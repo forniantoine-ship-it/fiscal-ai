@@ -35,8 +35,8 @@ export function Hero() {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Button href="#contact">Obtenir mon diagnostic gratuit</Button>
-            <Button variant="secondary" href="/onboarding/lmnp">
-              Déclaration LMNP
+            <Button variant="secondary" href="/app">
+              Mon dossier LMNP
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
               </svg>
