@@ -1,6 +1,11 @@
 import type { NextAction, UserConfidenceScore } from "../types";
+import { FIELD_REGISTRY, type FieldKey } from "../types/field-keys";
 import type { EngineContext } from "./context";
 import { getApplicableRequirements, getRequiredFields, hasActiveLedgerForField } from "./context";
+
+const FIELD_TAB: Record<FieldKey, string> = Object.fromEntries(
+  (Object.keys(FIELD_REGISTRY) as FieldKey[]).map((k) => [k, FIELD_REGISTRY[k].tab]),
+) as Record<FieldKey, string>;
 
 export function getConfidenceBand(score: number): "high" | "medium" | "low" {
   if (score >= 95) return "high";
@@ -89,26 +94,64 @@ export function pickNextAction(ctx: EngineContext): NextAction {
 
   const pending = ctx.validationItems.filter((v) => v.status === "pending");
   if (pending.length > 0) {
+    const tabHref = pickTabForPendingValidation(ctx, base);
     return {
-      title: `Confirmer ${pending.length} montant${pending.length > 1 ? "s" : ""}`,
-      description: "L'IA a pré-rempli ces lignes — un rapide coup d'œil suffit.",
-      href: `${base}/validation`,
+      title: `${pending.length} montant${pending.length > 1 ? "s" : ""} à valider`,
+      description:
+        "L’IA a tout pré-rempli — ouvrez Mes loyers ou Mes dépenses et confirmez en un clic.",
+      href: tabHref,
       estimatedMinutes: Math.ceil(pending.length * 1.5),
     };
   }
 
   if (ctx.documents.length === 0) {
     return {
-      title: "Ajouter vos documents",
-      description: "Bail, relevés de loyers, factures de charges…",
+      title: "Commencez par vos documents",
+      description:
+        "Déposez vos PDF : acte notarié, factures, taxe foncière, relevés de loyers… L’IA fait le reste.",
       href: `${base}/documents`,
       estimatedMinutes: 10,
     };
   }
 
+  const missing = getApplicableRequirements(ctx).filter((req) => {
+    if (req.level === "recommended") return false;
+    return !ctx.documents.some(
+      (d) => d.documentType === req.documentType && d.status === "analyzed",
+    );
+  });
+
+  if (missing.length > 0) {
+    return {
+      title: `Il manque encore : ${missing[0].label.toLowerCase()}`,
+      description: "Ajoutez-le pour que votre dossier soit complet.",
+      href: `${base}/documents`,
+      estimatedMinutes: 5,
+    };
+  }
+
   return {
-    title: "Compléter votre dossier",
-    description: "Parcourez les onglets pour vérifier vos montants.",
+    title: "Votre dossier avance bien",
+    description: "Parcourez vos loyers, dépenses et crédit pour vérifier que tout est correct.",
     href: `${base}/recettes`,
   };
+}
+
+function pickTabForPendingValidation(ctx: EngineContext, base: string): string {
+  const tabOrder = ["recettes", "depenses", "immobilisations", "emprunts"] as const;
+  const tabPaths = {
+    recettes: `${base}/recettes`,
+    depenses: `${base}/depenses`,
+    immobilisations: `${base}/immobilisations`,
+    emprunts: `${base}/emprunts`,
+  };
+
+  for (const tab of tabOrder) {
+    const hasPending = ctx.validationItems.some(
+      (v) => v.status === "pending" && FIELD_TAB[v.fieldKey] === tab,
+    );
+    if (hasPending) return tabPaths[tab];
+  }
+
+  return `${base}/recettes`;
 }

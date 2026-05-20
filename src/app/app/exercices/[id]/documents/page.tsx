@@ -13,20 +13,22 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Documents"
-        description="Ajoutez vos pièces (bail, relevés, factures). Nous les analysons pour pré-remplir votre dossier — vous confirmez ensuite chaque montant."
+        title="Vos documents"
+        description="Téléversez simplement vos PDF. L’IA les analyse, les classe et remplit votre déclaration — vous n’avez pas à choisir une catégorie comptable."
       >
         {workspace.pendingValidationCount > 0 && (
           <Link
-            href={`${base}/validation`}
+            href={`${base}/recettes`}
             className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
           >
-            Voir {workspace.pendingValidationCount} à confirmer
+            Vérifier {workspace.pendingValidationCount} montant
+            {workspace.pendingValidationCount > 1 ? "s" : ""}
           </Link>
         )}
       </PageHeader>
-      <DocumentChecklist />
+
       <DocumentUploadPanel />
+      <DocumentChecklist />
     </div>
   );
 }

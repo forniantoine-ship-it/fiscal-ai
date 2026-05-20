@@ -33,9 +33,9 @@ export function DocumentChecklist() {
     <section className="glass rounded-2xl border border-white/5 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-zinc-200">Pièces attendues</p>
+          <p className="text-sm font-semibold text-zinc-200">Documents utiles pour votre dossier</p>
           <p className="mt-1 text-xs text-zinc-500">
-            {presentCount}/{items.length} reçue{presentCount > 1 ? "s" : ""}
+            {presentCount}/{items.length} déjà reçu{presentCount > 1 ? "s" : ""}
             {missingRequired > 0 && (
               <span className="text-amber-400">
                 {" "}
@@ -76,7 +76,7 @@ export function DocumentChecklist() {
       </ul>
 
       <p className="mt-4 text-xs text-zinc-600">
-        Pas de jargon comptable — ajoutez simplement les documents que vous avez sous la main.
+        L’IA adapte la liste selon votre situation — ajoutez ce que vous avez, le reste pourra suivre.
       </p>
     </section>
   );

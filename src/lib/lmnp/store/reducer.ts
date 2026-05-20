@@ -17,7 +17,7 @@ import type {
 } from "../types";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
-import { FIELD_REGISTRY, getRequiredFieldKeys } from "../types/field-keys";
+import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/field-keys";
 import { HIGH_CONFIDENCE_THRESHOLD } from "../validation/display";
 import type { PersistedWorkspace } from "./persistence";
 
@@ -61,6 +61,13 @@ export type LmnpAction =
       ledgerEntryId: string;
       value: NormalizedValue;
       note?: string;
+    }
+  | {
+      type: "ADD_MANUAL_EXTRACTION";
+      documentId: string;
+      fieldKey: FieldKey;
+      value: NormalizedValue;
+      label?: string;
     };
 
 function nowIso(): string {
@@ -412,6 +419,42 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         }
       }
       return next;
+    }
+
+    case "ADD_MANUAL_EXTRACTION": {
+      const doc = state.documents.find((d) => d.id === action.documentId);
+      if (!doc) return state;
+
+      const extraction: Extraction = {
+        id: crypto.randomUUID(),
+        documentId: doc.id,
+        fiscalYearId: state.fiscalYear.id,
+        fieldKey: action.fieldKey,
+        displayLabel: action.label ?? FIELD_REGISTRY[action.fieldKey].label,
+        rawValue:
+          action.value.type === "money"
+            ? String(action.value.amountCents / 100)
+            : action.value.type === "text"
+              ? action.value.text
+              : "",
+        normalizedValue: action.value,
+        confidence: 100,
+        status: "pending_validation",
+      };
+
+      const extractions = [...state.extractions, extraction];
+      const validationItems = upsertValidationFromExtraction(
+        { ...state, extractions },
+        extraction,
+        doc,
+      );
+
+      return finalizeState({
+        ...state,
+        extractions,
+        validationItems,
+        fiscalYear: touchFiscalYear(state.fiscalYear, "pending_validation"),
+      });
     }
 
     case "CONFIRM_REGIME": {

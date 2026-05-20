@@ -1,5 +1,6 @@
 "use client";
 
+import { TAB_COPY } from "@/lib/lmnp/constants/copilot-copy";
 import { LedgerTabView } from "@/components/lmnp/tabs/LedgerTabView";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 
@@ -7,14 +8,10 @@ export default function ImmobilisationsPage() {
   return (
     <div>
       <PageHeader
-        title="Immobilisations"
-        description="Amortissement du bien et du mobilier — montants étalés sur plusieurs années, pas une dépense unique."
+        title={TAB_COPY.immobilisations.title}
+        description={TAB_COPY.immobilisations.description}
       />
-      <LedgerTabView
-        tab="immobilisations"
-        title="Immobilisations"
-        description="Factures meublé et actes notariés — une ligne par document validé, modifiable à tout moment."
-      />
+      <LedgerTabView tab="immobilisations" title={TAB_COPY.immobilisations.title} description="" />
     </div>
   );
 }

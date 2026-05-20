@@ -8,11 +8,12 @@ import { sumMoneyValues } from "@/lib/lmnp/types/values";
 import { formatMoney } from "@/lib/lmnp/types/values";
 import type { LedgerEntry, ValidationItem } from "@/lib/lmnp/types";
 import type { NormalizedValue } from "@/lib/lmnp/types/values";
+import { CorrectionModal } from "@/components/lmnp/validation/CorrectionModal";
 import { LedgerEditModal } from "./LedgerEditModal";
 import { LedgerLineRow } from "./LedgerLineRow";
+import { PendingAmountRow } from "./PendingAmountRow";
 import { EmptyState, TabEmptyIcon } from "@/components/lmnp/shared/EmptyState";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
-import { ConfidencePill } from "@/components/lmnp/shared/ConfidencePill";
 
 interface LedgerTabViewProps {
   tab: "activite" | "recettes" | "depenses" | "immobilisations" | "emprunts";
@@ -28,11 +29,6 @@ function formatValue(value: NormalizedValue): string {
   return "—";
 }
 
-function pendingOriginLabel(item: ValidationItem): string {
-  return item.confidence >= 95
-    ? "En attente de votre confirmation"
-    : "Confiance faible — à vérifier dans Validation";
-}
 
 interface FieldGroup {
   fieldKey: FieldKey;
@@ -71,6 +67,7 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
   const { workspace, dispatch } = useLmnp();
   const { showSuccess } = useFeedback();
   const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
+  const [correctingItem, setCorrectingItem] = useState<ValidationItem | null>(null);
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
   const fieldKeys = (Object.keys(FIELD_REGISTRY) as FieldKey[]).filter(
@@ -104,10 +101,9 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
       {groups.length === 0 ? (
         <EmptyState
           icon={<TabEmptyIcon />}
-          title="Aucune ligne enregistrée"
-          description="Les montants apparaissent ici dès que vous approuvez un document dans Validation — ou automatiquement si la lecture IA est très confiante (≥ 95 %)."
-          primaryAction={{ label: "Ajouter un document", href: `${base}/documents` }}
-          secondaryAction={{ label: "Ouvrir Validation", href: `${base}/validation` }}
+          title="Rien ici pour l’instant"
+          description="Déposez vos documents : l’IA remplira automatiquement vos loyers, dépenses et crédit. Vous n’aurez qu’à confirmer."
+          primaryAction={{ label: "Ajouter mes documents", href: `${base}/documents` }}
         />
       ) : (
         <ul className="space-y-4">
@@ -123,7 +119,7 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
                     {group.entries.length} ligne{group.entries.length > 1 ? "s" : ""} enregistrée
                     {group.entries.length > 1 ? "s" : ""}
                     {group.pending.length > 0 &&
-                      ` · ${group.pending.length} en attente de validation`}
+                      ` · ${group.pending.length} à confirmer`}
                   </p>
                 </div>
                 {group.total && (
@@ -153,27 +149,23 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
                   );
                 })}
 
-                {group.pending.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-4 bg-amber-500/[0.03] px-5 py-4"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-medium text-amber-400">{pendingOriginLabel(item)}</p>
-                        <ConfidencePill score={item.confidence} />
-                      </div>
-                      {item.documentFileName && (
-                        <p className="mt-1 truncate text-xs text-zinc-600">
-                          Source : {item.documentFileName}
-                        </p>
-                      )}
-                    </div>
-                    <p className="shrink-0 text-base font-semibold text-zinc-400">
-                      {formatValue(item.proposedValue)}
-                    </p>
-                  </li>
-                ))}
+                {group.pending.map((item) => {
+                  const doc = item.documentId
+                    ? documentsById.get(item.documentId)
+                    : undefined;
+                  return (
+                    <PendingAmountRow
+                      key={item.id}
+                      item={item}
+                      document={doc}
+                      onConfirm={() => {
+                        dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id });
+                        showSuccess("Montant confirmé", item.label);
+                      }}
+                      onCorrect={() => setCorrectingItem(item)}
+                    />
+                  );
+                })}
               </ul>
             </li>
           ))}
@@ -193,6 +185,22 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
             note,
           });
           showSuccess("Montant mis à jour", editingEntry.label ?? "Ligne modifiée");
+        }}
+      />
+
+      <CorrectionModal
+        item={correctingItem}
+        onClose={() => setCorrectingItem(null)}
+        onSave={(finalValue, note) => {
+          if (!correctingItem) return;
+          dispatch({
+            type: "VALIDATION_CORRECT",
+            validationItemId: correctingItem.id,
+            finalValue,
+            note,
+          });
+          showSuccess("Montant corrigé", correctingItem.label);
+          setCorrectingItem(null);
         }}
       />
     </div>

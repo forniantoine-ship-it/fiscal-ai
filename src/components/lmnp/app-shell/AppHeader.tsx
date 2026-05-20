@@ -30,7 +30,7 @@ export function AppHeader() {
           <span className="hidden text-zinc-600 sm:inline">/</span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-zinc-100">
-              Déclaration LMNP {fiscalYear.year}
+              Assistant LMNP · {fiscalYear.year}
             </p>
             <p className="truncate text-xs text-zinc-500">
               {statusLabel} · {CONFIDENCE_LEVEL_LABELS[confidence.level]} · {confidence.score} %
@@ -51,7 +51,7 @@ export function AppHeader() {
           )}
           {pendingValidationCount > 0 && (
             <Link
-              href={`/app/exercices/${fiscalYear.id}/validation`}
+              href={`/app/exercices/${fiscalYear.id}/recettes`}
               className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-medium text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25"
             >
               {pendingValidationCount} à confirmer

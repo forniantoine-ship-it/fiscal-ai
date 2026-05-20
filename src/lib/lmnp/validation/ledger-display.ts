@@ -9,18 +9,18 @@ export function getLedgerOriginBadge(origin: LedgerEntry["origin"]): {
   switch (origin) {
     case "ai_validated":
       return {
-        label: "Validé par IA + vous",
+        label: "Confirmé par vous",
         className: "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30",
       };
     case "ai_auto_synced":
     case "ai_extracted":
       return {
-        label: "Synchronisé auto (OCR ≥ 95 %)",
+        label: "Ajouté par l’IA",
         className: "bg-blue-500/15 text-blue-400 ring-blue-500/30",
       };
     case "manual_edit":
       return {
-        label: "Modifié par vous",
+        label: "Corrigé par vous",
         className: "bg-amber-500/15 text-amber-400 ring-amber-500/30",
       };
     default:

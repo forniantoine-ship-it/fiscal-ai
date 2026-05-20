@@ -1,25 +1,21 @@
 import type { FiscalYearStatus, UserConfidenceScore } from "@/lib/lmnp/types";
+import { CONFIDENCE_HUMAN, FISCAL_STATUS_HUMAN, PILLAR_HUMAN_LABELS } from "@/lib/lmnp/constants/copilot-copy";
 
 export const CONFIDENCE_LEVEL_LABELS: Record<UserConfidenceScore["level"], string> = {
-  starting: "Démarrage",
-  building: "En construction",
-  advancing: "Bon chemin",
-  almost_ready: "Presque prêt",
-  ready: "Prêt à clôturer",
+  starting: CONFIDENCE_HUMAN.starting,
+  building: CONFIDENCE_HUMAN.building,
+  advancing: CONFIDENCE_HUMAN.advancing,
+  almost_ready: CONFIDENCE_HUMAN.almost_ready,
+  ready: CONFIDENCE_HUMAN.ready,
 };
 
 export const FISCAL_YEAR_STATUS_LABELS: Record<FiscalYearStatus, string> = {
-  draft: "Brouillon",
-  collecting_documents: "Collecte en cours",
-  analyzing: "Analyse IA",
-  pending_validation: "Validation en cours",
-  ready_to_close: "Prêt à clôturer",
-  closed: "Clôturé",
+  draft: FISCAL_STATUS_HUMAN.draft,
+  collecting_documents: FISCAL_STATUS_HUMAN.collecting_documents,
+  analyzing: FISCAL_STATUS_HUMAN.analyzing,
+  pending_validation: FISCAL_STATUS_HUMAN.pending_validation,
+  ready_to_close: FISCAL_STATUS_HUMAN.ready_to_close,
+  closed: FISCAL_STATUS_HUMAN.closed,
 };
 
-export const PILLAR_LABELS = {
-  documents: "Documents",
-  validations: "Validations",
-  coherence: "Cohérence",
-  tabs: "Onglets métier",
-} as const;
+export const PILLAR_LABELS = PILLAR_HUMAN_LABELS;

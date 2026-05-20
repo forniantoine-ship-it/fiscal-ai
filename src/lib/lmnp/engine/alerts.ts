@@ -1,3 +1,4 @@
+import { TAB_COPY } from "../constants/copilot-copy";
 import type { Alert, AlertCode } from "../types";
 import { FIELD_REGISTRY } from "../types/field-keys";
 import type { EngineContext } from "./context";
@@ -23,9 +24,9 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         code: "A04_REQUIRED_DOCUMENT_MISSING",
         severity: "blocking",
         status: "open",
-        title: `Pièce manquante : ${req.label}`,
-        message: `Ajoutez ce document pour pouvoir clôturer sereinement votre dossier.`,
-        primaryActionLabel: "Ajouter un document",
+        title: `Il manque : ${req.label}`,
+        message: `Ajoutez ce document — l’IA le lira et remplira votre dossier automatiquement.`,
+        primaryActionLabel: "Ajouter mes documents",
         primaryActionHref: `/app/exercices/${base}/documents`,
       });
     }
@@ -45,8 +46,8 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
       code: "A05_LOAN_INTEREST_WITHOUT_CERTIFICATE",
       severity: "blocking",
       status: "open",
-      title: "Attestation d'intérêts manquante",
-      message: `Vous avez indiqué des intérêts d'emprunt — joignez l'attestation de votre banque.`,
+      title: "Il manque votre attestation de crédit",
+      message: `Vous avez des intérêts d’emprunt — ajoutez le document de votre banque.`,
       fieldKey: "loan.annualInterest",
       primaryActionLabel: "Ajouter le document",
       primaryActionHref: `/app/exercices/${base}/documents`,
@@ -66,8 +67,8 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         message: `Confiance de lecture ${item.confidence} % — un rapide contrôle suffit.`,
         validationItemId: item.id,
         fieldKey: item.fieldKey,
-        primaryActionLabel: "Confirmer le montant",
-        primaryActionHref: `/app/exercices/${base}/validation`,
+        primaryActionLabel: "Vérifier ce montant",
+        primaryActionHref: `/app/exercices/${base}/${FIELD_REGISTRY[item.fieldKey].tab}`,
       });
     }
     if (item.isRequired) {
@@ -77,12 +78,12 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         code: "A07_PENDING_REQUIRED_VALIDATION",
         severity: "warning",
         status: "open",
-        title: `Montant à confirmer : ${item.label}`,
-        message: `Ce montant est nécessaire pour compléter votre dossier.`,
+        title: `À confirmer : ${item.label}`,
+        message: `L’IA a détecté ce montant — un clic pour valider.`,
         validationItemId: item.id,
         fieldKey: item.fieldKey,
-        primaryActionLabel: "Ouvrir la validation",
-        primaryActionHref: `/app/exercices/${base}/validation`,
+        primaryActionLabel: "Confirmer",
+        primaryActionHref: `/app/exercices/${base}/${FIELD_REGISTRY[item.fieldKey].tab}`,
       });
     }
   }
@@ -90,16 +91,17 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
   for (const fieldKey of getRequiredFields(ctx)) {
     if (!hasActiveLedgerForField(ctx, fieldKey)) {
       const meta = FIELD_REGISTRY[fieldKey as keyof typeof FIELD_REGISTRY];
+      const tabLabel = TAB_COPY[meta.tab].sidebar;
       alerts.push({
         id: alertId("A11_REQUIRED_FIELD_EMPTY", fieldKey),
         fiscalYearId: base,
         code: "A11_REQUIRED_FIELD_EMPTY",
         severity: "blocking",
         status: "open",
-        title: `Information manquante : ${meta.label}`,
-        message: `Complétez ou validez cette donnée dans l'onglet ${meta.tab}.`,
+        title: `Il manque : ${meta.label}`,
+        message: `Ajoutez un document ou confirmez le montant dans « ${tabLabel} ».`,
         fieldKey: fieldKey as Alert["fieldKey"],
-        primaryActionLabel: `Aller à ${meta.tab}`,
+        primaryActionLabel: `Ouvrir ${tabLabel}`,
         primaryActionHref: `/app/exercices/${base}/${meta.tab}`,
       });
     }

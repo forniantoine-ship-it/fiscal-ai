@@ -78,8 +78,8 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
     <section className="glass rounded-2xl border border-white/5 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
-            Progression du dossier
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            Où en est votre dossier
           </p>
           <p className="mt-2 text-3xl font-bold tabular-nums text-zinc-100">{confidence.score} %</p>
           <p className="mt-1 text-sm text-emerald-400/90">
@@ -97,7 +97,7 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
 
       <div className="mt-6 grid gap-3 border-t border-white/5 pt-5 sm:grid-cols-2">
         <Metric
-          label="Alertes restantes"
+          label="Points à clarifier"
           value={String(openAlertCount)}
           detail={
             openAlertCount === 0
@@ -108,7 +108,7 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
           tone={blockingAlertCount > 0 ? "danger" : warningAlertCount > 0 ? "warning" : "neutral"}
         />
         <Metric
-          label="Documents validés"
+          label="Documents analysés"
           value={`${fullyValidatedDocumentCount}/${analyzedDocumentCount}`}
           detail={
             analyzedDocumentCount === 0
@@ -124,8 +124,7 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
         <p className="mt-4 text-xs text-zinc-600">
           {autoSyncedFieldCount > 0 && (
             <span>
-              {autoSyncedFieldCount} synchronisé{autoSyncedFieldCount > 1 ? "s" : ""} automatiquement
-              (OCR ≥ 95 %)
+              {autoSyncedFieldCount} ajouté{autoSyncedFieldCount > 1 ? "s" : ""} automatiquement par l’IA
             </span>
           )}
           {autoSyncedFieldCount > 0 && manuallyValidatedFieldCount > 0 && " · "}

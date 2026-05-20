@@ -10,8 +10,12 @@ export default function AlertesPage() {
   return (
     <div>
       <PageHeader
-        title="Alertes"
-        description={`${workspace.openAlertCount} alerte${workspace.openAlertCount > 1 ? "s" : ""} restante${workspace.openAlertCount > 1 ? "s" : ""} — les blocages empêchent la clôture future.`}
+        title="Points à clarifier"
+        description={
+          workspace.openAlertCount === 0
+            ? "Rien à signaler — votre assistant a tout ce qu’il lui faut."
+            : `${workspace.openAlertCount} rappel${workspace.openAlertCount > 1 ? "s" : ""} pour compléter sereinement votre dossier.`
+        }
       />
       <AlertList alerts={workspace.alerts} limit={50} />
     </div>

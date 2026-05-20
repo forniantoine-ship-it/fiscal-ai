@@ -1,8 +1,7 @@
 "use client";
 
-import { AlertList } from "@/components/lmnp/shared/AlertList";
+import { CopilotGuideCard } from "@/components/lmnp/shared/CopilotGuideCard";
 import { DossierProgressCard } from "@/components/lmnp/shared/DossierProgressCard";
-import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { NextActionCard } from "@/components/lmnp/shared/NextActionCard";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -10,91 +9,84 @@ import Link from "next/link";
 
 export default function ExerciceDashboardPage() {
   const { workspace } = useLmnp();
-  const { fiscalYear, confidence, documents, alerts, openAlertCount, pendingValidationCount } =
-    workspace;
+  const { fiscalYear, documents } = workspace;
   const base = `/app/exercices/${fiscalYear.id}`;
   const isFirstVisit = documents.length === 0;
 
   return (
     <div className="space-y-8">
       <PageHeader
-        title={`Bonjour — exercice ${fiscalYear.year}`}
-        description="Votre copilote LMNP : déposez vos documents, confirmez les montants, suivez votre avancement."
+        title={`Votre déclaration LMNP ${fiscalYear.year}`}
+        description="Un assistant pas à pas : déposez vos documents, l’IA remplit tout, vous confirmez. Aucune connaissance comptable requise."
       />
 
       {isFirstVisit ? (
-        <EmptyState
-          title="Bienvenue dans votre dossier LMNP"
-          description="Pas besoin d'être comptable — ajoutez vos documents, l'IA lit les montants et vous les propose pour validation. Vous gardez toujours le dernier mot."
-          primaryAction={{ label: "Commencer par mes documents", href: `${base}/documents` }}
-        />
+        <CopilotGuideCard />
       ) : (
-        <NextActionCard />
+        <>
+          <CopilotGuideCard />
+          <NextActionCard />
+        </>
       )}
 
       <DossierProgressCard />
 
       <section className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Documents" value={String(documents.length)} href={`${base}/documents`} />
-        <StatCard
-          label="À confirmer"
-          value={String(pendingValidationCount)}
-          href={`${base}/validation`}
-          highlight={pendingValidationCount > 0}
+        <QuickLink
+          label="Mes documents"
+          detail={`${documents.length} fichier${documents.length > 1 ? "s" : ""} déposé${documents.length > 1 ? "s" : ""}`}
+          href={`${base}/documents`}
         />
-        <StatCard
-          label="Alertes"
-          value={String(openAlertCount)}
+        <QuickLink
+          label="À valider"
+          detail={
+            workspace.pendingValidationCount > 0
+              ? `${workspace.pendingValidationCount} montant${workspace.pendingValidationCount > 1 ? "s" : ""}`
+              : "Rien en attente"
+          }
+          href={`${base}/recettes`}
+          highlight={workspace.pendingValidationCount > 0}
+        />
+        <QuickLink
+          label="Points à clarifier"
+          detail={
+            workspace.openAlertCount === 0
+              ? "Tout va bien"
+              : `${workspace.openAlertCount} point${workspace.openAlertCount > 1 ? "s" : ""}`
+          }
           href={`${base}/alertes`}
           highlight={workspace.blockingAlertCount > 0}
-          sub={
-            openAlertCount === 0
-              ? "Tout est en ordre"
-              : `${workspace.blockingAlertCount} blocage${workspace.blockingAlertCount > 1 ? "s" : ""}`
-          }
         />
-      </section>
-
-      <section>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-300">Alertes restantes</h2>
-          <Link href={`${base}/alertes`} className="text-sm text-emerald-400 hover:text-emerald-300">
-            Tout voir ({openAlertCount})
-          </Link>
-        </div>
-        <AlertList alerts={alerts} limit={3} />
       </section>
 
       <p className="text-center text-xs text-zinc-600">
-        Score recalculé à chaque validation · {confidence.score} % · L&apos;IA propose (≥ 95 % auto),
-        vous décidez sinon
+        L’IA lit vos PDF et propose les montants — vous gardez toujours le contrôle avant la
+        déclaration.
       </p>
     </div>
   );
 }
 
-function StatCard({
+function QuickLink({
   label,
-  value,
-  sub,
+  detail,
   href,
   highlight,
 }: {
   label: string;
-  value: string;
-  sub?: string;
-  href?: string;
+  detail: string;
+  href: string;
   highlight?: boolean;
 }) {
-  const inner = (
-    <div
-      className={`glass rounded-xl p-5 ${highlight ? "ring-1 ring-amber-500/30" : ""} ${href ? "transition-colors hover:bg-white/[0.04]" : ""}`}
+  return (
+    <Link
+      href={href}
+      className={`glass block rounded-xl p-5 transition-colors hover:bg-white/[0.04] ${
+        highlight ? "ring-1 ring-amber-500/30" : ""
+      }`}
     >
       <p className="text-xs text-zinc-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-zinc-100">{value}</p>
-      {sub && <p className="mt-1 text-xs text-zinc-500">{sub}</p>}
-    </div>
+      <p className="mt-1 text-lg font-semibold text-zinc-100">{detail}</p>
+    </Link>
   );
-  if (href) return <Link href={href}>{inner}</Link>;
-  return inner;
 }

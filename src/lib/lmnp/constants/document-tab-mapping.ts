@@ -20,16 +20,18 @@ export const DOCUMENT_TYPE_TAB: Partial<
 };
 
 export const DOCUMENT_TYPE_SHORT_LABEL: Partial<Record<DocumentType, string>> = {
-  furniture_invoice: "Facture meublé",
-  property_tax: "Taxe foncière",
-  rent_bank_statement: "Relevé de loyers",
-  rent_receipt: "Quittance de loyer",
-  loan_interest_certificate: "Intérêts bancaires",
-  loan_schedule: "Tableau d'amortissement",
-  insurance_invoice: "Assurance",
-  condo_charges: "Charges copropriété",
-  works_invoice: "Factures travaux",
   notary_deed: "Acte notarié",
+  furniture_invoice: "Facture de meubles",
+  property_tax: "Taxe foncière",
+  loan_interest_certificate: "Crédit immobilier",
+  loan_schedule: "Tableau de crédit",
+  insurance_invoice: "Assurance habitation",
+  rent_bank_statement: "Relevés de loyers",
+  rent_receipt: "Quittance de loyer",
+  lease_contract: "Bail / location",
+  works_invoice: "Factures de travaux",
+  condo_charges: "Charges copropriété",
+  bank_statement: "Relevé bancaire",
 };
 
 export const FIELD_KEY_TAB_HINT: Partial<Record<FieldKey, string>> = {

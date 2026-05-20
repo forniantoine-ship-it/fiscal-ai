@@ -2,21 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { TAB_COPY } from "@/lib/lmnp/constants/copilot-copy";
 import { useLmnp } from "@/lib/lmnp/store";
 
 const MAIN_NAV = [
-  { href: "", label: "Tableau de bord", exact: true },
-  { href: "/documents", label: "Documents" },
-  { href: "/validation", label: "Validation", badge: "pending" as const },
-  { href: "/alertes", label: "Alertes", badge: "blocking" as const },
+  { href: "", label: "Guide", exact: true },
+  { href: "/documents", label: "Mes documents" },
+  { href: "/alertes", label: "À clarifier", badge: "blocking" as const },
 ];
 
 const TABS_NAV = [
-  { href: "/activite", label: "Activité" },
-  { href: "/recettes", label: "Recettes" },
-  { href: "/depenses", label: "Dépenses" },
-  { href: "/immobilisations", label: "Immobilisations" },
-  { href: "/emprunts", label: "Emprunts" },
+  { href: "/activite", label: TAB_COPY.activite.sidebar },
+  { href: "/recettes", label: TAB_COPY.recettes.sidebar, badge: "pending" as const },
+  { href: "/depenses", label: TAB_COPY.depenses.sidebar },
+  { href: "/immobilisations", label: TAB_COPY.immobilisations.sidebar },
+  { href: "/emprunts", label: TAB_COPY.emprunts.sidebar },
 ];
 
 export function AppSidebar() {
@@ -35,13 +35,12 @@ export function AppSidebar() {
   return (
     <aside className="w-56 shrink-0 border-r border-white/5 bg-[#0a0a0f]/80 p-4">
       <p className="mb-3 px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-        Mon dossier
+        Votre assistant
       </p>
       <nav className="space-y-1">
         {MAIN_NAV.map((item) => {
           const active = isActive(item.href, item.exact);
           let badge: number | undefined;
-          if (item.badge === "pending") badge = pending;
           if (item.badge === "blocking") badge = blocking;
 
           return (
@@ -56,13 +55,7 @@ export function AppSidebar() {
             >
               <span>{item.label}</span>
               {badge !== undefined && badge > 0 && (
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                    item.badge === "blocking"
-                      ? "bg-red-500/20 text-red-400"
-                      : "bg-amber-500/20 text-amber-400"
-                  }`}
-                >
+                <span className="rounded-full bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-400">
                   {badge}
                 </span>
               )}
@@ -72,22 +65,33 @@ export function AppSidebar() {
       </nav>
 
       <p className="mb-3 mt-8 px-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-        Mon activité
+        Votre déclaration
       </p>
       <nav className="space-y-1">
-        {TABS_NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={`${base}${item.href}`}
-            className={`block rounded-lg px-3 py-2 text-sm transition-colors ${
-              isActive(item.href)
-                ? "bg-white/10 font-medium text-zinc-100"
-                : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-            }`}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {TABS_NAV.map((item) => {
+          const active = isActive(item.href);
+          let badge: number | undefined;
+          if ("badge" in item && item.badge === "pending") badge = pending;
+
+          return (
+            <Link
+              key={item.href}
+              href={`${base}${item.href}`}
+              className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
+                active
+                  ? "bg-white/10 font-medium text-zinc-100"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+              }`}
+            >
+              <span>{item.label}</span>
+              {badge !== undefined && badge > 0 && (
+                <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">
+                  {badge}
+                </span>
+              )}
+            </Link>
+          );
+        })}
       </nav>
     </aside>
   );

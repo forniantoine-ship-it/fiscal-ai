@@ -13,6 +13,14 @@ const FILENAME_RULES: { pattern: RegExp; documentType: DocumentType; category: D
   { pattern: /notaire|acte/i, documentType: "notary_deed", category: "amortissement" },
 ];
 
+/** Déduit type et catégorie depuis le nom de fichier — sans choix utilisateur. */
+export function inferUploadFromFileName(fileName: string): {
+  documentType: DocumentType;
+  category: DocumentCategory;
+} {
+  return inferDocumentType(fileName, "autre");
+}
+
 export function inferDocumentType(
   fileName: string,
   userCategory: DocumentCategory,

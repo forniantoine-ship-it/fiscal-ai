@@ -10,13 +10,13 @@ export function NextActionCard() {
   return (
     <section className="glass rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6">
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-        À faire maintenant
+        Prochaine étape
       </p>
       <h2 className="mt-2 text-xl font-semibold text-zinc-100">{nextAction.title}</h2>
       <p className="mt-2 text-sm text-zinc-400">{nextAction.description}</p>
       {nextAction.estimatedMinutes && (
         <p className="mt-2 text-xs text-zinc-500">
-          Environ {nextAction.estimatedMinutes} min · Dossier à {confidence.score} %
+          Environ {nextAction.estimatedMinutes} min · Avancement {confidence.score} %
         </p>
       )}
       <Link

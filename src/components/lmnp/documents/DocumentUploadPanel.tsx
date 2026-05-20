@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ACCEPTED_MIME_TYPES, DOCUMENT_CATEGORIES, MAX_FILE_BYTES } from "@/lib/lmnp/constants/documents";
+import { ACCEPTED_MIME_TYPES, MAX_FILE_BYTES } from "@/lib/lmnp/constants/documents";
 import { DOCUMENT_TYPE_SHORT_LABEL } from "@/lib/lmnp/constants/document-tab-mapping";
+import { inferUploadFromFileName } from "@/lib/lmnp/services/document-classifier";
 import { useLmnp } from "@/lib/lmnp/store";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { ConfidencePill } from "@/components/lmnp/shared/ConfidencePill";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
-import { DocumentsEmptyIcon, EmptyState } from "@/components/lmnp/shared/EmptyState";
+import { DocumentsEmptyIcon } from "@/components/lmnp/shared/EmptyState";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
 
 function formatSize(bytes: number): string {
@@ -17,10 +18,10 @@ function formatSize(bytes: number): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  uploaded: "En file d'attente",
-  processing: "Analyse en cours…",
-  analyzed: "Analysé",
-  failed: "Échec de lecture",
+  uploaded: "En attente d’analyse",
+  processing: "L’IA lit votre document…",
+  analyzed: "Analysé — montants extraits",
+  failed: "Lecture impossible",
 };
 
 function avgConfidenceForDocument(
@@ -33,8 +34,8 @@ function avgConfidenceForDocument(
 }
 
 function documentTypeLabel(doc: LmnpDocument): string | null {
-  if (doc.documentType === "unknown") return null;
-  return DOCUMENT_TYPE_SHORT_LABEL[doc.documentType] ?? doc.documentType;
+  if (doc.documentType === "unknown") return "Document classé par l’IA";
+  return DOCUMENT_TYPE_SHORT_LABEL[doc.documentType] ?? null;
 }
 
 export function DocumentUploadPanel() {
@@ -43,7 +44,6 @@ export function DocumentUploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
   const analyzingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [category, setCategory] = useState<DocumentCategory>("revenus");
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
@@ -64,23 +64,24 @@ export function DocumentUploadPanel() {
           documentIds,
           getFile,
           dispatch,
+          fiscalYear: workspace.fiscalYear.year,
         });
 
         if (succeeded > 0) {
           showSuccess(
             `${succeeded} document${succeeded > 1 ? "s" : ""} analysé${succeeded > 1 ? "s" : ""}`,
-            "Consultez Validation pour confirmer, ou parcourez vos onglets métier",
-            `${base}/validation`,
+            "Les montants sont dans Mes loyers et Mes dépenses — confirmez-les en un clic.",
+            `${base}/recettes`,
           );
         }
 
         if (failed > 0 && succeeded === 0) {
           const msg =
-            "Impossible de lire vos documents. Vérifiez votre connexion ou réessayez avec un PDF plus net.";
+            "Impossible de lire vos documents. Essayez un PDF plus net ou réimportez le fichier.";
           setError(msg);
           showError("Analyse impossible", msg);
         } else if (failed > 0) {
-          const msg = `${failed} document${failed > 1 ? "s" : ""} en échec — utilisez « Réessayer » sur la ligne concernée.`;
+          const msg = `${failed} document${failed > 1 ? "s" : ""} en échec — touchez « Réessayer » sur la ligne concernée.`;
           setError(msg);
           showError("Analyse partielle", msg);
         }
@@ -88,15 +89,15 @@ export function DocumentUploadPanel() {
         const msg =
           err instanceof Error
             ? err.message
-            : "Une erreur est survenue pendant l'analyse.";
+            : "Une erreur est survenue pendant l’analyse.";
         setError(msg);
-        showError("Erreur d'analyse", msg);
+        showError("Erreur d’analyse", msg);
       } finally {
         analyzingRef.current = false;
         setIsAnalyzing(false);
       }
     },
-    [workspace.documents, getFile, dispatch, showSuccess, showError, base],
+    [workspace.documents, workspace.fiscalYear.year, getFile, dispatch, showSuccess, showError, base],
   );
 
   useEffect(() => {
@@ -118,68 +119,39 @@ export function DocumentUploadPanel() {
           ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number]) ||
           /\.(pdf|jpe?g|png|webp)$/i.test(file.name);
         if (!okType) {
-          const msg = `"${file.name}" : format non accepté — utilisez PDF, JPG ou PNG.`;
+          const msg = `"${file.name}" : utilisez un PDF, JPG ou PNG.`;
           setError(msg);
           showError("Format refusé", msg);
           continue;
         }
         if (file.size > MAX_FILE_BYTES) {
-          const msg = `"${file.name}" dépasse 20 Mo. Compressez le fichier ou scindez-le.`;
+          const msg = `"${file.name}" dépasse 20 Mo — compressez ou scindez le fichier.`;
           setError(msg);
           showError("Fichier trop lourd", msg);
           continue;
         }
+        const { category } = inferUploadFromFileName(file.name);
         valid.push({ file, category });
       }
 
       if (valid.length > 0) {
         dispatch({ type: "UPLOAD_DOCUMENTS", files: valid });
         showInfo(
-          `${valid.length} fichier${valid.length > 1 ? "s" : ""} ajouté${valid.length > 1 ? "s" : ""}`,
-          "Analyse automatique en cours…",
+          `${valid.length} fichier${valid.length > 1 ? "s" : ""} reçu${valid.length > 1 ? "s" : ""}`,
+          "L’IA analyse et classe automatiquement…",
         );
       }
     },
-    [category, dispatch, showError, showInfo],
+    [dispatch, showError, showInfo],
   );
 
   const retryDocument = (doc: LmnpDocument) => {
     dispatch({ type: "DOCUMENT_SET_STATUS", documentId: doc.id, status: "uploaded" });
-    showInfo(`Nouvelle analyse de « ${doc.fileName} »…`);
+    showInfo(`Nouvelle lecture de « ${doc.fileName} »…`);
   };
 
   return (
     <div className="space-y-6">
-      {workspace.documents.length === 0 && (
-        <EmptyState
-          icon={<DocumentsEmptyIcon />}
-          title="Commencez par vos pièces justificatives"
-          description="Bail, relevé de loyers, taxe foncière, facture meublé… L'IA lit vos documents et pré-remplit votre dossier. Vous gardez le contrôle sur chaque montant."
-          primaryAction={{ label: "Ajouter un document", href: "#upload-zone" }}
-        />
-      )}
-
-      <div>
-        <p className="mb-2 text-sm font-medium text-zinc-300">Type de document</p>
-        <div className="flex flex-wrap gap-2">
-          {DOCUMENT_CATEGORIES.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setCategory(cat.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
-                category === cat.id
-                  ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40"
-                  : "bg-white/5 text-zinc-400 ring-1 ring-white/10 hover:text-zinc-200"
-              }`}
-              title={cat.hint}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div
         id="upload-zone"
         role="button"
@@ -201,10 +173,10 @@ export function DocumentUploadPanel() {
           processFiles(e.dataTransfer.files);
         }}
         onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition-all ${
+        className={`cursor-pointer rounded-2xl border-2 border-dashed p-12 text-center transition-all ${
           isDragging
-            ? "border-emerald-400 bg-emerald-500/10"
-            : "border-white/15 bg-white/[0.02] hover:border-emerald-500/40"
+            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10"
+            : "border-white/15 bg-white/[0.02] hover:border-emerald-500/40 hover:bg-emerald-500/[0.03]"
         }`}
       >
         <input
@@ -218,22 +190,27 @@ export function DocumentUploadPanel() {
             e.target.value = "";
           }}
         />
-        <p className="text-base font-semibold text-zinc-200">Glissez vos fichiers ici</p>
-        <p className="mt-2 text-sm text-zinc-500">
-          ou <span className="text-emerald-400">parcourir</span> — PDF, JPG, PNG
+        <DocumentsEmptyIcon />
+        <p className="mt-4 text-lg font-semibold text-zinc-100">
+          Téléversez simplement vos documents
         </p>
-        <p className="mt-2 text-xs text-zinc-600">
-          Analyse lancée automatiquement · montants ≥ 95 % synchronisés dans vos onglets
+        <p className="mt-2 text-sm text-zinc-400">
+          L&apos;IA les analysera automatiquement — acte notarié, factures, taxe foncière, relevés
+          de loyers…
         </p>
+        <p className="mt-4 text-sm text-emerald-400/90">
+          Glissez-déposez ici ou <span className="underline">parcourir vos fichiers</span>
+        </p>
+        <p className="mt-2 text-xs text-zinc-600">PDF, JPG, PNG · max 20 Mo par fichier</p>
       </div>
 
       {(isAnalyzing || hasProcessing) && (
         <div className="flex items-center gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3">
           <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-blue-400/30 border-t-blue-400" />
           <div>
-            <p className="text-sm font-medium text-blue-300">Lecture IA en cours</p>
+            <p className="text-sm font-medium text-blue-300">L’IA lit vos documents</p>
             <p className="text-xs text-zinc-500">
-              Extraction des montants — quelques secondes par document
+              Classification, extraction des montants, remplissage de votre dossier…
             </p>
           </div>
         </div>
@@ -245,18 +222,18 @@ export function DocumentUploadPanel() {
         </p>
       )}
 
-      {uploadedIds.length > 0 && !isAnalyzing && !hasProcessing && (
-        <button
-          type="button"
-          onClick={() => runAnalysisForIds(uploadedIds)}
-          className="w-full rounded-full border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20"
-        >
-          Relancer l&apos;analyse ({uploadedIds.length} en attente)
-        </button>
+      {workspace.documents.length === 0 && !isAnalyzing && !hasProcessing && (
+        <p className="text-center text-sm text-zinc-500">
+          Pas de case à cocher, pas de jargon — déposez vos PDF et laissez l&apos;assistant faire le
+          tri.
+        </p>
       )}
 
       {workspace.documents.length > 0 && (
         <ul className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+            Vos fichiers
+          </p>
           {workspace.documents.map((doc) => {
             const confidence = avgConfidenceForDocument(doc.id, workspace.extractions);
             const typeLabel = documentTypeLabel(doc);
