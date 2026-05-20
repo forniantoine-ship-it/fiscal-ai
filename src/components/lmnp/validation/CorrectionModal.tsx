@@ -13,6 +13,7 @@ interface CorrectionModalProps {
 export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps) {
   const [input, setInput] = useState("");
   const [note, setNote] = useState("");
+  const [inputError, setInputError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!item) return;
@@ -22,6 +23,7 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
       setInput(item.proposedValue.text);
     }
     setNote("");
+    setInputError(null);
   }, [item]);
 
   if (!item) return null;
@@ -31,9 +33,16 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
   const handleSave = () => {
     if (isMoney) {
       const value = moneyFromInput(input);
-      if (!value) return;
+      if (!value) {
+        setInputError("Montant invalide — utilisez par ex. 1 234,56");
+        return;
+      }
       onSave(value, note || undefined);
     } else if (item.proposedValue.type === "text") {
+      if (!input.trim()) {
+        setInputError("Ce champ ne peut pas être vide");
+        return;
+      }
       onSave({ type: "text", text: input }, note || undefined);
     }
     onClose();
@@ -65,11 +74,18 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
             type={isMoney ? "text" : "text"}
             inputMode={isMoney ? "decimal" : "text"}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              setInputError(null);
+            }}
             className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-zinc-100 outline-none focus:border-emerald-500/50"
             placeholder={isMoney ? "0,00" : ""}
           />
         </label>
+
+        {inputError && (
+          <p className="mt-2 text-xs text-red-400">{inputError}</p>
+        )}
 
         <label className="mt-3 block text-sm font-medium text-zinc-300">
           Note (optionnel)

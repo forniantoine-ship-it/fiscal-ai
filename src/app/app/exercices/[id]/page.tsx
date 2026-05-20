@@ -2,6 +2,7 @@
 
 import { AlertList } from "@/components/lmnp/shared/AlertList";
 import { DossierProgressCard } from "@/components/lmnp/shared/DossierProgressCard";
+import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { NextActionCard } from "@/components/lmnp/shared/NextActionCard";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -12,6 +13,7 @@ export default function ExerciceDashboardPage() {
   const { fiscalYear, confidence, documents, alerts, openAlertCount, pendingValidationCount } =
     workspace;
   const base = `/app/exercices/${fiscalYear.id}`;
+  const isFirstVisit = documents.length === 0;
 
   return (
     <div className="space-y-8">
@@ -20,7 +22,15 @@ export default function ExerciceDashboardPage() {
         description="Votre copilote LMNP : déposez vos documents, confirmez les montants, suivez votre avancement."
       />
 
-      <NextActionCard />
+      {isFirstVisit ? (
+        <EmptyState
+          title="Bienvenue dans votre dossier LMNP"
+          description="Pas besoin d'être comptable — ajoutez vos documents, l'IA lit les montants et vous les propose pour validation. Vous gardez toujours le dernier mot."
+          primaryAction={{ label: "Commencer par mes documents", href: `${base}/documents` }}
+        />
+      ) : (
+        <NextActionCard />
+      )}
 
       <DossierProgressCard />
 

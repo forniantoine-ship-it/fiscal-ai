@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { ValidationItem } from "@/lib/lmnp/types";
 import { groupValidationByDocument } from "@/lib/lmnp/validation/grouping";
+import { getTabLabelForField } from "@/lib/lmnp/validation/ledger-display";
+import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { DocumentValidationCard } from "./DocumentValidationCard";
 import { ValidationSummaryBar } from "./ValidationSummaryBar";
 import { ValidationFieldRowDone } from "./ValidationFieldRow";
@@ -13,6 +15,7 @@ import { RejectFieldDialog } from "./RejectFieldDialog";
 
 export function ValidationInbox() {
   const { workspace, dispatch } = useLmnp();
+  const { showSuccess } = useFeedback();
   const [correcting, setCorrecting] = useState<ValidationItem | null>(null);
   const [rejecting, setRejecting] = useState<ValidationItem | null>(null);
 
@@ -36,6 +39,25 @@ export function ValidationInbox() {
 
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
+  const handleApprove = (item: ValidationItem) => {
+    dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id });
+    showSuccess(
+      `${item.label} enregistré`,
+      `Ligne ajoutée dans ${getTabLabelForField(item.fieldKey)}`,
+      `${base}/${FIELD_TAB[item.fieldKey] ?? "recettes"}`,
+    );
+  };
+
+  const handleBulkApprove = () => {
+    const count = highConfidence.length;
+    dispatch({ type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" });
+    showSuccess(
+      `${count} montant${count > 1 ? "s" : ""} confirmé${count > 1 ? "s" : ""}`,
+      "Synchronisés dans vos onglets métier",
+      `${base}/recettes`,
+    );
+  };
+
   return (
     <div className="space-y-8">
       <ValidationSummaryBar
@@ -43,21 +65,28 @@ export function ValidationInbox() {
         highConfidenceCount={highConfidence.length}
         analyzedDocumentsCount={analyzedDocs.length}
         validatedCount={done.filter((d) => d.status !== "ignored").length}
-        onBulkApproveHighConfidence={() =>
-          dispatch({ type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" })
-        }
+        onBulkApproveHighConfidence={handleBulkApprove}
       />
 
       {analyzedDocs.length === 0 && pending.length === 0 ? (
-        <EmptyState href={`${base}/documents`} />
+        <EmptyState
+          title="Aucun document analysé"
+          description="Importez vos pièces (loyers, charges, meublé…) — l'IA extrait les montants et vous les présente ici pour confirmation."
+          primaryAction={{ label: "Ajouter des documents", href: `${base}/documents` }}
+        />
       ) : pending.length === 0 ? (
-        <AllValidatedState href={base} doneCount={done.length} />
+        <EmptyState
+          variant="success"
+          title="Tout est confirmé"
+          description={`${done.length} décision${done.length > 1 ? "s" : ""} enregistrée${done.length > 1 ? "s" : ""}. Vos onglets Recettes, Dépenses… sont à jour.`}
+          primaryAction={{ label: "Voir les recettes", href: `${base}/recettes` }}
+          secondaryAction={{ label: "Consulter les alertes", href: `${base}/alertes` }}
+        />
       ) : (
         <>
           <p className="text-sm text-zinc-400">
-            {pending.length} montant{pending.length !== 1 ? "s" : ""} à confirmer — les
-            extractions à haute confiance (≥ 95 %) sont déjà synchronisées dans vos onglets
-            métier.
+            {pending.length} montant{pending.length !== 1 ? "s" : ""} à confirmer — les lectures ≥
+            95 % sont déjà dans vos onglets. Un clic suffit pour valider le reste.
           </p>
 
           <div className="space-y-6">
@@ -65,9 +94,7 @@ export function ValidationInbox() {
               <DocumentValidationCard
                 key={group.documentId ?? "orphan"}
                 group={group}
-                onApprove={(item) =>
-                  dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id })
-                }
+                onApprove={handleApprove}
                 onCorrect={(item) => setCorrecting(item)}
                 onReject={(item) => setRejecting(item)}
               />
@@ -100,6 +127,11 @@ export function ValidationInbox() {
             finalValue,
             note,
           });
+          showSuccess(
+            `${correcting.label} corrigé`,
+            `Montant mis à jour dans ${getTabLabelForField(correcting.fieldKey)}`,
+            `${base}/${FIELD_TAB[correcting.fieldKey] ?? "recettes"}`,
+          );
         }}
       />
 
@@ -119,37 +151,19 @@ export function ValidationInbox() {
   );
 }
 
-function EmptyState({ href }: { href: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-10 text-center">
-      <p className="text-lg font-semibold text-zinc-200">Aucun document analysé</p>
-      <p className="mt-2 text-sm text-zinc-500">
-        Importez vos pièces pour que l&apos;IA extraie les montants à valider.
-      </p>
-      <Link
-        href={href}
-        className="mt-6 inline-flex rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
-      >
-        Ajouter des documents
-      </Link>
-    </div>
-  );
-}
-
-function AllValidatedState({ href, doneCount }: { href: string; doneCount: number }) {
-  return (
-    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-10 text-center">
-      <p className="text-lg font-semibold text-emerald-400">Tout est confirmé</p>
-      <p className="mt-2 text-sm text-zinc-400">
-        {doneCount} décision{doneCount !== 1 ? "s" : ""} enregistrée{doneCount !== 1 ? "s" : ""}.
-        Passez aux onglets Recettes, Dépenses… pour le récapitulatif.
-      </p>
-      <Link
-        href={`${href}/recettes`}
-        className="mt-6 inline-flex rounded-full border border-white/10 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5"
-      >
-        Voir les recettes
-      </Link>
-    </div>
-  );
-}
+const FIELD_TAB: Record<string, string> = {
+  "fiscal.regime": "activite",
+  "property.address": "activite",
+  "property.label": "activite",
+  "income.annualRent": "recettes",
+  "income.refactoredCharges": "recettes",
+  "expense.propertyTax": "depenses",
+  "expense.insurance": "depenses",
+  "expense.condo": "depenses",
+  "expense.worksDeductible": "depenses",
+  "expense.managementFees": "depenses",
+  "expense.other": "depenses",
+  "amort.buildingAnnual": "immobilisations",
+  "amort.furnitureAnnual": "immobilisations",
+  "loan.annualInterest": "emprunts",
+};

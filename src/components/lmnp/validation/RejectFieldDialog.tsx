@@ -41,6 +41,13 @@ export function RejectFieldDialog({ item, onClose, onConfirm }: RejectFieldDialo
           dans l&apos;onglet concerné ou importer un autre document.
         </p>
 
+        {item.isRequired && (
+          <p className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+            Ce montant est important pour votre dossier — le rejeter peut bloquer la clôture
+            future.
+          </p>
+        )}
+
         <label className="mt-4 block text-sm font-medium text-zinc-300">
           Motif (optionnel)
           <input

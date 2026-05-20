@@ -10,6 +10,9 @@ import type { LedgerEntry, ValidationItem } from "@/lib/lmnp/types";
 import type { NormalizedValue } from "@/lib/lmnp/types/values";
 import { LedgerEditModal } from "./LedgerEditModal";
 import { LedgerLineRow } from "./LedgerLineRow";
+import { EmptyState, TabEmptyIcon } from "@/components/lmnp/shared/EmptyState";
+import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import { ConfidencePill } from "@/components/lmnp/shared/ConfidencePill";
 
 interface LedgerTabViewProps {
   tab: "activite" | "recettes" | "depenses" | "immobilisations" | "emprunts";
@@ -66,7 +69,9 @@ function groupByField(
 
 export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
   const { workspace, dispatch } = useLmnp();
+  const { showSuccess } = useFeedback();
   const [editingEntry, setEditingEntry] = useState<LedgerEntry | null>(null);
+  const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
   const fieldKeys = (Object.keys(FIELD_REGISTRY) as FieldKey[]).filter(
     (k) => FIELD_REGISTRY[k].tab === tab,
@@ -97,13 +102,13 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
       {description && <p className="text-sm text-zinc-500">{description}</p>}
 
       {groups.length === 0 ? (
-        <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-10 text-center">
-          <p className="text-sm text-zinc-400">Aucune ligne pour l&apos;instant</p>
-          <p className="mt-2 text-xs text-zinc-600">
-            Importez un document, puis approuvez-le dans Validation — la ligne apparaît ici
-            instantanément.
-          </p>
-        </div>
+        <EmptyState
+          icon={<TabEmptyIcon />}
+          title="Aucune ligne enregistrée"
+          description="Les montants apparaissent ici dès que vous approuvez un document dans Validation — ou automatiquement si la lecture IA est très confiante (≥ 95 %)."
+          primaryAction={{ label: "Ajouter un document", href: `${base}/documents` }}
+          secondaryAction={{ label: "Ouvrir Validation", href: `${base}/validation` }}
+        />
       ) : (
         <ul className="space-y-4">
           {groups.map((group) => (
@@ -154,7 +159,10 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
                     className="flex items-center justify-between gap-4 bg-amber-500/[0.03] px-5 py-4"
                   >
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-amber-400">{pendingOriginLabel(item)}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-medium text-amber-400">{pendingOriginLabel(item)}</p>
+                        <ConfidencePill score={item.confidence} />
+                      </div>
                       {item.documentFileName && (
                         <p className="mt-1 truncate text-xs text-zinc-600">
                           Source : {item.documentFileName}
@@ -184,6 +192,7 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
             value,
             note,
           });
+          showSuccess("Montant mis à jour", editingEntry.label ?? "Ligne modifiée");
         }}
       />
     </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { DocumentChecklist } from "@/components/lmnp/documents/DocumentChecklist";
 import { DocumentUploadPanel } from "@/components/lmnp/documents/DocumentUploadPanel";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import Link from "next/link";
@@ -10,7 +11,7 @@ export default function DocumentsPage() {
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
   return (
-    <div>
+    <div className="space-y-8">
       <PageHeader
         title="Documents"
         description="Ajoutez vos pièces (bail, relevés, factures). Nous les analysons pour pré-remplir votre dossier — vous confirmez ensuite chaque montant."
@@ -24,6 +25,7 @@ export default function DocumentsPage() {
           </Link>
         )}
       </PageHeader>
+      <DocumentChecklist />
       <DocumentUploadPanel />
     </div>
   );

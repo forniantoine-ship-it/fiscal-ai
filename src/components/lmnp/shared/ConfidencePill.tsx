@@ -14,7 +14,7 @@ export function ConfidencePill({ score }: { score: number }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${className}`}
       title={`Confiance de lecture ${score} % — confirmez le montant`}
     >
       {label} · {score} %

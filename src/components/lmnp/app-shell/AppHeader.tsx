@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
+import { ConfidencePill } from "@/components/lmnp/shared/ConfidencePill";
 import { CONFIDENCE_LEVEL_LABELS, FISCAL_YEAR_STATUS_LABELS } from "./labels";
 
 export function AppHeader() {
@@ -57,8 +58,14 @@ export function AppHeader() {
             </Link>
           )}
           <div
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-400 ring-1 ring-emerald-500/30"
-            title="Avancement dossier"
+            className="hidden sm:block"
+            title={`Dossier à ${confidence.score} %`}
+          >
+            <ConfidencePill score={confidence.score} />
+          </div>
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-xs font-bold text-emerald-400 ring-1 ring-emerald-500/30 sm:hidden"
+            title={`${CONFIDENCE_LEVEL_LABELS[confidence.level]} · ${confidence.score} %`}
           >
             {confidence.score}
           </div>

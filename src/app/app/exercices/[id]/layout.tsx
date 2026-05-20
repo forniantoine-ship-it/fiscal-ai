@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppHeader } from "@/components/lmnp/app-shell/AppHeader";
 import { AppSidebar } from "@/components/lmnp/app-shell/AppSidebar";
+import { AlertStrip } from "@/components/lmnp/app-shell/AlertStrip";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function ExerciceLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +23,7 @@ export default function ExerciceLayout({ children }: { children: React.ReactNode
   return (
     <>
       <AppHeader />
+      <AlertStrip />
       <div className="mx-auto flex max-w-7xl">
         <AppSidebar />
         <main className="min-w-0 flex-1 px-4 py-8 sm:px-8">{children}</main>

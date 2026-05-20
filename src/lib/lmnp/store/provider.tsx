@@ -16,6 +16,7 @@ import {
   saveWorkspace,
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
+import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
@@ -71,11 +72,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   );
 
   if (!isReady) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center text-sm text-zinc-500">
-        Chargement de votre dossier…
-      </div>
-    );
+    return <AppLoadingSkeleton />;
   }
 
   return <LmnpContext.Provider value={value}>{children}</LmnpContext.Provider>;

@@ -1,4 +1,5 @@
 import { LmnpProvider } from "@/lib/lmnp/store";
+import { FeedbackProvider } from "@/components/lmnp/shared/FeedbackProvider";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -9,7 +10,9 @@ export const metadata: Metadata = {
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <LmnpProvider>
-      <div className="gradient-mesh min-h-screen">{children}</div>
+      <FeedbackProvider>
+        <div className="gradient-mesh min-h-screen">{children}</div>
+      </FeedbackProvider>
     </LmnpProvider>
   );
 }

@@ -31,10 +31,10 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
 
   const base = `/app/exercices/${fiscalYear.id}`;
   const pillars = [
-    { key: "documents" as const, value: confidence.pillars.documents },
-    { key: "validations" as const, value: confidence.pillars.validations },
-    { key: "coherence" as const, value: confidence.pillars.coherence },
-    { key: "tabs" as const, value: confidence.pillars.tabs },
+    { key: "documents" as const, value: confidence.pillars.documents, href: `${base}/documents` },
+    { key: "validations" as const, value: confidence.pillars.validations, href: `${base}/validation` },
+    { key: "coherence" as const, value: confidence.pillars.coherence, href: `${base}/alertes` },
+    { key: "tabs" as const, value: confidence.pillars.tabs, href: `${base}/recettes` },
   ];
 
   if (compact) {
@@ -65,6 +65,11 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
             </span>
           )}
         </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {pillars.map(({ key, value }) => (
+            <PillarRow key={key} label={PILLAR_LABELS[key]} value={value} compact />
+          ))}
+        </div>
       </section>
     );
   }
@@ -85,8 +90,8 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
       </div>
 
       <div className="mt-6 space-y-3">
-        {pillars.map(({ key, value }) => (
-          <PillarRow key={key} label={PILLAR_LABELS[key]} value={value} />
+        {pillars.map(({ key, value, href }) => (
+          <PillarRow key={key} label={PILLAR_LABELS[key]} value={value} href={href} />
         ))}
       </div>
 
@@ -136,14 +141,26 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
   );
 }
 
-function PillarRow({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
+function PillarRow({
+  label,
+  value,
+  href,
+  compact,
+}: {
+  label: string;
+  value: number;
+  href?: string;
+  compact?: boolean;
+}) {
+  const bar = (
+    <div className={compact ? "" : ""}>
       <div className="mb-1 flex items-center justify-between text-xs">
-        <span className="text-zinc-400">{label}</span>
+        <span className={href ? "text-zinc-300 hover:text-emerald-400" : "text-zinc-400"}>
+          {label}
+        </span>
         <span className="tabular-nums text-zinc-500">{value} %</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+      <div className={`overflow-hidden rounded-full bg-white/5 ${compact ? "h-1" : "h-1.5"}`}>
         <div
           className="h-full rounded-full bg-emerald-500/70 transition-all duration-500"
           style={{ width: `${value}%` }}
@@ -151,6 +168,16 @@ function PillarRow({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="block rounded-lg transition-colors hover:bg-white/[0.02]">
+        {bar}
+      </Link>
+    );
+  }
+
+  return bar;
 }
 
 function Metric({
