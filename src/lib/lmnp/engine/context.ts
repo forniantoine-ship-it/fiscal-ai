@@ -33,16 +33,23 @@ export function buildEngineContext(
   ledgerEntries: LedgerEntry[],
   alerts: Alert[],
 ): EngineContext {
-  const interestEntry = ledgerEntries.find(
+  const interestEntries = ledgerEntries.filter(
     (e) => e.status === "active" && e.fieldKey === "loan.annualInterest",
   );
-  const pendingInterest = validationItems.find(
+  const pendingInterest = validationItems.filter(
     (v) => v.fieldKey === "loan.annualInterest" && v.status === "pending",
   );
   let annualInterestCents = 0;
-  if (interestEntry?.value.type === "money") annualInterestCents = interestEntry.value.amountCents;
-  else if (pendingInterest?.proposedValue.type === "money")
-    annualInterestCents = pendingInterest.proposedValue.amountCents;
+  for (const entry of interestEntries) {
+    if (entry.value.type === "money") annualInterestCents += entry.value.amountCents;
+  }
+  if (annualInterestCents === 0) {
+    for (const item of pendingInterest) {
+      if (item.proposedValue.type === "money") {
+        annualInterestCents += item.proposedValue.amountCents;
+      }
+    }
+  }
 
   return {
     fiscalYear,

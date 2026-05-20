@@ -149,7 +149,8 @@ export function DocumentUploadPanel() {
           ou <span className="text-emerald-400">parcourir</span> — PDF, JPG, PNG
         </p>
         <p className="mt-2 text-xs text-zinc-600">
-          Analyse par OpenAI Vision — montants, TVA, fournisseur et date extraits automatiquement.
+          Analyse OpenAI Vision — montants à haute confiance synchronisés automatiquement dans vos
+          onglets Recettes, Dépenses, etc.
         </p>
       </div>
 

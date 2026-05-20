@@ -1,6 +1,12 @@
 import { deriveWorkspace } from "../engine";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
-import { createLedgerEntryFromValidation, voidLedgerEntry } from "../services/ledger";
+import {
+  createLedgerEntryFromField,
+  createLedgerEntryFromValidation,
+  regimeToLedgerValue,
+  shouldVoidLedgerEntryForValidation,
+  voidLedgerEntry,
+} from "../services/ledger";
 import type {
   DocumentCategory,
   Extraction,
@@ -9,7 +15,9 @@ import type {
   ValidationItem,
 } from "../types";
 import type { NormalizedValue } from "../types/values";
+import { valuesEqual } from "../types/values";
 import { FIELD_REGISTRY, getRequiredFieldKeys } from "../types/field-keys";
+import { HIGH_CONFIDENCE_THRESHOLD } from "../validation/display";
 import type { PersistedWorkspace } from "./persistence";
 
 export type FileRegistry = Map<string, File>;
@@ -178,7 +186,7 @@ function applyLedgerForValidation(
   item: ValidationItem,
 ): { ledgerEntries: PersistedWorkspace["ledgerEntries"]; item: ValidationItem } {
   const voided = state.ledgerEntries.map((e) =>
-    e.fieldKey === item.fieldKey && e.status === "active" ? voidLedgerEntry(e) : e,
+    shouldVoidLedgerEntryForValidation(e, item) ? voidLedgerEntry(e) : e,
   );
   const entry = createLedgerEntryFromValidation(
     { ...item, finalValue: item.finalValue ?? item.proposedValue },
@@ -188,6 +196,54 @@ function applyLedgerForValidation(
     ledgerEntries: [...voided, entry],
     item: { ...item, ledgerEntryId: entry.id },
   };
+}
+
+function approveValidationItem(
+  state: PersistedWorkspace,
+  item: ValidationItem,
+  finalValue?: NormalizedValue,
+  statusOverride?: ValidationItem["status"],
+): PersistedWorkspace {
+  const resolvedValue = finalValue ?? item.proposedValue;
+  const updated: ValidationItem = {
+    ...item,
+    status:
+      statusOverride ??
+      (finalValue && !valuesMatch(item.proposedValue, finalValue) ? "corrected" : "approved"),
+    finalValue: resolvedValue,
+    reviewedAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+
+  const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
+  return {
+    ...state,
+    validationItems: state.validationItems.map((v) => (v.id === item.id ? withLedger : v)),
+    ledgerEntries,
+    extractions: linkExtractions(state.extractions, withLedger),
+  };
+}
+
+function valuesMatch(a: NormalizedValue, b: NormalizedValue): boolean {
+  return valuesEqual(a, b);
+}
+
+function autoSyncDocumentToLedger(
+  state: PersistedWorkspace,
+  documentId: string,
+): PersistedWorkspace {
+  let next = state;
+  const pendingFromDoc = state.validationItems.filter(
+    (v) => v.documentId === documentId && v.status === "pending",
+  );
+
+  for (const item of pendingFromDoc) {
+    if (item.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
+      next = approveValidationItem(next, item);
+    }
+  }
+
+  return next;
 }
 
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
@@ -248,61 +304,27 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     }
 
     case "APPLY_DOCUMENT_ANALYSIS": {
+      const analyzed = applyDocumentAnalysisToState(state, action.documentId, action.result);
       return {
         ...state,
-        ...applyDocumentAnalysisToState(state, action.documentId, action.result),
+        ...autoSyncDocumentToLedger(analyzed, action.documentId),
       };
     }
 
     case "VALIDATION_APPROVE": {
       const item = state.validationItems.find((v) => v.id === action.validationItemId);
       if (!item) return state;
-
-      const updated: ValidationItem = {
-        ...item,
-        status: "approved",
-        finalValue: item.proposedValue,
-        reviewedAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-
-      const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
-      const validationItems = state.validationItems.map((v) =>
-        v.id === item.id ? withLedger : v,
-      );
-
-      return {
-        ...state,
-        validationItems,
-        ledgerEntries,
-        extractions: linkExtractions(state.extractions, withLedger),
-      };
+      return { ...state, ...approveValidationItem(state, item) };
     }
 
     case "VALIDATION_CORRECT": {
       const item = state.validationItems.find((v) => v.id === action.validationItemId);
       if (!item) return state;
-
-      const updated: ValidationItem = {
-        ...item,
-        status: "corrected",
-        finalValue: action.finalValue,
-        correctionNote: action.note,
-        reviewedAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-
-      const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
-      const validationItems = state.validationItems.map((v) =>
-        v.id === item.id ? withLedger : v,
+      const corrected = approveValidationItem(state, item, action.finalValue, "corrected");
+      const validationItems = corrected.validationItems.map((v) =>
+        v.id === item.id ? { ...v, correctionNote: action.note } : v,
       );
-
-      return {
-        ...state,
-        validationItems,
-        ledgerEntries,
-        extractions: linkExtractions(state.extractions, withLedger),
-      };
+      return { ...state, ...corrected, validationItems };
     }
 
     case "VALIDATION_IGNORE":
@@ -332,7 +354,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE": {
       let next = state;
       for (const item of state.validationItems) {
-        if (item.status === "pending" && item.confidence >= 95) {
+        if (item.status === "pending" && item.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
           next = lmnpReducer(next, {
             type: "VALIDATION_APPROVE",
             validationItemId: item.id,
@@ -342,7 +364,18 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       return next;
     }
 
-    case "CONFIRM_REGIME":
+    case "CONFIRM_REGIME": {
+      const voidedRegime = state.ledgerEntries.map((e) =>
+        e.fieldKey === "fiscal.regime" && e.status === "active" ? voidLedgerEntry(e) : e,
+      );
+      const regimeEntry = createLedgerEntryFromField({
+        fiscalYearId: state.fiscalYear.id,
+        propertyId: state.fiscalYear.propertyIds[0],
+        fieldKey: "fiscal.regime",
+        value: regimeToLedgerValue(action.regime),
+        origin: "manual",
+      });
+
       return {
         ...state,
         fiscalYear: {
@@ -350,7 +383,9 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           regime: action.regime,
           regimeConfirmedAt: nowIso(),
         },
+        ledgerEntries: [...voidedRegime, regimeEntry],
       };
+    }
 
     case "UPDATE_PROPERTY":
       return {

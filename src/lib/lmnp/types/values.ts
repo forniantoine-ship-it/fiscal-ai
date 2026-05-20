@@ -40,6 +40,14 @@ export function moneyFromInput(input: string): NormalizedValue | null {
   return moneyFromEuros(euros);
 }
 
+export function sumMoneyValues(values: NormalizedValue[]): NormalizedValue | null {
+  const moneyValues = values.filter((v): v is Extract<NormalizedValue, { type: "money" }> => v.type === "money");
+  if (moneyValues.length === 0) return null;
+  const currency = moneyValues[0].currency;
+  const amountCents = moneyValues.reduce((sum, v) => sum + v.amountCents, 0);
+  return { type: "money", amountCents, currency };
+}
+
 export function valuesEqual(a: NormalizedValue, b: NormalizedValue): boolean {
   if (a.type !== b.type) return false;
   switch (a.type) {

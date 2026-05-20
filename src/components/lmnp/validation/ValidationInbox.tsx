@@ -55,9 +55,9 @@ export function ValidationInbox() {
       ) : (
         <>
           <p className="text-sm text-zinc-400">
-            {pending.length} montant{pending.length !== 1 ? "s" : ""} extrait
-            {pending.length !== 1 ? "s" : ""} par l&apos;IA — regroupés par document. Chaque
-            approbation ou correction crée une ligne dans votre dossier comptable.
+            {pending.length} montant{pending.length !== 1 ? "s" : ""} à confirmer — les
+            extractions à haute confiance (≥ 95 %) sont déjà synchronisées dans vos onglets
+            métier.
           </p>
 
           <div className="space-y-6">
