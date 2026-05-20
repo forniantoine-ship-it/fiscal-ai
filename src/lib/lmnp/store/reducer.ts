@@ -1,10 +1,11 @@
-import { deriveWorkspace } from "../engine";
+import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import {
   createLedgerEntryFromField,
   createLedgerEntryFromValidation,
   regimeToLedgerValue,
   shouldVoidLedgerEntryForValidation,
+  updateLedgerEntryValue,
   voidLedgerEntry,
 } from "../services/ledger";
 import type {
@@ -53,7 +54,13 @@ export type LmnpAction =
   | { type: "VALIDATION_REJECT"; validationItemId: string; note?: string }
   | { type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" }
   | { type: "CONFIRM_REGIME"; regime: "micro-bic" | "reel" }
-  | { type: "UPDATE_PROPERTY"; propertyId: string; patch: Partial<PersistedWorkspace["properties"][0]> };
+  | { type: "UPDATE_PROPERTY"; propertyId: string; patch: Partial<PersistedWorkspace["properties"][0]> }
+  | {
+      type: "LEDGER_UPDATE_VALUE";
+      ledgerEntryId: string;
+      value: NormalizedValue;
+      note?: string;
+    };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -184,13 +191,18 @@ function linkExtractions(
 function applyLedgerForValidation(
   state: PersistedWorkspace,
   item: ValidationItem,
+  options?: { autoSynced?: boolean },
 ): { ledgerEntries: PersistedWorkspace["ledgerEntries"]; item: ValidationItem } {
   const voided = state.ledgerEntries.map((e) =>
     shouldVoidLedgerEntryForValidation(e, item) ? voidLedgerEntry(e) : e,
   );
+  const sourceDoc = item.documentId
+    ? state.documents.find((d) => d.id === item.documentId)
+    : undefined;
   const entry = createLedgerEntryFromValidation(
     { ...item, finalValue: item.finalValue ?? item.proposedValue },
     state.fiscalYear.id,
+    { autoSynced: options?.autoSynced, sourceDocumentType: sourceDoc?.documentType },
   );
   return {
     ledgerEntries: [...voided, entry],
@@ -203,6 +215,7 @@ function approveValidationItem(
   item: ValidationItem,
   finalValue?: NormalizedValue,
   statusOverride?: ValidationItem["status"],
+  options?: { autoSynced?: boolean },
 ): PersistedWorkspace {
   const resolvedValue = finalValue ?? item.proposedValue;
   const updated: ValidationItem = {
@@ -215,7 +228,7 @@ function approveValidationItem(
     updatedAt: nowIso(),
   };
 
-  const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
+  const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated, options);
   return {
     ...state,
     validationItems: state.validationItems.map((v) => (v.id === item.id ? withLedger : v)),
@@ -239,11 +252,37 @@ function autoSyncDocumentToLedger(
 
   for (const item of pendingFromDoc) {
     if (item.confidence >= HIGH_CONFIDENCE_THRESHOLD) {
-      next = approveValidationItem(next, item);
+      next = approveValidationItem(next, item, undefined, undefined, { autoSynced: true });
     }
   }
 
   return next;
+}
+
+function applyWorkspaceProgress(state: PersistedWorkspace): PersistedWorkspace {
+  const derived = deriveWorkspace(
+    state.fiscalYear,
+    state.properties,
+    state.documents,
+    state.validationItems,
+    state.ledgerEntries,
+  );
+
+  const status = resolveFiscalYearStatus(
+    state.fiscalYear,
+    state.documents,
+    derived.pendingValidationCount,
+    derived.canClose,
+  );
+
+  return {
+    ...state,
+    fiscalYear: touchFiscalYear(state.fiscalYear, status),
+  };
+}
+
+function finalizeState(state: LmnpState): LmnpState {
+  return { ...state, ...applyWorkspaceProgress(state) };
 }
 
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
@@ -270,28 +309,28 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         fileRegistry.set(newDocs[i].id, file);
       });
 
-      return {
+      return finalizeState({
         ...state,
         fileRegistry,
         documents: [...state.documents, ...newDocs],
         fiscalYear: touchFiscalYear(state.fiscalYear, "collecting_documents"),
-      };
+      });
     }
 
     case "REMOVE_DOCUMENT": {
       const fileRegistry = new Map(state.fileRegistry);
       fileRegistry.delete(action.documentId);
-      return {
+      return finalizeState({
         ...state,
         fileRegistry,
         documents: state.documents.filter((d) => d.id !== action.documentId),
         extractions: state.extractions.filter((e) => e.documentId !== action.documentId),
         validationItems: state.validationItems.filter((v) => v.documentId !== action.documentId),
-      };
+      });
     }
 
     case "DOCUMENT_SET_STATUS": {
-      return {
+      return finalizeState({
         ...state,
         documents: state.documents.map((d) =>
           d.id === action.documentId ? { ...d, status: action.status } : d,
@@ -300,21 +339,21 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           action.status === "processing"
             ? touchFiscalYear(state.fiscalYear, "analyzing")
             : state.fiscalYear,
-      };
+      });
     }
 
     case "APPLY_DOCUMENT_ANALYSIS": {
       const analyzed = applyDocumentAnalysisToState(state, action.documentId, action.result);
-      return {
+      return finalizeState({
         ...state,
         ...autoSyncDocumentToLedger(analyzed, action.documentId),
-      };
+      });
     }
 
     case "VALIDATION_APPROVE": {
       const item = state.validationItems.find((v) => v.id === action.validationItemId);
       if (!item) return state;
-      return { ...state, ...approveValidationItem(state, item) };
+      return finalizeState({ ...state, ...approveValidationItem(state, item) });
     }
 
     case "VALIDATION_CORRECT": {
@@ -324,7 +363,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       const validationItems = corrected.validationItems.map((v) =>
         v.id === item.id ? { ...v, correctionNote: action.note } : v,
       );
-      return { ...state, ...corrected, validationItems };
+      return finalizeState({ ...state, ...corrected, validationItems });
     }
 
     case "VALIDATION_IGNORE":
@@ -348,7 +387,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
               : e,
           )
         : state.extractions;
-      return { ...state, validationItems, extractions };
+      return finalizeState({ ...state, validationItems, extractions });
     }
 
     case "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE": {
@@ -376,7 +415,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         origin: "manual",
       });
 
-      return {
+      return finalizeState({
         ...state,
         fiscalYear: {
           ...touchFiscalYear(state.fiscalYear),
@@ -384,7 +423,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           regimeConfirmedAt: nowIso(),
         },
         ledgerEntries: [...voidedRegime, regimeEntry],
-      };
+      });
     }
 
     case "UPDATE_PROPERTY":
@@ -394,6 +433,41 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           p.id === action.propertyId ? { ...p, ...action.patch } : p,
         ),
       };
+
+    case "LEDGER_UPDATE_VALUE": {
+      const entry = state.ledgerEntries.find(
+        (e) => e.id === action.ledgerEntryId && e.status === "active",
+      );
+      if (!entry) return state;
+
+      const voided = state.ledgerEntries.map((e) =>
+        e.id === entry.id ? voidLedgerEntry(e) : e,
+      );
+      const updatedEntry = updateLedgerEntryValue(entry, action.value, action.note);
+
+      let validationItems = state.validationItems;
+      if (entry.validationItemId && entry.validationItemId !== "system") {
+        validationItems = validationItems.map((v) =>
+          v.id === entry.validationItemId
+            ? {
+                ...v,
+                status: "corrected" as const,
+                finalValue: action.value,
+                correctionNote: action.note ?? v.correctionNote,
+                reviewedAt: nowIso(),
+                updatedAt: nowIso(),
+                ledgerEntryId: updatedEntry.id,
+              }
+            : v,
+        );
+      }
+
+      return finalizeState({
+        ...state,
+        validationItems,
+        ledgerEntries: [...voided, updatedEntry],
+      });
+    }
 
     default:
       return state;

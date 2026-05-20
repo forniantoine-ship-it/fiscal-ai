@@ -11,7 +11,7 @@ export default function AlertesPage() {
     <div>
       <PageHeader
         title="Alertes"
-        description="Points à traiter pour avancer sereinement. Les blocages empêchent la clôture future."
+        description={`${workspace.openAlertCount} alerte${workspace.openAlertCount > 1 ? "s" : ""} restante${workspace.openAlertCount > 1 ? "s" : ""} — les blocages empêchent la clôture future.`}
       />
       <AlertList alerts={workspace.alerts} limit={50} />
     </div>

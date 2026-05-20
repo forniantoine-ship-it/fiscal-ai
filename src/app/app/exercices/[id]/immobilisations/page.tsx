@@ -10,7 +10,11 @@ export default function ImmobilisationsPage() {
         title="Immobilisations"
         description="Amortissement du bien et du mobilier — montants étalés sur plusieurs années, pas une dépense unique."
       />
-      <LedgerTabView tab="immobilisations" title="Immobilisations" description="" />
+      <LedgerTabView
+        tab="immobilisations"
+        title="Immobilisations"
+        description="Factures meublé et actes notariés — une ligne par document validé, modifiable à tout moment."
+      />
     </div>
   );
 }

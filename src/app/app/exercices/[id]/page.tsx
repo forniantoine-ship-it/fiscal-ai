@@ -1,15 +1,16 @@
 "use client";
 
 import { AlertList } from "@/components/lmnp/shared/AlertList";
+import { DossierProgressCard } from "@/components/lmnp/shared/DossierProgressCard";
 import { NextActionCard } from "@/components/lmnp/shared/NextActionCard";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
-import { CONFIDENCE_LEVEL_LABELS } from "@/components/lmnp/app-shell/labels";
 import { useLmnp } from "@/lib/lmnp/store";
 import Link from "next/link";
 
 export default function ExerciceDashboardPage() {
   const { workspace } = useLmnp();
-  const { fiscalYear, confidence, documents, validationItems, alerts } = workspace;
+  const { fiscalYear, confidence, documents, alerts, openAlertCount, pendingValidationCount } =
+    workspace;
   const base = `/app/exercices/${fiscalYear.id}`;
 
   return (
@@ -21,34 +22,42 @@ export default function ExerciceDashboardPage() {
 
       <NextActionCard />
 
+      <DossierProgressCard />
+
       <section className="grid gap-4 sm:grid-cols-3">
         <StatCard label="Documents" value={String(documents.length)} href={`${base}/documents`} />
         <StatCard
           label="À confirmer"
-          value={String(workspace.pendingValidationCount)}
+          value={String(pendingValidationCount)}
           href={`${base}/validation`}
-          highlight={workspace.pendingValidationCount > 0}
+          highlight={pendingValidationCount > 0}
         />
         <StatCard
-          label="Avancement"
-          value={`${confidence.score} %`}
-          sub={CONFIDENCE_LEVEL_LABELS[confidence.level]}
+          label="Alertes"
+          value={String(openAlertCount)}
+          href={`${base}/alertes`}
+          highlight={workspace.blockingAlertCount > 0}
+          sub={
+            openAlertCount === 0
+              ? "Tout est en ordre"
+              : `${workspace.blockingAlertCount} blocage${workspace.blockingAlertCount > 1 ? "s" : ""}`
+          }
         />
       </section>
 
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-zinc-300">Alertes</h2>
+          <h2 className="text-sm font-semibold text-zinc-300">Alertes restantes</h2>
           <Link href={`${base}/alertes`} className="text-sm text-emerald-400 hover:text-emerald-300">
-            Tout voir
+            Tout voir ({openAlertCount})
           </Link>
         </div>
         <AlertList alerts={alerts} limit={3} />
       </section>
 
       <p className="text-center text-xs text-zinc-600">
-        {validationItems.filter((v) => v.status === "approved" || v.status === "corrected").length}{" "}
-        montants validés par vous · L&apos;IA propose, vous décidez
+        Score recalculé à chaque validation · {confidence.score} % · L&apos;IA propose (≥ 95 % auto),
+        vous décidez sinon
       </p>
     </div>
   );

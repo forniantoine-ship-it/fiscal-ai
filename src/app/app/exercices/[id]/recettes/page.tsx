@@ -10,7 +10,11 @@ export default function RecettesPage() {
         title="Recettes"
         description="Tout ce que vous avez encaissé — principalement vos loyers."
       />
-      <LedgerTabView tab="recettes" title="Recettes" description="" />
+      <LedgerTabView
+        tab="recettes"
+        title="Recettes"
+        description="Lignes créées depuis vos relevés de loyers et baux — chaque approbation dans Validation ajoute une entrée ici."
+      />
     </div>
   );
 }

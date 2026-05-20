@@ -83,7 +83,8 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
         </label>
 
         <p className="mt-3 rounded-lg bg-white/[0.03] p-3 text-xs text-zinc-500">
-          Cette valeur sera marquée « Validée par vous » et utilisée dans votre dossier.
+          Cette valeur sera enregistrée dans l&apos;onglet métier correspondant, marquée « Validé par
+          IA + vous ».
         </p>
 
         <div className="mt-6 flex gap-3">

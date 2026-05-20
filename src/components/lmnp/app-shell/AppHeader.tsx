@@ -2,12 +2,22 @@
 
 import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
-import { CONFIDENCE_LEVEL_LABELS } from "./labels";
+import { CONFIDENCE_LEVEL_LABELS, FISCAL_YEAR_STATUS_LABELS } from "./labels";
 
 export function AppHeader() {
   const { workspace } = useLmnp();
-  const { fiscalYear, confidence, pendingValidationCount, alerts } = workspace;
-  const blockingCount = alerts.filter((a) => a.severity === "blocking").length;
+  const {
+    fiscalYear,
+    confidence,
+    pendingValidationCount,
+    blockingAlertCount,
+    openAlertCount,
+    canClose,
+  } = workspace;
+
+  const statusLabel = canClose
+    ? FISCAL_YEAR_STATUS_LABELS.ready_to_close
+    : FISCAL_YEAR_STATUS_LABELS[fiscalYear.status];
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/5 bg-[#06060b]/90 backdrop-blur-md">
@@ -22,15 +32,20 @@ export function AppHeader() {
               Déclaration LMNP {fiscalYear.year}
             </p>
             <p className="truncate text-xs text-zinc-500">
-              {CONFIDENCE_LEVEL_LABELS[confidence.level]} · {confidence.score} %
+              {statusLabel} · {CONFIDENCE_LEVEL_LABELS[confidence.level]} · {confidence.score} %
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {blockingCount > 0 && (
+          {blockingAlertCount > 0 && (
             <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400 ring-1 ring-red-500/30">
-              {blockingCount} blocage{blockingCount > 1 ? "s" : ""}
+              {blockingAlertCount} blocage{blockingAlertCount > 1 ? "s" : ""}
+            </span>
+          )}
+          {openAlertCount > blockingAlertCount && (
+            <span className="hidden rounded-full bg-white/5 px-2.5 py-1 text-xs text-zinc-500 ring-1 ring-white/10 sm:inline">
+              {openAlertCount} alerte{openAlertCount > 1 ? "s" : ""}
             </span>
           )}
           {pendingValidationCount > 0 && (

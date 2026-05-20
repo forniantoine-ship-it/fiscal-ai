@@ -136,6 +136,13 @@ export interface ValidationItem {
   updatedAt: string;
 }
 
+export type LedgerOrigin =
+  | "ai_validated"
+  | "ai_auto_synced"
+  | "ai_extracted"
+  | "manual_edit"
+  | "manual";
+
 export interface LedgerEntry {
   id: string;
   fiscalYearId: string;
@@ -146,11 +153,14 @@ export interface LedgerEntry {
   expenseCategory?: ExpenseCategory;
   validationItemId: string;
   sourceDocumentIds: string[];
-  origin: "ai_extracted" | "manual";
+  sourceDocumentType?: DocumentType;
+  origin: LedgerOrigin;
   status: "active" | "voided";
   version: number;
   label?: string;
+  editNote?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface Alert {
@@ -199,4 +209,13 @@ export interface LmnpWorkspace {
   confidence: UserConfidenceScore;
   nextAction: NextAction;
   pendingValidationCount: number;
+  blockingAlertCount: number;
+  canClose: boolean;
+  openAlertCount: number;
+  warningAlertCount: number;
+  validatedFieldCount: number;
+  autoSyncedFieldCount: number;
+  manuallyValidatedFieldCount: number;
+  fullyValidatedDocumentCount: number;
+  analyzedDocumentCount: number;
 }

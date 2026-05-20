@@ -10,7 +10,11 @@ export default function EmpruntsPage() {
         title="Emprunts"
         description="Seuls les intérêts d'emprunt sont déductibles — pas le remboursement du capital."
       />
-      <LedgerTabView tab="emprunts" title="Emprunts" description="" />
+      <LedgerTabView
+        tab="emprunts"
+        title="Emprunts"
+        description="Intérêts bancaires issus de vos attestations — validés par l'IA, confirmés par vous."
+      />
     </div>
   );
 }

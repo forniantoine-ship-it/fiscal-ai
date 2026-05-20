@@ -1,13 +1,19 @@
 export { buildEngineContext, getRequiredFields, hasActiveLedgerForField } from "./context";
 export { recomputeAlerts } from "./alerts";
 export { computeUserConfidence, pickNextAction, getConfidenceBand } from "./confidence";
+export {
+  computeDossierProgress,
+  resolveFiscalYearStatus,
+  type DossierProgressSnapshot,
+} from "./workspace-progress";
 
 import type { Alert, UserConfidenceScore, NextAction } from "../types";
 import { buildEngineContext, type EngineContext } from "./context";
 import { recomputeAlerts } from "./alerts";
 import { computeUserConfidence, pickNextAction } from "./confidence";
+import { computeDossierProgress, type DossierProgressSnapshot } from "./workspace-progress";
 
-export interface WorkspaceDerivatives {
+export interface WorkspaceDerivatives extends DossierProgressSnapshot {
   alerts: Alert[];
   confidence: UserConfidenceScore;
   nextAction: NextAction;
@@ -40,6 +46,8 @@ export function deriveWorkspace(
     pendingValidationCount === 0 &&
     Boolean(fiscalYear.regimeConfirmedAt);
 
+  const progress = computeDossierProgress(documents, validationItems, alerts);
+
   return {
     alerts,
     confidence: computeUserConfidence(ctxWithAlerts, canClose),
@@ -47,5 +55,6 @@ export function deriveWorkspace(
     pendingValidationCount,
     blockingAlertCount,
     canClose,
+    ...progress,
   };
 }
