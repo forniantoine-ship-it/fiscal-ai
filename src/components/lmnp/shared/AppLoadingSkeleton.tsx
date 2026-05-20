@@ -1,4 +1,8 @@
-export function AppLoadingSkeleton() {
+interface AppLoadingSkeletonProps {
+  message?: string;
+}
+
+export function AppLoadingSkeleton({ message }: AppLoadingSkeletonProps) {
   return (
     <div className="min-h-screen bg-[#06060b]">
       <div className="border-b border-white/5 px-6 py-4">
@@ -29,7 +33,12 @@ export function AppLoadingSkeleton() {
           </div>
         </main>
       </div>
-      <p className="sr-only">Chargement de votre dossier…</p>
+      {message ? (
+        <p className="fixed bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full border border-white/10 bg-black/60 px-4 py-2 text-sm text-zinc-400 backdrop-blur-sm">
+          {message}
+        </p>
+      ) : null}
+      <p className="sr-only">{message ?? "Chargement de votre dossier…"}</p>
     </div>
   );
 }

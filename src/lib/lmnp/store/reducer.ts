@@ -28,7 +28,7 @@ export interface LmnpState extends PersistedWorkspace {
 }
 
 export type LmnpAction =
-  | { type: "HYDRATE"; payload: PersistedWorkspace }
+  | { type: "HYDRATE"; payload: PersistedWorkspace; files?: FileRegistry }
   | {
       type: "UPLOAD_DOCUMENTS";
       files: { file: File; category: DocumentCategory }[];
@@ -288,7 +288,11 @@ function finalizeState(state: LmnpState): LmnpState {
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
   switch (action.type) {
     case "HYDRATE":
-      return { ...state, ...action.payload };
+      return finalizeState({
+        ...state,
+        ...action.payload,
+        fileRegistry: action.files ?? state.fileRegistry,
+      });
 
     case "UPLOAD_DOCUMENTS": {
       const newDocs: LmnpDocument[] = action.files.map(({ file, category }) => ({
