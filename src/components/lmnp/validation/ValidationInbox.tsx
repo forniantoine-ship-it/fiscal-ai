@@ -1,120 +1,89 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { ValidationItem } from "@/lib/lmnp/types";
-import { formatMoney } from "@/lib/lmnp/types/values";
-import { ConfidencePill } from "../shared/ConfidencePill";
+import { groupValidationByDocument } from "@/lib/lmnp/validation/grouping";
+import { DocumentValidationCard } from "./DocumentValidationCard";
+import { ValidationSummaryBar } from "./ValidationSummaryBar";
+import { ValidationFieldRowDone } from "./ValidationFieldRow";
 import { CorrectionModal } from "./CorrectionModal";
+import { RejectFieldDialog } from "./RejectFieldDialog";
 
 export function ValidationInbox() {
   const { workspace, dispatch } = useLmnp();
   const [correcting, setCorrecting] = useState<ValidationItem | null>(null);
+  const [rejecting, setRejecting] = useState<ValidationItem | null>(null);
 
   const pending = workspace.validationItems.filter((v) => v.status === "pending");
   const done = workspace.validationItems.filter(
-    (v) => v.status === "approved" || v.status === "corrected",
+    (v) => v.status === "approved" || v.status === "corrected" || v.status === "ignored",
   );
   const highConfidence = pending.filter((v) => v.confidence >= 95);
+  const analyzedDocs = workspace.documents.filter((d) => d.status === "analyzed");
+
+  const documentGroups = useMemo(
+    () =>
+      groupValidationByDocument(
+        workspace.documents,
+        workspace.validationItems,
+        workspace.extractions,
+        (v) => v.status === "pending",
+      ),
+    [workspace.documents, workspace.validationItems, workspace.extractions],
+  );
+
+  const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-zinc-400">
-          {pending.length} montant{pending.length !== 1 ? "s" : ""} à confirmer ·{" "}
-          <span className="text-zinc-500">L&apos;IA propose — vous validez.</span>
-        </p>
-        {highConfidence.length > 0 && (
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" })}
-            className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20"
-          >
-            Tout valider ≥ 95 % ({highConfidence.length})
-          </button>
-        )}
-      </div>
+      <ValidationSummaryBar
+        pendingCount={pending.length}
+        highConfidenceCount={highConfidence.length}
+        analyzedDocumentsCount={analyzedDocs.length}
+        validatedCount={done.filter((d) => d.status !== "ignored").length}
+        onBulkApproveHighConfidence={() =>
+          dispatch({ type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" })
+        }
+      />
 
-      {pending.length === 0 ? (
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-10 text-center">
-          <p className="text-lg font-semibold text-emerald-400">Tout est confirmé</p>
-          <p className="mt-2 text-sm text-zinc-400">
-            Passez aux onglets Recettes, Dépenses… pour vérifier le récapitulatif.
-          </p>
-        </div>
+      {analyzedDocs.length === 0 && pending.length === 0 ? (
+        <EmptyState href={`${base}/documents`} />
+      ) : pending.length === 0 ? (
+        <AllValidatedState href={base} doneCount={done.length} />
       ) : (
-        <ul className="space-y-3">
-          {pending.map((item) => (
-            <li key={item.id} className="glass rounded-xl p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-zinc-100">{item.label}</p>
-                  <p className="mt-1 text-lg font-semibold text-zinc-50">
-                    {item.proposedValue.type === "money"
-                      ? formatMoney(item.proposedValue)
-                      : item.proposedValue.type === "text"
-                        ? item.proposedValue.text
-                        : "—"}
-                  </p>
-                  {item.documentFileName && (
-                    <p className="mt-1 text-xs text-zinc-500">Source : {item.documentFileName}</p>
-                  )}
-                </div>
-                <ConfidencePill score={item.confidence} />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id })
-                  }
-                  className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
-                >
-                  C&apos;est correct
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCorrecting(item)}
-                  className="rounded-full border border-white/10 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-white/5"
-                >
-                  Corriger
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    dispatch({ type: "VALIDATION_IGNORE", validationItemId: item.id })
-                  }
-                  className="rounded-full px-4 py-2 text-sm text-zinc-500 hover:text-zinc-300"
-                >
-                  Ignorer
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="text-sm text-zinc-400">
+            {pending.length} montant{pending.length !== 1 ? "s" : ""} extrait
+            {pending.length !== 1 ? "s" : ""} par l&apos;IA — regroupés par document. Chaque
+            approbation ou correction crée une ligne dans votre dossier comptable.
+          </p>
+
+          <div className="space-y-6">
+            {documentGroups.map((group) => (
+              <DocumentValidationCard
+                key={group.documentId ?? "orphan"}
+                group={group}
+                onApprove={(item) =>
+                  dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id })
+                }
+                onCorrect={(item) => setCorrecting(item)}
+                onReject={(item) => setRejecting(item)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {done.length > 0 && (
         <section>
           <h3 className="mb-3 text-sm font-medium text-zinc-500">
-            Déjà confirmés ({done.length})
+            Historique ({done.length})
           </h3>
-          <ul className="space-y-2">
+          <ul className="space-y-2 rounded-2xl border border-white/5 bg-white/[0.01] p-2">
             {done.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between rounded-lg bg-white/[0.02] px-4 py-3 text-sm"
-              >
-                <span className="text-zinc-400">{item.label}</span>
-                <span className="font-medium text-emerald-400/90">
-                  {item.finalValue?.type === "money"
-                    ? formatMoney(item.finalValue)
-                    : item.finalValue?.type === "text"
-                      ? item.finalValue.text
-                      : formatMoney(item.proposedValue)}
-                  {" · "}✓
-                </span>
-              </li>
+              <ValidationFieldRowDone key={item.id} item={item} />
             ))}
           </ul>
         </section>
@@ -133,6 +102,54 @@ export function ValidationInbox() {
           });
         }}
       />
+
+      <RejectFieldDialog
+        item={rejecting}
+        onClose={() => setRejecting(null)}
+        onConfirm={(note) => {
+          if (!rejecting) return;
+          dispatch({
+            type: "VALIDATION_REJECT",
+            validationItemId: rejecting.id,
+            note,
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+function EmptyState({ href }: { href: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-10 text-center">
+      <p className="text-lg font-semibold text-zinc-200">Aucun document analysé</p>
+      <p className="mt-2 text-sm text-zinc-500">
+        Importez vos pièces pour que l&apos;IA extraie les montants à valider.
+      </p>
+      <Link
+        href={href}
+        className="mt-6 inline-flex rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+      >
+        Ajouter des documents
+      </Link>
+    </div>
+  );
+}
+
+function AllValidatedState({ href, doneCount }: { href: string; doneCount: number }) {
+  return (
+    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-10 text-center">
+      <p className="text-lg font-semibold text-emerald-400">Tout est confirmé</p>
+      <p className="mt-2 text-sm text-zinc-400">
+        {doneCount} décision{doneCount !== 1 ? "s" : ""} enregistrée{doneCount !== 1 ? "s" : ""}.
+        Passez aux onglets Recettes, Dépenses… pour le récapitulatif.
+      </p>
+      <Link
+        href={`${href}/recettes`}
+        className="mt-6 inline-flex rounded-full border border-white/10 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5"
+      >
+        Voir les recettes
+      </Link>
     </div>
   );
 }

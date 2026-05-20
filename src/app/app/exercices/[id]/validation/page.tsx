@@ -7,8 +7,8 @@ export default function ValidationPage() {
   return (
     <div>
       <PageHeader
-        title="Confirmer les montants"
-        description="L'IA a lu vos documents. Rien n'est enregistré tant que vous n'avez pas cliqué « C'est correct » ou corrigé."
+        title="Validation"
+        description="Documents analysés, champs extraits par l'IA — approuvez, corrigez ou rejetez. Chaque validation enregistre une ligne dans votre dossier."
       />
       <ValidationInbox />
     </div>

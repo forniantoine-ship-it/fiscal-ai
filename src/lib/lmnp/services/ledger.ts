@@ -32,7 +32,7 @@ export function createLedgerEntryFromValidation(
     expenseCategory: EXPENSE_FIELD_TO_CATEGORY[item.fieldKey],
     validationItemId: item.id,
     sourceDocumentIds: item.documentId ? [item.documentId] : [],
-    origin: item.status === "corrected" ? "ai_extracted" : "ai_extracted",
+    origin: item.status === "corrected" ? "manual" : "ai_extracted",
     status: "active",
     version: 1,
     label: item.label,

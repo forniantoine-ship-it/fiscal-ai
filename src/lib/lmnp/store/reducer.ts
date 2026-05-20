@@ -37,6 +37,7 @@ export type LmnpAction =
       note?: string;
     }
   | { type: "VALIDATION_IGNORE"; validationItemId: string; note?: string }
+  | { type: "VALIDATION_REJECT"; validationItemId: string; note?: string }
   | { type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" }
   | { type: "CONFIRM_REGIME"; regime: "micro-bic" | "reel" }
   | { type: "UPDATE_PROPERTY"; propertyId: string; patch: Partial<PersistedWorkspace["properties"][0]> };
@@ -99,10 +100,21 @@ function upsertValidationFromExtraction(
   return [...state.validationItems, item];
 }
 
+function linkExtractions(
+  extractions: Extraction[],
+  item: ValidationItem,
+): Extraction[] {
+  return extractions.map((e) =>
+    item.extractionIds.includes(e.id)
+      ? { ...e, status: "linked" as const, validationItemId: item.id }
+      : e,
+  );
+}
+
 function applyLedgerForValidation(
   state: PersistedWorkspace,
   item: ValidationItem,
-): PersistedWorkspace["ledgerEntries"] {
+): { ledgerEntries: PersistedWorkspace["ledgerEntries"]; item: ValidationItem } {
   const voided = state.ledgerEntries.map((e) =>
     e.fieldKey === item.fieldKey && e.status === "active" ? voidLedgerEntry(e) : e,
   );
@@ -110,7 +122,10 @@ function applyLedgerForValidation(
     { ...item, finalValue: item.finalValue ?? item.proposedValue },
     state.fiscalYear.id,
   );
-  return [...voided, entry];
+  return {
+    ledgerEntries: [...voided, entry],
+    item: { ...item, ledgerEntryId: entry.id },
+  };
 }
 
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
@@ -221,12 +236,17 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         updatedAt: nowIso(),
       };
 
+      const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
       const validationItems = state.validationItems.map((v) =>
-        v.id === item.id ? updated : v,
+        v.id === item.id ? withLedger : v,
       );
-      const ledgerEntries = applyLedgerForValidation(state, updated);
 
-      return { ...state, validationItems, ledgerEntries };
+      return {
+        ...state,
+        validationItems,
+        ledgerEntries,
+        extractions: linkExtractions(state.extractions, withLedger),
+      };
     }
 
     case "VALIDATION_CORRECT": {
@@ -242,26 +262,41 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         updatedAt: nowIso(),
       };
 
+      const { ledgerEntries, item: withLedger } = applyLedgerForValidation(state, updated);
       const validationItems = state.validationItems.map((v) =>
-        v.id === item.id ? updated : v,
+        v.id === item.id ? withLedger : v,
       );
-      const ledgerEntries = applyLedgerForValidation(state, updated);
 
-      return { ...state, validationItems, ledgerEntries };
+      return {
+        ...state,
+        validationItems,
+        ledgerEntries,
+        extractions: linkExtractions(state.extractions, withLedger),
+      };
     }
 
-    case "VALIDATION_IGNORE": {
+    case "VALIDATION_IGNORE":
+    case "VALIDATION_REJECT": {
       const validationItems = state.validationItems.map((v) =>
         v.id === action.validationItemId
           ? {
               ...v,
               status: "ignored" as const,
+              correctionNote: action.note,
               reviewedAt: nowIso(),
               updatedAt: nowIso(),
             }
           : v,
       );
-      return { ...state, validationItems };
+      const item = validationItems.find((v) => v.id === action.validationItemId);
+      const extractions = item
+        ? state.extractions.map((e) =>
+            item.extractionIds.includes(e.id)
+              ? { ...e, status: "discarded" as const }
+              : e,
+          )
+        : state.extractions;
+      return { ...state, validationItems, extractions };
     }
 
     case "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE": {
