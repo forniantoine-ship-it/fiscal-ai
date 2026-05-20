@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -15,6 +16,7 @@ import {
   createDefaultWorkspace,
   flushWorkspaceSave,
   hydrateLmnpStore,
+  loadDocumentFile,
   removePersistedDocument,
   scheduleSaveWorkspace,
   syncDocumentBlobs,
@@ -53,6 +55,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const pendingFileLoadsRef = useRef(new Set<string>());
+
   useEffect(() => {
     let cancelled = false;
 
@@ -84,7 +88,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     state.ledgerEntries,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isReady) return;
     void syncDocumentBlobs(state.documents, state.fileRegistry);
   }, [isReady, state.documents, state.fileRegistry]);
@@ -117,8 +121,24 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const workspace = useMemo(() => selectWorkspace(state), [state]);
 
   const getFile = useCallback(
-    (documentId: string) => state.fileRegistry.get(documentId),
-    [state.fileRegistry],
+    (documentId: string) => {
+      const cached = state.fileRegistry.get(documentId);
+      if (cached) return cached;
+
+      if (pendingFileLoadsRef.current.has(documentId)) return undefined;
+
+      const doc = state.documents.find((d) => d.id === documentId);
+      if (!doc) return undefined;
+
+      pendingFileLoadsRef.current.add(documentId);
+      void loadDocumentFile(documentId).then((file) => {
+        pendingFileLoadsRef.current.delete(documentId);
+        if (file) dispatch({ type: "REGISTER_FILE", documentId, file });
+      });
+
+      return undefined;
+    },
+    [state.fileRegistry, state.documents],
   );
 
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {

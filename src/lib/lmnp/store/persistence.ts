@@ -10,6 +10,7 @@ import type { FileRegistry } from "./reducer";
 import {
   deleteDocumentBlob,
   getAllDocumentBlobs,
+  getDocumentBlob,
   getWorkspaceRecord,
   putDocumentBlob,
   putWorkspaceRecord,
@@ -88,9 +89,32 @@ async function migrateLegacyWorkspaceIfNeeded(): Promise<PersistedWorkspace | nu
   return legacy;
 }
 
-function blobToFile(record: DocumentBlobRecord): File {
-  return new File([record.blob], record.fileName, {
-    type: record.mimeType || "application/octet-stream",
+function resolveDocumentMimeType(fileName: string, mimeType?: string): string {
+  if (mimeType && mimeType !== "application/octet-stream") return mimeType;
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (/\.jpe?g$/i.test(lower)) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return mimeType || "application/octet-stream";
+}
+
+async function recordToFile(record: DocumentBlobRecord): Promise<File | null> {
+  let buffer: ArrayBuffer | undefined = record.data;
+
+  if (!buffer && record.blob) {
+    try {
+      buffer = await record.blob.arrayBuffer();
+    } catch {
+      buffer = undefined;
+    }
+  }
+
+  if (!buffer || buffer.byteLength === 0) return null;
+
+  const mimeType = resolveDocumentMimeType(record.fileName, record.mimeType);
+  return new File([buffer], record.fileName, {
+    type: mimeType,
     lastModified: Date.parse(record.uploadedAt) || Date.now(),
   });
 }
@@ -108,10 +132,28 @@ async function loadFileRegistry(
       void deleteDocumentBlob(record.documentId);
       continue;
     }
-    registry.set(record.documentId, blobToFile(record));
+    const file = await recordToFile(record);
+    if (!file) continue;
+    registry.set(record.documentId, file);
+    if (doc) {
+      persistedBlobFingerprints.set(record.documentId, blobFingerprint(file, doc));
+    }
   }
 
   return registry;
+}
+
+/** Loads a single document file from IndexedDB (lazy fallback). */
+export async function loadDocumentFile(documentId: string): Promise<File | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const record = await getDocumentBlob(documentId);
+    if (!record) return null;
+    return recordToFile(record);
+  } catch (error) {
+    console.error("[lmnp] loadDocumentFile failed", documentId, error);
+    return null;
+  }
 }
 
 /** Loads workspace metadata from IndexedDB (migrates legacy localStorage once). */
@@ -133,9 +175,10 @@ export async function hydrateLmnpStore(): Promise<HydratedLmnpStore> {
 
   try {
     const workspace = await loadWorkspace();
-    const fileRegistry = workspace
-      ? await loadFileRegistry(workspace.documents)
-      : new Map();
+    if (!workspace) return { workspace: null, fileRegistry: new Map() };
+
+    const loaded = await loadFileRegistry(workspace.documents);
+    const fileRegistry = await ensureDocumentFilesLoaded(workspace.documents, loaded);
     return { workspace, fileRegistry };
   } catch (error) {
     console.error("[lmnp] IndexedDB hydration failed, using defaults", error);
@@ -184,14 +227,16 @@ export async function persistDocumentFile(
 ): Promise<void> {
   if (typeof window === "undefined") return;
   try {
+    const data = await file.arrayBuffer();
+    const mimeType = resolveDocumentMimeType(document.fileName, file.type || document.mimeType);
     await putDocumentBlob({
       documentId: document.id,
       fiscalYearId: document.fiscalYearId,
       fileName: document.fileName,
-      mimeType: document.mimeType,
-      sizeBytes: document.sizeBytes,
+      mimeType,
+      sizeBytes: data.byteLength,
       uploadedAt: document.uploadedAt,
-      blob: file,
+      data,
     });
   } catch (error) {
     console.error("[lmnp] Failed to persist document blob", document.id, error);
@@ -208,6 +253,11 @@ export async function removePersistedDocument(documentId: string): Promise<void>
 }
 
 const blobSyncInFlight = new Set<string>();
+const persistedBlobFingerprints = new Map<string, string>();
+
+function blobFingerprint(file: File, doc: LmnpDocument): string {
+  return `${doc.id}:${file.size}:${file.name}:${doc.uploadedAt}`;
+}
 
 /** Sync in-memory files to IndexedDB (uploads / re-hydration safety). */
 export async function syncDocumentBlobs(
@@ -224,12 +274,20 @@ export async function syncDocumentBlobs(
     const doc = docById.get(documentId);
     if (!file || !doc || blobSyncInFlight.has(documentId)) continue;
 
+    const fingerprint = blobFingerprint(file, doc);
+    if (persistedBlobFingerprints.get(documentId) === fingerprint) continue;
+
     blobSyncInFlight.add(documentId);
     try {
       await persistDocumentFile(doc, file);
+      persistedBlobFingerprints.set(documentId, fingerprint);
     } finally {
       blobSyncInFlight.delete(documentId);
     }
+  }
+
+  for (const id of [...persistedBlobFingerprints.keys()]) {
+    if (!activeIds.has(id)) persistedBlobFingerprints.delete(id);
   }
 
   try {
@@ -242,6 +300,24 @@ export async function syncDocumentBlobs(
   } catch (error) {
     console.error("[lmnp] Failed to prune orphan document blobs", error);
   }
+}
+
+/** Ensures every known document has its file in memory (post-hydration). */
+export async function ensureDocumentFilesLoaded(
+  documents: LmnpDocument[],
+  fileRegistry: FileRegistry,
+): Promise<FileRegistry> {
+  const next = new Map(fileRegistry);
+
+  await Promise.all(
+    documents.map(async (doc) => {
+      if (next.has(doc.id)) return;
+      const file = await loadDocumentFile(doc.id);
+      if (file) next.set(doc.id, file);
+    }),
+  );
+
+  return next;
 }
 
 export function createDefaultWorkspace(): PersistedWorkspace {

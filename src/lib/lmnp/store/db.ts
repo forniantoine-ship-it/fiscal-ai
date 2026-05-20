@@ -82,10 +82,17 @@ function withStore<T>(
         const tx = db.transaction(storeName, mode);
         const store = tx.objectStore(storeName);
         const request = run(store);
+        let result: T;
 
-        request.onsuccess = () => resolve(request.result as T);
-        request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+        request.onsuccess = () => {
+          result = request.result as T;
+        };
+        request.onerror = () =>
+          reject(request.error ?? new Error("IndexedDB request failed"));
+
+        tx.oncomplete = () => resolve(result);
         tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+        tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
       }),
   );
 }
@@ -132,7 +139,14 @@ export interface DocumentBlobRecord {
   mimeType: string;
   sizeBytes: number;
   uploadedAt: string;
-  blob: Blob;
+  /** Binary payload (preferred). */
+  data?: ArrayBuffer;
+  /** Legacy records written before ArrayBuffer storage. */
+  blob?: Blob;
+}
+
+export function getDocumentBlob(documentId: string): Promise<DocumentBlobRecord | undefined> {
+  return idbGet<DocumentBlobRecord>(STORE_DOCUMENT_BLOBS, documentId);
 }
 
 export function putDocumentBlob(record: DocumentBlobRecord): Promise<void> {
