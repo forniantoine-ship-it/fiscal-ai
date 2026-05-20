@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ACCEPTED_MIME_TYPES, DOCUMENT_CATEGORIES, MAX_FILE_BYTES } from "@/lib/lmnp/constants/documents";
 import { useLmnp } from "@/lib/lmnp/store";
+import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import type { DocumentCategory } from "@/lib/lmnp/types";
 
 function formatSize(bytes: number): string {
@@ -13,19 +14,21 @@ function formatSize(bytes: number): string {
 
 const STATUS_LABELS: Record<string, string> = {
   uploaded: "En attente d'analyse",
-  processing: "Analyse…",
+  processing: "Analyse IA en cours…",
   analyzed: "Analysé",
-  failed: "Échec",
+  failed: "Échec — réessayez",
 };
 
 export function DocumentUploadPanel() {
-  const { workspace, dispatch } = useLmnp();
+  const { workspace, dispatch, getFile } = useLmnp();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [category, setCategory] = useState<DocumentCategory>("revenus");
   const [error, setError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const pendingAnalysis = workspace.documents.some((d) => d.status === "uploaded");
+  const hasProcessing = workspace.documents.some((d) => d.status === "processing");
 
   const processFiles = useCallback(
     (fileList: FileList | null) => {
@@ -55,8 +58,31 @@ export function DocumentUploadPanel() {
     [category, dispatch],
   );
 
-  const runAnalysis = () => {
-    dispatch({ type: "RUN_ANALYSIS" });
+  const runAnalysis = async () => {
+    setError(null);
+    setIsAnalyzing(true);
+    const ids = workspace.documents.filter((d) => d.status === "uploaded").map((d) => d.id);
+
+    try {
+      const { succeeded, failed } = await runBulkDocumentAnalysis({
+        documents: workspace.documents,
+        documentIds: ids,
+        getFile,
+        dispatch,
+      });
+
+      if (failed > 0 && succeeded === 0) {
+        setError(
+          "L'analyse OCR a échoué. Vérifiez OPENAI_API_KEY et votre connexion, puis réessayez.",
+        );
+      } else if (failed > 0) {
+        setError(`${failed} document(s) en échec — les autres ont été analysés.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur lors de l'analyse.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -111,7 +137,7 @@ export function DocumentUploadPanel() {
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.jpg,.jpeg,.png,.webp"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
           className="hidden"
           onChange={(e) => {
             processFiles(e.target.files);
@@ -123,39 +149,55 @@ export function DocumentUploadPanel() {
           ou <span className="text-emerald-400">parcourir</span> — PDF, JPG, PNG
         </p>
         <p className="mt-2 text-xs text-zinc-600">
-          *Envoyez tout d&apos;un coup — nous classons selon le nom et le type choisi.*
+          Analyse par OpenAI Vision — montants, TVA, fournisseur et date extraits automatiquement.
         </p>
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && (
+        <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+          {error}
+        </p>
+      )}
 
-      {pendingAnalysis && (
+      {(pendingAnalysis || hasProcessing) && (
         <button
           type="button"
           onClick={runAnalysis}
-          className="w-full rounded-full bg-emerald-500 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+          disabled={isAnalyzing || hasProcessing}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Lancer l&apos;analyse de mes documents
+          {isAnalyzing || hasProcessing ? (
+            <>
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-950/30 border-t-zinc-950" />
+              Analyse Vision en cours…
+            </>
+          ) : (
+            "Lancer l'analyse OCR (OpenAI Vision)"
+          )}
         </button>
       )}
 
       {workspace.documents.length > 0 && (
         <ul className="space-y-2">
           {workspace.documents.map((doc) => (
-            <li
-              key={doc.id}
-              className="glass flex items-center gap-3 rounded-xl px-4 py-3"
-            >
+            <li key={doc.id} className="glass flex items-center gap-3 rounded-xl px-4 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-zinc-200">{doc.fileName}</p>
                 <p className="text-xs text-zinc-500">
                   {STATUS_LABELS[doc.status]} · {formatSize(doc.sizeBytes)}
+                  {doc.status === "analyzed" && doc.documentType !== "unknown" && (
+                    <span className="text-emerald-500/80"> · {doc.documentType}</span>
+                  )}
                 </p>
               </div>
+              {doc.status === "processing" && (
+                <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
+              )}
               <button
                 type="button"
                 onClick={() => dispatch({ type: "REMOVE_DOCUMENT", documentId: doc.id })}
-                className="rounded-lg p-2 text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+                disabled={doc.status === "processing"}
+                className="rounded-lg p-2 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
                 aria-label="Supprimer"
               >
                 ×

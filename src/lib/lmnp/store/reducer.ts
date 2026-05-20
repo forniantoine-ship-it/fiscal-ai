@@ -1,5 +1,5 @@
 import { deriveWorkspace } from "../engine";
-import { analyzeDocument } from "../services/document-analysis";
+import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import { createLedgerEntryFromValidation, voidLedgerEntry } from "../services/ledger";
 import type {
   DocumentCategory,
@@ -25,7 +25,12 @@ export type LmnpAction =
       files: { file: File; category: DocumentCategory }[];
     }
   | { type: "REMOVE_DOCUMENT"; documentId: string }
-  | { type: "RUN_ANALYSIS"; documentIds?: string[] }
+  | { type: "DOCUMENT_SET_STATUS"; documentId: string; status: LmnpDocument["status"] }
+  | {
+      type: "APPLY_DOCUMENT_ANALYSIS";
+      documentId: string;
+      result: DocumentAnalysisResult;
+    }
   | {
       type: "VALIDATION_APPROVE";
       validationItemId: string;
@@ -57,19 +62,29 @@ function touchFiscalYear(
   };
 }
 
+function extractionLabel(extraction: Extraction): string {
+  return extraction.displayLabel ?? FIELD_REGISTRY[extraction.fieldKey].label;
+}
+
 function upsertValidationFromExtraction(
   state: PersistedWorkspace,
   extraction: Extraction,
   doc: LmnpDocument,
 ): ValidationItem[] {
   const requiredKeys = getRequiredFieldKeys(state.fiscalYear.regime);
+  const label = extractionLabel(extraction);
   const existing = state.validationItems.find(
-    (v) => v.fieldKey === extraction.fieldKey && v.status === "pending",
+    (v) =>
+      v.fieldKey === extraction.fieldKey &&
+      v.label === label &&
+      v.documentId === doc.id &&
+      v.status === "pending",
   );
 
   const item: ValidationItem = existing
     ? {
         ...existing,
+        label,
         proposedValue: extraction.normalizedValue,
         confidence: Math.min(existing.confidence, extraction.confidence),
         extractionIds: [...new Set([...existing.extractionIds, extraction.id])],
@@ -82,7 +97,7 @@ function upsertValidationFromExtraction(
         fiscalYearId: state.fiscalYear.id,
         propertyId: state.fiscalYear.propertyIds[0],
         fieldKey: extraction.fieldKey,
-        label: FIELD_REGISTRY[extraction.fieldKey].label,
+        label,
         proposedValue: extraction.normalizedValue,
         status: "pending",
         isRequired: requiredKeys.includes(extraction.fieldKey),
@@ -98,6 +113,53 @@ function upsertValidationFromExtraction(
     return state.validationItems.map((v) => (v.id === existing.id ? item : v));
   }
   return [...state.validationItems, item];
+}
+
+function applyDocumentAnalysisToState(
+  state: PersistedWorkspace,
+  documentId: string,
+  result: DocumentAnalysisResult,
+): PersistedWorkspace {
+  const docIndex = state.documents.findIndex((d) => d.id === documentId);
+  if (docIndex < 0) return state;
+
+  const doc = state.documents[docIndex];
+  const analyzed: LmnpDocument = {
+    ...doc,
+    status: "analyzed",
+    documentType: result.documentType,
+    category: result.category,
+  };
+
+  const documents = [...state.documents];
+  documents[docIndex] = analyzed;
+
+  const extractions: Extraction[] = result.extractions.map((e) => ({
+    ...e,
+    id: e.id,
+  }));
+
+  let newExtractions = [
+    ...state.extractions.filter((e) => e.documentId !== documentId),
+    ...extractions,
+  ];
+
+  let validationItems = state.validationItems;
+  for (const extraction of extractions) {
+    validationItems = upsertValidationFromExtraction(
+      { ...state, validationItems, documents },
+      extraction,
+      analyzed,
+    );
+  }
+
+  return {
+    ...state,
+    documents,
+    extractions: newExtractions,
+    validationItems,
+    fiscalYear: touchFiscalYear(state.fiscalYear, "pending_validation"),
+  };
 }
 
 function linkExtractions(
@@ -172,55 +234,23 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       };
     }
 
-    case "RUN_ANALYSIS": {
-      const ids = action.documentIds ?? state.documents.filter((d) => d.status === "uploaded").map((d) => d.id);
-      let next = { ...state };
-      let newExtractions = [...state.extractions];
-
-      for (const docId of ids) {
-        const docIndex = next.documents.findIndex((d) => d.id === docId);
-        if (docIndex < 0) continue;
-        const doc = next.documents[docIndex];
-        const userCategory = doc.category;
-
-        const processing: LmnpDocument = { ...doc, status: "processing" };
-        next.documents = [...next.documents];
-        next.documents[docIndex] = processing;
-
-        const result = analyzeDocument(processing, userCategory);
-        const analyzed: LmnpDocument = {
-          ...processing,
-          status: "analyzed",
-          documentType: result.documentType,
-          category: result.category,
-        };
-        next.documents[docIndex] = analyzed;
-
-        const extractions: Extraction[] = result.extractions.map((e) => ({
-          ...e,
-          id: e.id,
-        }));
-
-        newExtractions = [
-          ...newExtractions.filter((e) => e.documentId !== docId),
-          ...extractions,
-        ];
-
-        let validationItems = next.validationItems;
-        for (const extraction of extractions) {
-          validationItems = upsertValidationFromExtraction(
-            { ...next, validationItems },
-            extraction,
-            analyzed,
-          );
-        }
-        next = { ...next, validationItems };
-      }
-
+    case "DOCUMENT_SET_STATUS": {
       return {
-        ...next,
-        extractions: newExtractions,
-        fiscalYear: touchFiscalYear(state.fiscalYear, "pending_validation"),
+        ...state,
+        documents: state.documents.map((d) =>
+          d.id === action.documentId ? { ...d, status: action.status } : d,
+        ),
+        fiscalYear:
+          action.status === "processing"
+            ? touchFiscalYear(state.fiscalYear, "analyzing")
+            : state.fiscalYear,
+      };
+    }
+
+    case "APPLY_DOCUMENT_ANALYSIS": {
+      return {
+        ...state,
+        ...applyDocumentAnalysisToState(state, action.documentId, action.result),
       };
     }
 

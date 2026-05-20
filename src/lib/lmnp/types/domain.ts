@@ -106,6 +106,8 @@ export interface Extraction {
   documentId: string;
   fiscalYearId: string;
   fieldKey: FieldKey;
+  /** Override label shown in ValidationItem (e.g. TVA, date). */
+  displayLabel?: string;
   rawValue: string;
   normalizedValue: NormalizedValue;
   confidence: number;
