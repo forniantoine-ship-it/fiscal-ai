@@ -9,60 +9,54 @@ export function JourneyTunnel() {
 
   if (journey.isComplete) {
     return (
-      <div className="mx-auto flex min-h-[50vh] max-w-sm flex-col items-center justify-center px-4 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+      <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-[16rem] flex-col items-center justify-center px-10 text-center">
+        <p className="text-lg font-normal leading-relaxed text-zinc-500">
           Déclaration transmise
-        </h1>
+        </p>
       </div>
     );
   }
 
-  const badges = assistant.insights.slice(0, 2);
+  const badge = assistant.insights[0];
 
   return (
-    <div className="mx-auto flex min-h-[50vh] max-w-sm flex-col justify-center px-4 py-12">
+    <div className="mx-auto flex min-h-[calc(100vh-3.5rem)] w-full max-w-[16rem] flex-col px-10">
+      <div className="flex flex-1 flex-col items-center justify-center pb-8 pt-16 text-center">
+        <h1 className="text-lg font-normal leading-[1.45] tracking-tight text-zinc-500">
+          {assistant.headline}
+        </h1>
+
+        {badge && (
+          <p className="mt-8 text-[10px] font-normal text-zinc-800/35">{badge.text}</p>
+        )}
+
+        <Link
+          href={nextAction.href}
+          className="group mt-[5.5rem] inline-flex items-baseline gap-1.5 py-2 text-[15px] font-normal text-zinc-400 transition-colors duration-200 hover:text-zinc-300"
+        >
+          {nextAction.cta}
+          <span
+            aria-hidden
+            className="text-zinc-700/50 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-zinc-600/60"
+          >
+            →
+          </span>
+        </Link>
+      </div>
+
       <div
-        className="h-0.5 w-full overflow-hidden rounded-full bg-white/[0.04]"
+        className="mx-auto mb-14 h-px w-12 overflow-hidden bg-white/[0.015]"
         role="progressbar"
         aria-valuenow={journey.percentComplete}
         aria-valuemin={0}
         aria-valuemax={100}
+        aria-label="Progression"
       >
         <div
-          className="h-full rounded-full bg-emerald-500/70 transition-[width] duration-700 ease-out"
-          style={{ width: `${Math.max(journey.percentComplete, 2)}%` }}
+          className="h-full bg-white/[0.08] transition-[width] duration-[1.4s] ease-out"
+          style={{ width: `${Math.max(journey.percentComplete, 8)}%` }}
         />
       </div>
-
-      <h1 className="mt-14 text-[1.75rem] font-semibold leading-tight tracking-tight text-zinc-50">
-        {assistant.headline}
-      </h1>
-
-      {badges.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {badges.map((insight) => (
-            <span
-              key={insight.id}
-              className={`rounded-md px-2 py-0.5 text-[11px] tracking-wide ${
-                insight.tone === "ai"
-                  ? "text-violet-400/80"
-                  : insight.tone === "pending"
-                    ? "text-amber-400/80"
-                    : "text-zinc-500"
-              }`}
-            >
-              {insight.text}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <Link
-        href={nextAction.href}
-        className="mt-10 flex w-full items-center justify-center rounded-xl bg-zinc-100 py-3.5 text-sm font-medium text-zinc-950 transition-colors hover:bg-white"
-      >
-        {nextAction.cta}
-      </Link>
     </div>
   );
 }
