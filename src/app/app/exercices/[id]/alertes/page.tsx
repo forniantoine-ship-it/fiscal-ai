@@ -10,7 +10,7 @@ export default function AlertesPage() {
   return (
     <div>
       <PageHeader
-        title="Points à clarifier"
+        title="À clarifier"
         description={
           workspace.openAlertCount === 0
             ? "Rien à signaler — votre assistant a tout ce qu’il lui faut."

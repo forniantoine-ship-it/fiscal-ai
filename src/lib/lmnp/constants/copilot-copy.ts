@@ -1,16 +1,4 @@
 import type { DocumentType } from "../types";
-import type { DocumentChecklistItem } from "../services/document-checklist";
-
-/** Documents que l’on mentionne au particulier (pas de jargon comptable). */
-export const EXPECTED_DOCUMENT_NAMES = [
-  "Acte notarié",
-  "Facture de meubles",
-  "Taxe foncière",
-  "Crédit immobilier",
-  "Assurance habitation",
-  "Relevés de loyers",
-  "Factures de travaux",
-] as const;
 
 export const TAB_COPY = {
   activite: {
@@ -29,8 +17,8 @@ export const TAB_COPY = {
     sidebar: "Mes dépenses",
   },
   immobilisations: {
-    title: "Mon mobilier & bien",
-    description: "Factures de meubles et acte notarié — l’amortissement est calculé pour vous.",
+    title: "Mobilier & bien",
+    description: "Factures de meubles et acte notarié — l’IA calcule tout pour vous.",
     sidebar: "Mobilier & bien",
   },
   emprunts: {
@@ -88,107 +76,3 @@ export const DOCUMENT_TYPE_HUMAN_LABEL: Partial<Record<DocumentType, string>> = 
   bank_statement: "Relevé bancaire",
 };
 
-export interface CopilotGuideStep {
-  step: number;
-  title: string;
-  description: string;
-  href: string;
-  cta: string;
-  done: boolean;
-  active: boolean;
-}
-
-export function buildCopilotGuideSteps(params: {
-  base: string;
-  documentCount: number;
-  analyzedCount: number;
-  pendingValidationCount: number;
-  missingDocumentCount: number;
-  canClose: boolean;
-}): CopilotGuideStep[] {
-  const {
-    base,
-    documentCount,
-    analyzedCount,
-    pendingValidationCount,
-    missingDocumentCount,
-    canClose,
-  } = params;
-
-  const hasDocs = documentCount > 0;
-  const hasAnalysis = analyzedCount > 0;
-  const needsReview = pendingValidationCount > 0;
-
-  const step1Done = hasDocs;
-  const step2Done = hasAnalysis && !needsReview && missingDocumentCount === 0;
-  const step3Done = canClose;
-
-  const activeStep = !step1Done ? 1 : needsReview || missingDocumentCount > 0 ? 2 : step3Done ? 3 : 2;
-
-  return [
-    {
-      step: 1,
-      title: "Ajoutez vos documents principaux",
-      description:
-        "Déposez vos PDF (acte, factures, taxe foncière, relevés de loyers…). L’IA les classe et lit les montants pour vous.",
-      href: `${base}/documents`,
-      cta: "Ajouter mes documents",
-      done: step1Done,
-      active: activeStep === 1,
-    },
-    {
-      step: 2,
-      title: "Vérifiez ce que l’IA a pré-rempli",
-      description: needsReview
-        ? `${pendingValidationCount} montant${pendingValidationCount > 1 ? "s" : ""} à confirmer — un clic suffit dans Mes loyers ou Mes dépenses.`
-        : missingDocumentCount > 0
-          ? `Il manque encore ${missingDocumentCount} document${missingDocumentCount > 1 ? "s" : ""} pour compléter le dossier.`
-          : "Parcourez vos loyers, dépenses et crédit : tout est déjà rangé par l’IA.",
-      href: needsReview ? `${base}/recettes` : `${base}/documents`,
-      cta: needsReview ? "Vérifier mes montants" : "Voir mon dossier",
-      done: step2Done,
-      active: activeStep === 2,
-    },
-    {
-      step: 3,
-      title: "Finalisez votre déclaration",
-      description: canClose
-        ? "Votre dossier est complet — vous pouvez préparer la déclaration en toute sérénité."
-        : "Encore quelques points à valider, puis votre LMNP sera prêt.",
-      href: `${base}/recettes`,
-      cta: "Voir le récapitulatif",
-      done: step3Done,
-      active: activeStep === 3,
-    },
-  ];
-}
-
-export function buildCopilotFeedMessages(params: {
-  documents: { documentType: DocumentType; fileName: string; status: string }[];
-  checklist: DocumentChecklistItem[];
-  pendingValidationCount: number;
-  canClose: boolean;
-}): string[] {
-  const messages: string[] = [];
-
-  for (const doc of params.documents.filter((d) => d.status === "analyzed")) {
-    const label = humanDocumentLabel(doc.documentType, doc.fileName);
-    messages.push(`Votre ${label.toLowerCase()} a bien été analysée.`);
-  }
-
-  for (const item of params.checklist.filter((i) => i.status === "missing")) {
-    messages.push(`Il manque encore : ${item.label.toLowerCase()}.`);
-  }
-
-  if (params.pendingValidationCount > 0) {
-    messages.push(
-      `${params.pendingValidationCount} montant${params.pendingValidationCount > 1 ? "s" : ""} attend${params.pendingValidationCount > 1 ? "ent" : ""} votre confirmation.`,
-    );
-  }
-
-  if (params.canClose) {
-    messages.push("Votre dossier est presque prêt — bravo, vous y êtes !");
-  }
-
-  return messages.slice(0, 4);
-}

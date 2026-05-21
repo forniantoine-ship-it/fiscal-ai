@@ -35,8 +35,8 @@ export const DOCUMENT_TYPE_SHORT_LABEL: Partial<Record<DocumentType, string>> = 
 };
 
 export const FIELD_KEY_TAB_HINT: Partial<Record<FieldKey, string>> = {
-  "income.annualRent": "Recettes",
-  "expense.propertyTax": "Dépenses",
-  "amort.furnitureAnnual": "Immobilisations",
-  "loan.annualInterest": "Emprunts",
+  "income.annualRent": "Mes loyers",
+  "expense.propertyTax": "Mes dépenses",
+  "amort.furnitureAnnual": "Mobilier & bien",
+  "loan.annualInterest": "Mon crédit",
 };

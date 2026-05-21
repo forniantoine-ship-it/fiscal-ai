@@ -7,12 +7,12 @@ export interface DocumentCategoryMeta {
 }
 
 export const DOCUMENT_CATEGORIES: DocumentCategoryMeta[] = [
-  { id: "bail", label: "Bail / quittances", hint: "Contrat de location meublée" },
-  { id: "revenus", label: "Revenus locatifs", hint: "Relevés bancaires, attestations" },
-  { id: "charges", label: "Charges déductibles", hint: "Factures, assurances, syndic" },
-  { id: "amortissement", label: "Amortissements", hint: "Factures mobilier, travaux" },
-  { id: "emprunt", label: "Emprunt", hint: "Attestation ou tableau d'amortissement" },
-  { id: "autre", label: "Autres pièces", hint: "Taxe foncière, documents divers" },
+  { id: "bail", label: "Bail / location", hint: "Contrat de location meublée" },
+  { id: "revenus", label: "Relevés de loyers", hint: "Relevés bancaires, quittances" },
+  { id: "charges", label: "Assurance habitation", hint: "Assurance, travaux, charges copropriété" },
+  { id: "amortissement", label: "Mobilier & bien", hint: "Facture de meubles, acte notarié" },
+  { id: "emprunt", label: "Crédit immobilier", hint: "Attestation ou tableau de crédit" },
+  { id: "autre", label: "Taxe foncière", hint: "Taxe foncière et autres pièces" },
 ];
 
 export interface DocumentRequirement {

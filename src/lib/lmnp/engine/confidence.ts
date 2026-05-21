@@ -82,13 +82,31 @@ function scoreToLevel(
 
 export function pickNextAction(ctx: EngineContext): NextAction {
   const base = `/app/exercices/${ctx.fiscalYear.id}`;
+  const canClose =
+    ctx.alerts.filter((a) => a.severity === "blocking").length === 0 &&
+    ctx.validationItems.filter((v) => v.status === "pending").length === 0 &&
+    Boolean(ctx.fiscalYear.regimeConfirmedAt);
+
   const blocking = ctx.alerts.find((a) => a.severity === "blocking");
   if (blocking?.primaryActionHref) {
     return {
       title: blocking.title,
       description: blocking.message,
       href: blocking.primaryActionHref,
+      cta: "Corriger maintenant",
       estimatedMinutes: 5,
+    };
+  }
+
+  const isAnalyzing = ctx.documents.some(
+    (d) => d.status === "processing" || d.status === "uploaded",
+  );
+  if (isAnalyzing) {
+    return {
+      title: "L’IA analyse vos documents",
+      description: "Classification et extraction des montants en cours — cela ne prend que quelques instants.",
+      href: `${base}/documents`,
+      cta: "Voir l’avancement",
     };
   }
 
@@ -96,20 +114,22 @@ export function pickNextAction(ctx: EngineContext): NextAction {
   if (pending.length > 0) {
     const tabHref = pickTabForPendingValidation(ctx, base);
     return {
-      title: `${pending.length} montant${pending.length > 1 ? "s" : ""} à valider`,
+      title: "Vérifiez les informations détectées par l’IA",
       description:
-        "L’IA a tout pré-rempli — ouvrez Mes loyers ou Mes dépenses et confirmez en un clic.",
+        "L’IA a pré-rempli vos montants — confirmez-les en un clic dans Mes loyers ou Mes dépenses.",
       href: tabHref,
+      cta: "Vérifier maintenant",
       estimatedMinutes: Math.ceil(pending.length * 1.5),
     };
   }
 
   if (ctx.documents.length === 0) {
     return {
-      title: "Commencez par vos documents",
+      title: "Commencez par ajouter vos documents principaux",
       description:
-        "Déposez vos PDF : acte notarié, factures, taxe foncière, relevés de loyers… L’IA fait le reste.",
+        "Déposez simplement vos PDF. L’IA analyse et classe automatiquement votre dossier.",
       href: `${base}/documents`,
+      cta: "Ajouter mes documents",
       estimatedMinutes: 10,
     };
   }
@@ -122,18 +142,30 @@ export function pickNextAction(ctx: EngineContext): NextAction {
   });
 
   if (missing.length > 0) {
+    const label = missing[0].label.replace(/\s*\(.*\)\s*$/, "").toLowerCase();
     return {
-      title: `Il manque encore : ${missing[0].label.toLowerCase()}`,
-      description: "Ajoutez-le pour que votre dossier soit complet.",
+      title: `Il manque encore votre ${label}`,
+      description: "Ajoutez ce document pour compléter sereinement votre dossier.",
       href: `${base}/documents`,
+      cta: "Ajouter un document",
       estimatedMinutes: 5,
+    };
+  }
+
+  if (canClose) {
+    return {
+      title: "Votre déclaration est prête",
+      description: "Tous les éléments sont en place — vous pouvez générer votre déclaration LMNP.",
+      href: `${base}/validation`,
+      cta: "Générer ma déclaration",
     };
   }
 
   return {
     title: "Votre dossier avance bien",
-    description: "Parcourez vos loyers, dépenses et crédit pour vérifier que tout est correct.",
+    description: "Consultez Mes loyers et Mes dépenses pour vérifier que tout correspond à votre situation.",
     href: `${base}/recettes`,
+    cta: "Voir mon dossier",
   };
 }
 

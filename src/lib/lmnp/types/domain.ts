@@ -57,6 +57,7 @@ export type AlertCode =
   | "A05_LOAN_INTEREST_WITHOUT_CERTIFICATE"
   | "A06_UNRESOLVED_CONFLICT"
   | "A07_PENDING_REQUIRED_VALIDATION"
+  | "A08_DOCUMENT_INCONSISTENCY"
   | "A11_REQUIRED_FIELD_EMPTY";
 
 export type ConfidenceBand = "high" | "medium" | "low";
@@ -88,6 +89,18 @@ export interface FiscalYear {
   updatedAt: string;
 }
 
+export interface DocumentOcrMeta {
+  documentTypeConfidence: number;
+  amountPeriod: "monthly" | "annual" | "one_time" | "unknown";
+  amountKind: "ttc" | "ht" | "unknown";
+  warnings: string[];
+  inconsistencies: { code: string; severity: "warning" | "info"; message: string }[];
+  fieldsDetected: number;
+  fieldsRejected: number;
+  trustedForAutoSync: boolean;
+  usedHeuristicFallback: boolean;
+}
+
 export interface LmnpDocument {
   id: string;
   fiscalYearId: string;
@@ -99,6 +112,21 @@ export interface LmnpDocument {
   documentType: DocumentType;
   status: DocumentStatus;
   uploadedAt: string;
+  ocrMeta?: DocumentOcrMeta;
+}
+
+export type OcrFieldKey =
+  | "totalAmount"
+  | "vatAmount"
+  | "supplierName"
+  | "invoiceDate"
+  | "address";
+
+export interface OcrFieldRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface Extraction {
@@ -113,6 +141,10 @@ export interface Extraction {
   confidence: number;
   validationItemId?: string;
   status: "pending_validation" | "linked" | "superseded" | "discarded";
+  /** Source OCR field for preview highlighting. */
+  ocrFieldKey?: OcrFieldKey;
+  region?: OcrFieldRegion;
+  warnings?: string[];
 }
 
 export interface ValidationItem {
@@ -195,6 +227,7 @@ export interface NextAction {
   title: string;
   description: string;
   href: string;
+  cta: string;
   estimatedMinutes?: number;
 }
 

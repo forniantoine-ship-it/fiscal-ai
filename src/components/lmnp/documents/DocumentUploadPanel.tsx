@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ACCEPTED_MIME_TYPES, MAX_FILE_BYTES } from "@/lib/lmnp/constants/documents";
-import { DOCUMENT_TYPE_SHORT_LABEL } from "@/lib/lmnp/constants/document-tab-mapping";
+import { humanDocumentLabel } from "@/lib/lmnp/constants/copilot-copy";
 import { inferUploadFromFileName } from "@/lib/lmnp/services/document-classifier";
 import { useLmnp } from "@/lib/lmnp/store";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { ConfidencePill } from "@/components/lmnp/shared/ConfidencePill";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { DocumentsEmptyIcon } from "@/components/lmnp/shared/EmptyState";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
@@ -18,25 +17,11 @@ function formatSize(bytes: number): string {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  uploaded: "En attente d’analyse",
-  processing: "L’IA lit votre document…",
-  analyzed: "Analysé — montants extraits",
+  uploaded: "En attente",
+  processing: "Analyse en cours",
+  analyzed: "Analysé",
   failed: "Lecture impossible",
 };
-
-function avgConfidenceForDocument(
-  documentId: string,
-  extractions: { documentId: string; confidence: number }[],
-): number | null {
-  const scoped = extractions.filter((e) => e.documentId === documentId);
-  if (scoped.length === 0) return null;
-  return Math.round(scoped.reduce((sum, e) => sum + e.confidence, 0) / scoped.length);
-}
-
-function documentTypeLabel(doc: LmnpDocument): string | null {
-  if (doc.documentType === "unknown") return "Document classé par l’IA";
-  return DOCUMENT_TYPE_SHORT_LABEL[doc.documentType] ?? null;
-}
 
 export function DocumentUploadPanel() {
   const { workspace, dispatch, getFile } = useLmnp();
@@ -192,11 +177,11 @@ export function DocumentUploadPanel() {
         />
         <DocumentsEmptyIcon />
         <p className="mt-4 text-lg font-semibold text-zinc-100">
-          Téléversez simplement vos documents
+          Déposez simplement vos documents
         </p>
         <p className="mt-2 text-sm text-zinc-400">
-          L&apos;IA les analysera automatiquement — acte notarié, factures, taxe foncière, relevés
-          de loyers…
+          Acte notarié, facture de meubles, taxe foncière, crédit immobilier, relevés de loyers,
+          assurance habitation, factures de travaux…
         </p>
         <p className="mt-4 text-sm text-emerald-400/90">
           Glissez-déposez ici ou <span className="underline">parcourir vos fichiers</span>
@@ -222,35 +207,26 @@ export function DocumentUploadPanel() {
         </p>
       )}
 
-      {workspace.documents.length === 0 && !isAnalyzing && !hasProcessing && (
-        <p className="text-center text-sm text-zinc-500">
-          Pas de case à cocher, pas de jargon — déposez vos PDF et laissez l&apos;assistant faire le
-          tri.
-        </p>
-      )}
-
       {workspace.documents.length > 0 && (
         <ul className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
-            Vos fichiers
-          </p>
           {workspace.documents.map((doc) => {
-            const confidence = avgConfidenceForDocument(doc.id, workspace.extractions);
-            const typeLabel = documentTypeLabel(doc);
+            const typeLabel =
+              doc.status === "analyzed"
+                ? humanDocumentLabel(doc.documentType, doc.fileName)
+                : null;
 
             return (
               <li key={doc.id} className="glass flex items-center gap-3 rounded-xl px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-zinc-200">{doc.fileName}</p>
-                  <p className="text-xs text-zinc-500">
-                    {STATUS_LABELS[doc.status]} · {formatSize(doc.sizeBytes)}
-                    {typeLabel && <span className="text-emerald-500/80"> · {typeLabel}</span>}
+                  <p className="truncate text-sm font-medium text-zinc-200">
+                    {typeLabel ?? doc.fileName}
                   </p>
-                  {confidence !== null && doc.status === "analyzed" && (
-                    <div className="mt-1.5">
-                      <ConfidencePill score={confidence} />
-                    </div>
-                  )}
+                  <p className="text-xs text-zinc-500">
+                    {STATUS_LABELS[doc.status]}
+                    {typeLabel && doc.fileName !== typeLabel && (
+                      <span className="text-zinc-600"> · {doc.fileName}</span>
+                    )}
+                  </p>
                 </div>
                 {doc.status === "processing" && (
                   <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
