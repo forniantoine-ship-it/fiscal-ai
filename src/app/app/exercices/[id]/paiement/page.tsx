@@ -1,40 +1,39 @@
 "use client";
 
+import Link from "next/link";
 import { StepPageShell } from "@/components/lmnp/journey/StepPageShell";
-import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function PaiementPage() {
   const { workspace, dispatch } = useLmnp();
   const paid = Boolean(workspace.fiscalYear.paidAt);
+  const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
   return (
     <StepPageShell hideNextCta>
-      <div className="mx-auto max-w-lg space-y-8">
-        <PageHeader
-          title="Régler votre dossier"
-          description="Débloquez la télétransmission en finalisant votre offre. Paiement sécurisé."
-        />
+      <div className="mx-auto max-w-md py-8">
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-50">Liasse prête</h1>
+        <p className="mt-2 text-sm text-zinc-600">Une étape pour transmettre.</p>
 
-        <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
-          <p className="text-3xl font-bold tabular-nums text-zinc-100">179 €</p>
-          <p className="mt-2 text-sm text-zinc-500">
-            Exercice {workspace.fiscalYear.year} · Assistant LMNP complet
-          </p>
-          <p className="mt-4 text-xs text-zinc-600">
-            Paiement sécurisé (démo — intégration Stripe à venir)
-          </p>
+        <section className="mt-12 rounded-2xl border border-white/[0.05] px-6 py-8">
+          <p className="text-center text-4xl font-semibold tabular-nums text-zinc-100">179 €</p>
+          <p className="mt-1 text-center text-xs text-zinc-600">{workspace.fiscalYear.year}</p>
 
           {!paid ? (
             <button
               type="button"
               onClick={() => dispatch({ type: "JOURNEY_MARK_PAID" })}
-              className="mt-8 inline-flex w-full justify-center rounded-full bg-zinc-100 py-3 text-sm font-semibold text-zinc-950 hover:bg-white"
+              className="mt-8 flex w-full justify-center rounded-2xl bg-zinc-50 py-4 text-sm font-semibold text-zinc-950 hover:bg-white"
             >
-              Procéder au paiement
+              Payer
             </button>
           ) : (
-            <p className="mt-8 text-sm font-medium text-emerald-400">✓ Paiement enregistré</p>
+            <Link
+              href={`${base}/teletransmission`}
+              className="mt-8 flex w-full justify-center rounded-2xl bg-zinc-50 py-4 text-sm font-semibold text-zinc-950"
+            >
+              Transmettre →
+            </Link>
           )}
         </section>
       </div>

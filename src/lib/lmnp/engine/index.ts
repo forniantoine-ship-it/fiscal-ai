@@ -7,13 +7,15 @@ export {
   pickJourneyAction,
   journeyAllowsRoute,
 } from "./journey";
+export { buildAssistantBrief } from "./assistant-brief";
 export {
   computeDossierProgress,
   resolveFiscalYearStatus,
   type DossierProgressSnapshot,
 } from "./workspace-progress";
 
-import type { Alert, LmnpJourney, UserConfidenceScore, NextAction } from "../types";
+import type { Alert, AssistantBrief, LmnpJourney, UserConfidenceScore, NextAction } from "../types";
+import { buildAssistantBrief } from "./assistant-brief";
 import { buildEngineContext } from "./context";
 import { recomputeAlerts } from "./alerts";
 import { computeUserConfidence } from "./confidence";
@@ -24,6 +26,7 @@ export interface WorkspaceDerivatives extends DossierProgressSnapshot {
   alerts: Alert[];
   confidence: UserConfidenceScore;
   journey: LmnpJourney;
+  assistant: AssistantBrief;
   nextAction: NextAction;
   pendingValidationCount: number;
   blockingAlertCount: number;
@@ -36,6 +39,7 @@ export function deriveWorkspace(
   documents: Parameters<typeof buildEngineContext>[2],
   validationItems: Parameters<typeof buildEngineContext>[3],
   ledgerEntries: Parameters<typeof buildEngineContext>[4],
+  extractions: import("../types").Extraction[] = [],
 ): WorkspaceDerivatives {
   const ctx = buildEngineContext(
     fiscalYear,
@@ -54,12 +58,14 @@ export function deriveWorkspace(
 
   const progress = computeDossierProgress(documents, validationItems, alerts);
   const journey = resolveJourney(ctxWithAlerts);
-  const nextAction = pickJourneyAction(ctxWithAlerts, journey);
+  const assistant = buildAssistantBrief(ctxWithAlerts, journey, extractions);
+  const nextAction = pickJourneyAction(ctxWithAlerts, journey, extractions);
 
   return {
     alerts,
     confidence: computeUserConfidence(ctxWithAlerts, canClose),
     journey,
+    assistant,
     nextAction,
     pendingValidationCount,
     blockingAlertCount,

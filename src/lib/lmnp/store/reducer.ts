@@ -277,6 +277,7 @@ function applyWorkspaceProgress(state: PersistedWorkspace): PersistedWorkspace {
     state.documents,
     state.validationItems,
     state.ledgerEntries,
+    state.extractions,
   );
 
   const status = resolveFiscalYearStatus(
@@ -565,6 +566,7 @@ export function selectWorkspace(state: LmnpState) {
     state.documents,
     state.validationItems,
     state.ledgerEntries,
+    state.extractions,
   );
 
   return {

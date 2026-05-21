@@ -2,26 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ACCEPTED_MIME_TYPES, MAX_FILE_BYTES } from "@/lib/lmnp/constants/documents";
-import { humanDocumentLabel } from "@/lib/lmnp/constants/copilot-copy";
 import { inferUploadFromFileName } from "@/lib/lmnp/services/document-classifier";
 import { useLmnp } from "@/lib/lmnp/store";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
-import { DocumentsEmptyIcon } from "@/components/lmnp/shared/EmptyState";
-import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  uploaded: "En attente",
-  processing: "Analyse en cours",
-  analyzed: "Analysé",
-  failed: "Lecture impossible",
-};
+import { AiActivityFeed } from "@/components/lmnp/journey/AiActivityFeed";
+import { AiDocumentRow } from "./AiDocumentRow";
+import type { DocumentCategory } from "@/lib/lmnp/types";
 
 export function DocumentUploadPanel() {
   const { workspace, dispatch, getFile } = useLmnp();
@@ -35,6 +22,7 @@ export function DocumentUploadPanel() {
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
   const uploadedIds = workspace.documents.filter((d) => d.status === "uploaded").map((d) => d.id);
   const hasProcessing = workspace.documents.some((d) => d.status === "processing");
+  const isBusy = isAnalyzing || hasProcessing;
 
   const runAnalysisForIds = useCallback(
     async (documentIds: string[]) => {
@@ -55,28 +43,24 @@ export function DocumentUploadPanel() {
         if (succeeded > 0) {
           showSuccess(
             `${succeeded} document${succeeded > 1 ? "s" : ""} analysé${succeeded > 1 ? "s" : ""}`,
-            "Les montants sont dans Mes loyers et Mes dépenses — confirmez-les en un clic.",
-            `${base}/recettes`,
+            "L’IA a pré-rempli votre dossier.",
+            `${base}/validation`,
           );
         }
 
         if (failed > 0 && succeeded === 0) {
-          const msg =
-            "Impossible de lire vos documents. Essayez un PDF plus net ou réimportez le fichier.";
+          const msg = "PDF illisible — essayez une version plus nette.";
           setError(msg);
           showError("Analyse impossible", msg);
         } else if (failed > 0) {
-          const msg = `${failed} document${failed > 1 ? "s" : ""} en échec — touchez « Réessayer » sur la ligne concernée.`;
+          const msg = `${failed} échec${failed > 1 ? "s" : ""} — touchez Réessayer.`;
           setError(msg);
           showError("Analyse partielle", msg);
         }
       } catch (err) {
-        const msg =
-          err instanceof Error
-            ? err.message
-            : "Une erreur est survenue pendant l’analyse.";
+        const msg = err instanceof Error ? err.message : "Erreur pendant l’analyse.";
         setError(msg);
-        showError("Erreur d’analyse", msg);
+        showError("Erreur", msg);
       } finally {
         analyzingRef.current = false;
         setIsAnalyzing(false);
@@ -104,15 +88,11 @@ export function DocumentUploadPanel() {
           ACCEPTED_MIME_TYPES.includes(file.type as (typeof ACCEPTED_MIME_TYPES)[number]) ||
           /\.(pdf|jpe?g|png|webp)$/i.test(file.name);
         if (!okType) {
-          const msg = `"${file.name}" : utilisez un PDF, JPG ou PNG.`;
-          setError(msg);
-          showError("Format refusé", msg);
+          showError("Format refusé", `"${file.name}" : PDF, JPG ou PNG uniquement.`);
           continue;
         }
         if (file.size > MAX_FILE_BYTES) {
-          const msg = `"${file.name}" dépasse 20 Mo — compressez ou scindez le fichier.`;
-          setError(msg);
-          showError("Fichier trop lourd", msg);
+          showError("Fichier trop lourd", `"${file.name}" dépasse 20 Mo.`);
           continue;
         }
         const { category } = inferUploadFromFileName(file.name);
@@ -121,138 +101,110 @@ export function DocumentUploadPanel() {
 
       if (valid.length > 0) {
         dispatch({ type: "UPLOAD_DOCUMENTS", files: valid });
-        showInfo(
-          `${valid.length} fichier${valid.length > 1 ? "s" : ""} reçu${valid.length > 1 ? "s" : ""}`,
-          "L’IA analyse et classe automatiquement…",
-        );
+        showInfo("Reçu", "L’IA démarre l’analyse…");
       }
     },
     [dispatch, showError, showInfo],
   );
 
-  const retryDocument = (doc: LmnpDocument) => {
-    dispatch({ type: "DOCUMENT_SET_STATUS", documentId: doc.id, status: "uploaded" });
-    showInfo(`Nouvelle lecture de « ${doc.fileName} »…`);
-  };
-
   return (
-    <div className="space-y-6">
-      <div
-        id="upload-zone"
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-          processFiles(e.dataTransfer.files);
-        }}
-        onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-2xl border-2 border-dashed p-12 text-center transition-all ${
-          isDragging
-            ? "border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10"
-            : "border-white/15 bg-white/[0.02] hover:border-emerald-500/40 hover:bg-emerald-500/[0.03]"
-        }`}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
-          className="hidden"
-          onChange={(e) => {
-            processFiles(e.target.files);
-            e.target.value = "";
+    <div className="space-y-8">
+      {!isBusy && workspace.documents.length === 0 && (
+        <div
+          id="upload-zone"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
           }}
-        />
-        <DocumentsEmptyIcon />
-        <p className="mt-4 text-lg font-semibold text-zinc-100">
-          Déposez simplement vos documents
-        </p>
-        <p className="mt-2 text-sm text-zinc-400">
-          Acte notarié, facture de meubles, taxe foncière, crédit immobilier, relevés de loyers,
-          assurance habitation, factures de travaux…
-        </p>
-        <p className="mt-4 text-sm text-emerald-400/90">
-          Glissez-déposez ici ou <span className="underline">parcourir vos fichiers</span>
-        </p>
-        <p className="mt-2 text-xs text-zinc-600">PDF, JPG, PNG · max 20 Mo par fichier</p>
-      </div>
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            processFiles(e.dataTransfer.files);
+          }}
+          onClick={() => inputRef.current?.click()}
+          className={`cursor-pointer rounded-3xl border border-dashed px-8 py-16 text-center transition-all ${
+            isDragging
+              ? "border-emerald-400/60 bg-emerald-500/[0.06]"
+              : "border-white/10 bg-white/[0.01] hover:border-white/20"
+          }`}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+            className="hidden"
+            onChange={(e) => {
+              processFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <p className="text-lg font-medium text-zinc-200">Déposer vos documents</p>
+          <p className="mt-6 text-xs text-zinc-600">
+            Glisser-déposer ou <span className="text-zinc-400 underline">parcourir</span>
+          </p>
+        </div>
+      )}
 
-      {(isAnalyzing || hasProcessing) && (
-        <div className="flex items-center gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3">
-          <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-blue-400/30 border-t-blue-400" />
-          <div>
-            <p className="text-sm font-medium text-blue-300">L’IA lit vos documents</p>
-            <p className="text-xs text-zinc-500">
-              Classification, extraction des montants, remplissage de votre dossier…
-            </p>
-          </div>
+      {(isBusy || workspace.documents.length > 0) && (
+        <div className="space-y-4">
+          {isBusy && workspace.documents.length > 0 && (
+            <AiActivityFeed
+              documentType={
+                workspace.documents.find((d) => d.status === "processing")?.documentType
+              }
+            />
+          )}
+
+          {!isBusy && workspace.documents.length > 0 && (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="w-full rounded-2xl border border-dashed border-white/10 py-3 text-xs text-zinc-500 transition-colors hover:border-white/20 hover:text-zinc-400"
+            >
+              + Ajouter un document
+            </button>
+          )}
+
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"
+            className="hidden"
+            onChange={(e) => {
+              processFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+
+          <ul className="space-y-3">
+            {workspace.documents.map((doc) => (
+              <AiDocumentRow
+                key={doc.id}
+                doc={doc}
+                extractionCount={workspace.extractions.filter((e) => e.documentId === doc.id).length}
+                onRetry={() => {
+                  dispatch({ type: "DOCUMENT_SET_STATUS", documentId: doc.id, status: "uploaded" });
+                }}
+                onRemove={() => dispatch({ type: "REMOVE_DOCUMENT", documentId: doc.id })}
+              />
+            ))}
+          </ul>
         </div>
       )}
 
       {error && (
-        <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
-          {error}
-        </p>
-      )}
-
-      {workspace.documents.length > 0 && (
-        <ul className="space-y-2">
-          {workspace.documents.map((doc) => {
-            const typeLabel =
-              doc.status === "analyzed"
-                ? humanDocumentLabel(doc.documentType, doc.fileName)
-                : null;
-
-            return (
-              <li key={doc.id} className="glass flex items-center gap-3 rounded-xl px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-zinc-200">
-                    {typeLabel ?? doc.fileName}
-                  </p>
-                  <p className="text-xs text-zinc-500">
-                    {STATUS_LABELS[doc.status]}
-                    {typeLabel && doc.fileName !== typeLabel && (
-                      <span className="text-zinc-600"> · {doc.fileName}</span>
-                    )}
-                  </p>
-                </div>
-                {doc.status === "processing" && (
-                  <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-emerald-500/30 border-t-emerald-400" />
-                )}
-                {doc.status === "failed" && (
-                  <button
-                    type="button"
-                    onClick={() => retryDocument(doc)}
-                    className="shrink-0 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/25"
-                  >
-                    Réessayer
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => dispatch({ type: "REMOVE_DOCUMENT", documentId: doc.id })}
-                  disabled={doc.status === "processing"}
-                  className="rounded-lg p-2 text-zinc-500 hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
-                  aria-label="Supprimer"
-                >
-                  ×
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <p className="rounded-xl border border-red-500/20 px-4 py-3 text-sm text-red-300">{error}</p>
       )}
     </div>
   );

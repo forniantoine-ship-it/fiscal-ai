@@ -13,6 +13,7 @@ import type {
 } from "../types";
 import type { EngineContext } from "./context";
 import { getApplicableRequirements } from "./context";
+import { buildAssistantBrief } from "./assistant-brief";
 
 export interface JourneyFlags {
   uploadDone: boolean;
@@ -128,7 +129,6 @@ export function resolveJourney(ctx: EngineContext): LmnpJourney {
       description: def.description,
       href: `${base}${def.href}`,
       cta: def.cta,
-      aiHint: def.aiHint,
       status,
       stepNumber: index + 1,
     };
@@ -159,129 +159,58 @@ export function journeyAllowsRoute(routeSuffix: string, journey: LmnpJourney): b
   return currentIdx >= minIdx && stepAtMin?.status !== "locked";
 }
 
-/** Next action aligned with the active journey step. */
-export function pickJourneyAction(ctx: EngineContext, journey: LmnpJourney): NextAction {
+/** CTA + route — titres alignés sur assistant-brief (pas de prose). */
+export function pickJourneyAction(
+  ctx: EngineContext,
+  journey: LmnpJourney,
+  extractions: import("../types").Extraction[],
+): NextAction {
   const base = `/app/exercices/${ctx.fiscalYear.id}`;
-  const flags = computeJourneyFlags(ctx);
+  const brief = buildAssistantBrief(ctx, journey, extractions);
+  const def = getJourneyStepDef(journey.currentStepId);
   const blocking = ctx.alerts.find((a) => a.severity === "blocking");
 
   if (blocking?.primaryActionHref && journey.currentStepId === "dossier") {
     return {
-      title: blocking.title,
-      description: blocking.message,
+      title: brief.headline,
+      description: "",
       href: blocking.primaryActionHref,
       cta: "Corriger",
     };
   }
 
-  const active = journey.steps.find((s) => s.id === journey.currentStepId);
-  const def = getJourneyStepDef(journey.currentStepId);
+  const hrefByStep: Record<JourneyStepId, string> = {
+    documents: `${base}/documents`,
+    analysis: `${base}/documents`,
+    validation: `${base}/validation`,
+    dossier: `${base}/activite`,
+    generate: `${base}/validation`,
+    payment: `${base}/paiement`,
+    transmission: `${base}/teletransmission`,
+  };
 
-  if (journey.currentStepId === "documents" && !flags.uploadDone) {
-    return {
-      title: def.title,
-      description: def.description,
-      href: `${base}${def.href}`,
-      cta: def.cta,
-      estimatedMinutes: 10,
-    };
-  }
-
-  if (journey.currentStepId === "analysis") {
-    return {
-      title: "L’IA analyse vos documents",
-      description: def.description,
-      href: `${base}/documents`,
-      cta: "Voir l’avancement",
-    };
-  }
-
-  if (journey.currentStepId === "validation") {
-    const pending = ctx.validationItems.filter((v) => v.status === "pending").length;
-    return {
-      title: "Vérifiez ce que l’IA a détecté",
-      description:
-        pending > 0
-          ? `${pending} montant${pending > 1 ? "s" : ""} à confirmer — un clic suffit.`
-          : def.description,
-      href: `${base}/validation`,
-      cta: def.cta,
-      estimatedMinutes: pending > 0 ? Math.ceil(pending * 1.5) : undefined,
-    };
-  }
-
-  if (journey.currentStepId === "dossier") {
-    if (!ctx.fiscalYear.regimeConfirmedAt) {
+  if (journey.currentStepId === "dossier" && ctx.fiscalYear.regimeConfirmedAt) {
+    const missing = getApplicableRequirements(ctx).find(
+      (req) =>
+        req.level !== "recommended" &&
+        !ctx.documents.some(
+          (d) => d.documentType === req.documentType && d.status === "analyzed",
+        ),
+    );
+    if (missing) {
       return {
-        title: "Choisissez votre régime fiscal",
-        description: "Une question simple — nous adaptons tout le dossier pour vous.",
-        href: `${base}/activite`,
-        cta: "Continuer",
-      };
-    }
-    const missing = getApplicableRequirements(ctx).filter((req) => {
-      if (req.level === "recommended") return false;
-      return !ctx.documents.some(
-        (d) => d.documentType === req.documentType && d.status === "analyzed",
-      );
-    });
-    if (missing.length > 0) {
-      const label = missing[0].label.replace(/\s*\(.*\)\s*$/, "").toLowerCase();
-      return {
-        title: `Il manque encore : ${label}`,
-        description: "Ajoutez ce document pour débloquer la déclaration.",
+        title: brief.headline,
+        description: "",
         href: `${base}/documents`,
-        cta: "Ajouter un document",
+        cta: "Ajouter",
       };
     }
-    return {
-      title: def.title,
-      description: def.description,
-      href: active?.href ?? `${base}/activite`,
-      cta: def.cta,
-    };
-  }
-
-  if (journey.currentStepId === "generate") {
-    return {
-      title: def.title,
-      description: def.description,
-      href: `${base}/validation`,
-      cta: def.cta,
-    };
-  }
-
-  if (journey.currentStepId === "payment") {
-    return {
-      title: def.title,
-      description: def.description,
-      href: `${base}/paiement`,
-      cta: def.cta,
-    };
-  }
-
-  if (journey.currentStepId === "transmission") {
-    return {
-      title: def.title,
-      description: def.description,
-      href: `${base}/teletransmission`,
-      cta: def.cta,
-    };
-  }
-
-  if (journey.isComplete) {
-    return {
-      title: "Déclaration transmise",
-      description: "Votre dossier LMNP est terminé. Bravo !",
-      href: `${base}`,
-      cta: "Voir le récapitulatif",
-    };
   }
 
   return {
-    title: def.title,
-    description: def.description,
-    href: active?.href ?? `${base}${def.href}`,
+    title: brief.headline,
+    description: "",
+    href: hrefByStep[journey.currentStepId] ?? `${base}${def.href}`,
     cta: def.cta,
   };
 }

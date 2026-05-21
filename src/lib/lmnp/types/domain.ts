@@ -95,7 +95,6 @@ export interface JourneyStepView {
   description: string;
   href: string;
   cta: string;
-  aiHint?: string;
   status: JourneyStepStatus;
   stepNumber: number;
 }
@@ -107,6 +106,19 @@ export interface LmnpJourney {
   totalSteps: number;
   percentComplete: number;
   isComplete: boolean;
+}
+
+export type AssistantInsightTone = "ai" | "success" | "pending";
+
+export interface AssistantInsight {
+  id: string;
+  tone: AssistantInsightTone;
+  text: string;
+}
+
+export interface AssistantBrief {
+  headline: string;
+  insights: AssistantInsight[];
 }
 
 export interface FiscalYear {
@@ -275,6 +287,7 @@ export interface LmnpWorkspace {
   alerts: Alert[];
   confidence: UserConfidenceScore;
   journey: LmnpJourney;
+  assistant: AssistantBrief;
   nextAction: NextAction;
   pendingValidationCount: number;
   blockingAlertCount: number;

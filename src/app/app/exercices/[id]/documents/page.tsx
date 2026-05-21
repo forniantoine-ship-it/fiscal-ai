@@ -3,7 +3,6 @@
 import { DocumentChecklist } from "@/components/lmnp/documents/DocumentChecklist";
 import { DocumentUploadPanel } from "@/components/lmnp/documents/DocumentUploadPanel";
 import { StepPageShell } from "@/components/lmnp/journey/StepPageShell";
-import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function DocumentsPage() {
@@ -14,15 +13,12 @@ export default function DocumentsPage() {
 
   return (
     <StepPageShell hideNextCta>
-      <div className="mx-auto max-w-2xl space-y-8">
-        <PageHeader
-          title={
-            isAnalyzing ? "L’IA analyse vos documents" : "Déposez vos documents"
-          }
-          description="L’IA lit, classe et pré-remplit votre dossier automatiquement. Vous n’avez rien à saisir."
-        />
+      <div className="mx-auto max-w-lg space-y-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+          {isAnalyzing ? "Analyse en cours" : "Documents"}
+        </h1>
         <DocumentUploadPanel />
-        <DocumentChecklist />
+        {!isAnalyzing && workspace.documents.length > 0 && <DocumentChecklist />}
       </div>
     </StepPageShell>
   );

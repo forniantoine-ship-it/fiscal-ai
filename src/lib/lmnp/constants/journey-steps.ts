@@ -4,72 +4,59 @@ export interface JourneyStepDefinition {
   id: JourneyStepId;
   title: string;
   description: string;
-  /** Route suffix under `/app/exercices/[id]` */
   href: string;
   cta: string;
-  aiHint?: string;
 }
 
 export const JOURNEY_STEPS: JourneyStepDefinition[] = [
   {
     id: "documents",
-    title: "Déposer vos documents",
-    description:
-      "Téléversez vos PDF — acte notarié, factures, taxe foncière, relevés de loyers… L’IA s’occupe du reste.",
+    title: "Documents",
+    description: "",
     href: "/documents",
-    cta: "Ajouter mes documents",
-    aiHint: "L’IA classera et lira chaque document automatiquement.",
+    cta: "Déposer",
   },
   {
     id: "analysis",
-    title: "Analyse par l’IA",
-    description:
-      "Vos documents sont en cours de lecture : classification, extraction des montants et pré-remplissage du dossier.",
+    title: "Analyse",
+    description: "",
     href: "/documents",
-    cta: "Voir l’analyse",
-    aiHint: "Aucune saisie manuelle — l’IA remplit les champs pour vous.",
+    cta: "Voir",
   },
   {
     id: "validation",
-    title: "Vérifier les montants proposés",
-    description:
-      "L’IA a pré-rempli votre dossier. Confirmez ou corrigez en un clic — c’est la seule étape où vous intervenez.",
+    title: "Validation",
+    description: "",
     href: "/validation",
-    cta: "Vérifier maintenant",
-    aiHint: "Tout est déjà rempli — vous validez seulement.",
+    cta: "Valider",
   },
   {
     id: "dossier",
-    title: "Finaliser votre dossier",
-    description:
-      "Choisissez votre régime, vérifiez vos loyers et dépenses, puis levez les derniers points à clarifier.",
+    title: "Dossier",
+    description: "",
     href: "/activite",
     cta: "Continuer",
-    aiHint: "Les montants viennent de vos documents — rien à recalculer.",
   },
   {
     id: "generate",
-    title: "Générer votre déclaration",
-    description:
-      "Votre dossier est complet. Générez la liasse LMNP prête pour la déclaration.",
+    title: "Déclaration",
+    description: "",
     href: "/validation",
-    cta: "Générer ma déclaration",
+    cta: "Générer",
   },
   {
     id: "payment",
-    title: "Régler votre dossier",
-    description:
-      "Dernière étape avant l’envoi : validez votre offre pour débloquer la télétransmission.",
+    title: "Paiement",
+    description: "",
     href: "/paiement",
-    cta: "Procéder au paiement",
+    cta: "Payer",
   },
   {
     id: "transmission",
-    title: "Télétransmettre",
-    description:
-      "Envoyez votre déclaration aux impôts en toute sécurité — nous guidons chaque clic.",
+    title: "Transmission",
+    description: "",
     href: "/teletransmission",
-    cta: "Télétransmettre",
+    cta: "Transmettre",
   },
 ];
 
@@ -85,7 +72,6 @@ export function getJourneyStepDef(id: JourneyStepId): JourneyStepDefinition {
   return def;
 }
 
-/** Minimum journey step required to access a route suffix. */
 export const ROUTE_MIN_STEP: Record<string, JourneyStepId> = {
   "": "documents",
   documents: "documents",
