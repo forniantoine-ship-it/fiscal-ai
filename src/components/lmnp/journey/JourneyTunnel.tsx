@@ -5,106 +5,64 @@ import { useLmnp } from "@/lib/lmnp/store";
 
 export function JourneyTunnel() {
   const { workspace } = useLmnp();
-  const { journey, nextAction, assistant, fiscalYear } = workspace;
+  const { journey, nextAction, assistant } = workspace;
 
   if (journey.isComplete) {
     return (
-      <div className="mx-auto max-w-md py-24 text-center">
-        <span className="text-2xl text-emerald-400">✓</span>
-        <h1 className="mt-6 text-2xl font-semibold tracking-tight text-zinc-100">
+      <div className="mx-auto flex min-h-[50vh] max-w-sm flex-col items-center justify-center px-4 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
           Déclaration transmise
         </h1>
       </div>
     );
   }
 
-  return (
-    <div className="mx-auto max-w-md py-16 sm:py-24">
-      <ProgressRail journey={journey} year={fiscalYear.year} />
+  const badges = assistant.insights.slice(0, 2);
 
-      <h1 className="mt-16 text-3xl font-semibold tracking-tight text-zinc-50 sm:text-[2rem]">
+  return (
+    <div className="mx-auto flex min-h-[50vh] max-w-sm flex-col justify-center px-4 py-12">
+      <div
+        className="h-0.5 w-full overflow-hidden rounded-full bg-white/[0.04]"
+        role="progressbar"
+        aria-valuenow={journey.percentComplete}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full rounded-full bg-emerald-500/70 transition-[width] duration-700 ease-out"
+          style={{ width: `${Math.max(journey.percentComplete, 2)}%` }}
+        />
+      </div>
+
+      <h1 className="mt-14 text-[1.75rem] font-semibold leading-tight tracking-tight text-zinc-50">
         {assistant.headline}
       </h1>
 
-      {assistant.insights.length > 0 && (
-        <ul className="mt-5 flex flex-wrap gap-2">
-          {assistant.insights.map((insight) => (
-            <li
+      {badges.length > 0 && (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {badges.map((insight) => (
+            <span
               key={insight.id}
-              className={`rounded-full px-3 py-1 text-xs ${
+              className={`rounded-md px-2 py-0.5 text-[11px] tracking-wide ${
                 insight.tone === "ai"
-                  ? "bg-violet-500/10 text-violet-300/90"
+                  ? "text-violet-400/80"
                   : insight.tone === "pending"
-                    ? "bg-amber-500/10 text-amber-300/90"
-                    : "bg-emerald-500/10 text-emerald-400/90"
+                    ? "text-amber-400/80"
+                    : "text-zinc-500"
               }`}
             >
-              {insight.tone === "ai" && (
-                <span className="mr-1.5 inline-block h-1 w-1 animate-pulse rounded-full bg-violet-400 align-middle" />
-              )}
               {insight.text}
-            </li>
+            </span>
           ))}
-        </ul>
+        </div>
       )}
 
       <Link
         href={nextAction.href}
-        className="mt-10 flex w-full items-center justify-center rounded-2xl bg-zinc-50 py-4 text-sm font-semibold text-zinc-950 transition-all hover:bg-white active:scale-[0.99]"
+        className="mt-10 flex w-full items-center justify-center rounded-xl bg-zinc-100 py-3.5 text-sm font-medium text-zinc-950 transition-colors hover:bg-white"
       >
         {nextAction.cta}
       </Link>
-
-      <StepDots steps={journey.steps} currentId={journey.currentStepId} />
-    </div>
-  );
-}
-
-function ProgressRail({
-  journey,
-  year,
-}: {
-  journey: { percentComplete: number; currentStepIndex: number; totalSteps: number };
-  year: number;
-}) {
-  return (
-    <div className="flex items-center gap-4 text-[11px] text-zinc-600">
-      <span>{year}</span>
-      <div className="h-px flex-1 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full bg-emerald-500/80 transition-all duration-700 ease-out"
-          style={{ width: `${Math.max(journey.percentComplete, 3)}%` }}
-        />
-      </div>
-      <span className="tabular-nums">
-        {journey.currentStepIndex}/{journey.totalSteps}
-      </span>
-    </div>
-  );
-}
-
-function StepDots({
-  steps,
-  currentId,
-}: {
-  steps: { id: string; status: string; title: string }[];
-  currentId: string;
-}) {
-  return (
-    <div className="mt-20 flex justify-center gap-1.5">
-      {steps.map((step) => (
-        <div
-          key={step.id}
-          title={step.title}
-          className={`h-1 rounded-full transition-all duration-500 ${
-            step.status === "completed"
-              ? "w-6 bg-emerald-500/60"
-              : step.id === currentId
-                ? "w-8 animate-pulse bg-emerald-400"
-                : "w-3 bg-white/[0.06]"
-          }`}
-        />
-      ))}
     </div>
   );
 }

@@ -27,20 +27,21 @@ export function buildAssistantBrief(
   };
 }
 
-/** Max 2 signaux — faits, pas de prose. */
+/** Max 2 signaux — jamais redondant avec le titre. */
 function buildInsights(
   ctx: EngineContext,
   flags: JourneyFlags,
   extractions: Extraction[],
 ): AssistantInsight[] {
-  const out: AssistantInsight[] = [];
-
   const isAnalyzing = ctx.documents.some(
     (d) => d.status === "uploaded" || d.status === "processing",
   );
-  if (isAnalyzing) {
-    return [{ id: "ai", tone: "ai", text: "Analyse en cours" }];
-  }
+  if (isAnalyzing) return [];
+
+  const pending = ctx.validationItems.filter((v) => v.status === "pending").length;
+  if (pending > 0) return [];
+
+  const out: AssistantInsight[] = [];
 
   const openIssues = ctx.alerts.filter(
     (a) => a.status === "open" && a.severity !== "info",
@@ -49,18 +50,8 @@ function buildInsights(
     out.push({
       id: "issues",
       tone: "pending",
-      text: `${openIssues} incohérence${openIssues > 1 ? "s" : ""} détectée${openIssues > 1 ? "s" : ""}`,
+      text: `${openIssues} incohérence${openIssues > 1 ? "s" : ""}`,
     });
-  }
-
-  const pending = ctx.validationItems.filter((v) => v.status === "pending").length;
-  if (pending > 0) {
-    out.push({
-      id: "pending",
-      tone: "pending",
-      text: `${pending} à confirmer`,
-    });
-    return out.slice(0, 2);
   }
 
   const analyzed = ctx.documents.filter((d) => d.status === "analyzed");
@@ -72,18 +63,20 @@ function buildInsights(
     });
   } else if (analyzed.length === 1) {
     const doc = analyzed[0];
-    const text =
-      AI_DETECTED_SUCCESS[doc.documentType] ??
-      `${humanDocumentLabel(doc.documentType, doc.fileName)} identifié`;
-    out.push({ id: "doc", tone: "success", text });
+    out.push({
+      id: "doc",
+      tone: "success",
+      text:
+        AI_DETECTED_SUCCESS[doc.documentType] ??
+        `${humanDocumentLabel(doc.documentType, doc.fileName)} identifié`,
+    });
   }
 
-  if (extractions.length > 0 && flags.analysisDone) {
-    out.push({
-      id: "prefill",
-      tone: "success",
-      text: "Montants pré-remplis",
-    });
+  if (extractions.length > 0 && flags.analysisDone && out.length < 2) {
+    const hasPrefill = out.some((i) => i.id === "prefill");
+    if (!hasPrefill) {
+      out.push({ id: "prefill", tone: "success", text: "Montants pré-remplis" });
+    }
   }
 
   return out.slice(0, 2);

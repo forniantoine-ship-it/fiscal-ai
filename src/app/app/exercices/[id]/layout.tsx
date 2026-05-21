@@ -34,9 +34,9 @@ export default function ExerciceLayout({ children }: { children: React.ReactNode
       <AppHeader />
       {showAlerts && <AlertStrip />}
       <div className="mx-auto flex max-w-7xl">
-        <JourneySidebar />
+        {!isDashboard && <JourneySidebar />}
         <main
-          className={`min-w-0 flex-1 px-4 sm:px-8 ${isDashboard ? "py-10" : "py-8"}`}
+          className={`min-w-0 flex-1 ${isDashboard ? "px-4" : "px-4 py-8 sm:px-8"}`}
         >
           <JourneyGuard>{children}</JourneyGuard>
         </main>
