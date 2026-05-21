@@ -20,24 +20,24 @@ export function EmptyState({
 }: EmptyStateProps) {
   const borderClass =
     variant === "success"
-      ? "border-emerald-500/20 bg-emerald-500/5"
-      : "border-white/10 bg-white/[0.02]";
+      ? "border-accent/20 bg-accent/5"
+      : "border-stone-200 bg-stone-100/80";
 
   return (
     <div className={`rounded-2xl border p-10 text-center ${borderClass}`}>
-      {icon && <div className="mb-4 flex justify-center text-zinc-500">{icon}</div>}
+      {icon && <div className="mb-4 flex justify-center text-stone-500">{icon}</div>}
       <p
-        className={`text-lg font-semibold ${variant === "success" ? "text-emerald-400" : "text-zinc-200"}`}
+        className={`text-lg font-semibold ${variant === "success" ? "text-accent" : "text-stone-800"}`}
       >
         {title}
       </p>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-zinc-500">{description}</p>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-stone-500">{description}</p>
       {(primaryAction || secondaryAction) && (
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
           {primaryAction && (
             <Link
               href={primaryAction.href}
-              className="inline-flex rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+              className="inline-flex rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
             >
               {primaryAction.label}
             </Link>
@@ -45,7 +45,7 @@ export function EmptyState({
           {secondaryAction && (
             <Link
               href={secondaryAction.href}
-              className="inline-flex rounded-full border border-white/10 px-5 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5"
+              className="inline-flex rounded-full border border-stone-200 px-5 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
             >
               {secondaryAction.label}
             </Link>

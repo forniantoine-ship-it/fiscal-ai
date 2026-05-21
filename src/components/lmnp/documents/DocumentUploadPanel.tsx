@@ -133,8 +133,8 @@ export function DocumentUploadPanel() {
           onClick={() => inputRef.current?.click()}
           className={`cursor-pointer rounded-3xl border border-dashed px-8 py-16 text-center transition-all ${
             isDragging
-              ? "border-emerald-400/60 bg-emerald-500/[0.06]"
-              : "border-white/10 bg-white/[0.01] hover:border-white/20"
+              ? "border-accent/40 bg-accent-subtle"
+              : "border-stone-200 bg-stone-50 hover:border-stone-300"
           }`}
         >
           <input
@@ -148,9 +148,9 @@ export function DocumentUploadPanel() {
               e.target.value = "";
             }}
           />
-          <p className="text-lg font-medium text-zinc-200">Déposer vos documents</p>
-          <p className="mt-6 text-xs text-zinc-600">
-            Glisser-déposer ou <span className="text-zinc-400 underline">parcourir</span>
+          <p className="text-lg font-medium text-stone-800">Déposer vos documents</p>
+          <p className="mt-6 text-xs text-stone-500">
+            Glisser-déposer ou <span className="text-stone-600 underline">parcourir</span>
           </p>
         </div>
       )}
@@ -169,7 +169,7 @@ export function DocumentUploadPanel() {
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="w-full rounded-2xl border border-dashed border-white/10 py-3 text-xs text-zinc-500 transition-colors hover:border-white/20 hover:text-zinc-400"
+              className="w-full rounded-2xl border border-dashed border-stone-200 py-3 text-xs text-stone-500 transition-colors hover:border-stone-300 hover:text-stone-600"
             >
               + Ajouter un document
             </button>

@@ -13,14 +13,14 @@ export function ConfidenceScore({ score, size = "sm", showRing = true }: Confide
 
   const colorClass =
     band === "high"
-      ? "text-emerald-400"
+      ? "text-accent"
       : band === "medium"
         ? "text-amber-400"
         : "text-red-300";
 
   const bgClass =
     band === "high"
-      ? "bg-emerald-500/15"
+      ? "bg-accent-muted"
       : band === "medium"
         ? "bg-amber-500/15"
         : "bg-red-500/10";
@@ -65,9 +65,9 @@ export function ConfidenceScore({ score, size = "sm", showRing = true }: Confide
       )}
       <div className="min-w-0">
         <p className={`font-semibold ${textSize} ${colorClass}`}>{label}</p>
-        <p className="text-[10px] text-zinc-500">{score} % confiance</p>
+        <p className="text-[10px] text-stone-500">{score} % confiance</p>
         {preValidated && (
-          <p className="text-[10px] text-emerald-500/80">Éligible validation rapide</p>
+          <p className="text-[10px] text-accent/80">Éligible validation rapide</p>
         )}
       </div>
     </div>

@@ -49,7 +49,7 @@ export function LedgerLineRow({
     <li className="flex items-start justify-between gap-4 px-5 py-4">
       <div className="min-w-0 flex-1 space-y-2">
         {showFieldLabel && entry.label && (
-          <p className="text-sm font-medium text-zinc-200">{entry.label}</p>
+          <p className="text-sm font-medium text-stone-800">{entry.label}</p>
         )}
 
         <span
@@ -59,11 +59,11 @@ export function LedgerLineRow({
         </span>
 
         <div className="space-y-0.5">
-          <p className="truncate text-xs text-zinc-500">
-            Source : <span className="text-zinc-400">{sourceLine}</span>
+          <p className="truncate text-xs text-stone-500">
+            Source : <span className="text-stone-600">{sourceLine}</span>
           </p>
           {entry.updatedAt && entry.version > 1 && (
-            <p className="text-[10px] text-zinc-600">
+            <p className="text-[10px] text-stone-500">
               Historique · version {entry.version}
               {entry.editNote ? ` · ${entry.editNote}` : ""}
             </p>
@@ -73,7 +73,7 @@ export function LedgerLineRow({
 
       <div className="flex shrink-0 flex-col items-end gap-2">
         <p
-          className={`font-semibold tabular-nums text-zinc-100 ${compactAmount ? "text-sm" : "text-lg"}`}
+          className={`font-semibold tabular-nums text-stone-900 ${compactAmount ? "text-sm" : "text-lg"}`}
         >
           {formatValue(entry.value)}
         </p>
@@ -81,7 +81,7 @@ export function LedgerLineRow({
           <button
             type="button"
             onClick={onEdit}
-            className="rounded-lg px-2.5 py-1 text-xs font-medium text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-white/5 hover:text-zinc-200"
+            className="rounded-lg px-2.5 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200 transition-colors hover:bg-stone-100 hover:text-stone-800"
           >
             Modifier
           </button>

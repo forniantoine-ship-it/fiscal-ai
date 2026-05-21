@@ -10,17 +10,17 @@ export function AlertStrip() {
   if (topAlerts.length === 0) return null;
 
   return (
-    <div className="border-b border-white/5 bg-[#0a0a0f]/90">
+    <div className="border-b border-stone-200 bg-card/95">
       <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-2 sm:px-6">
         {topAlerts.map((alert) => (
           <div
             key={alert.id}
             className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs ${
               alert.severity === "blocking"
-                ? "bg-red-500/10 text-red-300"
+                ? "bg-red-50 text-red-800"
                 : alert.severity === "warning"
-                  ? "bg-amber-500/10 text-amber-300"
-                  : "bg-white/5 text-zinc-400"
+                  ? "bg-amber-50 text-amber-900"
+                  : "bg-stone-100 text-stone-600"
             }`}
           >
             <span className="font-medium">{alert.title}</span>

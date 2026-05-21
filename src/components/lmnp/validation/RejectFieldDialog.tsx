@@ -26,17 +26,17 @@ export function RejectFieldDialog({ item, onClose, onConfirm }: RejectFieldDialo
         role="dialog"
         aria-labelledby="reject-title"
       >
-        <h2 id="reject-title" className="text-lg font-semibold text-zinc-100">
+        <h2 id="reject-title" className="text-lg font-semibold text-stone-900">
           Rejeter cette proposition
         </h2>
-        <p className="mt-1 text-sm text-zinc-500">{item.label}</p>
+        <p className="mt-1 text-sm text-stone-500">{item.label}</p>
 
-        <div className="mt-4 rounded-xl bg-white/[0.03] px-4 py-3">
-          <p className="text-xs text-zinc-500">Montant proposé par l&apos;IA</p>
+        <div className="mt-4 rounded-xl bg-stone-100/80 px-4 py-3">
+          <p className="text-xs text-stone-500">Montant proposé par l&apos;IA</p>
           <NormalizedValueDisplay value={item.proposedValue} size="sm" />
         </div>
 
-        <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+        <p className="mt-3 text-xs leading-relaxed text-stone-500">
           Le champ ne sera pas enregistré dans votre dossier. Vous pourrez le saisir manuellement
           dans l&apos;onglet concerné ou importer un autre document.
         </p>
@@ -48,13 +48,13 @@ export function RejectFieldDialog({ item, onClose, onConfirm }: RejectFieldDialo
           </p>
         )}
 
-        <label className="mt-4 block text-sm font-medium text-zinc-300">
+        <label className="mt-4 block text-sm font-medium text-stone-700">
           Motif (optionnel)
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-100 outline-none focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20"
+            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-2 text-sm text-stone-900 outline-none focus:border-red-500/40 focus:ring-1 focus:ring-red-500/20"
             placeholder="Ex. montant incorrect, document illisible"
           />
         </label>
@@ -63,7 +63,7 @@ export function RejectFieldDialog({ item, onClose, onConfirm }: RejectFieldDialo
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-full border border-white/10 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5"
+            className="flex-1 rounded-full border border-stone-200 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
           >
             Annuler
           </button>

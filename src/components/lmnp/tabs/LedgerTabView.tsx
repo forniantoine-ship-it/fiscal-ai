@@ -96,7 +96,7 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
 
   return (
     <div className="space-y-6">
-      {description && <p className="text-sm text-zinc-500">{description}</p>}
+      {description && <p className="text-sm text-stone-500">{description}</p>}
 
       {groups.length === 0 ? (
         <EmptyState
@@ -110,12 +110,12 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
           {groups.map((group) => (
             <li
               key={group.fieldKey}
-              className="glass overflow-hidden rounded-xl border border-white/5"
+              className="glass overflow-hidden rounded-xl border border-stone-200"
             >
-              <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+              <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
                 <div>
-                  <p className="text-sm font-medium text-zinc-200">{group.label}</p>
-                  <p className="mt-0.5 text-xs text-zinc-600">
+                  <p className="text-sm font-medium text-stone-800">{group.label}</p>
+                  <p className="mt-0.5 text-xs text-stone-500">
                     {group.entries.length} ligne{group.entries.length > 1 ? "s" : ""} enregistrée
                     {group.entries.length > 1 ? "s" : ""}
                     {group.pending.length > 0 &&
@@ -124,10 +124,10 @@ export function LedgerTabView({ tab, description }: LedgerTabViewProps) {
                 </div>
                 {group.total && (
                   <div className="text-right">
-                    <p className="text-lg font-semibold text-emerald-400">
+                    <p className="text-lg font-semibold text-accent">
                       {formatValue(group.total)}
                     </p>
-                    <p className="text-xs text-zinc-500">Total</p>
+                    <p className="text-xs text-stone-500">Total</p>
                   </div>
                 )}
               </div>

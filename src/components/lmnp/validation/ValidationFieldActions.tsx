@@ -20,21 +20,21 @@ export function ValidationFieldActions({
       <button
         type="button"
         onClick={onApprove}
-        className={`rounded-full bg-emerald-500 font-semibold text-zinc-950 hover:bg-emerald-400 ${btn}`}
+        className={`rounded-full bg-accent font-semibold text-white hover:opacity-90 ${btn}`}
       >
         {approveLabel}
       </button>
       <button
         type="button"
         onClick={onCorrect}
-        className={`rounded-full border border-white/10 font-medium text-zinc-300 hover:bg-white/5 ${btn}`}
+        className={`rounded-full border border-stone-200 font-medium text-stone-700 hover:bg-stone-100 ${btn}`}
       >
         Corriger
       </button>
       <button
         type="button"
         onClick={onReject}
-        className={`rounded-full font-medium text-zinc-500 hover:bg-red-500/10 hover:text-red-400 ${btn}`}
+        className={`rounded-full font-medium text-stone-500 hover:bg-red-500/10 hover:text-red-400 ${btn}`}
       >
         Rejeter
       </button>

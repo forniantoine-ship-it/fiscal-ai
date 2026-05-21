@@ -28,11 +28,11 @@ export function DocumentChecklist() {
   if (items.length === 0) return null;
 
   return (
-    <section className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-      <p className="text-sm text-zinc-400">
+    <section className="rounded-2xl border border-stone-200 bg-stone-100/80 p-5">
+      <p className="text-sm text-stone-600">
         {presentCount} sur {items.length} documents reçus
         {missingRequired > 0 && (
-          <span className="text-zinc-500">
+          <span className="text-stone-500">
             {" "}
             · {missingRequired} encore utile{missingRequired > 1 ? "s" : ""}
           </span>
@@ -47,15 +47,15 @@ export function DocumentChecklist() {
           >
             <span
               className={
-                item.status === "present" ? "text-zinc-300" : "text-zinc-500"
+                item.status === "present" ? "text-stone-700" : "text-stone-500"
               }
             >
               {item.label}
             </span>
             {item.status === "present" ? (
-              <span className="text-xs text-emerald-500/80">✓</span>
+              <span className="text-xs text-accent/80">✓</span>
             ) : item.status === "missing" ? (
-              <span className="text-xs text-zinc-600">—</span>
+              <span className="text-xs text-stone-500">—</span>
             ) : null}
           </li>
         ))}

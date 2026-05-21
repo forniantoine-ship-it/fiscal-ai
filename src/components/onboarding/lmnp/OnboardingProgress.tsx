@@ -13,15 +13,15 @@ export function OnboardingProgress({ currentStep }: OnboardingProgressProps) {
   return (
     <div className="w-full">
       <div className="mb-3 flex items-center justify-between text-xs">
-        <span className="font-medium text-zinc-400">
+        <span className="font-medium text-stone-600">
           Étape {currentIndex + 1} sur {ONBOARDING_STEPS.length}
         </span>
-        <span className="font-semibold text-emerald-400">{Math.round(progress)} %</span>
+        <span className="font-semibold text-accent">{Math.round(progress)} %</span>
       </div>
 
-      <div className="relative h-2 overflow-hidden rounded-full bg-white/5">
+      <div className="relative h-2 overflow-hidden rounded-full bg-stone-100">
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-amber-400 transition-all duration-500 ease-out"
+          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-accent via-accent to-stone-400 transition-all duration-500 ease-out"
           style={{ width: `${progress}%` }}
         />
         <div className="absolute inset-0 animate-shimmer bg-gradient-to-r from-transparent via-white/15 to-transparent" />
@@ -37,10 +37,10 @@ export function OnboardingProgress({ currentStep }: OnboardingProgressProps) {
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-all duration-300 ${
                   isComplete
-                    ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40"
+                    ? "bg-accent-muted text-accent ring-1 ring-accent/30"
                     : isCurrent
-                      ? "bg-emerald-500 text-zinc-950 shadow-lg shadow-emerald-500/30"
-                      : "bg-white/5 text-zinc-500 ring-1 ring-white/10"
+                      ? "bg-accent text-white shadow-lg shadow-stone-900/5"
+                      : "bg-stone-100 text-stone-500 ring-1 ring-stone-200"
                 }`}
               >
                 {isComplete ? (
@@ -53,7 +53,7 @@ export function OnboardingProgress({ currentStep }: OnboardingProgressProps) {
               </div>
               <span
                 className={`hidden text-center text-[10px] font-medium uppercase tracking-wider lg:block ${
-                  isCurrent ? "text-emerald-400" : isComplete ? "text-zinc-400" : "text-zinc-600"
+                  isCurrent ? "text-accent" : isComplete ? "text-stone-600" : "text-stone-500"
                 }`}
               >
                 {step.shortLabel}

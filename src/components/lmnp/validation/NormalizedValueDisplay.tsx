@@ -15,8 +15,8 @@ export function NormalizedValueDisplay({
   return (
     <span
       className={`font-semibold tabular-nums ${
-        size === "lg" ? "text-lg text-zinc-50" : "text-sm text-zinc-200"
-      } ${muted ? "text-zinc-500 line-through decoration-zinc-600" : ""}`}
+        size === "lg" ? "text-lg text-stone-900" : "text-sm text-stone-800"
+      } ${muted ? "text-stone-500 line-through decoration-stone-400" : ""}`}
     >
       {formatNormalizedValue(value)}
     </span>

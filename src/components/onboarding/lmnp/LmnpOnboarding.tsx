@@ -77,8 +77,8 @@ export function LmnpOnboarding() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
         <div className="gradient-mesh absolute inset-0 -z-10" />
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 ring-1 ring-emerald-500/40">
-          <svg className="h-10 w-10 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-accent-muted ring-1 ring-accent/30">
+          <svg className="h-10 w-10 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
@@ -88,12 +88,12 @@ export function LmnpOnboarding() {
         >
           Dossier LMNP prêt à l&apos;export
         </h1>
-        <p className="mt-3 max-w-md text-sm text-zinc-400">
+        <p className="mt-3 max-w-md text-sm text-stone-600">
           Votre liasse 2031 / 2033 a été préparée. Un expert fiscal peut la valider sous 48 h.
         </p>
         <Link
           href="/"
-          className="mt-8 inline-flex items-center gap-2 rounded-full bg-emerald-500 px-6 py-3 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+          className="mt-8 inline-flex items-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
         >
           Retour à l&apos;accueil
         </Link>
@@ -108,7 +108,7 @@ export function LmnpOnboarding() {
       <div className="mx-auto max-w-7xl px-4 pb-24 pt-6 sm:px-6 lg:px-8">
         <div className="mb-8 lg:grid lg:grid-cols-[1fr_340px] lg:gap-8">
           <header className="mb-6 lg:mb-0">
-            <Link href="/" className="mb-4 inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300">
+            <Link href="/" className="mb-4 inline-flex items-center gap-2 text-sm text-stone-500 hover:text-stone-700">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
@@ -117,7 +117,7 @@ export function LmnpOnboarding() {
             <p className="text-xs font-medium uppercase tracking-wider text-amber-400/90">
               Onboarding LMNP
             </p>
-            <h1 className="mt-1 text-lg font-semibold text-zinc-100 sm:text-xl">
+            <h1 className="mt-1 text-lg font-semibold text-stone-900 sm:text-xl">
               {currentStepMeta?.label}
             </h1>
           </header>
@@ -164,7 +164,7 @@ export function LmnpOnboarding() {
                 <button
                   type="button"
                   onClick={goBack}
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-stone-200 bg-stone-100 px-5 py-2.5 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-200/40"
                 >
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -177,7 +177,7 @@ export function LmnpOnboarding() {
                     type="button"
                     onClick={startOcrAndAdvance}
                     disabled={!canProceedFromDocuments}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-semibold text-zinc-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Lancer l&apos;analyse OCR
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -190,7 +190,7 @@ export function LmnpOnboarding() {
                   <button
                     type="button"
                     onClick={goNext}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90"
                   >
                     Continuer vers le bien
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -204,7 +204,7 @@ export function LmnpOnboarding() {
                     type="button"
                     onClick={goNext}
                     disabled={!canProceedFromProperty}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-500 px-6 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40"
                   >
                     Voir le récapitulatif
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

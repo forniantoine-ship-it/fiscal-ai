@@ -55,10 +55,10 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
         role="dialog"
         aria-labelledby="correction-title"
       >
-        <h2 id="correction-title" className="text-lg font-semibold text-zinc-100">
+        <h2 id="correction-title" className="text-lg font-semibold text-stone-900">
           Modifier : {item.label}
         </h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-1 text-sm text-stone-500">
           Proposition IA :{" "}
           {item.proposedValue.type === "money"
             ? formatMoney(item.proposedValue)
@@ -68,7 +68,7 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
           {item.documentFileName && ` · ${item.documentFileName}`}
         </p>
 
-        <label className="mt-4 block text-sm font-medium text-zinc-300">
+        <label className="mt-4 block text-sm font-medium text-stone-700">
           Votre valeur
           <input
             type={isMoney ? "text" : "text"}
@@ -78,7 +78,7 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
               setInput(e.target.value);
               setInputError(null);
             }}
-            className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-zinc-100 outline-none focus:border-emerald-500/50"
+            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-stone-900 outline-none focus:border-accent/40"
             placeholder={isMoney ? "0,00" : ""}
           />
         </label>
@@ -87,18 +87,18 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
           <p className="mt-2 text-xs text-red-400">{inputError}</p>
         )}
 
-        <label className="mt-3 block text-sm font-medium text-zinc-300">
+        <label className="mt-3 block text-sm font-medium text-stone-700">
           Note (optionnel)
           <input
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-100 outline-none focus:border-emerald-500/50"
+            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-2 text-sm text-stone-900 outline-none focus:border-accent/40"
             placeholder="Ex. remboursement partiel"
           />
         </label>
 
-        <p className="mt-3 rounded-lg bg-white/[0.03] p-3 text-xs text-zinc-500">
+        <p className="mt-3 rounded-lg bg-stone-100/80 p-3 text-xs text-stone-500">
           Cette valeur sera enregistrée dans l&apos;onglet métier correspondant, marquée « Validé par
           IA + vous ».
         </p>
@@ -107,14 +107,14 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-full border border-white/10 py-2.5 text-sm font-medium text-zinc-300 hover:bg-white/5"
+            className="flex-1 rounded-full border border-stone-200 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
           >
             Annuler
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="flex-1 rounded-full bg-emerald-500 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400"
+            className="flex-1 rounded-full bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90"
           >
             Enregistrer
           </button>

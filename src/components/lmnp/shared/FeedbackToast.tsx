@@ -4,13 +4,13 @@ import Link from "next/link";
 import type { FeedbackMessage } from "./FeedbackProvider";
 
 const KIND_STYLES = {
-  success: "border-emerald-500/30 bg-emerald-500/10",
+  success: "border-accent/25 bg-accent/10",
   error: "border-red-500/30 bg-red-500/10",
   info: "border-blue-500/30 bg-blue-500/10",
 } as const;
 
 const KIND_TITLE = {
-  success: "text-emerald-300",
+  success: "text-accent",
   error: "text-red-300",
   info: "text-blue-300",
 } as const;
@@ -39,12 +39,12 @@ export function FeedbackToastStack({ messages, onDismiss }: FeedbackToastStackPr
                 {message.title}
               </p>
               {message.description && (
-                <p className="mt-1 text-xs leading-relaxed text-zinc-400">{message.description}</p>
+                <p className="mt-1 text-xs leading-relaxed text-stone-600">{message.description}</p>
               )}
               {message.href && (
                 <Link
                   href={message.href}
-                  className="mt-2 inline-block text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                  className="mt-2 inline-block text-xs font-medium text-accent hover:text-accent"
                 >
                   Voir →
                 </Link>
@@ -53,7 +53,7 @@ export function FeedbackToastStack({ messages, onDismiss }: FeedbackToastStackPr
             <button
               type="button"
               onClick={() => onDismiss(message.id)}
-              className="shrink-0 text-zinc-500 hover:text-zinc-300"
+              className="shrink-0 text-stone-500 hover:text-stone-700"
               aria-label="Fermer"
             >
               ×

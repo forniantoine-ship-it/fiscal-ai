@@ -26,7 +26,7 @@ const testimonials = [
 
 export function Testimonials() {
   return (
-    <section id="temoignages" className="border-t border-white/5 py-20 sm:py-28">
+    <section id="temoignages" className="border-t border-stone-200 py-20 sm:py-28">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           label="Témoignages"
@@ -38,7 +38,7 @@ export function Testimonials() {
           {testimonials.map((t) => (
             <article
               key={t.name}
-              className="flex flex-col rounded-2xl border border-white/5 bg-zinc-900/60 p-8"
+              className="flex flex-col rounded-2xl border border-stone-200 bg-card p-8"
             >
               <div className="mb-4 flex gap-1 text-amber-400">
                 {Array.from({ length: 5 }).map((_, i) => (
@@ -47,13 +47,13 @@ export function Testimonials() {
                   </svg>
                 ))}
               </div>
-              <blockquote className="flex-1 text-sm leading-relaxed text-zinc-300">
+              <blockquote className="flex-1 text-sm leading-relaxed text-stone-700">
                 &ldquo;{t.quote}&rdquo;
               </blockquote>
-              <div className="mt-6 border-t border-white/5 pt-6">
+              <div className="mt-6 border-t border-stone-200 pt-6">
                 <p className="font-semibold">{t.name}</p>
-                <p className="text-sm text-zinc-500">{t.role}</p>
-                <p className="mt-2 text-sm font-medium text-emerald-400">{t.savings}</p>
+                <p className="text-sm text-stone-500">{t.role}</p>
+                <p className="mt-2 text-sm font-medium text-accent">{t.savings}</p>
               </div>
             </article>
           ))}

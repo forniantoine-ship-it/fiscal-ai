@@ -14,7 +14,7 @@ export default function DocumentsPage() {
   return (
     <StepPageShell hideNextCta>
       <div className="mx-auto max-w-lg space-y-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">
           {isAnalyzing ? "Analyse en cours" : "Documents"}
         </h1>
         <DocumentUploadPanel />

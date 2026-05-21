@@ -30,17 +30,15 @@ export default function ExerciceLayout({ children }: { children: React.ReactNode
     pathname === `/app/exercices/${id}` || pathname === `/app/exercices/${id}/`;
 
   return (
-    <div className={isDashboard ? "relative min-h-screen" : undefined}>
+    <>
       <AppHeader />
       {showAlerts && !isDashboard && <AlertStrip />}
       <div className="mx-auto flex max-w-7xl">
-        {!isDashboard && <JourneySidebar />}
-        <main
-          className={`min-w-0 flex-1 ${isDashboard ? "flex justify-center" : "px-4 py-8 sm:px-8"}`}
-        >
+        <JourneySidebar />
+        <main className={`min-w-0 flex-1 px-4 sm:px-8 ${isDashboard ? "py-10" : "py-8"}`}>
           <JourneyGuard>{children}</JourneyGuard>
         </main>
       </div>
-    </div>
+    </>
   );
 }

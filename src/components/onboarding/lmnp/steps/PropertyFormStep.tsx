@@ -19,15 +19,15 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-zinc-300">{label}</span>
+      <span className="mb-1.5 block text-sm font-medium text-stone-700">{label}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-zinc-600">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-stone-500">{hint}</span>}
     </label>
   );
 }
 
 const inputClass =
-  "w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 transition-colors focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30";
+  "w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-2.5 text-sm text-stone-900 placeholder:text-stone-500 transition-colors focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25";
 
 export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStepProps) {
   const update = (key: keyof PropertyFormData, value: string) => {
@@ -42,24 +42,24 @@ export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStep
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold tracking-tight text-zinc-100 sm:text-2xl">
+        <h2 className="text-xl font-semibold tracking-tight text-stone-900 sm:text-2xl">
           Informations du bien locatif
         </h2>
-        <p className="mt-2 text-sm text-zinc-400">
+        <p className="mt-2 text-sm text-stone-600">
           Complétez les données de votre logement meublé. Les champs pré-remplis proviennent de
           l&apos;analyse OCR.
         </p>
       </div>
 
       {ocrFields.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
-          <p className="text-xs text-emerald-300/90">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3">
+          <p className="text-xs text-accent/90">
             {ocrFields.length} montants détectés par OCR — appliquez-les ou corrigez-les ci-dessous.
           </p>
           <button
             type="button"
             onClick={applyOcrRent}
-            className="shrink-0 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-medium text-emerald-400 ring-1 ring-emerald-500/30 hover:bg-emerald-500/30"
+            className="shrink-0 rounded-full bg-accent-muted px-3 py-1 text-xs font-medium text-accent ring-1 ring-accent/25 hover:bg-accent-muted"
           >
             Appliquer les loyers OCR
           </button>
@@ -67,7 +67,7 @@ export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStep
       )}
 
       <section className="glass space-y-4 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500">
           Localisation
         </h3>
         <Field label="Adresse du bien">
@@ -102,7 +102,7 @@ export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStep
       </section>
 
       <section className="glass space-y-4 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500">
           Acquisition & surface
         </h3>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -148,7 +148,7 @@ export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStep
       </section>
 
       <section className="glass space-y-4 rounded-2xl p-5">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500">
           Revenus & charges (année 2025)
         </h3>
         <Field label="Régime fiscal">
@@ -173,12 +173,12 @@ export function PropertyFormStep({ data, ocrFields, onChange }: PropertyFormStep
                 onClick={() => update("regime", regime.id)}
                 className={`rounded-xl border p-4 text-left transition-all ${
                   data.regime === regime.id
-                    ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30"
-                    : "border-white/10 bg-white/[0.02] hover:border-white/20"
+                    ? "border-accent/35 bg-accent/10 ring-1 ring-accent/25"
+                    : "border-stone-200 bg-stone-100/80 hover:border-stone-300"
                 }`}
               >
-                <p className="text-sm font-semibold text-zinc-100">{regime.title}</p>
-                <p className="mt-1 text-xs text-zinc-500">{regime.desc}</p>
+                <p className="text-sm font-semibold text-stone-900">{regime.title}</p>
+                <p className="mt-1 text-xs text-stone-500">{regime.desc}</p>
               </button>
             ))}
           </div>

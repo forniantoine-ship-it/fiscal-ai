@@ -39,19 +39,19 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
 
   if (compact) {
     return (
-      <section className="glass rounded-xl border border-white/5 p-4">
+      <section className="glass rounded-xl border border-stone-200 p-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">
+            <p className="text-xs font-medium uppercase tracking-wider text-stone-500">
               Progression dossier
             </p>
-            <p className="mt-1 text-lg font-semibold text-zinc-100">
+            <p className="mt-1 text-lg font-semibold text-stone-900">
               {confidence.score} % · {CONFIDENCE_LEVEL_LABELS[confidence.level]}
             </p>
           </div>
           <StatusBadge status={fiscalYear.status} canClose={canClose} />
         </div>
-        <p className="mt-3 text-xs text-zinc-500">
+        <p className="mt-3 text-xs text-stone-500">
           {openAlertCount === 0
             ? "Aucune alerte restante"
             : `${openAlertCount} alerte${openAlertCount > 1 ? "s" : ""} restante${openAlertCount > 1 ? "s" : ""}`}
@@ -75,14 +75,14 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
   }
 
   return (
-    <section className="glass rounded-2xl border border-white/5 p-6">
+    <section className="glass rounded-2xl border border-stone-200 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
             Où en est votre dossier
           </p>
-          <p className="mt-2 text-3xl font-bold tabular-nums text-zinc-100">{confidence.score} %</p>
-          <p className="mt-1 text-sm text-emerald-400/90">
+          <p className="mt-2 text-3xl font-bold tabular-nums text-stone-900">{confidence.score} %</p>
+          <p className="mt-1 text-sm text-accent/90">
             {CONFIDENCE_LEVEL_LABELS[confidence.level]}
           </p>
         </div>
@@ -95,7 +95,7 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
         ))}
       </div>
 
-      <div className="mt-6 grid gap-3 border-t border-white/5 pt-5 sm:grid-cols-2">
+      <div className="mt-6 grid gap-3 border-t border-stone-200 pt-5 sm:grid-cols-2">
         <Metric
           label="Points à clarifier"
           value={String(openAlertCount)}
@@ -121,7 +121,7 @@ export function DossierProgressCard({ compact = false }: DossierProgressCardProp
       </div>
 
       {validatedFieldCount > 0 && (
-        <p className="mt-4 text-xs text-zinc-600">
+        <p className="mt-4 text-xs text-stone-500">
           {autoSyncedFieldCount > 0 && (
             <span>
               {autoSyncedFieldCount} ajouté{autoSyncedFieldCount > 1 ? "s" : ""} automatiquement par l’IA
@@ -154,14 +154,14 @@ function PillarRow({
   const bar = (
     <div className={compact ? "" : ""}>
       <div className="mb-1 flex items-center justify-between text-xs">
-        <span className={href ? "text-zinc-300 hover:text-emerald-400" : "text-zinc-400"}>
+        <span className={href ? "text-stone-700 hover:text-accent" : "text-stone-600"}>
           {label}
         </span>
-        <span className="tabular-nums text-zinc-500">{value} %</span>
+        <span className="tabular-nums text-stone-500">{value} %</span>
       </div>
-      <div className={`overflow-hidden rounded-full bg-white/5 ${compact ? "h-1" : "h-1.5"}`}>
+      <div className={`overflow-hidden rounded-full bg-stone-100 ${compact ? "h-1" : "h-1.5"}`}>
         <div
-          className="h-full rounded-full bg-emerald-500/70 transition-all duration-500"
+          className="h-full rounded-full bg-accent transition-all duration-500"
           style={{ width: `${value}%` }}
         />
       </div>
@@ -170,7 +170,7 @@ function PillarRow({
 
   if (href) {
     return (
-      <Link href={href} className="block rounded-lg transition-colors hover:bg-white/[0.02]">
+      <Link href={href} className="block rounded-lg transition-colors hover:bg-stone-100/80">
         {bar}
       </Link>
     );
@@ -197,13 +197,13 @@ function Metric({
       ? "text-red-400"
       : tone === "warning"
         ? "text-amber-400"
-        : "text-zinc-100";
+        : "text-stone-900";
 
   const inner = (
     <>
-      <p className="text-xs text-zinc-500">{label}</p>
+      <p className="text-xs text-stone-500">{label}</p>
       <p className={`mt-1 text-xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
-      <p className="mt-0.5 text-xs text-zinc-600">{detail}</p>
+      <p className="mt-0.5 text-xs text-stone-500">{detail}</p>
     </>
   );
 
@@ -211,14 +211,14 @@ function Metric({
     return (
       <Link
         href={href}
-        className="rounded-xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]"
+        className="rounded-xl border border-stone-200 bg-stone-100/80 p-4 transition-colors hover:bg-stone-100"
       >
         {inner}
       </Link>
     );
   }
 
-  return <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">{inner}</div>;
+  return <div className="rounded-xl border border-stone-200 bg-stone-100/80 p-4">{inner}</div>;
 }
 
 function StatusBadge({
@@ -230,12 +230,12 @@ function StatusBadge({
 }) {
   const label = canClose ? FISCAL_YEAR_STATUS_LABELS.ready_to_close : FISCAL_YEAR_STATUS_LABELS[status];
   const className = canClose
-    ? "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30"
+    ? "bg-accent-muted text-accent ring-accent/25"
     : status === "analyzing"
-      ? "bg-blue-500/15 text-blue-400 ring-blue-500/30"
+      ? "bg-stone-100 text-stone-600 ring-stone-200"
       : status === "pending_validation"
-        ? "bg-amber-500/15 text-amber-400 ring-amber-500/30"
-        : "bg-white/5 text-zinc-400 ring-white/10";
+        ? "bg-stone-100 text-stone-600 ring-stone-200"
+        : "bg-stone-100 text-stone-600 ring-stone-200";
 
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${className}`}>

@@ -27,10 +27,10 @@ export function AiActivityFeed({ documentType, compact }: AiActivityFeedProps) {
 
   return (
     <p
-      className={`text-zinc-500 ${compact ? "text-xs" : "text-sm"}`}
+      className={`text-stone-500 ${compact ? "text-xs" : "text-sm"}`}
       key={phaseIndex}
     >
-      <span className="mr-2 inline-block h-1 w-1 animate-pulse rounded-full bg-violet-400/80 align-middle" />
+      <span className="mr-2 inline-block h-1 w-1 animate-pulse rounded-full bg-stone-400 align-middle" />
       {phases[phaseIndex]}
     </p>
   );

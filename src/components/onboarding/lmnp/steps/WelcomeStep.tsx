@@ -42,7 +42,7 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
           Votre déclaration locative meublée,{" "}
           <span className="text-gradient">guidée par l&apos;IA</span>
         </h2>
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-zinc-400 sm:text-base">
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-stone-600 sm:text-base">
           Ce parcours vous accompagne étape par étape pour constituer votre liasse fiscale LMNP :
           collecte des pièces, analyse OCR, saisie du bien et validation avant export.
         </p>
@@ -52,23 +52,23 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
         {features.map((feature) => (
           <article
             key={feature.title}
-            className="glass group rounded-xl p-4 transition-colors hover:border-emerald-500/20"
+            className="glass group rounded-xl p-4 transition-colors hover:border-accent/20"
           >
             <span className="text-2xl" role="img" aria-hidden>
               {feature.icon}
             </span>
-            <h3 className="mt-3 text-sm font-semibold text-zinc-100">{feature.title}</h3>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-500">{feature.description}</p>
+            <h3 className="mt-3 text-sm font-semibold text-stone-900">{feature.title}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-stone-500">{feature.description}</p>
           </article>
         ))}
       </div>
 
-      <div className="glass rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-        <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">
+      <div className="glass rounded-xl border border-accent/20 bg-accent/5 p-4">
+        <p className="text-xs font-medium uppercase tracking-wider text-accent">
           Durée estimée
         </p>
-        <p className="mt-1 text-sm text-zinc-300">
-          Environ <strong className="text-emerald-400">12 minutes</strong> avec vos documents à portée
+        <p className="mt-1 text-sm text-stone-700">
+          Environ <strong className="text-accent">12 minutes</strong> avec vos documents à portée
           de main. L&apos;assistant IA reste disponible à chaque étape.
         </p>
       </div>
@@ -76,7 +76,7 @@ export function WelcomeStep({ onNext }: WelcomeStepProps) {
       <button
         type="button"
         onClick={onNext}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-emerald-500 px-6 py-3.5 text-sm font-semibold text-zinc-950 shadow-lg shadow-emerald-500/25 transition-all hover:bg-emerald-400 sm:w-auto"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-accent px-6 py-3.5 text-sm font-semibold text-white shadow-lg shadow-stone-900/5 transition-all hover:opacity-90 sm:w-auto"
       >
         Commencer ma déclaration
         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

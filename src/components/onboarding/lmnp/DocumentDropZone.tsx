@@ -75,7 +75,7 @@ export function DocumentDropZone({
   return (
     <div className="space-y-6">
       <div>
-        <label className="mb-2 block text-sm font-medium text-zinc-300">
+        <label className="mb-2 block text-sm font-medium text-stone-700">
           Catégorie du document
         </label>
         <div className="flex flex-wrap gap-2">
@@ -86,8 +86,8 @@ export function DocumentDropZone({
               onClick={() => setSelectedCategory(cat.id)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium transition-all ${
                 selectedCategory === cat.id
-                  ? "bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/40"
-                  : "bg-white/5 text-zinc-400 ring-1 ring-white/10 hover:bg-white/10 hover:text-zinc-200"
+                  ? "bg-accent-muted text-accent ring-1 ring-accent/30"
+                  : "bg-stone-100 text-stone-600 ring-1 ring-stone-200 hover:bg-stone-200/40 hover:text-stone-800"
               }`}
             >
               {cat.label}
@@ -108,8 +108,8 @@ export function DocumentDropZone({
         onClick={() => inputRef.current?.click()}
         className={`group relative cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed p-10 text-center transition-all duration-300 ${
           isDragging
-            ? "border-emerald-400 bg-emerald-500/10 scale-[1.01]"
-            : "border-white/15 bg-white/[0.02] hover:border-emerald-500/40 hover:bg-emerald-500/5"
+            ? "border-accent bg-accent/10 scale-[1.01]"
+            : "border-stone-200 bg-stone-100/80 hover:border-emerald-500/40 hover:bg-accent/5"
         }`}
       >
         <input
@@ -126,9 +126,9 @@ export function DocumentDropZone({
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
 
-        <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10 ring-1 ring-emerald-500/20">
+        <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
           <svg
-            className={`h-8 w-8 transition-colors ${isDragging ? "text-emerald-400" : "text-emerald-500/70"}`}
+            className={`h-8 w-8 transition-colors ${isDragging ? "text-accent" : "text-accent/70"}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -142,13 +142,13 @@ export function DocumentDropZone({
           </svg>
         </div>
 
-        <p className="relative mt-4 text-base font-semibold text-zinc-200">
+        <p className="relative mt-4 text-base font-semibold text-stone-800">
           {isDragging ? "Déposez vos fichiers ici" : "Glissez-déposez vos documents"}
         </p>
-        <p className="relative mt-2 text-sm text-zinc-500">
-          ou <span className="text-emerald-400">parcourir</span> — PDF, JPG, PNG (max 10 Mo)
+        <p className="relative mt-2 text-sm text-stone-500">
+          ou <span className="text-accent">parcourir</span> — PDF, JPG, PNG (max 10 Mo)
         </p>
-        <p className="relative mt-3 text-xs text-zinc-600">
+        <p className="relative mt-3 text-xs text-stone-500">
           {DOCUMENT_CATEGORIES.find((c) => c.id === selectedCategory)?.hint}
         </p>
       </div>
@@ -158,7 +158,7 @@ export function DocumentDropZone({
           {documents.map((doc) => (
             <li
               key={doc.id}
-              className="glass flex items-center gap-3 rounded-xl px-4 py-3 transition-colors hover:bg-white/[0.04]"
+              className="glass flex items-center gap-3 rounded-xl px-4 py-3 transition-colors hover:bg-stone-100"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400">
                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -171,8 +171,8 @@ export function DocumentDropZone({
                 </svg>
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-zinc-200">{doc.name}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="truncate text-sm font-medium text-stone-800">{doc.name}</p>
+                <p className="text-xs text-stone-500">
                   {categoryLabel(doc.category)} · {formatSize(doc.size)}
                 </p>
               </div>
@@ -182,7 +182,7 @@ export function DocumentDropZone({
                   e.stopPropagation();
                   onDocumentRemove(doc.id);
                 }}
-                className="rounded-lg p-2 text-zinc-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                className="rounded-lg p-2 text-stone-500 transition-colors hover:bg-red-500/10 hover:text-red-400"
                 aria-label={`Supprimer ${doc.name}`}
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

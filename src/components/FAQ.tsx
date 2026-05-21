@@ -40,7 +40,7 @@ export function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="border-t border-white/5 py-20 sm:py-28">
+    <section id="faq" className="border-t border-stone-200 py-20 sm:py-28">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           label="FAQ"
@@ -54,7 +54,7 @@ export function FAQ() {
             return (
               <div
                 key={faq.question}
-                className="overflow-hidden rounded-xl border border-white/5 bg-zinc-900/60"
+                className="overflow-hidden rounded-xl border border-stone-200 bg-card"
               >
                 <button
                   type="button"
@@ -64,7 +64,7 @@ export function FAQ() {
                 >
                   {faq.question}
                   <svg
-                    className={`h-5 w-5 shrink-0 text-emerald-400 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    className={`h-5 w-5 shrink-0 text-accent transition-transform ${isOpen ? "rotate-180" : ""}`}
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -73,8 +73,8 @@ export function FAQ() {
                   </svg>
                 </button>
                 {isOpen && (
-                  <div className="border-t border-white/5 px-6 pb-5 pt-0">
-                    <p className="text-sm leading-relaxed text-zinc-400">{faq.answer}</p>
+                  <div className="border-t border-stone-200 px-6 pb-5 pt-0">
+                    <p className="text-sm leading-relaxed text-stone-600">{faq.answer}</p>
                   </div>
                 )}
               </div>

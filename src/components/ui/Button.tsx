@@ -11,10 +11,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variants: Record<Variant, string> = {
   primary:
-    "bg-accent text-zinc-950 hover:bg-emerald-300 shadow-lg shadow-emerald-500/20",
+    "bg-accent text-accent-foreground hover:opacity-90 shadow-sm shadow-stone-900/5",
   secondary:
-    "border border-white/10 bg-white/5 text-foreground hover:bg-white/10 hover:border-white/20",
-  ghost: "text-muted hover:text-foreground hover:bg-white/5",
+    "border border-border bg-card text-foreground hover:bg-subtle hover:border-stone-300",
+  ghost: "text-muted hover:text-foreground hover:bg-subtle",
 };
 
 export function Button({

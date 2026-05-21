@@ -116,25 +116,25 @@ export function AiAssistantChat({ currentStep, isOpen, onToggle }: AiAssistantCh
 
   const panel = (
     <div
-      className={`flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-card shadow-2xl shadow-black/40 ${
+      className={`flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-card shadow-2xl shadow-black/40 ${
         isOpen ? "h-full" : "hidden lg:flex lg:h-full"
       }`}
     >
-      <div className="flex items-center gap-3 border-b border-white/5 bg-white/[0.03] px-4 py-3">
-        <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-amber-500">
-          <svg className="h-4 w-4 text-zinc-950" fill="currentColor" viewBox="0 0 24 24">
+      <div className="flex items-center gap-3 border-b border-stone-200 bg-stone-100/80 px-4 py-3">
+        <div className="relative flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent to-stone-400">
+          <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 110 2h-1v1a7 7 0 01-7 7h-1v1.27c.6.34 1 .99 1 1.73a2 2 0 11-4 0c0-.74.4-1.39 1-1.73V17h-1a7 7 0 01-7-7h-1a1 1 0 110-2h1v-1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z" />
           </svg>
-          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-emerald-400" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-accent" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-zinc-100">Assistant Fiscal LMNP</p>
-          <p className="text-xs text-emerald-400/90">En ligne · Expertise 2031/2033</p>
+          <p className="text-sm font-semibold text-stone-900">Assistant Fiscal LMNP</p>
+          <p className="text-xs text-accent/90">En ligne · Expertise 2031/2033</p>
         </div>
         <button
           type="button"
           onClick={onToggle}
-          className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-zinc-300 lg:hidden"
+          className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-700 lg:hidden"
           aria-label="Fermer l'assistant"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -152,8 +152,8 @@ export function AiAssistantChat({ currentStep, isOpen, onToggle }: AiAssistantCh
             <div
               className={`max-w-[90%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
                 msg.role === "user"
-                  ? "bg-emerald-500/20 text-emerald-50 ring-1 ring-emerald-500/30"
-                  : "bg-white/5 text-zinc-300 ring-1 ring-white/10"
+                  ? "bg-accent-muted text-white ring-1 ring-accent/25"
+                  : "bg-stone-100 text-stone-700 ring-1 ring-stone-200"
               }`}
             >
               {msg.content}
@@ -162,23 +162,23 @@ export function AiAssistantChat({ currentStep, isOpen, onToggle }: AiAssistantCh
         ))}
         {isTyping && (
           <div className="flex justify-start">
-            <div className="flex gap-1 rounded-2xl bg-white/5 px-4 py-3 ring-1 ring-white/10">
-              <span className="h-2 w-2 animate-bounce rounded-full bg-emerald-400 [animation-delay:0ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-emerald-400 [animation-delay:150ms]" />
-              <span className="h-2 w-2 animate-bounce rounded-full bg-emerald-400 [animation-delay:300ms]" />
+            <div className="flex gap-1 rounded-2xl bg-stone-100 px-4 py-3 ring-1 ring-stone-200">
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:0ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:150ms]" />
+              <span className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:300ms]" />
             </div>
           </div>
         )}
       </div>
 
-      <div className="border-t border-white/5 p-3">
+      <div className="border-t border-stone-200 p-3">
         <div className="mb-2 flex flex-wrap gap-1.5">
           {QUICK_PROMPTS.map((prompt) => (
             <button
               key={prompt}
               type="button"
               onClick={() => sendMessage(prompt)}
-              className="rounded-full bg-white/5 px-2.5 py-1 text-[10px] text-zinc-400 ring-1 ring-white/10 transition-colors hover:bg-emerald-500/10 hover:text-emerald-400"
+              className="rounded-full bg-stone-100 px-2.5 py-1 text-[10px] text-stone-600 ring-1 ring-stone-200 transition-colors hover:bg-accent/10 hover:text-accent"
             >
               {prompt}
             </button>
@@ -196,12 +196,12 @@ export function AiAssistantChat({ currentStep, isOpen, onToggle }: AiAssistantCh
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Posez votre question LMNP…"
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
+            className="flex-1 rounded-xl border border-stone-200 bg-stone-100 px-3 py-2.5 text-sm text-stone-900 placeholder:text-stone-500 focus:border-accent/40 focus:outline-none focus:ring-1 focus:ring-accent/25"
           />
           <button
             type="submit"
             disabled={!input.trim() || isTyping}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-zinc-950 transition-colors hover:bg-emerald-400 disabled:opacity-40"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-white transition-colors hover:opacity-90 disabled:opacity-40"
             aria-label="Envoyer"
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -218,10 +218,10 @@ export function AiAssistantChat({ currentStep, isOpen, onToggle }: AiAssistantCh
       <button
         type="button"
         onClick={onToggle}
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-amber-500 shadow-lg shadow-emerald-500/30 transition-transform hover:scale-105 lg:hidden"
+        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-accent to-stone-400 shadow-lg shadow-stone-900/5 transition-transform hover:scale-105 lg:hidden"
         aria-label="Ouvrir l'assistant IA"
       >
-        <svg className="h-6 w-6 text-zinc-950" fill="currentColor" viewBox="0 0 24 24">
+        <svg className="h-6 w-6 text-white" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 110 2h-1v1a7 7 0 01-7 7h-1v1.27c.6.34 1 .99 1 1.73a2 2 0 11-4 0c0-.74.4-1.39 1-1.73V17h-1a7 7 0 01-7-7h-1a1 1 0 110-2h1v-1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2z" />
         </svg>
       </button>
