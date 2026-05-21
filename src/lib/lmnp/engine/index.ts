@@ -2,20 +2,28 @@ export { buildEngineContext, getRequiredFields, hasActiveLedgerForField } from "
 export { recomputeAlerts } from "./alerts";
 export { computeUserConfidence, pickNextAction, getConfidenceBand } from "./confidence";
 export {
+  computeJourneyFlags,
+  resolveJourney,
+  pickJourneyAction,
+  journeyAllowsRoute,
+} from "./journey";
+export {
   computeDossierProgress,
   resolveFiscalYearStatus,
   type DossierProgressSnapshot,
 } from "./workspace-progress";
 
-import type { Alert, UserConfidenceScore, NextAction } from "../types";
-import { buildEngineContext, type EngineContext } from "./context";
+import type { Alert, LmnpJourney, UserConfidenceScore, NextAction } from "../types";
+import { buildEngineContext } from "./context";
 import { recomputeAlerts } from "./alerts";
-import { computeUserConfidence, pickNextAction } from "./confidence";
+import { computeUserConfidence } from "./confidence";
+import { resolveJourney, pickJourneyAction, computeJourneyFlags } from "./journey";
 import { computeDossierProgress, type DossierProgressSnapshot } from "./workspace-progress";
 
 export interface WorkspaceDerivatives extends DossierProgressSnapshot {
   alerts: Alert[];
   confidence: UserConfidenceScore;
+  journey: LmnpJourney;
   nextAction: NextAction;
   pendingValidationCount: number;
   blockingAlertCount: number;
@@ -41,17 +49,18 @@ export function deriveWorkspace(
   const ctxWithAlerts = { ...ctx, alerts };
   const blockingAlertCount = alerts.filter((a) => a.severity === "blocking").length;
   const pendingValidationCount = validationItems.filter((v) => v.status === "pending").length;
-  const canClose =
-    blockingAlertCount === 0 &&
-    pendingValidationCount === 0 &&
-    Boolean(fiscalYear.regimeConfirmedAt);
+  const journeyFlags = computeJourneyFlags(ctxWithAlerts);
+  const canClose = journeyFlags.dossierDone;
 
   const progress = computeDossierProgress(documents, validationItems, alerts);
+  const journey = resolveJourney(ctxWithAlerts);
+  const nextAction = pickJourneyAction(ctxWithAlerts, journey);
 
   return {
     alerts,
     confidence: computeUserConfidence(ctxWithAlerts, canClose),
-    nextAction: pickNextAction(ctxWithAlerts),
+    journey,
+    nextAction,
     pendingValidationCount,
     blockingAlertCount,
     canClose,

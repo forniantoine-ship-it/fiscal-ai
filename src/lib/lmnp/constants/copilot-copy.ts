@@ -8,12 +8,12 @@ export const TAB_COPY = {
   },
   recettes: {
     title: "Mes loyers",
-    description: "Ce que vous avez encaissé — l’IA remplit ces lignes depuis vos relevés et votre bail.",
+    description: "Montants détectés par l’IA depuis vos relevés — vérifiez et confirmez en un clic.",
     sidebar: "Mes loyers",
   },
   depenses: {
     title: "Mes dépenses",
-    description: "Taxe foncière, assurance, travaux… Tout ce que vous pouvez déduire de vos loyers.",
+    description: "Taxe foncière, assurance, travaux… pré-remplis par l’IA depuis vos factures.",
     sidebar: "Mes dépenses",
   },
   immobilisations: {

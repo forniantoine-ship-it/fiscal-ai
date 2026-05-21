@@ -2,15 +2,11 @@
 
 import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
-import { FISCAL_YEAR_STATUS_LABELS } from "./labels";
-
 export function AppHeader() {
   const { workspace } = useLmnp();
-  const { fiscalYear, pendingValidationCount, canClose } = workspace;
+  const { fiscalYear, pendingValidationCount } = workspace;
 
-  const statusLabel = canClose
-    ? FISCAL_YEAR_STATUS_LABELS.ready_to_close
-    : FISCAL_YEAR_STATUS_LABELS[fiscalYear.status];
+  const { journey } = workspace;
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/5 bg-[#06060b]/90 backdrop-blur-md">
@@ -21,8 +17,14 @@ export function AppHeader() {
           </Link>
           <span className="hidden text-zinc-700 sm:inline">/</span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-zinc-100">LMNP {fiscalYear.year}</p>
-            <p className="truncate text-xs text-zinc-500">{statusLabel}</p>
+            <p className="truncate text-sm font-semibold text-zinc-100">
+              Assistant LMNP · {fiscalYear.year}
+            </p>
+            <p className="truncate text-xs text-zinc-500">
+              {journey.isComplete
+                ? "Déclaration transmise"
+                : `Étape ${journey.currentStepIndex}/${journey.totalSteps} · ${journey.percentComplete} %`}
+            </p>
           </div>
         </div>
 

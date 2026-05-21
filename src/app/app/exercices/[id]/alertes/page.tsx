@@ -1,5 +1,6 @@
 "use client";
 
+import { StepPageShell } from "@/components/lmnp/journey/StepPageShell";
 import { AlertList } from "@/components/lmnp/shared/AlertList";
 import { PageHeader } from "@/components/lmnp/shared/PageHeader";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -8,7 +9,7 @@ export default function AlertesPage() {
   const { workspace } = useLmnp();
 
   return (
-    <div>
+    <StepPageShell>
       <PageHeader
         title="À clarifier"
         description={
@@ -18,6 +19,6 @@ export default function AlertesPage() {
         }
       />
       <AlertList alerts={workspace.alerts} limit={50} />
-    </div>
+    </StepPageShell>
   );
 }

@@ -78,12 +78,46 @@ export interface Property {
   postalCode: string;
 }
 
+export type JourneyStepId =
+  | "documents"
+  | "analysis"
+  | "validation"
+  | "dossier"
+  | "generate"
+  | "payment"
+  | "transmission";
+
+export type JourneyStepStatus = "completed" | "active" | "locked";
+
+export interface JourneyStepView {
+  id: JourneyStepId;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+  aiHint?: string;
+  status: JourneyStepStatus;
+  stepNumber: number;
+}
+
+export interface LmnpJourney {
+  steps: JourneyStepView[];
+  currentStepId: JourneyStepId;
+  currentStepIndex: number;
+  totalSteps: number;
+  percentComplete: number;
+  isComplete: boolean;
+}
+
 export interface FiscalYear {
   id: string;
   year: number;
   status: FiscalYearStatus;
   regime: FiscalRegime;
   regimeConfirmedAt?: string;
+  declarationGeneratedAt?: string;
+  paidAt?: string;
+  transmittedAt?: string;
   propertyIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -240,6 +274,7 @@ export interface LmnpWorkspace {
   ledgerEntries: LedgerEntry[];
   alerts: Alert[];
   confidence: UserConfidenceScore;
+  journey: LmnpJourney;
   nextAction: NextAction;
   pendingValidationCount: number;
   blockingAlertCount: number;

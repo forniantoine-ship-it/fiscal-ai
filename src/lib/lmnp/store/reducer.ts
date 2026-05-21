@@ -68,7 +68,10 @@ export type LmnpAction =
       fieldKey: FieldKey;
       value: NormalizedValue;
       label?: string;
-    };
+    }
+  | { type: "JOURNEY_MARK_DECLARATION_GENERATED" }
+  | { type: "JOURNEY_MARK_PAID" }
+  | { type: "JOURNEY_MARK_TRANSMITTED" };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -522,6 +525,33 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         ledgerEntries: [...voided, updatedEntry],
       });
     }
+
+    case "JOURNEY_MARK_DECLARATION_GENERATED":
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear, "ready_to_close"),
+          declarationGeneratedAt: nowIso(),
+        },
+      });
+
+    case "JOURNEY_MARK_PAID":
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear),
+          paidAt: nowIso(),
+        },
+      });
+
+    case "JOURNEY_MARK_TRANSMITTED":
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear, "closed"),
+          transmittedAt: nowIso(),
+        },
+      });
 
     default:
       return state;
