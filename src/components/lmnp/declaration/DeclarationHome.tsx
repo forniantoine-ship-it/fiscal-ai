@@ -7,6 +7,7 @@ import {
   QuietInsight,
 } from "@/components/lmnp/design-system";
 import { DeclarationHowItWorks } from "./DeclarationHowItWorks";
+import { DeclarationCompletedActions } from "./DeclarationCompletedActions";
 
 function resolveHomeCopy(
   year: number,
@@ -60,6 +61,7 @@ export function DeclarationHome() {
 
   const currentStep = steps.find((s) => s.status === "current");
   const showWhisperProgress = hasDocuments && !completed && percentComplete > 0;
+  const base = `/app/exercices/${fiscalYear.id}`;
 
   return (
     <div className="mx-auto max-w-xl animate-fade-in px-4 py-16 sm:py-24">
@@ -75,6 +77,13 @@ export function DeclarationHome() {
           {subtitle}
         </p>
       </header>
+
+      {completed && (
+        <DeclarationCompletedActions
+          dashboardHref={base}
+          documentsHref={`${base}/documents`}
+        />
+      )}
 
       {!completed && (
         <>

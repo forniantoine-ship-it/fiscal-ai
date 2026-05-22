@@ -20,7 +20,7 @@ import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
 import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/field-keys";
 import { HIGH_CONFIDENCE_THRESHOLD } from "../validation/display";
-import type { PersistedWorkspace } from "./persistence";
+import { createDefaultWorkspace, type PersistedWorkspace } from "./persistence";
 
 export type FileRegistry = Map<string, File>;
 
@@ -74,7 +74,8 @@ export type LmnpAction =
   | { type: "JOURNEY_MARK_PAID" }
   | { type: "JOURNEY_MARK_TRANSMITTED" }
   | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
-  | { type: "DECLARATION_COMPLETE_STEP"; stepId: string };
+  | { type: "DECLARATION_COMPLETE_STEP"; stepId: string }
+  | { type: "CREATE_NEW_DECLARATION" };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -576,6 +577,14 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           ...draft,
           completedSteps: [...completed],
         },
+      });
+    }
+
+    case "CREATE_NEW_DECLARATION": {
+      const fresh = createDefaultWorkspace();
+      return finalizeState({
+        ...fresh,
+        fileRegistry: new Map(),
       });
     }
 

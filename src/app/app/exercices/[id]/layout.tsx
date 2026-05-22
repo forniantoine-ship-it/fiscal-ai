@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { AppShell } from "@/components/lmnp/app-shell/AppShell";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function ExerciceLayout({ children }: { children: React.ReactNode }) {
@@ -18,5 +17,5 @@ export default function ExerciceLayout({ children }: { children: React.ReactNode
     }
   }, [id, isReady, router, workspace.fiscalYear.id]);
 
-  return <AppShell>{children}</AppShell>;
+  return <>{children}</>;
 }

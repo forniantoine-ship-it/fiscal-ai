@@ -21,7 +21,7 @@ export function StepPageShell({ children, hideNextCta }: StepPageShellProps) {
         href={base}
         className="mb-8 inline-block text-xs text-stone-500 transition-colors hover:text-stone-600"
       >
-        ← Parcours
+        ← Tableau de bord
       </Link>
       {children}
       {showNext && (
