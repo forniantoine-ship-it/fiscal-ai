@@ -1,67 +1,84 @@
 "use client";
 
 import { useLmnp } from "@/lib/lmnp/store";
+import { DOCUMENT_JOURNEY_STEPS } from "@/lib/lmnp/constants/document-journey";
+import {
+  isDocumentJourneyComplete,
+  resolveCurrentDocumentStep,
+  documentJourneyStepHref,
+  getDocumentJourneyProgress,
+} from "@/lib/lmnp/engine/document-journey-progress";
 import {
   PrimaryButton,
   QuietBadge,
   QuietInsight,
 } from "@/components/lmnp/design-system";
-import { DeclarationHowItWorks } from "./DeclarationHowItWorks";
 import { DeclarationCompletedActions } from "./DeclarationCompletedActions";
-
-function resolveHomeCopy(
-  year: number,
-  completed: boolean,
-  pending: number,
-): { title: string; subtitle: string } {
-  if (completed) {
-    return {
-      title: "Votre déclaration est transmise",
-      subtitle: "Merci — votre liasse a bien été envoyée.",
-    };
-  }
-  if (pending > 0) {
-    return {
-      title: `${pending} montant${pending > 1 ? "s" : ""} à confirmer`,
-      subtitle: "L’IA a pré-rempli votre dossier — une dernière validation suffit.",
-    };
-  }
-  return {
-    title: "Déposez vos documents.",
-    subtitle: "L’IA prépare votre déclaration à partir de vos justificatifs.",
-  };
-}
-
-function resolveCtaLabel(
-  hasDocuments: boolean,
-  pending: number,
-  currentStepId: string,
-): string {
-  if (pending > 0) return "Confirmer les montants";
-  if (!hasDocuments || currentStepId === "documents") return "Déposer mes documents";
-  if (currentStepId === "paiement") return "Payer";
-  if (currentStepId === "teletransmission") return "Transmettre";
-  return "Poursuivre ma déclaration";
-}
 
 export function DeclarationHome() {
   const { workspace } = useLmnp();
   const { declaration, fiscalYear } = workspace;
-  const { nextAction, insights, percentComplete, steps } = declaration;
 
   const completed = Boolean(fiscalYear.transmittedAt);
   const pending = workspace.pendingValidationCount;
-  const hasDocuments = workspace.documents.length > 0;
-  const { title, subtitle } = resolveHomeCopy(fiscalYear.year, completed, pending);
-  const ctaLabel = resolveCtaLabel(hasDocuments, pending, declaration.currentStepId);
-  const ctaHref =
-    pending > 0
-      ? `/app/exercices/${fiscalYear.id}/validation`
-      : nextAction.href;
-
-  const currentStep = steps.find((s) => s.status === "current");
-  const showWhisperProgress = hasDocuments && !completed && percentComplete > 0;
   const base = `/app/exercices/${fiscalYear.id}`;
+
+  const docJourneyDone = isDocumentJourneyComplete({
+    fiscalYear: workspace.fiscalYear,
+    properties: workspace.properties,
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    validationItems: workspace.validationItems,
+    ledgerEntries: workspace.ledgerEntries,
+    declarationDraft: workspace.declarationDraft,
+  });
+
+  const docProgress = getDocumentJourneyProgress({
+    fiscalYear: workspace.fiscalYear,
+    properties: workspace.properties,
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    validationItems: workspace.validationItems,
+    ledgerEntries: workspace.ledgerEntries,
+    declarationDraft: workspace.declarationDraft,
+  });
+
+  const currentDocStep = resolveCurrentDocumentStep({
+    fiscalYear: workspace.fiscalYear,
+    properties: workspace.properties,
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    validationItems: workspace.validationItems,
+    ledgerEntries: workspace.ledgerEntries,
+    declarationDraft: workspace.declarationDraft,
+  });
+
+  let title = "Votre déclaration LMNP";
+  let subtitle = "Le système vous guide pièce par pièce.";
+  let ctaLabel = "Commencer";
+  let ctaHref = documentJourneyStepHref(fiscalYear.id, currentDocStep.id);
+
+  if (completed) {
+    title = "Votre déclaration est transmise";
+    subtitle = "Merci — votre liasse a bien été envoyée.";
+  } else if (pending > 0) {
+    title = `${pending} montant${pending > 1 ? "s" : ""} à confirmer`;
+    subtitle = "L’IA a pré-rempli votre dossier — une validation suffit.";
+    ctaLabel = "Confirmer les montants";
+    ctaHref = `${base}/validation`;
+  } else if (!docJourneyDone) {
+    title = currentDocStep.screenTitle;
+    subtitle = currentDocStep.explanation;
+    ctaLabel = currentDocStep.ctaLabel;
+    ctaHref = documentJourneyStepHref(fiscalYear.id, currentDocStep.id);
+  } else {
+    title = declaration.nextAction.headline;
+    subtitle = "Poursuivez les dernières étapes de votre dossier.";
+    ctaLabel = declaration.nextAction.label;
+    ctaHref = declaration.nextAction.href;
+  }
+
+  const insights = docJourneyDone ? declaration.insights : [];
 
   return (
     <div className="mx-auto max-w-xl animate-fade-in px-4 py-16 sm:py-24">
@@ -81,13 +98,18 @@ export function DeclarationHome() {
       {completed && (
         <DeclarationCompletedActions
           dashboardHref={base}
-          documentsHref={`${base}/documents`}
+          documentsHref={documentJourneyStepHref(fiscalYear.id, "inpi")}
         />
       )}
 
       {!completed && (
         <>
-          <DeclarationHowItWorks />
+          {!docJourneyDone && (
+            <p className="mx-auto mt-8 max-w-sm text-center text-[12px] text-stone-400">
+              Parcours documentaire · {docProgress.completed} sur {DOCUMENT_JOURNEY_STEPS.length}{" "}
+              pièces
+            </p>
+          )}
 
           <div className="mt-12 flex justify-center">
             <PrimaryButton href={ctaHref}>{ctaLabel}</PrimaryButton>
@@ -101,29 +123,6 @@ export function DeclarationHome() {
                 </li>
               ))}
             </ul>
-          )}
-
-          {showWhisperProgress && (
-            <footer className="mt-20 text-center">
-              <div
-                className="mx-auto h-px max-w-[8rem] overflow-hidden bg-stone-200/60"
-                role="progressbar"
-                aria-valuenow={percentComplete}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Avancement"
-              >
-                <div
-                  className="h-full bg-stone-400/50 transition-[width] duration-700 ease-out"
-                  style={{ width: `${Math.max(percentComplete, 4)}%` }}
-                />
-              </div>
-              {currentStep && (
-                <p className="mt-4 text-[11px] text-stone-400">
-                  Suite du parcours · {currentStep.title}
-                </p>
-              )}
-            </footer>
           )}
         </>
       )}

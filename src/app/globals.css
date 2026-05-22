@@ -64,51 +64,63 @@ body {
 body::before {
   content: "";
   position: fixed;
-  inset: 0;
+  inset: -20%;
   z-index: -2;
   pointer-events: none;
-  background-color: var(--canvas-base);
+  background-color: #f3f3f1;
   background-image:
-    /* halo beige chaud — haut gauche */
     radial-gradient(
-      ellipse 120% 90% at -8% -12%,
-      rgba(237, 230, 220, 0.72) 0%,
-      rgba(243, 240, 234, 0.28) 38%,
-      transparent 62%
-    ),
-    /* gris froid diffus — droite */
-    radial-gradient(
-      ellipse 100% 75% at 108% 6%,
-      rgba(224, 228, 232, 0.48) 0%,
-      rgba(232, 234, 236, 0.18) 42%,
-      transparent 58%
-    ),
-    /* rose poudré ultra léger — centre */
-    radial-gradient(
-      ellipse 70% 55% at 48% 38%,
-      rgba(236, 218, 216, 0.16) 0%,
-      rgba(240, 232, 230, 0.06) 45%,
+      ellipse 160% 120% at -15% -25%,
+      rgba(234, 226, 214, 0.55) 0%,
+      rgba(241, 238, 232, 0.2) 42%,
       transparent 68%
     ),
-    /* brume blanc cassé — bas */
     radial-gradient(
-      ellipse 110% 80% at 50% 112%,
-      rgba(248, 247, 244, 0.78) 0%,
-      rgba(245, 244, 241, 0.32) 40%,
+      ellipse 140% 100% at 115% -5%,
+      rgba(218, 224, 230, 0.38) 0%,
+      rgba(228, 232, 236, 0.12) 45%,
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse 100% 80% at 52% 28%,
+      rgba(238, 220, 218, 0.14) 0%,
+      rgba(242, 236, 234, 0.05) 50%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 180% 130% at 50% 120%,
+      rgba(250, 249, 246, 0.65) 0%,
+      rgba(245, 244, 240, 0.22) 38%,
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 90% 70% at 82% 58%,
+      rgba(253, 251, 248, 0.35) 0%,
       transparent 58%
     ),
-    /* lumière douce secondaire — milieu droit */
     radial-gradient(
-      ellipse 65% 50% at 78% 62%,
-      rgba(252, 250, 247, 0.42) 0%,
-      transparent 55%
+      ellipse 120% 90% at 18% 72%,
+      rgba(245, 242, 236, 0.28) 0%,
+      transparent 60%
     ),
-    /* voile général — profondeur */
     radial-gradient(
-      ellipse 140% 100% at 50% 50%,
-      rgba(245, 245, 243, 0.35) 0%,
-      transparent 70%
+      ellipse 200% 140% at 50% 50%,
+      rgba(245, 245, 243, 0.25) 0%,
+      transparent 75%
     );
+}
+
+.gradient-mesh::before {
+  content: "";
+  position: fixed;
+  inset: -10%;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(255, 252, 248, 0.45) 0%,
+    transparent 55%
+  );
 }
 
 /* léger grain de surface — effet verre dépoli, quasi invisible */

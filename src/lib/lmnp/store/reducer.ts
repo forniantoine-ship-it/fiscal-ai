@@ -75,7 +75,21 @@ export type LmnpAction =
   | { type: "JOURNEY_MARK_TRANSMITTED" }
   | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
   | { type: "DECLARATION_COMPLETE_STEP"; stepId: string }
-  | { type: "CREATE_NEW_DECLARATION" };
+  | { type: "CREATE_NEW_DECLARATION" }
+  | {
+      type: "CONFIRM_INPI_PROFILE";
+      profile: {
+        siren?: string;
+        siret?: string;
+        firstName?: string;
+        lastName?: string;
+        address?: string;
+        city?: string;
+        postalCode?: string;
+      };
+      documentId?: string;
+    }
+  | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -585,6 +599,51 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       return finalizeState({
         ...fresh,
         fileRegistry: new Map(),
+      });
+    }
+
+    case "CONFIRM_INPI_PROFILE": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const propertyId = state.fiscalYear.propertyIds[0];
+      const properties = state.properties.map((p) =>
+        p.id === propertyId
+          ? {
+              ...p,
+              address: action.profile.address?.trim() ?? p.address,
+              city: action.profile.city?.trim() ?? p.city,
+              postalCode: action.profile.postalCode?.trim() ?? p.postalCode,
+            }
+          : p,
+      );
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add("inpi");
+      return finalizeState({
+        ...state,
+        properties,
+        declarationDraft: {
+          ...draft,
+          siren: action.profile.siren?.trim() ?? draft.siren,
+          siret: action.profile.siret?.trim() ?? draft.siret,
+          exploitantFirstName: action.profile.firstName?.trim() ?? draft.exploitantFirstName,
+          exploitantLastName: action.profile.lastName?.trim() ?? draft.exploitantLastName,
+          inpiDocumentId: action.documentId ?? draft.inpiDocumentId,
+          inpiConfirmedAt: nowIso(),
+          documentStepsCompleted: [...completed],
+          completedSteps: [...new Set([...draft.completedSteps, "siren", "exploitant", "logement"])],
+        },
+      });
+    }
+
+    case "COMPLETE_DOCUMENT_JOURNEY_STEP": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add(action.stepId);
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          documentStepsCompleted: [...completed],
+        },
       });
     }
 

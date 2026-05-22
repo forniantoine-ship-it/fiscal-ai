@@ -7,6 +7,11 @@ import {
 } from "../constants/declaration-flow";
 import type { DeclarationDraft } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import {
+  documentJourneyStepHref,
+  isDocumentJourneyComplete,
+  resolveCurrentDocumentStep,
+} from "./document-journey-progress";
 
 export type DeclarationStepStatus = "completed" | "current" | "upcoming";
 
@@ -39,7 +44,7 @@ function isStepComplete(id: DeclarationStepId, ws: PersistedWorkspace): boolean 
 
   switch (id) {
     case "documents":
-      return documents.length > 0;
+      return isDocumentJourneyComplete(ws) || Boolean(draft.inpiConfirmedAt);
     case "siren":
       return Boolean(draft.siren?.trim());
     case "exploitant":
@@ -112,8 +117,8 @@ function buildHeadline(currentId: DeclarationStepId, ws: PersistedWorkspace): st
   const step = DECLARATION_FLOW.find((s) => s.id === currentId)!;
   const pending = ws.validationItems.filter((v) => v.status === "pending").length;
 
-  if (currentId === "documents" && ws.documents.length === 0) {
-    return "Déposez vos documents pour commencer";
+  if (currentId === "documents" && !isDocumentJourneyComplete(ws)) {
+    return resolveCurrentDocumentStep(ws).screenTitle;
   }
   if (pending > 0) {
     return `${pending} élément${pending > 1 ? "s" : ""} à confirmer`;
@@ -152,7 +157,11 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
 
   let label = "Continuer";
   let href = declarationStepHref(ws.fiscalYear.id, currentStepId);
-  if (currentStepId === "documents") label = "Déposer des documents";
+  if (currentStepId === "documents" && !isDocumentJourneyComplete(ws)) {
+    const docStep = resolveCurrentDocumentStep(ws);
+    label = docStep.ctaLabel;
+    href = documentJourneyStepHref(ws.fiscalYear.id, docStep.id);
+  }
   else if (pending > 0) {
     label = "Confirmer";
     href = `/app/exercices/${ws.fiscalYear.id}/validation`;

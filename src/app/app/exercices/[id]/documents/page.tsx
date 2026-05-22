@@ -1,32 +1,36 @@
 "use client";
 
-import Link from "next/link";
-import { DocumentChecklist } from "@/components/lmnp/documents/DocumentChecklist";
-import { DocumentUploadPanel } from "@/components/lmnp/documents/DocumentUploadPanel";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useLmnp } from "@/lib/lmnp/store";
+import {
+  documentJourneyStepHref,
+  resolveCurrentDocumentStepId,
+} from "@/lib/lmnp/engine/document-journey-progress";
+import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
-export default function DocumentsPage() {
-  const { workspace } = useLmnp();
-  const base = `/app/exercices/${workspace.fiscalYear.id}`;
-  const isAnalyzing = workspace.documents.some(
-    (d) => d.status === "uploaded" || d.status === "processing",
-  );
+export default function DocumentsRedirectPage() {
+  const router = useRouter();
+  const { workspace, isReady } = useLmnp();
+
+  useEffect(() => {
+    if (!isReady) return;
+    const ws: PersistedWorkspace = {
+      fiscalYear: workspace.fiscalYear,
+      properties: workspace.properties,
+      documents: workspace.documents,
+      extractions: workspace.extractions,
+      validationItems: workspace.validationItems,
+      ledgerEntries: workspace.ledgerEntries,
+      declarationDraft: workspace.declarationDraft,
+    };
+    const stepId = resolveCurrentDocumentStepId(ws);
+    router.replace(documentJourneyStepHref(workspace.fiscalYear.id, stepId));
+  }, [isReady, router, workspace]);
 
   return (
-    <div className="mx-auto max-w-lg animate-fade-in px-4 py-12 sm:py-16">
-      <Link href={base} className="text-[12px] text-stone-400 hover:text-stone-600">
-        ← Déclaration
-      </Link>
-      <h1 className="mt-10 text-2xl font-normal tracking-tight text-stone-800">
-        {isAnalyzing ? "Analyse en cours" : "Vos documents"}
-      </h1>
-      <p className="mt-3 text-[15px] text-stone-500">
-        Déposez vos pièces — l’IA extrait les montants en silence.
-      </p>
-      <div className="mt-10 space-y-8">
-        <DocumentUploadPanel />
-        {!isAnalyzing && workspace.documents.length > 0 && <DocumentChecklist />}
-      </div>
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-stone-500">
+      Redirection…
     </div>
   );
 }

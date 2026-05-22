@@ -137,9 +137,13 @@ export interface FiscalYear {
 
 export interface DeclarationDraft {
   completedSteps: string[];
+  documentStepsCompleted?: string[];
   siren?: string;
+  siret?: string;
   exploitantFirstName?: string;
   exploitantLastName?: string;
+  inpiDocumentId?: string;
+  inpiConfirmedAt?: string;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;

@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLmnp } from "@/lib/lmnp/store";
+import {
+  documentJourneyStepHref,
+  resolveCurrentDocumentStepId,
+} from "@/lib/lmnp/engine/document-journey-progress";
+import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 const navLink =
   "text-[12px] text-stone-500 transition-colors hover:text-stone-700";
@@ -12,8 +17,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { workspace } = useLmnp();
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
   const isDashboard = pathname === base || pathname === `${base}/`;
-  const isDocuments = pathname.startsWith(`${base}/documents`);
+  const isDocuments =
+    pathname.startsWith(`${base}/documents`) || pathname.startsWith(`${base}/piece/`);
   const pending = workspace.pendingValidationCount;
+
+  const ws: PersistedWorkspace = {
+    fiscalYear: workspace.fiscalYear,
+    properties: workspace.properties,
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    validationItems: workspace.validationItems,
+    ledgerEntries: workspace.ledgerEntries,
+    declarationDraft: workspace.declarationDraft,
+  };
+  const documentsHref = documentJourneyStepHref(
+    workspace.fiscalYear.id,
+    resolveCurrentDocumentStepId(ws),
+  );
 
   return (
     <div className="min-h-screen">
@@ -38,11 +58,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               Tableau de bord
             </Link>
             <Link
-              href={`${base}/documents`}
+              href={documentsHref}
               className={isDocuments ? "text-[12px] text-stone-700" : navLink}
               aria-current={isDocuments ? "page" : undefined}
             >
-              Documents
+              Pièce en cours
             </Link>
             <Link href="/app" className={navLink}>
               Mes déclarations
