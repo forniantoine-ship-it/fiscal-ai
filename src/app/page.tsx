@@ -1,25 +1,21 @@
-import { Header } from "@/components/Header";
-import { Hero } from "@/components/Hero";
-import { HowItWorks } from "@/components/HowItWorks";
-import { Testimonials } from "@/components/Testimonials";
-import { CTABanner } from "@/components/CTABanner";
-import { FAQ } from "@/components/FAQ";
-import { LeadForm } from "@/components/LeadForm";
-import { Footer } from "@/components/Footer";
+import { HomeCta } from "@/components/marketing/HomeCta";
+import { HomeFaq } from "@/components/marketing/HomeFaq";
+import { HomeHero } from "@/components/marketing/HomeHero";
+import { ReassuranceGrid } from "@/components/marketing/ReassuranceGrid";
+import { SiteFooter } from "@/components/marketing/SiteFooter";
+import { SiteHeader } from "@/components/marketing/SiteHeader";
 
 export default function Home() {
   return (
     <>
-      <Header />
+      <SiteHeader />
       <main>
-        <Hero />
-        <HowItWorks />
-        <Testimonials />
-        <CTABanner />
-        <FAQ />
-        <LeadForm />
+        <HomeHero />
+        <ReassuranceGrid />
+        <HomeFaq />
+        <HomeCta />
       </main>
-      <Footer />
+      <SiteFooter />
     </>
   );
 }

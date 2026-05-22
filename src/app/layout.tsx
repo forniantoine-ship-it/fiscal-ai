@@ -15,9 +15,9 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Fiscal AI — Optimisation fiscale intelligente en France",
+  title: "Fiscal AI — Déclaration LMNP simple et guidée",
   description:
-    "Assistant IA pour réduire légalement vos impôts en France. Analyse personnalisée, dispositifs conformes au CGI et accompagnement expert.",
+    "Déposez vos documents, votre liasse LMNP est générée automatiquement. Parcours guidé, extraction IA et télétransmission.",
   keywords: [
     "optimisation fiscale",
     "impôts France",

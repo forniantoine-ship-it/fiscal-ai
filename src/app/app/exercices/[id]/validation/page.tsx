@@ -1,52 +1,43 @@
 "use client";
 
-import { StepPageShell } from "@/components/lmnp/journey/StepPageShell";
+import Link from "next/link";
 import { ValidationInbox } from "@/components/lmnp/validation/ValidationInbox";
+import { PrimaryButton } from "@/components/lmnp/design-system";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function ValidationPage() {
   const { workspace, dispatch } = useLmnp();
-  const { canClose, fiscalYear, pendingValidationCount, assistant } = workspace;
-  const generated = Boolean(fiscalYear.declarationGeneratedAt);
+  const base = `/app/exercices/${workspace.fiscalYear.id}`;
+  const pending = workspace.pendingValidationCount;
 
   return (
-    <StepPageShell hideNextCta={pendingValidationCount > 0}>
-      <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-semibold tracking-tight text-stone-900">
-          {assistant.headline}
-        </h1>
-
-        {assistant.insights.length > 0 && (
-          <ul className="mt-4 flex flex-wrap gap-2">
-            {assistant.insights.map((i) => (
-              <li
-                key={i.id}
-                className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-500"
-              >
-                {i.text}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="mt-10">
-          {!generated && pendingValidationCount > 0 && <ValidationInbox />}
-
-          {canClose && !generated && pendingValidationCount === 0 && (
-            <button
-              type="button"
-              onClick={() => dispatch({ type: "JOURNEY_MARK_DECLARATION_GENERATED" })}
-              className="w-full rounded-xl bg-accent py-4 text-sm font-medium text-accent-foreground shadow-sm shadow-stone-900/5 hover:opacity-90"
-            >
-              Générer
-            </button>
-          )}
-
-          {generated && (
-            <p className="text-center text-sm text-accent">✓ Liasse générée</p>
-          )}
-        </div>
+    <div className="mx-auto max-w-2xl px-4 py-12 sm:py-16">
+      <Link href={base} className="text-[12px] text-stone-400 hover:text-stone-600">
+        ← Déclaration
+      </Link>
+      <header className="mt-10">
+        <h1 className="text-2xl font-normal text-stone-800">À confirmer</h1>
+        <p className="mt-2 text-[15px] text-stone-500">
+          {pending > 0
+            ? `${pending} montant${pending > 1 ? "s" : ""} identifié${pending > 1 ? "s" : ""} par l’IA`
+            : "Tout est confirmé"}
+        </p>
+      </header>
+      <div className="mt-10">
+        <ValidationInbox />
       </div>
-    </StepPageShell>
+      {pending === 0 && !workspace.fiscalYear.declarationGeneratedAt && (
+        <div className="mt-12 text-center">
+          <PrimaryButton
+            onClick={() => dispatch({ type: "JOURNEY_MARK_DECLARATION_GENERATED" })}
+          >
+            Générer la liasse
+          </PrimaryButton>
+        </div>
+      )}
+      {workspace.fiscalYear.declarationGeneratedAt && (
+        <p className="mt-8 text-center text-sm text-accent">✓ Liasse générée</p>
+      )}
+    </div>
   );
 }

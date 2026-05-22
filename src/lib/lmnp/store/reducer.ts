@@ -9,6 +9,7 @@ import {
   voidLedgerEntry,
 } from "../services/ledger";
 import type {
+  DeclarationDraft,
   DocumentCategory,
   Extraction,
   FiscalYearStatus,
@@ -71,7 +72,9 @@ export type LmnpAction =
     }
   | { type: "JOURNEY_MARK_DECLARATION_GENERATED" }
   | { type: "JOURNEY_MARK_PAID" }
-  | { type: "JOURNEY_MARK_TRANSMITTED" };
+  | { type: "JOURNEY_MARK_TRANSMITTED" }
+  | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
+  | { type: "DECLARATION_COMPLETE_STEP"; stepId: string };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -278,6 +281,7 @@ function applyWorkspaceProgress(state: PersistedWorkspace): PersistedWorkspace {
     state.validationItems,
     state.ledgerEntries,
     state.extractions,
+    state.declarationDraft,
   );
 
   const status = resolveFiscalYearStatus(
@@ -554,6 +558,27 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         },
       });
 
+    case "DECLARATION_PATCH_DRAFT": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      return finalizeState({
+        ...state,
+        declarationDraft: { ...draft, ...action.patch },
+      });
+    }
+
+    case "DECLARATION_COMPLETE_STEP": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const completed = new Set(draft.completedSteps);
+      completed.add(action.stepId);
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          completedSteps: [...completed],
+        },
+      });
+    }
+
     default:
       return state;
   }
@@ -567,6 +592,7 @@ export function selectWorkspace(state: LmnpState) {
     state.validationItems,
     state.ledgerEntries,
     state.extractions,
+    state.declarationDraft,
   );
 
   return {
@@ -576,6 +602,7 @@ export function selectWorkspace(state: LmnpState) {
     extractions: state.extractions,
     validationItems: state.validationItems,
     ledgerEntries: state.ledgerEntries.filter((e) => e.status === "active"),
+    declarationDraft: state.declarationDraft ?? { completedSteps: [] },
     ...derived,
   };
 }

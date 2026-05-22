@@ -41,6 +41,7 @@ function toPersisted(state: LmnpState) {
     extractions: state.extractions,
     validationItems: state.validationItems,
     ledgerEntries: state.ledgerEntries,
+    declarationDraft: state.declarationDraft ?? { completedSteps: [] },
   };
 }
 

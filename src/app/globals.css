@@ -1,20 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8f7f4;
-  --foreground: #1c1917;
+  --background: #faf9f7;
+  --foreground: #292524;
   --muted: #78716c;
   --card: #ffffff;
-  --card-border: rgba(28, 25, 23, 0.08);
-  --subtle: #f3f2ef;
+  --card-border: rgba(41, 37, 36, 0.06);
+  --subtle: #f5f4f1;
   --border: #e7e5e4;
-  --accent: #6d8f73;
+  --accent: #7a9a80;
   --accent-foreground: #ffffff;
-  --accent-muted: rgba(109, 143, 115, 0.14);
-  --accent-subtle: rgba(109, 143, 115, 0.08);
+  --accent-muted: rgba(122, 154, 128, 0.12);
+  --accent-subtle: rgba(122, 154, 128, 0.06);
+  --primary: #e8b4b8;
+  --primary-hover: #dfa0a6;
+  --primary-foreground: #44272a;
+  --primary-muted: rgba(232, 180, 184, 0.35);
   --gold: #a8a29e;
-  --gold-muted: rgba(168, 162, 158, 0.12);
-  --shadow-soft: 0 1px 2px rgba(28, 25, 23, 0.04), 0 4px 16px rgba(28, 25, 23, 0.03);
+  --gold-muted: rgba(168, 162, 158, 0.1);
+  --shadow-soft: 0 1px 2px rgba(41, 37, 36, 0.04), 0 8px 32px rgba(41, 37, 36, 0.04);
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
 }
 
 @theme inline {
@@ -28,6 +34,10 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-muted: var(--accent-muted);
   --color-accent-subtle: var(--accent-subtle);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-muted: var(--primary-muted);
   --color-gold: var(--gold);
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
@@ -44,44 +54,35 @@ body {
 }
 
 ::selection {
-  background: rgba(109, 143, 115, 0.22);
+  background: var(--primary-muted);
   color: var(--foreground);
 }
 
 .gradient-mesh {
   background:
-    radial-gradient(ellipse 70% 45% at 50% -15%, var(--accent-subtle), transparent),
-    radial-gradient(ellipse 50% 35% at 100% 0%, var(--gold-muted), transparent),
+    radial-gradient(ellipse 70% 50% at 50% -20%, var(--primary-muted), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 100% 0%, var(--accent-subtle), transparent),
     var(--background);
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-soft);
 }
 
 .text-gradient {
-  background: linear-gradient(135deg, #1c1917 0%, #6d8f73 55%, #78716c 100%);
+  background: linear-gradient(135deg, #292524 0%, #7a9a80 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 @keyframes fade-in {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -89,10 +90,6 @@ body {
   }
 }
 
-.animate-shimmer {
-  animation: shimmer 2s ease-in-out infinite;
-}
-
 .animate-fade-in {
-  animation: fade-in 0.4s ease-out forwards;
+  animation: fade-in 0.45s ease-out forwards;
 }

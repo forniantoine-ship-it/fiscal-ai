@@ -135,6 +135,18 @@ export interface FiscalYear {
   updatedAt: string;
 }
 
+export interface DeclarationDraft {
+  completedSteps: string[];
+  siren?: string;
+  exploitantFirstName?: string;
+  exploitantLastName?: string;
+  usagesPersonnelsConfirmed?: boolean;
+  baremeCarburantConfirmed?: boolean;
+  regimeSocial?: string;
+  tvaRegime?: string;
+  signedAt?: string;
+}
+
 export interface DocumentOcrMeta {
   documentTypeConfidence: number;
   amountPeriod: "monthly" | "annual" | "one_time" | "unknown";

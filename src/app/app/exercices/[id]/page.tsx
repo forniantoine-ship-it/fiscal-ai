@@ -1,7 +1,7 @@
 "use client";
 
-import { JourneyTunnel } from "@/components/lmnp/journey/JourneyTunnel";
+import { DeclarationHome } from "@/components/lmnp/declaration/DeclarationHome";
 
 export default function ExerciceDashboardPage() {
-  return <JourneyTunnel />;
+  return <DeclarationHome />;
 }

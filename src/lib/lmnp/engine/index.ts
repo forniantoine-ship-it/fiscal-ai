@@ -13,8 +13,15 @@ export {
   resolveFiscalYearStatus,
   type DossierProgressSnapshot,
 } from "./workspace-progress";
+export {
+  resolveDeclarationProgress,
+  type DeclarationProgress,
+  type DeclarationStepView,
+} from "./declaration-progress";
 
-import type { Alert, AssistantBrief, LmnpJourney, UserConfidenceScore, NextAction } from "../types";
+import type { Alert, AssistantBrief, DeclarationDraft, LmnpJourney, UserConfidenceScore, NextAction } from "../types";
+import type { PersistedWorkspace } from "../store/persistence";
+import { resolveDeclarationProgress, type DeclarationProgress } from "./declaration-progress";
 import { buildAssistantBrief } from "./assistant-brief";
 import { buildEngineContext } from "./context";
 import { recomputeAlerts } from "./alerts";
@@ -28,6 +35,7 @@ export interface WorkspaceDerivatives extends DossierProgressSnapshot {
   journey: LmnpJourney;
   assistant: AssistantBrief;
   nextAction: NextAction;
+  declaration: DeclarationProgress;
   pendingValidationCount: number;
   blockingAlertCount: number;
   canClose: boolean;
@@ -40,6 +48,7 @@ export function deriveWorkspace(
   validationItems: Parameters<typeof buildEngineContext>[3],
   ledgerEntries: Parameters<typeof buildEngineContext>[4],
   extractions: import("../types").Extraction[] = [],
+  declarationDraft?: DeclarationDraft,
 ): WorkspaceDerivatives {
   const ctx = buildEngineContext(
     fiscalYear,
@@ -61,12 +70,24 @@ export function deriveWorkspace(
   const assistant = buildAssistantBrief(ctxWithAlerts, journey, extractions);
   const nextAction = pickJourneyAction(ctxWithAlerts, journey, extractions);
 
+  const persisted: PersistedWorkspace = {
+    fiscalYear,
+    properties,
+    documents,
+    validationItems,
+    ledgerEntries,
+    extractions,
+    declarationDraft,
+  };
+  const declaration = resolveDeclarationProgress(persisted);
+
   return {
     alerts,
     confidence: computeUserConfidence(ctxWithAlerts, canClose),
     journey,
     assistant,
     nextAction,
+    declaration,
     pendingValidationCount,
     blockingAlertCount,
     canClose,

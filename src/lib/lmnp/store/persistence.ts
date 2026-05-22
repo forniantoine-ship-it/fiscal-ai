@@ -1,4 +1,5 @@
 import type {
+  DeclarationDraft,
   Extraction,
   FiscalYear,
   LedgerEntry,
@@ -27,6 +28,7 @@ export interface PersistedWorkspace {
   extractions: Extraction[];
   validationItems: ValidationItem[];
   ledgerEntries: LedgerEntry[];
+  declarationDraft?: DeclarationDraft;
 }
 
 export interface HydratedLmnpStore {
@@ -348,5 +350,6 @@ export function createDefaultWorkspace(): PersistedWorkspace {
     extractions: [],
     validationItems: [],
     ledgerEntries: [],
+    declarationDraft: { completedSteps: [] },
   };
 }
