@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #faf9f7;
+  --canvas-base: #f3f3f1;
+  --canvas-mist: #f5f5f3;
+  --background: #f4f4f2;
   --foreground: #292524;
   --muted: #78716c;
   --card: #ffffff;
@@ -47,10 +49,77 @@ html {
   scroll-behavior: smooth;
 }
 
+/*
+ * Fond atmosphérique — plusieurs halos géants, presque imperceptibles.
+ * Aucun dégradé linéaire visible : uniquement des lumières diffuses superposées.
+ */
 body {
-  background: var(--background);
+  position: relative;
+  min-height: 100%;
+  background-color: var(--canvas-base);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-color: var(--canvas-base);
+  background-image:
+    /* halo beige chaud — haut gauche */
+    radial-gradient(
+      ellipse 120% 90% at -8% -12%,
+      rgba(237, 230, 220, 0.72) 0%,
+      rgba(243, 240, 234, 0.28) 38%,
+      transparent 62%
+    ),
+    /* gris froid diffus — droite */
+    radial-gradient(
+      ellipse 100% 75% at 108% 6%,
+      rgba(224, 228, 232, 0.48) 0%,
+      rgba(232, 234, 236, 0.18) 42%,
+      transparent 58%
+    ),
+    /* rose poudré ultra léger — centre */
+    radial-gradient(
+      ellipse 70% 55% at 48% 38%,
+      rgba(236, 218, 216, 0.16) 0%,
+      rgba(240, 232, 230, 0.06) 45%,
+      transparent 68%
+    ),
+    /* brume blanc cassé — bas */
+    radial-gradient(
+      ellipse 110% 80% at 50% 112%,
+      rgba(248, 247, 244, 0.78) 0%,
+      rgba(245, 244, 241, 0.32) 40%,
+      transparent 58%
+    ),
+    /* lumière douce secondaire — milieu droit */
+    radial-gradient(
+      ellipse 65% 50% at 78% 62%,
+      rgba(252, 250, 247, 0.42) 0%,
+      transparent 55%
+    ),
+    /* voile général — profondeur */
+    radial-gradient(
+      ellipse 140% 100% at 50% 50%,
+      rgba(245, 245, 243, 0.35) 0%,
+      transparent 70%
+    );
+}
+
+/* léger grain de surface — effet verre dépoli, quasi invisible */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 ::selection {
@@ -58,18 +127,25 @@ body {
   color: var(--foreground);
 }
 
+/* conteneur page : laisse passer l’ambiance du body */
 .gradient-mesh {
-  background:
-    radial-gradient(ellipse 70% 50% at 50% -20%, var(--primary-muted), transparent 55%),
-    radial-gradient(ellipse 40% 30% at 100% 0%, var(--accent-subtle), transparent),
-    var(--background);
+  position: relative;
+  min-height: 100vh;
+  background: transparent;
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(1.05);
+  -webkit-backdrop-filter: blur(20px) saturate(1.05);
   border: 1px solid var(--card-border);
   box-shadow: var(--shadow-soft);
+}
+
+.surface-frost {
+  background: rgba(252, 251, 249, 0.65);
+  backdrop-filter: blur(14px) saturate(1.02);
+  -webkit-backdrop-filter: blur(14px) saturate(1.02);
 }
 
 .text-gradient {

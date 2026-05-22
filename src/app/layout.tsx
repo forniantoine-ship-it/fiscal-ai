@@ -40,7 +40,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased">
+        <div className="gradient-mesh min-h-screen">{children}</div>
+      </body>
     </html>
   );
 }

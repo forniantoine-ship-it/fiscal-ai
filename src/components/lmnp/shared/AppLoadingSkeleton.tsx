@@ -4,7 +4,7 @@ interface AppLoadingSkeletonProps {
 
 export function AppLoadingSkeleton({ message }: AppLoadingSkeletonProps) {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <div className="border-b border-stone-200 px-6 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between">
           <div className="space-y-2">

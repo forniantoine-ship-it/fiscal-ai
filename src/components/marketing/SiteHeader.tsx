@@ -13,7 +13,7 @@ export function SiteHeader() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 bg-background/90 backdrop-blur-md">
+    <header className="surface-frost fixed inset-x-0 top-0 z-50 border-b border-stone-200/30">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="text-[15px] font-medium text-stone-700">
           Fiscal AI

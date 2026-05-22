@@ -3,7 +3,6 @@ import { PrimaryButton, SecondaryButton } from "@/components/lmnp/design-system"
 export function HomeHero() {
   return (
     <section className="relative overflow-hidden pt-32 pb-24 sm:pt-40 sm:pb-32">
-      <div className="gradient-mesh absolute inset-0 -z-10" />
       <div className="mx-auto max-w-3xl px-6 text-center">
         <p className="text-[12px] tracking-wide text-stone-500">Déclaration LMNP simplifiée</p>
         <h1

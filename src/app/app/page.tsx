@@ -14,7 +14,7 @@ export default function AppRootPage() {
   }, [isReady, router, workspace.fiscalYear.id]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center text-sm text-stone-500">
+    <div className="flex min-h-screen items-center justify-center bg-transparent text-sm text-stone-500">
       Redirection…
     </div>
   );

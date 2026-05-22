@@ -12,8 +12,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pending = workspace.pendingValidationCount;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 bg-background/90 backdrop-blur-md">
+    <div className="min-h-screen">
+      <header className="surface-frost sticky top-0 z-40 border-b border-stone-200/40">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
           <Link
             href={base}
