@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLmnp } from "@/lib/lmnp/store";
 import {
-  documentJourneyStepHref,
-  resolveCurrentDocumentStepId,
+  isDocumentJourneyStarted,
+  resolveCurrentDocumentStepHref,
 } from "@/lib/lmnp/engine/document-journey-progress";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
@@ -30,10 +30,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ledgerEntries: workspace.ledgerEntries,
     declarationDraft: workspace.declarationDraft,
   };
-  const documentsHref = documentJourneyStepHref(
-    workspace.fiscalYear.id,
-    resolveCurrentDocumentStepId(ws),
-  );
+  const documentsHref = isDocumentJourneyStarted(ws)
+    ? resolveCurrentDocumentStepHref(workspace.fiscalYear.id, ws)
+    : base;
 
   return (
     <div className="min-h-screen">

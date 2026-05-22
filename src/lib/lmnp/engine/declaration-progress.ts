@@ -8,9 +8,10 @@ import {
 import type { DeclarationDraft } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
 import {
-  documentJourneyStepHref,
   isDocumentJourneyComplete,
+  isDocumentJourneyStarted,
   resolveCurrentDocumentStep,
+  resolveCurrentDocumentStepHref,
 } from "./document-journey-progress";
 
 export type DeclarationStepStatus = "completed" | "current" | "upcoming";
@@ -118,6 +119,9 @@ function buildHeadline(currentId: DeclarationStepId, ws: PersistedWorkspace): st
   const pending = ws.validationItems.filter((v) => v.status === "pending").length;
 
   if (currentId === "documents" && !isDocumentJourneyComplete(ws)) {
+    if (!isDocumentJourneyStarted(ws)) {
+      return "Votre déclaration LMNP, presque entièrement automatisée.";
+    }
     return resolveCurrentDocumentStep(ws).screenTitle;
   }
   if (pending > 0) {
@@ -158,9 +162,16 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
   let label = "Continuer";
   let href = declarationStepHref(ws.fiscalYear.id, currentStepId);
   if (currentStepId === "documents" && !isDocumentJourneyComplete(ws)) {
-    const docStep = resolveCurrentDocumentStep(ws);
-    label = docStep.ctaLabel;
-    href = documentJourneyStepHref(ws.fiscalYear.id, docStep.id);
+    if (!isDocumentJourneyStarted(ws)) {
+      label = "Commencer";
+      href = `/app/exercices/${ws.fiscalYear.id}`;
+    } else {
+      const docStep = resolveCurrentDocumentStep(ws);
+      label = docStep.id === "inpi" && !ws.declarationDraft?.inpiDocumentId
+        ? docStep.ctaLabel
+        : "Poursuivre";
+      href = resolveCurrentDocumentStepHref(ws.fiscalYear.id, ws);
+    }
   }
   else if (pending > 0) {
     label = "Confirmer";

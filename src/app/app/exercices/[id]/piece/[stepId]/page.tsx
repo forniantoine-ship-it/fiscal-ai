@@ -5,7 +5,6 @@ import {
   DOCUMENT_JOURNEY_ORDER,
   type DocumentJourneyStepId,
 } from "@/lib/lmnp/constants/document-journey";
-import { InpiDocumentStep } from "@/components/lmnp/document-journey/InpiDocumentStep";
 import { SequentialDocumentStep } from "@/components/lmnp/document-journey/SequentialDocumentStep";
 
 const VALID = new Set(DOCUMENT_JOURNEY_ORDER);
@@ -22,7 +21,8 @@ export default function DocumentPiecePage() {
   }
 
   if (stepId === "inpi") {
-    return <InpiDocumentStep />;
+    router.replace(`/app/exercices/${fiscalYearId}/piece/inpi`);
+    return null;
   }
 
   return <SequentialDocumentStep stepId={stepId} />;

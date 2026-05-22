@@ -138,6 +138,7 @@ export interface FiscalYear {
 export interface DeclarationDraft {
   completedSteps: string[];
   documentStepsCompleted?: string[];
+  journeyStartedAt?: string;
   siren?: string;
   siret?: string;
   exploitantFirstName?: string;

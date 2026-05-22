@@ -89,7 +89,8 @@ export type LmnpAction =
       };
       documentId?: string;
     }
-  | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string };
+  | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
+  | { type: "START_DOCUMENT_JOURNEY" };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -590,6 +591,17 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         declarationDraft: {
           ...draft,
           completedSteps: [...completed],
+        },
+      });
+    }
+
+    case "START_DOCUMENT_JOURNEY": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          journeyStartedAt: draft.journeyStartedAt ?? nowIso(),
         },
       });
     }

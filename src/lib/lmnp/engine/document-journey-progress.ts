@@ -9,8 +9,12 @@ import {
 import type { DeclarationDraft, LmnpDocument } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
 
-function getCompletedDocumentSteps(draft: DeclarationDraft | undefined): string[] {
-  return draft?.documentStepsCompleted ?? [];
+function getDraft(ws: PersistedWorkspace): DeclarationDraft {
+  return ws.declarationDraft ?? { completedSteps: [] };
+}
+
+function getCompletedDocumentSteps(draft: DeclarationDraft): string[] {
+  return draft.documentStepsCompleted ?? [];
 }
 
 function documentMatchesStep(doc: LmnpDocument, stepId: DocumentJourneyStepId): boolean {
@@ -18,15 +22,26 @@ function documentMatchesStep(doc: LmnpDocument, stepId: DocumentJourneyStepId): 
   return def.fileNamePattern.test(doc.fileName) && doc.status === "analyzed";
 }
 
+export function isDocumentJourneyStarted(ws: PersistedWorkspace): boolean {
+  const draft = getDraft(ws);
+  return Boolean(
+    draft.journeyStartedAt ||
+    draft.inpiDocumentId ||
+    (draft.documentStepsCompleted?.length ?? 0) > 0 ||
+    ws.documents.length > 0,
+  );
+}
+
 export function isDocumentStepComplete(
   stepId: DocumentJourneyStepId,
   ws: PersistedWorkspace,
 ): boolean {
-  const completed = getCompletedDocumentSteps(ws.declarationDraft);
+  const draft = getDraft(ws);
+  const completed = getCompletedDocumentSteps(draft);
   if (completed.includes(stepId)) return true;
 
   if (stepId === "inpi") {
-    return Boolean(ws.declarationDraft?.inpiConfirmedAt);
+    return Boolean(draft.inpiConfirmedAt);
   }
 
   return ws.documents.some((d) => documentMatchesStep(d, stepId));
@@ -40,11 +55,40 @@ export function isDocumentJourneyComplete(ws: PersistedWorkspace): boolean {
   });
 }
 
+/** Où envoyer l’utilisateur pour la pièce INPI (upload vs validation). */
+export function inpiJourneyHref(fiscalYearId: string, ws: PersistedWorkspace): string {
+  const draft = getDraft(ws);
+  if (draft.inpiConfirmedAt) {
+    const next = nextDocumentStepId("inpi");
+    return next
+      ? documentJourneyStepHref(fiscalYearId, next)
+      : `/app/exercices/${fiscalYearId}`;
+  }
+
+  const inpiDoc = ws.documents.find((d) => d.id === draft.inpiDocumentId);
+  if (inpiDoc?.status === "analyzed" || inpiDoc?.status === "failed") {
+    return `/app/exercices/${fiscalYearId}/piece/inpi/validation`;
+  }
+
+  return `/app/exercices/${fiscalYearId}/piece/inpi`;
+}
+
 export function resolveCurrentDocumentStepId(ws: PersistedWorkspace): DocumentJourneyStepId {
+  if (!isDocumentStepComplete("inpi", ws)) return "inpi";
   for (const id of DOCUMENT_JOURNEY_ORDER) {
+    if (id === "inpi") continue;
     if (!isDocumentStepComplete(id, ws)) return id;
   }
   return DOCUMENT_JOURNEY_ORDER[DOCUMENT_JOURNEY_ORDER.length - 1];
+}
+
+export function resolveCurrentDocumentStepHref(
+  fiscalYearId: string,
+  ws: PersistedWorkspace,
+): string {
+  const stepId = resolveCurrentDocumentStepId(ws);
+  if (stepId === "inpi") return inpiJourneyHref(fiscalYearId, ws);
+  return documentJourneyStepHref(fiscalYearId, stepId);
 }
 
 export function resolveCurrentDocumentStep(ws: PersistedWorkspace) {
@@ -56,10 +100,9 @@ export function getDocumentJourneyProgress(ws: PersistedWorkspace) {
   const completed = DOCUMENT_JOURNEY_ORDER.filter((id) =>
     isDocumentStepComplete(id, ws),
   ).length;
-  const required = DOCUMENT_JOURNEY_STEPS.filter((s) => !s.optional).length;
   return {
     completed,
-    required,
+    total: DOCUMENT_JOURNEY_STEPS.length,
     percent: Math.round((completed / DOCUMENT_JOURNEY_ORDER.length) * 100),
   };
 }

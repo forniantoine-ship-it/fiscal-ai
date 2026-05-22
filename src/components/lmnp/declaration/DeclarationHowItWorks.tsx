@@ -1,8 +1,8 @@
 const STEPS = [
   "Déposez vos documents",
-  "L’IA extrait et pré-remplit automatiquement les informations",
-  "Vous corrigez ou validez",
-  "La déclaration est générée puis transmise",
+  "L’IA pré-remplit les données",
+  "Vous vérifiez et confirmez",
+  "La déclaration est télétransmise",
 ];
 
 export function DeclarationHowItWorks() {

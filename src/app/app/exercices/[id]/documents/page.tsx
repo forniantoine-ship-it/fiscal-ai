@@ -3,10 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useLmnp } from "@/lib/lmnp/store";
-import {
-  documentJourneyStepHref,
-  resolveCurrentDocumentStepId,
-} from "@/lib/lmnp/engine/document-journey-progress";
+import { resolveCurrentDocumentStepHref } from "@/lib/lmnp/engine/document-journey-progress";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 export default function DocumentsRedirectPage() {
@@ -24,8 +21,7 @@ export default function DocumentsRedirectPage() {
       ledgerEntries: workspace.ledgerEntries,
       declarationDraft: workspace.declarationDraft,
     };
-    const stepId = resolveCurrentDocumentStepId(ws);
-    router.replace(documentJourneyStepHref(workspace.fiscalYear.id, stepId));
+    router.replace(resolveCurrentDocumentStepHref(workspace.fiscalYear.id, ws));
   }, [isReady, router, workspace]);
 
   return (
