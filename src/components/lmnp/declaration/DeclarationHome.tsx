@@ -1,59 +1,91 @@
 "use client";
 
-import Link from "next/link";
 import { useLmnp } from "@/lib/lmnp/store";
-import { DECLARATION_FLOW } from "@/lib/lmnp/constants/declaration-flow";
 import {
-  MinimalProgress,
   PrimaryButton,
   QuietBadge,
   QuietInsight,
 } from "@/components/lmnp/design-system";
+import { DeclarationHowItWorks } from "./DeclarationHowItWorks";
 
-const STATUS_LABEL: Record<string, string> = {
-  uploaded: "En attente",
-  processing: "Analyse…",
-  analyzed: "Analysé",
-  failed: "À revoir",
-};
+function resolveHomeCopy(
+  year: number,
+  completed: boolean,
+  pending: number,
+): { title: string; subtitle: string } {
+  if (completed) {
+    return {
+      title: "Votre déclaration est transmise",
+      subtitle: "Merci — votre liasse a bien été envoyée.",
+    };
+  }
+  if (pending > 0) {
+    return {
+      title: `${pending} montant${pending > 1 ? "s" : ""} à confirmer`,
+      subtitle: "L’IA a pré-rempli votre dossier — une dernière validation suffit.",
+    };
+  }
+  return {
+    title: "Déposez vos documents.",
+    subtitle: "L’IA prépare votre déclaration à partir de vos justificatifs.",
+  };
+}
+
+function resolveCtaLabel(
+  hasDocuments: boolean,
+  pending: number,
+  currentStepId: string,
+): string {
+  if (pending > 0) return "Confirmer les montants";
+  if (!hasDocuments || currentStepId === "documents") return "Déposer mes documents";
+  if (currentStepId === "paiement") return "Payer";
+  if (currentStepId === "teletransmission") return "Transmettre";
+  return "Poursuivre ma déclaration";
+}
 
 export function DeclarationHome() {
   const { workspace } = useLmnp();
   const { declaration, fiscalYear } = workspace;
-  const { nextAction, insights, recentDocuments, percentComplete, steps } = declaration;
+  const { nextAction, insights, percentComplete, steps } = declaration;
 
-  const completed = fiscalYear.transmittedAt;
+  const completed = Boolean(fiscalYear.transmittedAt);
+  const pending = workspace.pendingValidationCount;
+  const hasDocuments = workspace.documents.length > 0;
+  const { title, subtitle } = resolveHomeCopy(fiscalYear.year, completed, pending);
+  const ctaLabel = resolveCtaLabel(hasDocuments, pending, declaration.currentStepId);
+  const ctaHref =
+    pending > 0
+      ? `/app/exercices/${fiscalYear.id}/validation`
+      : nextAction.href;
+
   const currentStep = steps.find((s) => s.status === "current");
+  const showWhisperProgress = hasDocuments && !completed && percentComplete > 0;
 
   return (
-    <div className="mx-auto max-w-xl animate-fade-in px-4 py-14 sm:py-20">
+    <div className="mx-auto max-w-xl animate-fade-in px-4 py-16 sm:py-24">
       <header className="text-center">
-        <QuietBadge tone="neutral">
-          Déclaration {fiscalYear.year}
-        </QuietBadge>
+        <QuietBadge tone="neutral">LMNP {fiscalYear.year}</QuietBadge>
         <h1
-          className="mt-6 text-[1.65rem] font-normal leading-snug tracking-tight text-stone-800 sm:text-3xl"
+          className="mt-8 text-[1.75rem] font-normal leading-[1.25] tracking-tight text-stone-800 sm:text-[2rem]"
           style={{ fontFamily: "var(--font-display), Georgia, serif" }}
         >
-          {completed ? "Votre déclaration est transmise" : nextAction.headline}
+          {title}
         </h1>
-        {!completed && (
-          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-stone-500">
-            Déposez vos documents — le reste avance presque tout seul.
-          </p>
-        )}
+        <p className="mx-auto mt-5 max-w-md text-[15px] leading-relaxed text-stone-500">
+          {subtitle}
+        </p>
       </header>
 
       {!completed && (
         <>
-          <div className="mt-12">
-            <PrimaryButton href={nextAction.href} className="w-full sm:w-auto">
-              {nextAction.label}
-            </PrimaryButton>
+          <DeclarationHowItWorks />
+
+          <div className="mt-12 flex justify-center">
+            <PrimaryButton href={ctaHref}>{ctaLabel}</PrimaryButton>
           </div>
 
           {insights.length > 0 && (
-            <ul className="mt-8 flex flex-col items-center gap-2">
+            <ul className="mt-10 flex flex-col items-center gap-1.5">
               {insights.map((text) => (
                 <li key={text}>
                   <QuietInsight text={text} />
@@ -62,60 +94,28 @@ export function DeclarationHome() {
             </ul>
           )}
 
-          {recentDocuments.length > 0 && (
-            <section className="mt-14">
-              <p className="mb-4 text-center text-[11px] tracking-wide text-stone-400">
-                Documents récents
-              </p>
-              <ul className="space-y-2">
-                {recentDocuments.map((doc) => (
-                  <li
-                    key={doc.id}
-                    className="flex items-center justify-between rounded-xl bg-card px-4 py-3 shadow-[var(--shadow-soft)]"
-                  >
-                    <span className="truncate text-sm text-stone-700">{doc.fileName}</span>
-                    <span className="shrink-0 text-[11px] text-stone-400">
-                      {STATUS_LABEL[doc.status] ?? doc.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+          {showWhisperProgress && (
+            <footer className="mt-20 text-center">
+              <div
+                className="mx-auto h-px max-w-[8rem] overflow-hidden bg-stone-200/60"
+                role="progressbar"
+                aria-valuenow={percentComplete}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Avancement"
+              >
+                <div
+                  className="h-full bg-stone-400/50 transition-[width] duration-700 ease-out"
+                  style={{ width: `${Math.max(percentComplete, 4)}%` }}
+                />
+              </div>
+              {currentStep && (
+                <p className="mt-4 text-[11px] text-stone-400">
+                  Suite du parcours · {currentStep.title}
+                </p>
+              )}
+            </footer>
           )}
-
-          <section className="mt-16">
-            <MinimalProgress percent={percentComplete} label="Progression" />
-            <nav className="mt-8" aria-label="Étapes de la déclaration">
-              <ol className="flex flex-wrap justify-center gap-x-4 gap-y-2">
-                {DECLARATION_FLOW.map((step) => {
-                  const view = steps.find((s) => s.id === step.id);
-                  const done = view?.status === "completed";
-                  const current = view?.status === "current";
-                  return (
-                    <li key={step.id}>
-                      <Link
-                        href={view?.href ?? "#"}
-                        className={`text-[11px] transition-colors ${
-                          current
-                            ? "text-stone-700 underline decoration-stone-300 underline-offset-4"
-                            : done
-                              ? "text-stone-400"
-                              : "text-stone-300 hover:text-stone-500"
-                        }`}
-                      >
-                        {step.title}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ol>
-            </nav>
-            {currentStep && (
-              <p className="mt-6 text-center text-[12px] text-stone-400">
-                Prochaine étape : {currentStep.title}
-              </p>
-            )}
-          </section>
         </>
       )}
     </div>
