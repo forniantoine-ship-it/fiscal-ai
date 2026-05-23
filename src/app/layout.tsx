@@ -15,19 +15,20 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "Fiscal AI — Déclaration LMNP simple et guidée",
+  title: "Fiscal AI — Votre déclaration LMNP, enfin simple",
   description:
-    "Déposez vos documents, votre liasse LMNP est générée automatiquement. Parcours guidé, extraction IA et télétransmission.",
+    "Déposez vos documents, validez l’essentiel, générez votre déclaration LMNP. 149 € TTC, télétransmission EDI incluse.",
   keywords: [
-    "optimisation fiscale",
-    "impôts France",
-    "assistant fiscal IA",
-    "réduction impôts légale",
+    "déclaration LMNP",
+    "liasse LMNP",
+    "location meublée",
+    "télétransmission EDI",
+    "déclaration LMP",
   ],
   openGraph: {
-    title: "Fiscal AI — Optimisation fiscale intelligente",
+    title: "Fiscal AI — Votre déclaration LMNP, enfin simple",
     description:
-      "Réduisez vos impôts légalement grâce à l'IA et l'expertise fiscale française.",
+      "Un parcours guidé : documents, préparation automatique, validation, déclaration. 149 € TTC, EDI inclus.",
     locale: "fr_FR",
     type: "website",
   },
