@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
-import { ProgressBar } from "@/design-system/components/ProgressBar";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { DeclarationHowItWorks } from "@/components/lmnp/declaration/DeclarationHowItWorks";
+import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import { formatNormalizedValue } from "@/lib/lmnp/validation/display";
 import {
   isDocumentJourneyComplete,
@@ -131,7 +131,7 @@ export function DashboardHome() {
             Il reste {pending} confirmation{pending > 1 ? "s" : ""} avant la génération de la liasse.
           </p>
           <div className="mt-6">
-            <ProgressBar value={declaration.percentComplete} label="Avancement global" />
+            <WorkspaceProgress label="Avancement global" />
           </div>
         </header>
 
@@ -219,7 +219,7 @@ export function DashboardHome() {
           : `Prochaine étape · ${currentDocStep.screenTitle}`}
       </p>
       <div className="mt-8">
-        <ProgressBar value={declaration.percentComplete} />
+        <WorkspaceProgress />
       </div>
       <div className="mt-10 flex flex-col items-center gap-3">
         <Button href={resumeHref}>{docJourneyDone ? workspace.nextAction.cta : "Poursuivre"}</Button>
