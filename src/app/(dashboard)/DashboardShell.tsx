@@ -7,12 +7,12 @@ import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
 
 function DashboardLayoutBridge({ children }: { children: ReactNode }) {
-  const { workspace } = useLmnp();
+  const { workspace, autosaveStatus } = useLmnp();
 
   return (
     <DashboardLayout
       declarationYear={workspace.fiscalYear.year}
-      autosaveStatus="saved"
+      autosaveStatus={autosaveStatus}
     >
       {children}
     </DashboardLayout>

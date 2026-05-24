@@ -17,9 +17,12 @@ import {
   flushWorkspaceSave,
   hydrateLmnpStore,
   loadDocumentFile,
+  markAutosaveSaved,
   removePersistedDocument,
   scheduleSaveWorkspace,
+  subscribeAutosaveStatus,
   syncDocumentBlobs,
+  type AutosaveStatus,
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
@@ -29,6 +32,7 @@ interface LmnpContextValue {
   dispatch: (action: LmnpAction) => void;
   getFile: (documentId: string) => File | undefined;
   isReady: boolean;
+  autosaveStatus: AutosaveStatus;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -47,6 +51,7 @@ function toPersisted(state: LmnpState) {
 
 export function LmnpProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -68,6 +73,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       if (workspace) {
         dispatch({ type: "HYDRATE", payload: workspace, files: fileRegistry });
       }
+      markAutosaveSaved();
       setIsReady(true);
     })();
 
@@ -75,6 +81,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
   useEffect(() => {
     if (!isReady) return;
@@ -155,8 +163,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       dispatch: dispatchWithPersistence,
       getFile,
       isReady,
+      autosaveStatus,
     }),
-    [workspace, dispatchWithPersistence, getFile, isReady],
+    [workspace, dispatchWithPersistence, getFile, isReady, autosaveStatus],
   );
 
   if (!isReady) {

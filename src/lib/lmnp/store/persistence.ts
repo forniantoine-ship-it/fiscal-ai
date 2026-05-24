@@ -39,6 +39,26 @@ export interface HydratedLmnpStore {
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingWorkspace: PersistedWorkspace | null = null;
 
+export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
+
+let autosaveStatus: AutosaveStatus = "idle";
+const autosaveListeners = new Set<(status: AutosaveStatus) => void>();
+
+function notifyAutosaveStatus(status: AutosaveStatus) {
+  autosaveStatus = status;
+  autosaveListeners.forEach((listener) => listener(status));
+}
+
+export function subscribeAutosaveStatus(listener: (status: AutosaveStatus) => void): () => void {
+  autosaveListeners.add(listener);
+  listener(autosaveStatus);
+  return () => autosaveListeners.delete(listener);
+}
+
+export function markAutosaveSaved() {
+  notifyAutosaveStatus("saved");
+}
+
 function isValidWorkspace(data: unknown): data is PersistedWorkspace {
   if (!data || typeof data !== "object") return false;
   const w = data as PersistedWorkspace;
@@ -193,14 +213,17 @@ export async function saveWorkspace(data: PersistedWorkspace): Promise<void> {
   if (typeof window === "undefined") return;
   try {
     await putWorkspaceRecord(data);
+    notifyAutosaveStatus("saved");
   } catch (error) {
     console.error("[lmnp] Failed to persist workspace", error);
+    notifyAutosaveStatus("error");
   }
 }
 
 /** Debounced workspace write — keeps UI instant while batching disk I/O. */
 export function scheduleSaveWorkspace(data: PersistedWorkspace): void {
   pendingWorkspace = data;
+  notifyAutosaveStatus("saving");
   if (saveWorkspaceTimer) clearTimeout(saveWorkspaceTimer);
   saveWorkspaceTimer = setTimeout(() => {
     saveWorkspaceTimer = null;
