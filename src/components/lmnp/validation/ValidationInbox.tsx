@@ -14,7 +14,7 @@ import { CorrectionModal } from "./CorrectionModal";
 import { RejectFieldDialog } from "./RejectFieldDialog";
 
 export function ValidationInbox() {
-  const { workspace, dispatch } = useLmnp();
+  const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess } = useFeedback();
   const [correcting, setCorrecting] = useState<ValidationItem | null>(null);
   const [rejecting, setRejecting] = useState<ValidationItem | null>(null);
@@ -36,6 +36,29 @@ export function ValidationInbox() {
       ),
     [workspace.documents, workspace.validationItems, workspace.extractions],
   );
+
+  const manualFallbackGroups = useMemo(() => {
+    const coveredIds = new Set(documentGroups.map((g) => g.documentId).filter(Boolean));
+    return workspace.documents
+      .filter(
+        (d) =>
+          d.status === "analyzed" &&
+          !coveredIds.has(d.id) &&
+          (d.ocrMeta?.usedHeuristicFallback ||
+            d.ocrMeta?.fieldsDetected === 0 ||
+            d.ocrMeta?.warnings.some((w) => w.toLowerCase().includes("manuelle"))),
+      )
+      .map((doc) => ({
+        document: doc,
+        documentId: doc.id,
+        items: [] as ValidationItem[],
+        extractions: workspace.extractions.filter((e) => e.documentId === doc.id),
+        pendingCount: 0,
+        preValidatedCount: 0,
+      }));
+  }, [workspace.documents, workspace.extractions, documentGroups]);
+
+  const allGroups = [...documentGroups, ...manualFallbackGroups];
 
   const base = `/app/exercices/${workspace.fiscalYear.id}`;
 
@@ -74,7 +97,7 @@ export function ValidationInbox() {
           description="Importez vos pièces (loyers, charges, meublé…) — l'IA extrait les montants et vous les présente ici pour confirmation."
           primaryAction={{ label: "Ajouter des documents", href: `${base}/documents` }}
         />
-      ) : pending.length === 0 ? (
+      ) : pending.length === 0 && manualFallbackGroups.length === 0 ? (
         <EmptyState
           variant="success"
           title="Tout est confirmé"
@@ -84,16 +107,18 @@ export function ValidationInbox() {
         />
       ) : (
         <>
-          <p className="text-sm text-zinc-400">
-            {pending.length} montant{pending.length !== 1 ? "s" : ""} à confirmer — les lectures ≥
-            95 % sont déjà dans vos onglets. Un clic suffit pour valider le reste.
+          <p className="text-sm text-stone-600">
+            {pending.length > 0
+              ? `${pending.length} montant${pending.length !== 1 ? "s" : ""} à confirmer — seuls les montants haute confiance sans alerte sont synchronisés automatiquement.`
+              : "Complétez les documents ci-dessous par saisie manuelle."}
           </p>
 
           <div className="space-y-6">
-            {documentGroups.map((group) => (
+            {allGroups.map((group) => (
               <DocumentValidationCard
                 key={group.documentId ?? "orphan"}
                 group={group}
+                file={group.documentId ? getFile(group.documentId) : undefined}
                 onApprove={handleApprove}
                 onCorrect={(item) => setCorrecting(item)}
                 onReject={(item) => setRejecting(item)}
@@ -105,10 +130,10 @@ export function ValidationInbox() {
 
       {done.length > 0 && (
         <section>
-          <h3 className="mb-3 text-sm font-medium text-zinc-500">
+          <h3 className="mb-3 text-sm font-medium text-stone-500">
             Historique ({done.length})
           </h3>
-          <ul className="space-y-2 rounded-2xl border border-white/5 bg-white/[0.01] p-2">
+          <ul className="space-y-2 rounded-2xl border border-stone-200 bg-stone-50 p-2">
             {done.map((item) => (
               <ValidationFieldRowDone key={item.id} item={item} />
             ))}

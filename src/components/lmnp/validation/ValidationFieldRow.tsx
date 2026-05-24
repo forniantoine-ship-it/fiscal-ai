@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { Extraction, ValidationItem } from "@/lib/lmnp/types";
+import type { Extraction, OcrFieldKey, ValidationItem } from "@/lib/lmnp/types";
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
 import { formatNormalizedValue, isPreValidated } from "@/lib/lmnp/validation/display";
 import { getTabLabelForField } from "@/lib/lmnp/validation/ledger-display";
@@ -14,6 +14,8 @@ import { ValidationFieldActions } from "./ValidationFieldActions";
 interface ValidationFieldRowProps {
   item: ValidationItem;
   extractions: Extraction[];
+  activeFieldKey?: OcrFieldKey | null;
+  onFieldHover?: (fieldKey: OcrFieldKey | null) => void;
   onApprove: () => void;
   onCorrect: () => void;
   onReject: () => void;
@@ -22,6 +24,8 @@ interface ValidationFieldRowProps {
 export function ValidationFieldRow({
   item,
   extractions,
+  activeFieldKey,
+  onFieldHover,
   onApprove,
   onCorrect,
   onReject,
@@ -29,40 +33,68 @@ export function ValidationFieldRow({
   const preValidated = isPreValidated(item.confidence);
   const linkedExtractions = extractions.filter((e) => item.extractionIds.includes(e.id));
   const tabLabel = getTabLabelForField(item.fieldKey);
+  const primaryExtraction = linkedExtractions[0];
+  const warnings = linkedExtractions.flatMap((e) => e.warnings ?? []);
+  const isHighlighted =
+    primaryExtraction?.ocrFieldKey && activeFieldKey === primaryExtraction.ocrFieldKey;
 
   return (
     <article
       className={`rounded-xl border p-4 transition-colors sm:p-5 ${
-        preValidated
-          ? "border-emerald-500/25 bg-emerald-500/[0.06] shadow-[inset_3px_0_0_0_rgba(52,211,153,0.6)]"
-          : "border-white/8 bg-white/[0.02]"
+        isHighlighted
+          ? "border-accent/30 bg-accent-subtle ring-1 ring-accent/20"
+          : preValidated
+            ? "border-accent/25 bg-accent-subtle shadow-[inset_3px_0_0_0_rgba(52,211,153,0.6)]"
+            : "border-stone-200 bg-stone-100/80"
       }`}
+      onMouseEnter={() => {
+        if (primaryExtraction?.ocrFieldKey) onFieldHover?.(primaryExtraction.ocrFieldKey);
+      }}
+      onMouseLeave={() => onFieldHover?.(null)}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-medium text-zinc-100">{item.label}</h4>
+            <h4 className="text-sm font-medium text-stone-900">{item.label}</h4>
             {item.isRequired && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
                 Obligatoire
               </span>
             )}
             {preValidated && <PreValidatedBadge />}
+            {primaryExtraction?.ocrFieldKey && (
+              <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] text-stone-500">
+                Détecté sur le document
+              </span>
+            )}
           </div>
 
           <NormalizedValueDisplay value={item.proposedValue} />
 
           {linkedExtractions.length > 0 && (
-            <ul className="space-y-1 rounded-lg bg-black/20 px-3 py-2 text-xs text-zinc-500">
+            <ul className="space-y-1.5 rounded-lg bg-stone-100 px-3 py-2 text-xs">
               {linkedExtractions.map((ext) => (
-                <li key={ext.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    Extrait IA : <span className="text-zinc-400">{ext.rawValue}</span>
-                  </span>
-                  <span className="text-zinc-600">{ext.confidence} %</span>
+                <li key={ext.id} className="space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-stone-500">
+                      Extrait IA : <span className="text-stone-700">{ext.rawValue}</span>
+                    </span>
+                    <ConfidenceScore score={ext.confidence} size="sm" showRing={false} />
+                  </div>
+                  {ext.warnings && ext.warnings.length > 0 && (
+                    <ul className="text-stone-500">
+                      {ext.warnings.map((w) => (
+                        <li key={w}>⚠ {w}</li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+
+          {warnings.length > 0 && linkedExtractions.length === 0 && (
+            <p className="text-xs text-stone-500">{warnings[0]}</p>
           )}
         </div>
 
@@ -76,9 +108,9 @@ export function ValidationFieldRow({
         approveLabel={preValidated ? "Confirmer" : "Approuver"}
       />
 
-      <p className="mt-3 text-xs text-zinc-600">
+      <p className="mt-3 text-xs text-stone-500">
         Approuver crée une ligne dans l&apos;onglet{" "}
-        <span className="text-emerald-500/80">{tabLabel}</span> — modification possible ensuite.
+        <span className="text-accent/80">{tabLabel}</span> — modification possible ensuite.
       </p>
     </article>
   );
@@ -98,20 +130,20 @@ export function ValidationFieldRowDone({ item }: { item: ValidationItem }) {
         : "Rejeté";
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/[0.02] px-4 py-3 text-sm">
+    <li className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-stone-100/80 px-4 py-3 text-sm">
       <div className="min-w-0">
-        <span className="text-zinc-400">{item.label}</span>
+        <span className="text-stone-600">{item.label}</span>
         {item.documentFileName && (
-          <p className="truncate text-[10px] text-zinc-600">Source : {item.documentFileName}</p>
+          <p className="truncate text-[10px] text-stone-500">Source : {item.documentFileName}</p>
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-emerald-400/90">{formatNormalizedValue(value)}</span>
+        <span className="font-medium text-accent/90">{formatNormalizedValue(value)}</span>
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
             item.status === "ignored"
-              ? "bg-zinc-500/10 text-zinc-500"
-              : "bg-emerald-500/10 text-emerald-400"
+              ? "bg-stone-400/10 text-stone-500"
+              : "bg-accent/10 text-accent"
           }`}
         >
           {statusLabel}
@@ -119,7 +151,7 @@ export function ValidationFieldRowDone({ item }: { item: ValidationItem }) {
         {item.status !== "ignored" && (
           <Link
             href={tabHref}
-            className="text-[10px] font-medium text-zinc-500 hover:text-emerald-400"
+            className="text-[10px] font-medium text-stone-500 hover:text-accent"
           >
             → {tabLabel}
           </Link>

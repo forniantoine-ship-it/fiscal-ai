@@ -19,6 +19,7 @@ export async function requestDocumentOcr(
     userCategory: DocumentCategory;
     fiscalYearId: string;
     documentId: string;
+    fiscalYear?: number;
   },
 ): Promise<DocumentAnalysisResult> {
   const formData = new FormData();
@@ -26,6 +27,9 @@ export async function requestDocumentOcr(
   formData.append("userCategory", options.userCategory);
   formData.append("fiscalYearId", options.fiscalYearId);
   formData.append("documentId", options.documentId);
+  if (options.fiscalYear) {
+    formData.append("fiscalYear", String(options.fiscalYear));
+  }
 
   images.forEach((img, index) => {
     const bytes = Uint8Array.from(atob(img.base64), (c) => c.charCodeAt(0));

@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
-import { LMNP_OCR_JSON_SCHEMA, parseOcrDocumentResult } from "@/lib/lmnp/ocr/schema";
+import { inferDocumentType } from "@/lib/lmnp/services/document-classifier";
 import { buildAnalysisResult } from "@/lib/lmnp/ocr/map-to-extractions";
+import { buildOcrSystemPrompt, buildOcrUserPrompt } from "@/lib/lmnp/ocr/prompts";
+import { LMNP_OCR_JSON_SCHEMA, parseOcrDocumentResult } from "@/lib/lmnp/ocr/schema";
 
 export const maxDuration = 60;
-
-const SYSTEM_PROMPT = `Tu es un expert OCR fiscal pour la location meublée non professionnelle (LMNP) en France.
-Analyse le(s) document(s) fourni(s) et extrais les champs demandés.
-- Montants en euros (nombre décimal, pas de symbole dans la valeur).
-- TVA : montant de TVA si présent, sinon null.
-- Fournisseur : nom de l'émetteur (syndic, assurance, administration, banque, etc.).
-- Date : format ISO YYYY-MM-DD si visible.
-- documentType : choisis le type LMNP le plus pertinent parmi l'enum.
-- confidence : entier 0-100 par champ (100 = certain).
-Si une information est absente ou illisible, renvoie null pour ce champ.`;
 
 function getOpenAI(): OpenAI {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -31,6 +23,8 @@ export async function POST(request: Request) {
     const userCategory = String(formData.get("userCategory") ?? "autre") as DocumentCategory;
     const fiscalYearId = String(formData.get("fiscalYearId") ?? "");
     const documentId = String(formData.get("documentId") ?? "");
+    const fiscalYearRaw = formData.get("fiscalYear");
+    const fiscalYear = fiscalYearRaw ? Number(fiscalYearRaw) : undefined;
 
     const imageParts: { type: "image_url"; image_url: { url: string; detail: "high" } }[] = [];
 
@@ -52,6 +46,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Aucune image fournie." }, { status: 400 });
     }
 
+    const suggested = inferDocumentType(fileName, userCategory);
+
     const openai = getOpenAI();
     const model = process.env.OPENAI_OCR_MODEL ?? "gpt-4o-mini";
 
@@ -59,13 +55,19 @@ export async function POST(request: Request) {
       model,
       temperature: 0,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: buildOcrSystemPrompt() },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: `Fichier : "${fileName}". Catégorie utilisateur : ${userCategory}. Pages : ${imageParts.length}. Extrais les champs structurés.`,
+              text: buildOcrUserPrompt({
+                fileName,
+                userCategory,
+                pageCount: imageParts.length,
+                suggestedType: suggested.documentType,
+                fiscalYear,
+              }),
             },
             ...imageParts,
           ],
@@ -99,7 +101,13 @@ export async function POST(request: Request) {
       uploadedAt: new Date().toISOString(),
     };
 
-    const result = buildAnalysisResult(stubDoc, parsed, userCategory);
+    const result = buildAnalysisResult({
+      doc: stubDoc,
+      ocr: parsed,
+      userCategory,
+      suggestedType: suggested.documentType,
+      fiscalYear,
+    });
 
     return NextResponse.json({
       result: { ...result, ocr: parsed },
