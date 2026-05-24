@@ -11,6 +11,7 @@ import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { DocumentValidationCard } from "./DocumentValidationCard";
 import { ValidationSummaryBar } from "./ValidationSummaryBar";
+import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import { ValidationFieldRowDone } from "./ValidationFieldRow";
 import { CorrectionModal } from "./CorrectionModal";
 import { RejectFieldDialog } from "./RejectFieldDialog";
@@ -85,6 +86,7 @@ export function ValidationInbox() {
 
   return (
     <div className="space-y-8">
+      <WorkspaceProgress label="Avancement de la déclaration" />
       <ValidationSummaryBar
         pendingCount={pending.length}
         highConfidenceCount={highConfidence.length}
