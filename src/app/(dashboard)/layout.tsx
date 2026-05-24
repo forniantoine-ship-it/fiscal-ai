@@ -1,9 +1,9 @@
-import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
+import { DashboardShell } from "./DashboardShell";
 
 export default function DashboardRouteLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <DashboardLayout>{children}</DashboardLayout>;
+  return <DashboardShell>{children}</DashboardShell>;
 }

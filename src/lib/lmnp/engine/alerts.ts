@@ -1,4 +1,5 @@
 import { TAB_COPY } from "../constants/copilot-copy";
+import { LMNP_ROUTES, lmnpTabRoute } from "../routes";
 import type { Alert, AlertCode } from "../types";
 import { FIELD_REGISTRY } from "../types/field-keys";
 import type { EngineContext } from "./context";
@@ -27,7 +28,7 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         title: `Il manque : ${req.label}`,
         message: `Ajoutez ce document — l’IA le lira et remplira votre dossier automatiquement.`,
         primaryActionLabel: "Ajouter mes documents",
-        primaryActionHref: `/app/exercices/${base}/documents`,
+        primaryActionHref: LMNP_ROUTES.documents,
       });
     }
   }
@@ -50,7 +51,7 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
       message: `Vous avez des intérêts d’emprunt — ajoutez le document de votre banque.`,
       fieldKey: "loan.annualInterest",
       primaryActionLabel: "Ajouter le document",
-      primaryActionHref: `/app/exercices/${base}/documents`,
+      primaryActionHref: LMNP_ROUTES.documents,
     });
   }
 
@@ -68,7 +69,7 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         validationItemId: item.id,
         fieldKey: item.fieldKey,
         primaryActionLabel: "Vérifier ce montant",
-        primaryActionHref: `/app/exercices/${base}/${FIELD_REGISTRY[item.fieldKey].tab}`,
+        primaryActionHref: lmnpTabRoute(FIELD_REGISTRY[item.fieldKey].tab),
       });
     }
     if (item.isRequired) {
@@ -83,7 +84,7 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         validationItemId: item.id,
         fieldKey: item.fieldKey,
         primaryActionLabel: "Confirmer",
-        primaryActionHref: `/app/exercices/${base}/${FIELD_REGISTRY[item.fieldKey].tab}`,
+        primaryActionHref: lmnpTabRoute(FIELD_REGISTRY[item.fieldKey].tab),
       });
     }
   }
@@ -102,7 +103,7 @@ export function recomputeAlerts(ctx: EngineContext): Alert[] {
         message: `Ajoutez un document ou confirmez le montant dans « ${tabLabel} ».`,
         fieldKey: fieldKey as Alert["fieldKey"],
         primaryActionLabel: `Ouvrir ${tabLabel}`,
-        primaryActionHref: `/app/exercices/${base}/${meta.tab}`,
+        primaryActionHref: lmnpTabRoute(meta.tab),
       });
     }
   }

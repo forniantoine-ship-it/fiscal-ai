@@ -27,7 +27,7 @@ export const JOURNEY_STEPS: JourneyStepDefinition[] = [
     id: "validation",
     title: "Validation",
     description: "",
-    href: "/validation",
+    href: "/declarations",
     cta: "Valider",
   },
   {
@@ -41,7 +41,7 @@ export const JOURNEY_STEPS: JourneyStepDefinition[] = [
     id: "generate",
     title: "Déclaration",
     description: "",
-    href: "/validation",
+    href: "/declarations",
     cta: "Générer",
   },
   {

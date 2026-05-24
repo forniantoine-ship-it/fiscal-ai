@@ -1,3 +1,5 @@
+import { ConnexionOnboarding } from "@/components/lmnp/onboarding/ConnexionOnboarding";
+
 export default function ConnexionPage() {
-  return <main>Connexion</main>;
+  return <ConnexionOnboarding />;
 }

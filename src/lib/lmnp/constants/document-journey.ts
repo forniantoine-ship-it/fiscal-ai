@@ -93,7 +93,6 @@ export function nextDocumentStepId(id: DocumentJourneyStepId): DocumentJourneySt
   return DOCUMENT_JOURNEY_ORDER[idx + 1];
 }
 
-export function documentJourneyStepHref(fiscalYearId: string, id: DocumentJourneyStepId): string {
-  if (id === "inpi") return `/app/exercices/${fiscalYearId}/piece/inpi`;
-  return `/app/exercices/${fiscalYearId}/piece/${id}`;
+export function documentJourneyStepHref(_fiscalYearId: string, id: DocumentJourneyStepId): string {
+  return `/documents?step=${encodeURIComponent(id)}`;
 }

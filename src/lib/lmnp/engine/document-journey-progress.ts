@@ -8,6 +8,7 @@ import {
 } from "../constants/document-journey";
 import type { DeclarationDraft, LmnpDocument } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import { LMNP_ROUTES, documentJourneyRoute } from "../routes";
 
 function getDraft(ws: PersistedWorkspace): DeclarationDraft {
   return ws.declarationDraft ?? { completedSteps: [] };
@@ -60,17 +61,15 @@ export function inpiJourneyHref(fiscalYearId: string, ws: PersistedWorkspace): s
   const draft = getDraft(ws);
   if (draft.inpiConfirmedAt) {
     const next = nextDocumentStepId("inpi");
-    return next
-      ? documentJourneyStepHref(fiscalYearId, next)
-      : `/app/exercices/${fiscalYearId}`;
+    return next ? documentJourneyStepHref(fiscalYearId, next) : LMNP_ROUTES.dashboard;
   }
 
   const inpiDoc = ws.documents.find((d) => d.id === draft.inpiDocumentId);
   if (inpiDoc?.status === "analyzed" || inpiDoc?.status === "failed") {
-    return `/app/exercices/${fiscalYearId}/piece/inpi/validation`;
+    return documentJourneyRoute("inpi");
   }
 
-  return `/app/exercices/${fiscalYearId}/piece/inpi`;
+  return documentJourneyRoute("inpi");
 }
 
 export function resolveCurrentDocumentStepId(ws: PersistedWorkspace): DocumentJourneyStepId {

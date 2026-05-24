@@ -1,3 +1,5 @@
+import { declarationFlowPathToRoute } from "../routes";
+
 export type DeclarationStepId =
   | "documents"
   | "siren"
@@ -147,7 +149,7 @@ export function prevDeclarationStepId(id: DeclarationStepId): DeclarationStepId 
   return DECLARATION_STEP_ORDER[idx - 1];
 }
 
-export function declarationStepHref(fiscalYearId: string, id: DeclarationStepId): string {
+export function declarationStepHref(_fiscalYearId: string, id: DeclarationStepId): string {
   const step = getDeclarationStep(id);
-  return `/app/exercices/${fiscalYearId}${step.path}`;
+  return declarationFlowPathToRoute(step.path);
 }

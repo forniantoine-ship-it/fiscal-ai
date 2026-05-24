@@ -7,6 +7,7 @@ import {
 } from "../constants/declaration-flow";
 import type { DeclarationDraft } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import { LMNP_ROUTES } from "../routes";
 import {
   isDocumentJourneyComplete,
   isDocumentJourneyStarted,
@@ -164,7 +165,7 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
   if (currentStepId === "documents" && !isDocumentJourneyComplete(ws)) {
     if (!isDocumentJourneyStarted(ws)) {
       label = "Commencer";
-      href = `/app/exercices/${ws.fiscalYear.id}`;
+      href = LMNP_ROUTES.dashboard;
     } else {
       const docStep = resolveCurrentDocumentStep(ws);
       label = docStep.id === "inpi" && !ws.declarationDraft?.inpiDocumentId
@@ -175,7 +176,7 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
   }
   else if (pending > 0) {
     label = "Confirmer";
-    href = `/app/exercices/${ws.fiscalYear.id}/validation`;
+    href = LMNP_ROUTES.declarations;
   } else if (currentStepId === "paiement") label = "Payer";
   else if (currentStepId === "teletransmission") label = "Transmettre";
 

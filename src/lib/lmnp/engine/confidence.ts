@@ -1,5 +1,6 @@
 import type { NextAction, UserConfidenceScore } from "../types";
 import { FIELD_REGISTRY, type FieldKey } from "../types/field-keys";
+import { LMNP_ROUTES, lmnpTabRoute, toFlatLmnpRoute } from "../routes";
 import type { EngineContext } from "./context";
 import { getApplicableRequirements, getRequiredFields, hasActiveLedgerForField } from "./context";
 
@@ -81,7 +82,6 @@ function scoreToLevel(
 }
 
 export function pickNextAction(ctx: EngineContext): NextAction {
-  const base = `/app/exercices/${ctx.fiscalYear.id}`;
   const canClose =
     ctx.alerts.filter((a) => a.severity === "blocking").length === 0 &&
     ctx.validationItems.filter((v) => v.status === "pending").length === 0 &&
@@ -92,7 +92,7 @@ export function pickNextAction(ctx: EngineContext): NextAction {
     return {
       title: blocking.title,
       description: blocking.message,
-      href: blocking.primaryActionHref,
+      href: toFlatLmnpRoute(blocking.primaryActionHref),
       cta: "Corriger maintenant",
       estimatedMinutes: 5,
     };
@@ -105,14 +105,14 @@ export function pickNextAction(ctx: EngineContext): NextAction {
     return {
       title: "L’IA analyse vos documents",
       description: "Classification et extraction des montants en cours — cela ne prend que quelques instants.",
-      href: `${base}/documents`,
+      href: LMNP_ROUTES.documents,
       cta: "Voir l’avancement",
     };
   }
 
   const pending = ctx.validationItems.filter((v) => v.status === "pending");
   if (pending.length > 0) {
-    const tabHref = pickTabForPendingValidation(ctx, base);
+    const tabHref = pickTabForPendingValidation(ctx);
     return {
       title: "Vérifiez les informations détectées par l’IA",
       description:
@@ -128,7 +128,7 @@ export function pickNextAction(ctx: EngineContext): NextAction {
       title: "Commencez par ajouter vos documents principaux",
       description:
         "Déposez simplement vos PDF. L’IA analyse et classe automatiquement votre dossier.",
-      href: `${base}/documents`,
+      href: LMNP_ROUTES.documents,
       cta: "Ajouter mes documents",
       estimatedMinutes: 10,
     };
@@ -146,7 +146,7 @@ export function pickNextAction(ctx: EngineContext): NextAction {
     return {
       title: `Il manque encore votre ${label}`,
       description: "Ajoutez ce document pour compléter sereinement votre dossier.",
-      href: `${base}/documents`,
+      href: LMNP_ROUTES.documents,
       cta: "Ajouter un document",
       estimatedMinutes: 5,
     };
@@ -156,7 +156,7 @@ export function pickNextAction(ctx: EngineContext): NextAction {
     return {
       title: "Votre déclaration est prête",
       description: "Tous les éléments sont en place — vous pouvez générer votre déclaration LMNP.",
-      href: `${base}/validation`,
+      href: LMNP_ROUTES.declarations,
       cta: "Générer ma déclaration",
     };
   }
@@ -164,26 +164,20 @@ export function pickNextAction(ctx: EngineContext): NextAction {
   return {
     title: "Votre dossier avance bien",
     description: "Consultez Mes loyers et Mes dépenses pour vérifier que tout correspond à votre situation.",
-    href: `${base}/recettes`,
+    href: LMNP_ROUTES.revenus,
     cta: "Voir mon dossier",
   };
 }
 
-function pickTabForPendingValidation(ctx: EngineContext, base: string): string {
+function pickTabForPendingValidation(ctx: EngineContext): string {
   const tabOrder = ["recettes", "depenses", "immobilisations", "emprunts"] as const;
-  const tabPaths = {
-    recettes: `${base}/recettes`,
-    depenses: `${base}/depenses`,
-    immobilisations: `${base}/immobilisations`,
-    emprunts: `${base}/emprunts`,
-  };
 
   for (const tab of tabOrder) {
     const hasPending = ctx.validationItems.some(
       (v) => v.status === "pending" && FIELD_TAB[v.fieldKey] === tab,
     );
-    if (hasPending) return tabPaths[tab];
+    if (hasPending) return lmnpTabRoute(tab);
   }
 
-  return `${base}/recettes`;
+  return LMNP_ROUTES.revenus;
 }

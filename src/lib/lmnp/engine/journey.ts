@@ -4,6 +4,7 @@ import {
   getJourneyStepDef,
   journeyStepIndex,
 } from "../constants/journey-steps";
+import { LMNP_ROUTES, lmnpTabRoute, toFlatLmnpRoute } from "../routes";
 import type {
   JourneyStepId,
   JourneyStepStatus,
@@ -105,7 +106,6 @@ export function resolveCurrentStepId(flags: JourneyFlags): JourneyStepId {
 }
 
 export function resolveJourney(ctx: EngineContext): LmnpJourney {
-  const base = `/app/exercices/${ctx.fiscalYear.id}`;
   const flags = computeJourneyFlags(ctx);
   const currentStepId = resolveCurrentStepId(flags);
   const completedCount = JOURNEY_STEPS.filter((s) => isStepDone(s.id, flags)).length;
@@ -127,7 +127,7 @@ export function resolveJourney(ctx: EngineContext): LmnpJourney {
       id: def.id,
       title: def.title,
       description: def.description,
-      href: `${base}${def.href}`,
+      href: def.href,
       cta: def.cta,
       status,
       stepNumber: index + 1,
@@ -174,19 +174,19 @@ export function pickJourneyAction(
     return {
       title: brief.headline,
       description: "",
-      href: blocking.primaryActionHref,
+      href: toFlatLmnpRoute(blocking.primaryActionHref),
       cta: "Corriger",
     };
   }
 
   const hrefByStep: Record<JourneyStepId, string> = {
-    documents: `${base}/documents`,
-    analysis: `${base}/documents`,
-    validation: `${base}/validation`,
-    dossier: `${base}/activite`,
-    generate: `${base}/validation`,
-    payment: `${base}/paiement`,
-    transmission: `${base}/teletransmission`,
+    documents: LMNP_ROUTES.documents,
+    analysis: LMNP_ROUTES.documents,
+    validation: LMNP_ROUTES.declarations,
+    dossier: LMNP_ROUTES.activite,
+    generate: LMNP_ROUTES.declarations,
+    payment: LMNP_ROUTES.declarations,
+    transmission: LMNP_ROUTES.declarations,
   };
 
   if (journey.currentStepId === "dossier" && ctx.fiscalYear.regimeConfirmedAt) {
@@ -201,7 +201,7 @@ export function pickJourneyAction(
       return {
         title: brief.headline,
         description: "",
-        href: `${base}/documents`,
+        href: LMNP_ROUTES.documents,
         cta: "Ajouter",
       };
     }
@@ -210,7 +210,7 @@ export function pickJourneyAction(
   return {
     title: brief.headline,
     description: "",
-    href: hrefByStep[journey.currentStepId] ?? `${base}${def.href}`,
+    href: hrefByStep[journey.currentStepId] ?? def.href,
     cta: def.cta,
   };
 }
