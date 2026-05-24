@@ -1,85 +1,137 @@
 "use client";
 
 import { useState } from "react";
+
 import { SectionHeading } from "@/design-system/components/Section";
+import { colors } from "@/design-system/theme/colors";
+import { motions } from "@/design-system/theme/motions";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 
 const faqs = [
   {
-    question: "Est-ce vraiment légal de réduire ses impôts avec l'IA ?",
+    question: "Ai-je besoin de connaissances comptables ?",
     answer:
-      "Oui. L'IA ne crée pas de montages fictifs : elle identifie les dispositifs prévus par le CGI (PER, déficit foncier, réductions d'impôt, etc.) adaptés à votre situation. Chaque recommandation est validée par un expert fiscaliste avant application.",
+      "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les montants extraits, et nous nous occupons de la génération et de la télétransmission.",
   },
   {
-    question: "Qui peut utiliser Fiscal AI ?",
+    question: "Quels documents dois-je fournir ?",
     answer:
-      "Salariés, indépendants, dirigeants, investisseurs immobiliers et professions libérales en France. Notre moteur couvre l'impôt sur le revenu, les plus-values, la fiscalité des sociétés et l'optimisation patrimoniale.",
+      "Typiquement : votre bail meublé, vos relevés de loyers, votre tableau d'amortissement, vos justificatifs de charges et d'emprunt. La liste s'adapte à votre situation.",
+  },
+  {
+    question: "La télétransmission est-elle vraiment incluse ?",
+    answer:
+      "Oui. Les 149 € TTC comprennent la préparation du dossier, la génération de la liasse et la télétransmission EDI aux impôts.",
+  },
+  {
+    question: "Puis-je modifier les montants proposés ?",
+    answer:
+      "Absolument. Chaque montant extrait est visible et modifiable avant validation. Vous gardez le contrôle total sur votre déclaration.",
   },
   {
     question: "Mes données sont-elles sécurisées ?",
     answer:
-      "Vos données sont chiffrées, hébergées en Union européenne (France) et ne sont jamais revendues. Nous sommes conformes au RGPD. Vous pouvez demander la suppression de vos données à tout moment.",
+      "Vos documents sont chiffrés, hébergés en France, et ne sont jamais revendus. La sauvegarde est automatique tout au long du parcours.",
   },
-  {
-    question: "Combien coûte le service ?",
-    answer:
-      "Le diagnostic initial est gratuit et sans engagement. Les formules payantes démarrent à partir de 49 €/mois selon la complexité de votre patrimoine. Vous ne payez que si l'économie fiscale estimée dépasse nos honoraires.",
-  },
-  {
-    question: "L'IA remplace-t-elle mon comptable ?",
-    answer:
-      "Non. Fiscal AI complète votre expert-comptable en détectant des opportunités qu'il n'a pas le temps d'explorer. Nous travaillons en synergie avec votre cabinet ou vous mettons en relation avec un partenaire agréé.",
-  },
-  {
-    question: "Que se passe-t-il en cas de contrôle fiscal ?",
-    answer:
-      "Chaque optimisation est documentée avec les textes de loi applicables et les justificatifs nécessaires. En cas de contrôle, notre équipe vous accompagne pour présenter un dossier cohérent et traçable.",
-  },
-];
+] as const;
+
+function FaqAccordionItem({
+  question,
+  answer,
+  isOpen,
+  onToggle,
+}: {
+  question: string;
+  answer: string;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      style={{
+        overflow: "hidden",
+        borderRadius: radius.lg,
+        border: `1px solid ${colors.border.subtle}`,
+        backgroundColor: colors.surface.primary,
+      }}
+    >
+      <button
+        type="button"
+        className="flex w-full min-h-[44px] items-center justify-between gap-4 text-left"
+        style={{ padding: `${spacing.scale[5]} ${spacing.scale[6]}` }}
+        onClick={onToggle}
+        aria-expanded={isOpen}
+      >
+        <span style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
+          {question}
+        </span>
+        <svg
+          className="h-5 w-5 shrink-0"
+          style={{
+            color: colors.text.accent,
+            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+            transition: motions.workflow.step,
+          }}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen ? (
+        <div
+          style={{
+            borderTop: `1px solid ${colors.border.subtle}`,
+            padding: `0 ${spacing.scale[6]} ${spacing.scale[5]}`,
+          }}
+        >
+          <p
+            style={{
+              ...typography.body.desktop,
+              color: colors.text.secondary,
+              lineHeight: typography.lineHeight.relaxed,
+            }}
+          >
+            {answer}
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function FAQ() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="border-t border-stone-200 py-20 sm:py-28">
+    <section
+      id="faq"
+      style={{
+        borderTop: `1px solid ${colors.border.subtle}`,
+        paddingBlock: spacing.section.gapLanding,
+      }}
+    >
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
         <SectionHeading
           label="FAQ"
           title="Questions fréquentes"
-          description="Tout ce que vous devez savoir avant de lancer votre diagnostic fiscal gratuit."
+          description="Tout ce que vous devez savoir avant de lancer votre déclaration LMNP."
         />
 
         <div className="mt-12 space-y-3">
-          {faqs.map((faq, index) => {
-            const isOpen = openIndex === index;
-            return (
-              <div
-                key={faq.question}
-                className="overflow-hidden rounded-xl border border-stone-200 bg-card"
-              >
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left text-sm font-medium sm:text-base"
-                  onClick={() => setOpenIndex(isOpen ? null : index)}
-                  aria-expanded={isOpen}
-                >
-                  {faq.question}
-                  <svg
-                    className={`h-5 w-5 shrink-0 text-accent transition-transform ${isOpen ? "rotate-180" : ""}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                {isOpen && (
-                  <div className="border-t border-stone-200 px-6 pb-5 pt-0">
-                    <p className="text-sm leading-relaxed text-stone-600">{faq.answer}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {faqs.map((faq, index) => (
+            <FaqAccordionItem
+              key={faq.question}
+              question={faq.question}
+              answer={faq.answer}
+              isOpen={openIndex === index}
+              onToggle={() => setOpenIndex(openIndex === index ? null : index)}
+            />
+          ))}
         </div>
       </div>
     </section>

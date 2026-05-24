@@ -1,4 +1,5 @@
 import { Button } from "@/design-system/components/Button";
+import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
@@ -8,8 +9,8 @@ export function CTABanner() {
   return (
     <section style={{ paddingBlock: spacing.scale[12] }}>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div
-          className="relative overflow-hidden text-center"
+        <Card
+          className="relative overflow-hidden text-center !p-0"
           style={{
             borderRadius: radius.xl,
             border: `1px solid ${colors.border.selected}`,
@@ -18,10 +19,9 @@ export function CTABanner() {
               `radial-gradient(ellipse 50% 45% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 68%)`,
               `linear-gradient(135deg, ${colors.surface.primary} 0%, ${colors.orange[50]} 100%)`,
             ].join(", "),
-            padding: `${spacing.scale[12]} ${spacing.scale[8]}`,
           }}
         >
-          <div className="relative">
+          <div style={{ padding: `${spacing.scale[12]} ${spacing.scale[8]}` }}>
             <h2
               className="text-3xl sm:text-4xl"
               style={{
@@ -46,7 +46,7 @@ export function CTABanner() {
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </section>
   );
