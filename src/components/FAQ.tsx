@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { SectionHeading } from "./ui/SectionHeading";
+import { SectionHeading } from "@/design-system/components/Section";
 
 const faqs = [
   {

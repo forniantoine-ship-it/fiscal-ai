@@ -1,37 +1,26 @@
 import type { Metadata } from "next";
-import { DM_Sans, Instrument_Serif } from "next/font/google";
+import { DM_Sans, Fraunces } from "next/font/google";
+
 import "./globals.css";
 
-const dmSans = DM_Sans({
-  variable: "--font-sans",
+const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  variable: "--font-display",
+  weight: ["400", "500"],
+  display: "swap",
 });
 
-const instrumentSerif = Instrument_Serif({
-  variable: "--font-display",
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  weight: "400",
+  variable: "--font-sans",
+  weight: ["400", "500", "600"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
   title: "Fiscal AI — Votre déclaration LMNP, enfin simple",
   description:
-    "Déposez vos documents, validez l’essentiel, générez votre déclaration LMNP. 149 € TTC, télétransmission EDI incluse.",
-  keywords: [
-    "déclaration LMNP",
-    "liasse LMNP",
-    "location meublée",
-    "télétransmission EDI",
-    "déclaration LMP",
-  ],
-  openGraph: {
-    title: "Fiscal AI — Votre déclaration LMNP, enfin simple",
-    description:
-      "Un parcours guidé : documents, préparation automatique, validation, déclaration. 149 € TTC, EDI inclus.",
-    locale: "fr_FR",
-    type: "website",
-  },
+    "Déposez vos documents. L'IA prépare automatiquement votre déclaration LMNP. Vérifiez simplement avant génération et télétransmission.",
 };
 
 export default function RootLayout({
@@ -40,10 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${dmSans.variable} ${instrumentSerif.variable}`}>
-      <body className="min-h-screen antialiased">
-        <div className="gradient-mesh min-h-screen">{children}</div>
-      </body>
+    <html lang="fr" className={`${fraunces.variable} ${dmSans.variable}`}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }

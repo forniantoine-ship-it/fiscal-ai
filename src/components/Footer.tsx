@@ -1,4 +1,4 @@
-import { Button } from "./ui/Button";
+import { Button } from "@/design-system/components/Button";
 
 export function Footer() {
   return (
@@ -19,7 +19,7 @@ export function Footer() {
             </p>
           </div>
 
-          <Button href="#contact">Diagnostic gratuit</Button>
+          <Button href="/dashboard">Commencer</Button>
         </div>
 
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-stone-200 pt-8 text-xs text-stone-500 sm:flex-row">

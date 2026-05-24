@@ -1,5 +1,5 @@
-import { SectionHeading } from "./ui/SectionHeading";
-import { Button } from "./ui/Button";
+import { SectionHeading } from "@/design-system/components/Section";
+import { Button } from "@/design-system/components/Button";
 
 const steps = [
   {

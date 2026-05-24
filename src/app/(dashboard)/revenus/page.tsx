@@ -1,3 +1,3 @@
 export default function RevenusPage() {
-  return <main>Revenus</main>;
+  return <p>Revenus</p>;
 }

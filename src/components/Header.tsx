@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "./ui/Button";
+import { Button } from "@/design-system/components/Button";
 
 const navLinks = [
   { href: "#fonctionnement", label: "Comment ça marche" },
@@ -38,10 +38,10 @@ export function Header() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Button variant="ghost" href="#contact">
+          <Button variant="ghost" href="/connexion">
             Connexion
           </Button>
-          <Button href="#contact">Diagnostic gratuit</Button>
+          <Button href="/dashboard">Commencer</Button>
         </div>
 
         <button

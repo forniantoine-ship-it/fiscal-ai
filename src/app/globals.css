@@ -1,211 +1,37 @@
 @import "tailwindcss";
-@config "../../tailwind.config.mjs";
-@source "../**/*.{js,ts,jsx,tsx,mdx}";
 
-:root {
-  --canvas-base: #f3f3f1;
-  --canvas-mist: #f5f5f3;
-  --background: #f4f4f2;
-  --foreground: #292524;
-  --muted: #78716c;
-  --card: #ffffff;
-  --card-border: rgba(41, 37, 36, 0.06);
-  --subtle: #f5f4f1;
-  --border: #e7e5e4;
-  --accent: #7a9a80;
-  --accent-foreground: #ffffff;
-  --accent-muted: rgba(122, 154, 128, 0.12);
-  --accent-subtle: rgba(122, 154, 128, 0.06);
-  --primary: #e8b4b8;
-  --primary-hover: #dfa0a6;
-  --primary-foreground: #44272a;
-  --primary-muted: rgba(232, 180, 184, 0.35);
-  --gold: #a8a29e;
-  --gold-muted: rgba(168, 162, 158, 0.1);
-  --shadow-soft: 0 1px 2px rgba(41, 37, 36, 0.04), 0 8px 32px rgba(41, 37, 36, 0.04);
-  --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-muted: var(--muted);
-  --color-card: var(--card);
-  --color-subtle: var(--subtle);
-  --color-border: var(--border);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent-muted: var(--accent-muted);
-  --color-accent-subtle: var(--accent-subtle);
-  --color-primary: var(--primary);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary-muted: var(--primary-muted);
-  --color-gold: var(--gold);
-  --font-sans: var(--font-sans);
-  --font-display: var(--font-display);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 html {
-  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/*
- * Fond atmosphérique — plusieurs halos géants, presque imperceptibles.
- * Aucun dégradé linéaire visible : uniquement des lumières diffuses superposées.
- */
 body {
-  position: relative;
-  min-height: 100%;
-  background-color: var(--canvas-base);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  margin: 0;
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: -20%;
-  z-index: -2;
-  pointer-events: none;
-  background-color: #f3f3f1;
-  background-image:
-    radial-gradient(
-      ellipse 160% 120% at -15% -25%,
-      rgba(234, 226, 214, 0.55) 0%,
-      rgba(241, 238, 232, 0.2) 42%,
-      transparent 68%
-    ),
-    radial-gradient(
-      ellipse 140% 100% at 115% -5%,
-      rgba(218, 224, 230, 0.38) 0%,
-      rgba(228, 232, 236, 0.12) 45%,
-      transparent 65%
-    ),
-    radial-gradient(
-      ellipse 100% 80% at 52% 28%,
-      rgba(238, 220, 218, 0.14) 0%,
-      rgba(242, 236, 234, 0.05) 50%,
-      transparent 72%
-    ),
-    radial-gradient(
-      ellipse 180% 130% at 50% 120%,
-      rgba(250, 249, 246, 0.65) 0%,
-      rgba(245, 244, 240, 0.22) 38%,
-      transparent 62%
-    ),
-    radial-gradient(
-      ellipse 90% 70% at 82% 58%,
-      rgba(253, 251, 248, 0.35) 0%,
-      transparent 58%
-    ),
-    radial-gradient(
-      ellipse 120% 90% at 18% 72%,
-      rgba(245, 242, 236, 0.28) 0%,
-      transparent 60%
-    ),
-    radial-gradient(
-      ellipse 200% 140% at 50% 50%,
-      rgba(245, 245, 243, 0.25) 0%,
-      transparent 75%
-    );
+@keyframes fiscal-analyzing-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
 }
 
-.gradient-mesh::before {
-  content: "";
-  position: fixed;
-  inset: -10%;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(
-    ellipse 80% 60% at 50% 0%,
-    rgba(255, 252, 248, 0.45) 0%,
-    transparent 55%
-  );
-}
-
-/* léger grain de surface — effet verre dépoli, quasi invisible */
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.018;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-::selection {
-  background: var(--primary-muted);
-  color: var(--foreground);
-}
-
-/* conteneur page : laisse passer l’ambiance du body */
-.gradient-mesh {
-  position: relative;
-  min-height: 100vh;
-  background: transparent;
-}
-
-.glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(20px) saturate(1.05);
-  -webkit-backdrop-filter: blur(20px) saturate(1.05);
-  border: 1px solid var(--card-border);
-  box-shadow: var(--shadow-soft);
-}
-
-.surface-frost {
-  background: rgba(252, 251, 249, 0.65);
-  backdrop-filter: blur(14px) saturate(1.02);
-  -webkit-backdrop-filter: blur(14px) saturate(1.02);
-}
-
-.text-gradient {
-  background: linear-gradient(135deg, #292524 0%, #7a9a80 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-@keyframes fade-in {
+@keyframes fiscal-fade-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.45s ease-out forwards;
-}
-
-/* Landing — cadre produit chaleureux, sans esthétique dashboard */
-.marketing-product-frame {
-  background: linear-gradient(
-    145deg,
-    rgba(234, 220, 214, 0.55) 0%,
-    rgba(245, 242, 236, 0.35) 45%,
-    rgba(218, 224, 230, 0.25) 100%
-  );
-  box-shadow:
-    0 24px 64px rgba(41, 37, 36, 0.05),
-    0 2px 8px rgba(41, 37, 36, 0.03);
-}
-
-.marketing-hero-glow {
-  pointer-events: none;
-  position: absolute;
-  inset: -12% -8% auto -8%;
-  height: 70%;
-  background: radial-gradient(
-    ellipse 70% 55% at 50% 40%,
-    rgba(232, 180, 184, 0.14) 0%,
-    rgba(245, 240, 235, 0.08) 45%,
-    transparent 72%
-  );
 }
