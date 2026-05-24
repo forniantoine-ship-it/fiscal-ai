@@ -27,34 +27,64 @@ const steps = [
   },
 ];
 
-function ProductPreview() {
+function HeroProductPreview() {
+  const prepared = [
+    "Loyers et charges classés",
+    "Amortissements calculés",
+    "Liasse structurée",
+  ];
+
   return (
-    <div className="overflow-hidden rounded-[1.25rem] bg-white shadow-[0_24px_80px_rgba(41,37,36,0.08),0_2px_12px_rgba(41,37,36,0.04)] ring-1 ring-stone-200/70">
-      <div className="border-b border-stone-100 bg-[#faf8f5] px-6 py-5 sm:px-7">
-        <p className="text-[12px] text-stone-500">Exercice 2025</p>
-        <p className="mt-2 text-[1.25rem] leading-snug text-stone-800 sm:text-[1.4rem]" style={serif}>
-          Presque prêt à confirmer
-        </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-stone-500">
-          3 montants préparés à partir de vos documents.
-        </p>
-      </div>
-      <div className="space-y-2.5 p-6 sm:p-7">
-        {[
-          { label: "Loyers perçus", value: "14 280 €" },
-          { label: "Charges déductibles", value: "1 940 €" },
-          { label: "Intérêts d’emprunt", value: "3 120 €" },
-        ].map((row) => (
-          <div
-            key={row.label}
-            className="flex items-center justify-between rounded-xl bg-[#f7f4ef] px-4 py-3.5"
-          >
-            <span className="text-[13px] text-stone-600">{row.label}</span>
-            <span className="text-[13px] tabular-nums text-stone-800">{row.value}</span>
+    <div className="relative">
+      <div
+        className="pointer-events-none absolute -inset-4 rounded-[2rem] bg-[radial-gradient(ellipse_at_center,rgba(232,180,184,0.12),transparent_70%)]"
+        aria-hidden
+      />
+      <div className="relative overflow-hidden rounded-[1.35rem] bg-white/95 shadow-[0_32px_90px_rgba(41,37,36,0.07),0_1px_0_rgba(255,255,255,0.8)_inset] ring-1 ring-stone-200/60">
+        <div className="border-b border-stone-100/80 bg-gradient-to-b from-[#faf7f2] to-white px-7 py-6 sm:px-8 sm:py-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[11px] tracking-[0.06em] text-stone-400 uppercase">
+                Dossier LMNP · 2025
+              </p>
+              <p className="mt-3 text-[1.2rem] leading-snug text-stone-800 sm:text-[1.35rem]" style={serif}>
+                Déjà préparé pour vous
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full bg-[#f0ebe4] px-3 py-1 text-[11px] text-stone-600">
+              En attente de validation
+            </span>
           </div>
-        ))}
-        <div className="mt-4 rounded-xl bg-primary-muted/60 px-4 py-3 text-[12px] leading-relaxed text-stone-600">
-          Vous confirmez — la liasse et la télétransmission suivent.
+        </div>
+
+        <div className="space-y-6 px-7 py-6 sm:px-8 sm:py-7">
+          <div>
+            <p className="text-[11px] text-stone-400">Traitement silencieux</p>
+            <ul className="mt-3 space-y-2">
+              {prepared.map((item) => (
+                <li key={item} className="flex items-center gap-3 text-[13px] text-stone-600">
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-stone-400" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-[11px] text-stone-400">Il vous reste à confirmer</p>
+            {[
+              { label: "Loyers perçus", value: "14 280 €" },
+              { label: "Charges déductibles", value: "1 940 €" },
+            ].map((row) => (
+              <div
+                key={row.label}
+                className="flex items-center justify-between rounded-2xl bg-[#f7f4ef]/90 px-4 py-3"
+              >
+                <span className="text-[13px] text-stone-600">{row.label}</span>
+                <span className="text-[13px] tabular-nums text-stone-800">{row.value}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -90,45 +120,61 @@ export default function Home() {
       </header>
 
       <main className="overflow-x-hidden">
-        <section className="relative border-b border-stone-200/40 bg-[#ece4da]/45 pt-24 pb-16 sm:pt-32 sm:pb-24">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_20%_0%,rgba(232,180,184,0.18),transparent_60%)]" />
-          <div className="relative mx-auto grid max-w-6xl gap-12 px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-16">
-            <div className="max-w-xl text-left">
-              <p className="text-[11px] tracking-[0.14em] text-stone-500 uppercase">
-                Déclaration LMNP · France
-              </p>
-              <h1
-                className="mt-5 text-[2.6rem] leading-[1.02] tracking-tight text-stone-900 sm:text-[3.4rem] lg:text-[3.75rem]"
-                style={serif}
-              >
-                Votre déclaration.
-                <br />
-                <span className="text-stone-600">Enfin simple.</span>
-              </h1>
-              <p className="mt-7 max-w-[34ch] text-[18px] leading-[1.65] text-stone-600">
-                Déposez vos documents. Pendant que vous avancez à votre rythme, la complexité
-                comptable est traitée en silence.
-              </p>
-              <p className="mt-4 max-w-[36ch] text-[15px] leading-relaxed text-stone-500">
-                Pas de logiciel à apprendre. Une expérience pensée comme un service du quotidien —
-                pas comme un outil fiscal.
-              </p>
-              <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <PrimaryButton href="/app">Commencer ma déclaration</PrimaryButton>
-                <SecondaryButton href="#parcours">Voir le parcours</SecondaryButton>
-              </div>
-              <div className="mt-10 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-stone-300/50 pt-8">
-                <span className="text-[1.6rem] text-stone-900" style={serif}>
-                  149 €
-                </span>
-                <span className="text-[14px] text-stone-500">TTC · une fois par an</span>
-                <span className="w-full text-[13px] text-stone-400 sm:w-auto">EDI inclus</span>
-              </div>
-            </div>
+        <section className="relative overflow-hidden border-b border-stone-200/30 bg-[#ebe3d8]/50 pt-[5.5rem] pb-20 sm:pt-36 sm:pb-28 lg:pb-32">
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_70%_at_0%_-10%,rgba(232,180,184,0.16),transparent_55%),radial-gradient(ellipse_60%_50%_at_100%_20%,rgba(245,240,234,0.9),transparent_50%)]"
+            aria-hidden
+          />
 
-            <div className="lg:justify-self-end">
-              <p className="mb-4 text-[12px] text-stone-500">Votre espace, tel qu’il se présente</p>
-              <ProductPreview />
+          <div className="relative mx-auto max-w-6xl px-6 lg:px-8">
+            <div className="grid items-end gap-14 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-12 xl:gap-20">
+              <div className="max-w-[36rem] text-left">
+                <p className="text-[11px] font-medium tracking-[0.12em] text-stone-500 uppercase">
+                  LMNP · France
+                </p>
+
+                <p className="mt-8 max-w-[32ch] text-[1.05rem] leading-[1.55] text-stone-600 sm:text-[1.125rem] sm:leading-[1.6]">
+                  La comptabilité LMNP complexe est déjà traitée pour vous — amortissements,
+                  charges, liasse.
+                </p>
+
+                <h1
+                  className="mt-5 text-[2.75rem] leading-[1.04] tracking-[-0.02em] text-stone-900 sm:mt-6 sm:text-[3.5rem] lg:text-[4rem] lg:leading-[1.02]"
+                  style={serif}
+                >
+                  Votre déclaration,
+                  <br />
+                  <span className="text-stone-500">enfin simple.</span>
+                </h1>
+
+                <p className="mt-8 max-w-[38ch] text-[17px] leading-[1.7] text-stone-500">
+                  Déposez vos documents, validez l’essentiel. Pendant ce temps, le dossier se
+                  construit en silence — sans jargon, sans tableur, sans stress.
+                </p>
+
+                <div className="mt-12 flex flex-wrap items-center gap-4">
+                  <PrimaryButton href="/app">Commencer ma déclaration</PrimaryButton>
+                  <SecondaryButton href="#parcours" className="!border-transparent !bg-transparent !px-0 !shadow-none hover:!bg-transparent">
+                    Voir le parcours →
+                  </SecondaryButton>
+                </div>
+
+                <div className="mt-14 flex items-baseline gap-3 text-stone-600">
+                  <span className="text-[1.5rem] leading-none text-stone-800" style={serif}>
+                    149 €
+                  </span>
+                  <span className="text-[14px] text-stone-500">
+                    TTC · une fois par an · EDI inclus
+                  </span>
+                </div>
+              </div>
+
+              <div className="lg:pb-2">
+                <p className="mb-5 max-w-[22ch] text-[13px] leading-relaxed text-stone-500">
+                  Ce que vous voyez après vos documents — le travail comptable, déjà fait.
+                </p>
+                <HeroProductPreview />
+              </div>
             </div>
           </div>
         </section>
