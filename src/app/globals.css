@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@config "../../tailwind.config.mjs";
+@source "../**/*.{js,ts,jsx,tsx,mdx}";
 
 :root {
   --canvas-base: #f3f3f1;
@@ -180,4 +182,30 @@ body::after {
 
 .animate-fade-in {
   animation: fade-in 0.45s ease-out forwards;
+}
+
+/* Landing — cadre produit chaleureux, sans esthétique dashboard */
+.marketing-product-frame {
+  background: linear-gradient(
+    145deg,
+    rgba(234, 220, 214, 0.55) 0%,
+    rgba(245, 242, 236, 0.35) 45%,
+    rgba(218, 224, 230, 0.25) 100%
+  );
+  box-shadow:
+    0 24px 64px rgba(41, 37, 36, 0.05),
+    0 2px 8px rgba(41, 37, 36, 0.03);
+}
+
+.marketing-hero-glow {
+  pointer-events: none;
+  position: absolute;
+  inset: -12% -8% auto -8%;
+  height: 70%;
+  background: radial-gradient(
+    ellipse 70% 55% at 50% 40%,
+    rgba(232, 180, 184, 0.14) 0%,
+    rgba(245, 240, 235, 0.08) 45%,
+    transparent 72%
+  );
 }
