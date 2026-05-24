@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import type { Extraction, OcrFieldKey, ValidationItem } from "@/lib/lmnp/types";
+import { lmnpTabRoute } from "@/lib/lmnp/routes";
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
 import { formatNormalizedValue, isPreValidated } from "@/lib/lmnp/validation/display";
 import { getTabLabelForField } from "@/lib/lmnp/validation/ledger-display";
@@ -120,7 +121,7 @@ export function ValidationFieldRowDone({ item }: { item: ValidationItem }) {
   const { workspace } = useLmnp();
   const value = item.finalValue ?? item.proposedValue;
   const tabLabel = getTabLabelForField(item.fieldKey);
-  const tabHref = `/app/exercices/${workspace.fiscalYear.id}/${FIELD_REGISTRY[item.fieldKey].tab}`;
+  const tabHref = lmnpTabRoute(FIELD_REGISTRY[item.fieldKey].tab);
 
   const statusLabel =
     item.status === "approved"

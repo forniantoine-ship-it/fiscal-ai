@@ -5,6 +5,8 @@ import { useLmnp } from "@/lib/lmnp/store";
 import type { ValidationItem } from "@/lib/lmnp/types";
 import { groupValidationByDocument } from "@/lib/lmnp/validation/grouping";
 import { getTabLabelForField } from "@/lib/lmnp/validation/ledger-display";
+import { LMNP_ROUTES, lmnpTabRoute } from "@/lib/lmnp/routes";
+import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { DocumentValidationCard } from "./DocumentValidationCard";
@@ -60,14 +62,14 @@ export function ValidationInbox() {
 
   const allGroups = [...documentGroups, ...manualFallbackGroups];
 
-  const base = `/app/exercices/${workspace.fiscalYear.id}`;
+  const fieldRoute = (fieldKey: string) => lmnpTabRoute(FIELD_REGISTRY[fieldKey as keyof typeof FIELD_REGISTRY]?.tab ?? "recettes");
 
   const handleApprove = (item: ValidationItem) => {
     dispatch({ type: "VALIDATION_APPROVE", validationItemId: item.id });
     showSuccess(
       `${item.label} enregistré`,
       `Ligne ajoutée dans ${getTabLabelForField(item.fieldKey)}`,
-      `${base}/${FIELD_TAB[item.fieldKey] ?? "recettes"}`,
+      fieldRoute(item.fieldKey),
     );
   };
 
@@ -77,7 +79,7 @@ export function ValidationInbox() {
     showSuccess(
       `${count} montant${count > 1 ? "s" : ""} confirmé${count > 1 ? "s" : ""}`,
       "Synchronisés dans vos onglets métier",
-      `${base}/recettes`,
+      LMNP_ROUTES.revenus,
     );
   };
 
@@ -95,15 +97,15 @@ export function ValidationInbox() {
         <EmptyState
           title="Aucun document analysé"
           description="Importez vos pièces (loyers, charges, meublé…) — l'IA extrait les montants et vous les présente ici pour confirmation."
-          primaryAction={{ label: "Ajouter des documents", href: `${base}/documents` }}
+          primaryAction={{ label: "Ajouter des documents", href: LMNP_ROUTES.documents }}
         />
       ) : pending.length === 0 && manualFallbackGroups.length === 0 ? (
         <EmptyState
           variant="success"
           title="Tout est confirmé"
           description={`${done.length} décision${done.length > 1 ? "s" : ""} enregistrée${done.length > 1 ? "s" : ""}. Vos onglets Recettes, Dépenses… sont à jour.`}
-          primaryAction={{ label: "Voir les recettes", href: `${base}/recettes` }}
-          secondaryAction={{ label: "Consulter les alertes", href: `${base}/alertes` }}
+          primaryAction={{ label: "Voir les revenus", href: LMNP_ROUTES.revenus }}
+          secondaryAction={{ label: "Retour au tableau de bord", href: LMNP_ROUTES.dashboard }}
         />
       ) : (
         <>
@@ -155,7 +157,7 @@ export function ValidationInbox() {
           showSuccess(
             `${correcting.label} corrigé`,
             `Montant mis à jour dans ${getTabLabelForField(correcting.fieldKey)}`,
-            `${base}/${FIELD_TAB[correcting.fieldKey] ?? "recettes"}`,
+            fieldRoute(correcting.fieldKey),
           );
         }}
       />
@@ -175,20 +177,3 @@ export function ValidationInbox() {
     </div>
   );
 }
-
-const FIELD_TAB: Record<string, string> = {
-  "fiscal.regime": "activite",
-  "property.address": "activite",
-  "property.label": "activite",
-  "income.annualRent": "recettes",
-  "income.refactoredCharges": "recettes",
-  "expense.propertyTax": "depenses",
-  "expense.insurance": "depenses",
-  "expense.condo": "depenses",
-  "expense.worksDeductible": "depenses",
-  "expense.managementFees": "depenses",
-  "expense.other": "depenses",
-  "amort.buildingAnnual": "immobilisations",
-  "amort.furnitureAnnual": "immobilisations",
-  "loan.annualInterest": "emprunts",
-};
