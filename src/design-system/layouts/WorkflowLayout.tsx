@@ -531,7 +531,7 @@ export function WorkflowLayout({
     <div
       className="relative min-h-screen"
       style={{
-        backgroundColor: colors.background.app,
+        backgroundColor: colors.orange[50],
         backgroundImage: gradients.app.background,
         backgroundAttachment: "fixed",
         backgroundSize: "cover",

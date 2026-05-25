@@ -41,51 +41,57 @@ export const gradients = {
   },
 
   // ─── 2. Private app background ─────────────────────────────────────────────
+  //
+  // Mirrors the LMNP Easy landing atmosphere: full-viewport linear edge washes,
+  // strong orange right field, softer left, cream-readable center band.
+  // Avoid small radial hotspots — layers cover the entire viewport.
 
   app: {
-    /**
-     * Base canvas — cream center column with a continuous warm left→right wash.
-     * Avoids flat cream by blending into orange before the edge diffusions stack.
-     */
+    /** Full-viewport cinematic base — linear only, strong right sunset like landing */
     background: [
-      `radial-gradient(ellipse 68% 92% at 50% 46%, ${colors.background.creamWarm} 0%, ${colors.background.app} 46%, ${colors.orange[50]} 72%, transparent 100%)`,
-      `linear-gradient(104deg, ${colors.background.creamWarm} 0%, ${colors.background.app} 18%, ${colors.background.landingGradientStart} 38%, ${colors.background.landingGradientMid} 58%, ${colors.orange[100]} 78%, ${colors.orange[200]} 100%)`,
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 8%, transparent 22%, transparent 78%, ${colors.orange[100]} 92%, ${colors.orange[200]} 100%)`,
+      `linear-gradient(96deg, ${colors.background.landingLeft} 0%, ${colors.background.creamWarm} 10%, ${colors.background.landingGradientStart} 22%, ${colors.background.landingGradientMid} 42%, ${colors.background.landingGradientEnd} 62%, ${colors.orange[300]} 78%, ${colors.orange[200]} 88%, ${colors.orange[300]} 100%)`,
     ].join(", "),
 
-    /**
-     * Cream center vault — keeps the main content readable while surrounded by warmth.
-     */
-    centerVault: [
-      `radial-gradient(ellipse 62% 78% at 50% 44%, ${colors.background.creamWarm} 0%, ${colors.background.app} 54%, transparent 88%)`,
-      `radial-gradient(ellipse 110% 52% at 50% 0%, ${colors.orange[50]} 0%, transparent 62%)`,
-    ].join(", "),
-
-    /** @deprecated Use centerVault — kept for compatibility */
-    centerLight: [
-      `radial-gradient(ellipse 62% 78% at 50% 44%, ${colors.background.creamWarm} 0%, ${colors.background.app} 54%, transparent 88%)`,
-      `radial-gradient(ellipse 110% 52% at 50% 0%, ${colors.orange[50]} 0%, transparent 62%)`,
-    ].join(", "),
-
-    /** Full-height left wash — softer counterbalance */
-    diffusionLeft: [
-      `radial-gradient(ellipse 130% 160% at -14% 50%, ${colors.orange[100]} 0%, ${colors.orange[50]} 20%, ${colors.background.landingGlowSoft} 36%, transparent 74%)`,
-      `radial-gradient(ellipse 96% 130% at 0% 72%, ${colors.background.appDiffusionLeft} 0%, ${colors.orange[50]} 32%, transparent 72%)`,
-      `radial-gradient(ellipse 70% 90% at 4% 18%, ${colors.background.landingGlowSoft} 0%, transparent 68%)`,
-    ].join(", "),
-
-    /** Full-height right wash — dominant LMNP Easy sunset field */
-    diffusionRight: [
-      `radial-gradient(ellipse 140% 170% at 108% 50%, ${colors.orange[200]} 0%, ${colors.orange[100]} 16%, ${colors.background.landingGlow} 30%, ${colors.orange[50]} 46%, transparent 78%)`,
-      `radial-gradient(ellipse 110% 130% at 100% 28%, ${colors.background.landingGradientMid} 0%, ${colors.orange[100]} 26%, transparent 64%)`,
-      `radial-gradient(ellipse 92% 100% at 96% 82%, ${colors.orange[200]} 0%, ${colors.orange[100]} 22%, transparent 66%)`,
-    ].join(", "),
-
-    /** Surrounding warmth — bottom and corners, no isolated hotspots */
+    /** Full-width vertical + horizontal warmth — continuous edge immersion */
     atmosphere: [
-      `radial-gradient(ellipse 150% 64% at 50% 112%, ${colors.orange[100]} 0%, ${colors.orange[50]} 26%, transparent 60%)`,
-      `radial-gradient(ellipse 88% 56% at 6% 96%, ${colors.orange[50]} 0%, transparent 58%)`,
-      `radial-gradient(ellipse 100% 62% at 94% 96%, ${colors.orange[100]} 0%, ${colors.orange[50]} 28%, transparent 58%)`,
-      `radial-gradient(ellipse 120% 80% at 50% 50%, transparent 42%, ${colors.orange[50]} 88%, transparent 100%)`,
+      `linear-gradient(180deg, ${colors.orange[200]} 0%, ${colors.orange[100]} 10%, ${colors.orange[50]} 18%, transparent 36%, transparent 64%, ${colors.orange[100]} 82%, ${colors.orange[200]} 94%, ${colors.orange[300]} 100%)`,
+      `linear-gradient(270deg, ${colors.orange[300]} 0%, ${colors.orange[200]} 8%, ${colors.background.landingGradientEnd} 16%, ${colors.background.landingGradientMid} 28%, transparent 58%)`,
+      `linear-gradient(90deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, ${colors.background.landingGlowSoft} 14%, transparent 38%)`,
+    ].join(", "),
+
+    /** Full-height left edge — softer but clearly warm orange wash */
+    glowLeft: [
+      `linear-gradient(90deg, ${colors.orange[200]} 0%, ${colors.orange[100]} 8%, ${colors.orange[50]} 16%, ${colors.background.landingGlowSoft} 28%, transparent 46%)`,
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 26%, transparent 74%, ${colors.orange[50]} 94%, ${colors.orange[100]} 100%)`,
+    ].join(", "),
+
+    /** Full-height right edge — dominant LMNP Easy sunset field */
+    glowRight: [
+      `linear-gradient(270deg, ${colors.orange[400]} 0%, ${colors.orange[300]} 10%, ${colors.orange[200]} 18%, ${colors.background.landingGradientEnd} 28%, ${colors.background.landingGradientMid} 38%, ${colors.orange[100]} 50%, ${colors.orange[50]} 62%, transparent 78%)`,
+      `linear-gradient(180deg, ${colors.orange[300]} 0%, ${colors.orange[200]} 10%, transparent 32%, transparent 68%, ${colors.orange[200]} 90%, ${colors.orange[400]} 100%)`,
+    ].join(", "),
+
+    /** Extra right-side immersion — full viewport sunset sweep */
+    sunsetRight: [
+      `linear-gradient(270deg, ${colors.orange[400]} 0%, ${colors.orange[300]} 14%, ${colors.orange[200]} 26%, ${colors.background.landingGlow} 40%, ${colors.orange[50]} 54%, transparent 72%)`,
+      `linear-gradient(115deg, transparent 32%, ${colors.orange[100]} 52%, ${colors.orange[200]} 70%, ${colors.orange[300]} 88%, ${colors.orange[400]} 100%)`,
+    ].join(", "),
+
+    /** Narrow cream readability band — linear only, edges stay fully orange */
+    centerVault: `linear-gradient(90deg, transparent 0%, transparent 28%, ${colors.background.creamWarm}66 38%, ${colors.background.creamWarm}b8 46%, ${colors.background.creamWarm} 50%, ${colors.background.creamWarm}b8 54%, ${colors.background.creamWarm}66 62%, transparent 72%, transparent 100%)`,
+
+    /** @deprecated aliases */
+    centerLight: `linear-gradient(90deg, transparent 0%, transparent 28%, ${colors.background.creamWarm}66 38%, ${colors.background.creamWarm}b8 46%, ${colors.background.creamWarm} 50%, ${colors.background.creamWarm}b8 54%, ${colors.background.creamWarm}66 62%, transparent 72%, transparent 100%)`,
+
+    diffusionLeft: [
+      `linear-gradient(90deg, ${colors.orange[200]} 0%, ${colors.orange[100]} 8%, ${colors.orange[50]} 16%, ${colors.background.landingGlowSoft} 28%, transparent 46%)`,
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 26%, transparent 74%, ${colors.orange[50]} 94%, ${colors.orange[100]} 100%)`,
+    ].join(", "),
+
+    diffusionRight: [
+      `linear-gradient(270deg, ${colors.orange[400]} 0%, ${colors.orange[300]} 10%, ${colors.orange[200]} 18%, ${colors.background.landingGradientEnd} 28%, ${colors.background.landingGradientMid} 38%, ${colors.orange[100]} 50%, ${colors.orange[50]} 62%, transparent 78%)`,
+      `linear-gradient(180deg, ${colors.orange[300]} 0%, ${colors.orange[200]} 10%, transparent 32%, transparent 68%, ${colors.orange[200]} 90%, ${colors.orange[400]} 100%)`,
     ].join(", "),
   },
 

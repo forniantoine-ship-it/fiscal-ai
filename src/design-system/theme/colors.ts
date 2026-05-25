@@ -28,9 +28,9 @@ export const colors = {
     /** Private app — centered cream canvas */
     app: "#FAF8F5",
 
-    /** Private app — subtle orange diffusion on side edges */
-    appDiffusionLeft: "#F5DCC4",
-    appDiffusionRight: "#FFD4B0",
+    /** Private app — warm edge diffusion tones */
+    appDiffusionLeft: "#FFDCC4",
+    appDiffusionRight: "#FFC49A",
     appDiffusionCenter: "#FBF8F3",
   },
 
