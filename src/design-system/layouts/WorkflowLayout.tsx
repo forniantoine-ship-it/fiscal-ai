@@ -541,17 +541,16 @@ export function WorkflowLayout({
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: gradients.app.centerLight,
-          opacity: 0.9,
         }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-[42%] max-w-xl opacity-90"
+        className="pointer-events-none absolute inset-y-0 left-0 w-[42%] max-w-xl"
         style={{ backgroundImage: gradients.app.diffusionLeft }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-xl opacity-90"
+        className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-xl"
         style={{ backgroundImage: gradients.app.diffusionRight }}
       />
 

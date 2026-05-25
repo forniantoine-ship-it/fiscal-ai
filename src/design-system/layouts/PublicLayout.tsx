@@ -440,7 +440,6 @@ export function PublicLayout({ children }: PublicLayoutProps) {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: gradients.landing.atmosphere,
-          opacity: 0.95,
         }}
       />
       <div
@@ -448,7 +447,6 @@ export function PublicLayout({ children }: PublicLayoutProps) {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: gradients.landing.glowLeft,
-          opacity: 0.85,
         }}
       />
       <div
@@ -456,7 +454,13 @@ export function PublicLayout({ children }: PublicLayoutProps) {
         className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage: gradients.landing.glowRight,
-          opacity: 0.9,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: gradients.landing.sunsetRight,
         }}
       />
 
