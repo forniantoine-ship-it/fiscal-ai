@@ -185,6 +185,43 @@ export interface RevenusExtractionData {
   };
 }
 
+export type ChargesExpenseSource = "upload" | "credit" | "revenus" | "amortissement";
+
+export interface ChargesExpenseLine {
+  id: string;
+  label: string;
+  amount: number;
+  vatAmount?: number;
+  date?: string;
+  propertyLabel?: string;
+  recoverable: boolean;
+  recurring?: boolean;
+  suggestsImmobilization?: boolean;
+  source?: ChargesExpenseSource;
+}
+
+export interface ChargesCategoryData {
+  id: string;
+  category: ExpenseCategory;
+  label: string;
+  annualTotal: number;
+  propertyId?: string;
+  propertyLabel?: string;
+  lines: ChargesExpenseLine[];
+  recurring?: boolean;
+}
+
+export interface ChargesExtractionData {
+  categories: ChargesCategoryData[];
+  recoveredFromOtherSteps: number;
+  summary: {
+    totalCharges: number;
+    categoryCount: number;
+    recoverableTotal: number;
+    nonRecoverableTotal: number;
+  };
+}
+
 export interface Property {
   id: string;
   label: string;
@@ -295,6 +332,9 @@ export interface DeclarationDraft {
   revenusDocumentIds?: string[];
   revenusConfirmedAt?: string;
   revenusExtraction?: RevenusExtractionData;
+  chargesDocumentIds?: string[];
+  chargesConfirmedAt?: string;
+  chargesExtraction?: ChargesExtractionData;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;

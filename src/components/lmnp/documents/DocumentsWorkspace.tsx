@@ -13,7 +13,9 @@ import { DocumentUploadZone } from "@/components/lmnp/design-system/DocumentUplo
 import { LogementDocumentStep } from "@/components/lmnp/documents/LogementDocumentStep";
 import { CreditDocumentStep } from "@/components/lmnp/documents/CreditDocumentStep";
 import { AmortissementDocumentStep } from "@/components/lmnp/documents/AmortissementDocumentStep";
+import { InpiDocumentStep } from "@/components/lmnp/documents/InpiDocumentStep";
 import { RevenusDocumentStep } from "@/components/lmnp/documents/RevenusDocumentStep";
+import { ChargesDocumentStep } from "@/components/lmnp/documents/ChargesDocumentStep";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
@@ -32,10 +34,13 @@ const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   failed: "Échec de lecture",
 };
 
-function resolveStepId(raw: string | null): DocumentJourneyStepId | "credit" | "amortissements" | "revenus" {
+function resolveStepId(
+  raw: string | null,
+): DocumentJourneyStepId | "credit" | "amortissements" | "revenus" | "charges" {
   if (raw === "credit") return "credit";
   if (raw === "amortissements") return "amortissements";
   if (raw === "revenus") return "revenus";
+  if (raw === "charges") return "charges";
   const allowed = new Set([
     "inpi",
     "logement",
@@ -278,6 +283,14 @@ export function DocumentsWorkspace() {
 
   if (stepId === "revenus") {
     return <RevenusDocumentStep />;
+  }
+
+  if (stepId === "charges") {
+    return <ChargesDocumentStep />;
+  }
+
+  if (stepId === "inpi") {
+    return <InpiDocumentStep />;
   }
 
   return <GenericDocumentStep stepId={stepId} />;

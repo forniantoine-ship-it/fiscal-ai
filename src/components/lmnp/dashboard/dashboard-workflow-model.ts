@@ -147,8 +147,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "charges",
     label: "Charges",
-    href: LMNP_ROUTES.depenses,
-    uploadHref: documentJourneyRoute("taxe-fonciere"),
+    href: documentJourneyRoute("charges"),
+    uploadHref: documentJourneyRoute("charges"),
     requestedDocument: "Factures + Charges",
     documentPrompt: "Ajoutez taxe foncière, assurance et charges.",
     aiExtracts: ["Taxe foncière", "Assurance", "Copropriété"],
@@ -157,15 +157,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.documentType === "property_tax" ||
       doc.documentType === "insurance_invoice" ||
       doc.documentType === "condo_charges",
-    isComplete: (ws) =>
-      ws.documents.some(
-        (doc) =>
-          (doc.category === "charges" ||
-            doc.documentType === "property_tax" ||
-            doc.documentType === "insurance_invoice" ||
-            doc.documentType === "condo_charges") &&
-          doc.status === "analyzed",
-      ) || ws.ledgerEntries.some((entry) => entry.domain === "expense"),
+    isComplete: (ws) => Boolean(ws.declarationDraft?.chargesConfirmedAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "depenses",
   },
   {
@@ -328,6 +320,7 @@ const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
   "credit-immobilier": "credit",
   bail: "revenus",
   revenus: "revenus",
+  charges: "charges",
   "taxe-fonciere": "charges",
   assurance: "charges",
   "factures-travaux": "amortissement",

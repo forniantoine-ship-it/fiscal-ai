@@ -20,6 +20,7 @@ import type {
   CreditFinancingData,
   AmortissementVentilationData,
   RevenusExtractionData,
+  ChargesExtractionData,
 } from "../types";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
@@ -127,6 +128,11 @@ export type LmnpAction =
   | {
       type: "CONFIRM_REVENUS";
       extraction: RevenusExtractionData;
+      documentIds?: string[];
+    }
+  | {
+      type: "CONFIRM_CHARGES";
+      extraction: ChargesExtractionData;
       documentIds?: string[];
     }
   | { type: "DECLARE_NO_CREDIT" }
@@ -788,6 +794,23 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           revenusExtraction: action.extraction,
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "revenus"])],
+        },
+      });
+    }
+
+    case "CONFIRM_CHARGES": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add("charges");
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          chargesDocumentIds: action.documentIds ?? draft.chargesDocumentIds,
+          chargesConfirmedAt: nowIso(),
+          chargesExtraction: action.extraction,
+          documentStepsCompleted: [...completed],
+          completedSteps: [...new Set([...draft.completedSteps, "charges"])],
         },
       });
     }
