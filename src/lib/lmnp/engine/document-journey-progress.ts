@@ -49,6 +49,10 @@ export function isDocumentStepComplete(
     return Boolean(draft.logementConfirmedAt);
   }
 
+  if (stepId === "credit-immobilier") {
+    return Boolean(draft.creditConfirmedAt || draft.creditDeclaredNoneAt);
+  }
+
   return ws.documents.some((d) => documentMatchesStep(d, stepId));
 }
 

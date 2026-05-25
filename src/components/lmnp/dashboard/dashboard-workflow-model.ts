@@ -99,8 +99,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "credit",
     label: "Crédit",
-    href: LMNP_ROUTES.depenses,
-    uploadHref: documentJourneyRoute("credit-immobilier"),
+    href: documentJourneyRoute("credit"),
+    uploadHref: documentJourneyRoute("credit"),
     requestedDocument: "Tableau d'amortissement",
     documentPrompt: "Déposez votre tableau d'amortissement.",
     aiExtracts: ["Mensualité", "Durée", "Taux", "Intérêts"],
@@ -109,13 +109,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.documentType === "loan_interest_certificate" ||
       doc.documentType === "loan_schedule",
     isComplete: (ws) =>
-      ws.documents.some(
-        (doc) =>
-          (doc.category === "emprunt" ||
-            doc.documentType === "loan_interest_certificate" ||
-            doc.documentType === "loan_schedule") &&
-          doc.status === "analyzed",
-      ) || ws.ledgerEntries.some((entry) => entry.domain === "loan"),
+      Boolean(ws.declarationDraft?.creditConfirmedAt || ws.declarationDraft?.creditDeclaredNoneAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "emprunts",
   },
   {
@@ -344,6 +338,7 @@ export function resolveDocumentCorrectionState(items: ValidationItem[]): string 
 const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
   inpi: "activite",
   logement: "logement",
+  credit: "credit",
   "credit-immobilier": "credit",
   bail: "revenus",
   "taxe-fonciere": "charges",

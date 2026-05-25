@@ -17,6 +17,7 @@ import type {
   PropertyBackgroundExtraction,
   PropertyType,
   ValidationItem,
+  CreditFinancingData,
 } from "../types";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
@@ -112,6 +113,12 @@ export type LmnpAction =
       backgroundExtraction?: PropertyBackgroundExtraction;
       documentId?: string;
     }
+  | {
+      type: "CONFIRM_CREDIT_FINANCING";
+      financing: CreditFinancingData;
+      documentId?: string;
+    }
+  | { type: "DECLARE_NO_CREDIT" }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
   | { type: "START_DOCUMENT_JOURNEY" };
 
@@ -707,6 +714,36 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
             action.backgroundExtraction ?? draft.propertyBackgroundExtraction,
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "logement"])],
+        },
+      });
+    }
+
+    case "CONFIRM_CREDIT_FINANCING": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add("credit-immobilier");
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          creditDocumentId: action.documentId ?? draft.creditDocumentId,
+          creditConfirmedAt: nowIso(),
+          creditDeclaredNoneAt: undefined,
+          creditFinancing: action.financing,
+          documentStepsCompleted: [...completed],
+          completedSteps: [...new Set([...draft.completedSteps, "credit"])],
+        },
+      });
+    }
+
+    case "DECLARE_NO_CREDIT": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          creditDeclaredNoneAt: nowIso(),
+          creditConfirmedAt: undefined,
         },
       });
     }

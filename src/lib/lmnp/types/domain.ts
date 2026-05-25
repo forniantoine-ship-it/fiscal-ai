@@ -86,6 +86,50 @@ export interface PropertyBackgroundExtraction {
   creditHints?: string;
 }
 
+export type LoanDeferralType = "total" | "partial" | "franchise" | "none";
+
+export interface LoanProfile {
+  id: string;
+  bank: string;
+  loanType: string;
+  borrowedAmount: number;
+  rate: number;
+  durationMonths: number;
+  monthlyPayment: number;
+  insurance: number;
+  deferralType?: LoanDeferralType;
+  deferralMonths?: number;
+  fees: number;
+  startDate: string;
+  firstPaymentDate: string;
+  remainingCapital: number;
+  isWorksLoan?: boolean;
+}
+
+export interface LoanInstallment {
+  date: string;
+  totalPayment: number;
+  principal: number;
+  interest: number;
+  insurance: number;
+  fees: number;
+  comment?: string;
+}
+
+export interface CreditFinancingSummary {
+  fiscalYearLabel: string;
+  annualInterest: number;
+  annualInsurance: number;
+  annualFinancingCharges: number;
+  remainingCapital: number;
+}
+
+export interface CreditFinancingData {
+  loans: LoanProfile[];
+  summary: CreditFinancingSummary;
+  installments: LoanInstallment[];
+}
+
 export interface Property {
   id: string;
   label: string;
@@ -183,6 +227,10 @@ export interface DeclarationDraft {
   logementDocumentId?: string;
   logementConfirmedAt?: string;
   propertyBackgroundExtraction?: PropertyBackgroundExtraction;
+  creditDocumentId?: string;
+  creditConfirmedAt?: string;
+  creditDeclaredNoneAt?: string;
+  creditFinancing?: CreditFinancingData;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;
