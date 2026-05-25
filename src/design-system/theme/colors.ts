@@ -29,9 +29,9 @@ export const colors = {
     app: "#FAF8F5",
 
     /** Private app — subtle orange diffusion on side edges */
-    appDiffusionLeft: "#FDF3EA",
-    appDiffusionRight: "#FDF3EA",
-    appDiffusionCenter: "#FAF8F5",
+    appDiffusionLeft: "#FCF0E4",
+    appDiffusionRight: "#FCF0E4",
+    appDiffusionCenter: "#FBF8F3",
   },
 
   // ─── Surfaces ──────────────────────────────────────────────────────────────

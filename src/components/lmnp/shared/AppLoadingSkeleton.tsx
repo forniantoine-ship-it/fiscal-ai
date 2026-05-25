@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 
 import { colors } from "@/design-system/theme/colors";
+import { gradients } from "@/design-system/theme/gradients";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
@@ -31,9 +32,25 @@ function PulseBlock({
 export function AppLoadingSkeleton({ message }: AppLoadingSkeletonProps) {
   return (
     <div
-      className="min-h-screen"
-      style={{ backgroundColor: colors.background.app }}
+      className="relative min-h-screen"
+      style={{
+        backgroundColor: colors.background.app,
+        backgroundImage: gradients.app.background,
+        backgroundAttachment: "fixed",
+        backgroundSize: "cover",
+      }}
     >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 left-0 w-[38%] max-w-lg"
+        style={{ backgroundImage: gradients.app.diffusionLeft, opacity: 0.85 }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 w-[38%] max-w-lg"
+        style={{ backgroundImage: gradients.app.diffusionRight, opacity: 0.85 }}
+      />
+      <div className="relative">
       <div
         style={{
           borderBottom: `1px solid ${colors.border.subtle}`,
@@ -104,6 +121,7 @@ export function AppLoadingSkeleton({ message }: AppLoadingSkeletonProps) {
         </p>
       ) : null}
       <p className="sr-only">{message ?? "Chargement de votre dossier…"}</p>
+      </div>
     </div>
   );
 }

@@ -180,7 +180,7 @@ function PublicNavbar({
           paddingInline: GUTTER,
           paddingBlock: spacing.scale[4],
           backgroundColor: scrolled
-            ? "rgba(255, 255, 255, 0.72)"
+            ? "rgba(251, 248, 243, 0.82)"
             : "transparent",
           backdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
           WebkitBackdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
@@ -261,7 +261,7 @@ function PublicNavbar({
           className="lg:hidden"
           style={{
             borderBottom: `1px solid ${colors.border.subtle}`,
-            backgroundColor: "rgba(255, 255, 255, 0.92)",
+            backgroundColor: "rgba(251, 248, 243, 0.94)",
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
             boxShadow: shadows.card.default,
@@ -301,7 +301,7 @@ function PublicFooter() {
     <footer
       style={{
         borderTop: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(255, 255, 255, 0.45)",
+        backgroundColor: "rgba(251, 248, 243, 0.58)",
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
       }}
@@ -435,6 +435,22 @@ export function PublicLayout({ children }: PublicLayoutProps) {
         backgroundSize: "cover",
       }}
     >
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: gradients.landing.atmosphere,
+          opacity: 0.95,
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: gradients.landing.glowLeft,
+          opacity: 0.85,
+        }}
+      />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"

@@ -324,7 +324,7 @@ function SidebarNav({
         padding: spacing.scale[4],
         paddingTop: spacing.scale[6],
         borderRight: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(255, 255, 255, 0.72)",
+        backgroundColor: "rgba(251, 248, 243, 0.78)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
         transition: motions.page.enter,
@@ -455,13 +455,21 @@ export function DashboardLayout({
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/3"
-        style={{ backgroundImage: gradients.app.diffusionLeft, opacity: 0.85 }}
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: gradients.app.centerLight,
+          opacity: 0.9,
+        }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-1/3"
-        style={{ backgroundImage: gradients.app.diffusionRight, opacity: 0.85 }}
+        className="pointer-events-none absolute inset-y-0 left-0 w-[42%] max-w-xl"
+        style={{ backgroundImage: gradients.app.diffusionLeft, opacity: 0.92 }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-xl"
+        style={{ backgroundImage: gradients.app.diffusionRight, opacity: 0.92 }}
       />
 
       <div className="relative flex min-h-screen">
@@ -484,7 +492,7 @@ export function DashboardLayout({
           <header
             style={{
               borderBottom: `1px solid ${colors.border.subtle}`,
-              backgroundColor: "rgba(250, 248, 245, 0.78)",
+              backgroundColor: "rgba(251, 248, 243, 0.84)",
               backdropFilter: "blur(16px)",
               WebkitBackdropFilter: "blur(16px)",
             }}
