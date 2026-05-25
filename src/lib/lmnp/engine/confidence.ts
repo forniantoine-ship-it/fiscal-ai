@@ -156,7 +156,7 @@ export function pickNextAction(ctx: EngineContext): NextAction {
     return {
       title: "Votre déclaration est prête",
       description: "Tous les éléments sont en place — vous pouvez générer votre déclaration LMNP.",
-      href: LMNP_ROUTES.declarations,
+      href: LMNP_ROUTES.validation,
       cta: "Générer ma déclaration",
     };
   }

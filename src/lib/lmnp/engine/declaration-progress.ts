@@ -176,7 +176,7 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
   }
   else if (pending > 0) {
     label = "Confirmer";
-    href = LMNP_ROUTES.declarations;
+    href = LMNP_ROUTES.validation;
   } else if (currentStepId === "paiement") label = "Payer";
   else if (currentStepId === "teletransmission") label = "Transmettre";
 

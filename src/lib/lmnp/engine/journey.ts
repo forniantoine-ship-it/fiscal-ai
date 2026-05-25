@@ -182,10 +182,10 @@ export function pickJourneyAction(
   const hrefByStep: Record<JourneyStepId, string> = {
     documents: LMNP_ROUTES.documents,
     analysis: LMNP_ROUTES.documents,
-    validation: LMNP_ROUTES.declarations,
+    validation: LMNP_ROUTES.validation,
     dossier: LMNP_ROUTES.activite,
-    generate: LMNP_ROUTES.declarations,
-    payment: LMNP_ROUTES.declarations,
+    generate: LMNP_ROUTES.validation,
+    payment: LMNP_ROUTES.validation,
     transmission: LMNP_ROUTES.declarations,
   };
 

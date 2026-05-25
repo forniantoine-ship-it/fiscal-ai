@@ -10,6 +10,7 @@ export const LMNP_ROUTES = {
   depenses: "/documents?step=charges",
   amortissements: "/documents?step=amortissements",
   declarations: "/declarations",
+  validation: "/documents?step=validation",
   connexion: "/connexion",
 } as const;
 
@@ -24,8 +25,8 @@ const LEGACY_SUFFIX_TO_ROUTE: Record<string, string> = {
   depenses: LMNP_ROUTES.depenses,
   emprunts: LMNP_ROUTES.depenses,
   immobilisations: LMNP_ROUTES.amortissements,
-  validation: LMNP_ROUTES.declarations,
-  paiement: LMNP_ROUTES.declarations,
+  validation: LMNP_ROUTES.validation,
+  paiement: LMNP_ROUTES.validation,
   teletransmission: LMNP_ROUTES.declarations,
   piece: LMNP_ROUTES.documents,
 };
@@ -50,7 +51,10 @@ export function declarationFlowPathToRoute(path: string): string {
   if (path === "/immobilisations") return documentJourneyRoute("amortissements");
   if (path === "/recettes") return documentJourneyRoute("revenus");
   if (path === "/depenses" || path === "/emprunts") return LMNP_ROUTES.charges;
-  if (path === "/validation" || path === "/paiement" || path === "/teletransmission") {
+  if (path === "/validation" || path === "/paiement") {
+    return LMNP_ROUTES.validation;
+  }
+  if (path === "/teletransmission") {
     return LMNP_ROUTES.declarations;
   }
   return LMNP_ROUTES.dashboard;

@@ -27,14 +27,14 @@ export const JOURNEY_STEPS: JourneyStepDefinition[] = [
     id: "validation",
     title: "Validation",
     description: "",
-    href: "/declarations",
+    href: "/documents?step=validation",
     cta: "Valider",
   },
   {
     id: "dossier",
     title: "Dossier",
     description: "",
-    href: "/activite",
+    href: "/documents?step=inpi",
     cta: "Continuer",
   },
   {

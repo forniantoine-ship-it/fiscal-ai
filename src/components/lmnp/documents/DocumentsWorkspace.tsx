@@ -16,6 +16,7 @@ import { AmortissementDocumentStep } from "@/components/lmnp/documents/Amortisse
 import { InpiDocumentStep } from "@/components/lmnp/documents/InpiDocumentStep";
 import { RevenusDocumentStep } from "@/components/lmnp/documents/RevenusDocumentStep";
 import { ChargesDocumentStep } from "@/components/lmnp/documents/ChargesDocumentStep";
+import { ValidationDocumentStep } from "@/components/lmnp/documents/ValidationDocumentStep";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
@@ -36,11 +37,12 @@ const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
 
 function resolveStepId(
   raw: string | null,
-): DocumentJourneyStepId | "credit" | "amortissements" | "revenus" | "charges" {
+): DocumentJourneyStepId | "credit" | "amortissements" | "revenus" | "charges" | "validation" {
   if (raw === "credit") return "credit";
   if (raw === "amortissements") return "amortissements";
   if (raw === "revenus") return "revenus";
   if (raw === "charges") return "charges";
+  if (raw === "validation") return "validation";
   const allowed = new Set([
     "inpi",
     "logement",
@@ -291,6 +293,10 @@ export function DocumentsWorkspace() {
 
   if (stepId === "inpi") {
     return <InpiDocumentStep />;
+  }
+
+  if (stepId === "validation") {
+    return <ValidationDocumentStep />;
   }
 
   return <GenericDocumentStep stepId={stepId} />;

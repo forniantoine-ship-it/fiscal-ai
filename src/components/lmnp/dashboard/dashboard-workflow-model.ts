@@ -163,8 +163,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "validation",
     label: "Validation",
-    href: LMNP_ROUTES.declarations,
-    uploadHref: LMNP_ROUTES.declarations,
+    href: documentJourneyRoute("validation"),
+    uploadHref: documentJourneyRoute("validation"),
     requestedDocument: "Prêt pour validation finale",
     documentPrompt: "Confirmez ou corrigez les montants extraits par l'IA.",
     aiExtracts: ["Montants détectés", "Cohérence", "Liasse prête"],
@@ -325,6 +325,7 @@ const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
   assurance: "charges",
   "factures-travaux": "amortissement",
   amortissements: "amortissement",
+  validation: "validation",
 };
 
 /** Primary navigation target when a workflow card is clicked. */
@@ -340,6 +341,7 @@ export function resolveActiveWorkflowStepFromRoute(
 ): DashboardWorkflowStepId | null {
   if (pathname === "/dashboard") return "dashboard";
   if (pathname === "/declarations") return "validation";
+  if (pathname === "/documents" && stepQuery === "validation") return "validation";
   if (pathname === "/revenus") return "revenus";
   if (pathname === "/amortissements") return "amortissement";
 
