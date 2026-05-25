@@ -95,6 +95,48 @@ export const gradients = {
     ].join(", "),
   },
 
+  // ─── 2b. Dashboard background — landing-like immersion, soft sunset only ───
+  //
+  // Stronger than generic app shells: bilateral orange diffusion with a
+  // stronger right field, cream-readable center, no dark orange tones.
+
+  dashboard: {
+    /** Full-viewport sunset base — bilateral warmth, stronger right bias */
+    background: [
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 16%, transparent 84%, ${colors.orange[100]} 94%, ${colors.orange[200]} 100%)`,
+      `linear-gradient(90deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 5%, ${colors.background.landingGlowSoft} 10%, transparent 22%, transparent 78%, ${colors.background.landingGradientMid} 88%, ${colors.background.landingGradientEnd} 94%, ${colors.orange[200]} 100%)`,
+      `linear-gradient(96deg, ${colors.background.landingGlowSoft} 0%, ${colors.background.creamWarm} 12%, ${colors.background.landingGradientStart} 24%, ${colors.background.creamWarm} 36%, ${colors.background.landingGradientStart} 48%, ${colors.background.landingGradientMid} 60%, ${colors.background.landingGradientEnd} 72%, ${colors.orange[200]} 84%, ${colors.orange[100]} 92%, ${colors.orange[200]} 100%)`,
+    ].join(", "),
+
+    /** Continuous viewport warmth — top, bottom, and horizontal edge continuity */
+    atmosphere: [
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 20%, transparent 80%, ${colors.orange[50]} 94%, ${colors.orange[100]} 100%)`,
+      `linear-gradient(270deg, ${colors.orange[200]} 0%, ${colors.background.landingGradientEnd} 8%, ${colors.background.landingGradientMid} 18%, ${colors.orange[100]} 30%, ${colors.orange[50]} 42%, transparent 58%)`,
+      `linear-gradient(90deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, ${colors.background.landingGlowSoft} 12%, transparent 28%)`,
+    ].join(", "),
+
+    /** Left edge — soft premium sunset wash across full height */
+    glowLeft: [
+      `linear-gradient(90deg, ${colors.orange[200]} 0%, ${colors.orange[100]} 11%, ${colors.orange[50]} 20%, ${colors.background.landingGlowSoft} 28%, ${colors.background.landingGradientStart} 36%, transparent 54%)`,
+      `linear-gradient(180deg, ${colors.orange[50]} 0%, ${colors.orange[100]} 4%, transparent 18%, transparent 82%, ${colors.orange[100]} 96%, ${colors.orange[50]} 100%)`,
+    ].join(", "),
+
+    /** Right edge — dominant sunset field, still soft and premium */
+    glowRight: [
+      `linear-gradient(270deg, ${colors.orange[200]} 0%, ${colors.background.landingGradientEnd} 6%, ${colors.background.landingGradientMid} 14%, ${colors.orange[100]} 26%, ${colors.orange[50]} 38%, ${colors.background.landingGlow} 48%, transparent 64%)`,
+      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[200]} 6%, transparent 20%, transparent 80%, ${colors.orange[200]} 94%, ${colors.orange[100]} 100%)`,
+    ].join(", "),
+
+    /** Extra right immersion — diagonal luxury sweep */
+    sunsetRight: [
+      `linear-gradient(270deg, ${colors.background.landingGradientEnd} 0%, ${colors.orange[200]} 12%, ${colors.background.landingGlow} 24%, ${colors.orange[50]} 38%, transparent 56%)`,
+      `linear-gradient(108deg, transparent 30%, ${colors.orange[100]} 50%, ${colors.background.landingGradientMid} 64%, ${colors.orange[200]} 80%, ${colors.background.landingGradientEnd} 96%)`,
+    ].join(", "),
+
+    /** Narrow cream readability vault — transparent edges keep orange visible */
+    centerVault: `linear-gradient(90deg, transparent 0%, transparent 18%, ${colors.background.creamWarm}35 30%, ${colors.background.creamWarm}88 40%, ${colors.background.creamWarm}cc 46%, ${colors.background.creamWarm} 50%, ${colors.background.creamWarm}cc 54%, ${colors.background.creamWarm}88 60%, ${colors.background.creamWarm}35 70%, transparent 82%, transparent 100%)`,
+  },
+
   // ─── 3. Button gradients ───────────────────────────────────────────────────
 
   button: {

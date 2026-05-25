@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { colors } from "@/design-system/theme/colors";
-import { appAtmosphereLayers } from "@/design-system/theme/app-atmosphere";
+import { dashboardAtmosphereLayers } from "@/design-system/theme/app-atmosphere";
 import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
@@ -312,13 +312,13 @@ export function DashboardLayout({
     <div
       className="relative min-h-screen"
       style={{
-        backgroundColor: colors.orange[50],
-        backgroundImage: gradients.app.background,
+        backgroundColor: colors.orange[100],
+        backgroundImage: gradients.dashboard.background,
         backgroundAttachment: "fixed",
         backgroundSize: "cover",
       }}
     >
-      {appAtmosphereLayers().map((layer) => (
+      {dashboardAtmosphereLayers().map((layer) => (
         <div key={layer.id} aria-hidden className={layer.className} style={layer.style} />
       ))}
 
