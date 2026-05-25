@@ -2,6 +2,7 @@ import type { DocumentCategory } from "../types";
 
 export type DocumentJourneyStepId =
   | "inpi"
+  | "logement"
   | "credit-immobilier"
   | "bail"
   | "taxe-fonciere"
@@ -30,6 +31,16 @@ export const DOCUMENT_JOURNEY_STEPS: DocumentJourneyStepDef[] = [
     uploadHint: "PDF ou image — extrait Kbis, avis INPI ou récapitulatif SIREN",
     category: "autre",
     fileNamePattern: /inpi|kbis|siren|siret|rcs|extrait/i,
+  },
+  {
+    id: "logement",
+    screenTitle: "Votre acte notarié.",
+    explanation:
+      "L'IA détecte automatiquement les informations du logement à partir de votre acte d'acquisition.",
+    ctaLabel: "Importer l'acte notarié",
+    uploadHint: "Acte notarié, compromis ou pièce d'acquisition — PDF ou image",
+    category: "autre",
+    fileNamePattern: /acte|notaire|acquisition|vente|logement/i,
   },
   {
     id: "credit-immobilier",

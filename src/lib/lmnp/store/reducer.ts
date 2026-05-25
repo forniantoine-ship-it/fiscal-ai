@@ -14,6 +14,8 @@ import type {
   Extraction,
   FiscalYearStatus,
   LmnpDocument,
+  PropertyBackgroundExtraction,
+  PropertyType,
   ValidationItem,
 } from "../types";
 import type { NormalizedValue } from "../types/values";
@@ -86,7 +88,28 @@ export type LmnpAction =
         address?: string;
         city?: string;
         postalCode?: string;
+        activityStartDate?: string;
+        activityType?: "LMNP" | "LMP";
+        indivision?: boolean;
+        coOwners?: { id: string; name: string; percentage: number }[];
       };
+      documentId?: string;
+    }
+  | {
+      type: "CONFIRM_LOGEMENT_PROFILE";
+      profile: {
+        label?: string;
+        address?: string;
+        addressLine2?: string;
+        city?: string;
+        postalCode?: string;
+        propertyType?: PropertyType;
+        coproperty?: boolean;
+        surface?: number;
+        acquisitionDate?: string;
+        status?: string;
+      };
+      backgroundExtraction?: PropertyBackgroundExtraction;
       documentId?: string;
     }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
@@ -638,10 +661,52 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           siret: action.profile.siret?.trim() ?? draft.siret,
           exploitantFirstName: action.profile.firstName?.trim() ?? draft.exploitantFirstName,
           exploitantLastName: action.profile.lastName?.trim() ?? draft.exploitantLastName,
+          activityStartDate: action.profile.activityStartDate?.trim() ?? draft.activityStartDate,
+          activityType: action.profile.activityType ?? draft.activityType,
+          indivision: action.profile.indivision ?? draft.indivision,
+          coOwners: action.profile.coOwners ?? draft.coOwners,
           inpiDocumentId: action.documentId ?? draft.inpiDocumentId,
           inpiConfirmedAt: nowIso(),
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "siren", "exploitant", "logement"])],
+        },
+      });
+    }
+
+    case "CONFIRM_LOGEMENT_PROFILE": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const propertyId = state.fiscalYear.propertyIds[0];
+      const properties = state.properties.map((p) =>
+        p.id === propertyId
+          ? {
+              ...p,
+              label: action.profile.label?.trim() || p.label,
+              address: action.profile.address?.trim() ?? p.address,
+              addressLine2: action.profile.addressLine2?.trim() ?? p.addressLine2,
+              city: action.profile.city?.trim() ?? p.city,
+              postalCode: action.profile.postalCode?.trim() ?? p.postalCode,
+              propertyType: action.profile.propertyType ?? p.propertyType,
+              coproperty: action.profile.coproperty ?? p.coproperty,
+              surface: action.profile.surface ?? p.surface,
+              acquisitionDate: action.profile.acquisitionDate?.trim() ?? p.acquisitionDate,
+              status: action.profile.status?.trim() ?? p.status,
+              notaryDocumentId: action.documentId ?? p.notaryDocumentId,
+            }
+          : p,
+      );
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add("logement");
+      return finalizeState({
+        ...state,
+        properties,
+        declarationDraft: {
+          ...draft,
+          logementDocumentId: action.documentId ?? draft.logementDocumentId,
+          logementConfirmedAt: nowIso(),
+          propertyBackgroundExtraction:
+            action.backgroundExtraction ?? draft.propertyBackgroundExtraction,
+          documentStepsCompleted: [...completed],
+          completedSteps: [...new Set([...draft.completedSteps, "logement"])],
         },
       });
     }

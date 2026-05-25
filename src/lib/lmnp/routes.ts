@@ -4,7 +4,7 @@ import type { DocumentJourneyStepId } from "./constants/document-journey";
 export const LMNP_ROUTES = {
   dashboard: "/dashboard",
   documents: "/documents",
-  activite: "/activite",
+  activite: "/documents?step=inpi",
   revenus: "/revenus",
   depenses: "/depenses",
   amortissements: "/amortissements",
@@ -43,7 +43,9 @@ export function documentJourneyRoute(stepId?: DocumentJourneyStepId | string): s
 /** Map declaration-flow suffix paths (e.g. /recettes) to flat routes. */
 export function declarationFlowPathToRoute(path: string): string {
   if (path === "/documents") return LMNP_ROUTES.documents;
-  if (path === "/activite" || path.startsWith("/etape/")) return LMNP_ROUTES.activite;
+  if (path === "/activite") return documentJourneyRoute("inpi");
+  if (path === "/etape/logement") return documentJourneyRoute("logement");
+  if (path.startsWith("/etape/")) return LMNP_ROUTES.dashboard;
   if (path === "/immobilisations") return LMNP_ROUTES.amortissements;
   if (path === "/recettes") return LMNP_ROUTES.revenus;
   if (path === "/depenses" || path === "/emprunts") return LMNP_ROUTES.depenses;

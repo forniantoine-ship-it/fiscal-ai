@@ -71,7 +71,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "activite",
     label: "Activité LMNP",
-    href: LMNP_ROUTES.activite,
+    href: documentJourneyRoute("inpi"),
     uploadHref: documentJourneyRoute("inpi"),
     requestedDocument: "Extrait INPI / Kbis",
     documentPrompt: "Ajoutez votre extrait INPI ou Kbis.",
@@ -85,20 +85,14 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "logement",
     label: "Logement",
-    href: LMNP_ROUTES.activite,
-    uploadHref: LMNP_ROUTES.documents,
+    href: documentJourneyRoute("logement"),
+    uploadHref: documentJourneyRoute("logement"),
     requestedDocument: "Acte notarié",
     documentPrompt: "Ajoutez votre acte notarié.",
     aiExtracts: ["Adresse", "Surface", "Date d'acquisition"],
     matchDocument: (doc) =>
       doc.documentType === "notary_deed" || /acte|notaire|acquisition/i.test(doc.fileName),
-    isComplete: (ws) =>
-      ws.properties.some((property) => property.address.trim() && property.city.trim()) ||
-      ws.documents.some(
-        (doc) =>
-          (doc.documentType === "notary_deed" || /acte|notaire|acquisition/i.test(doc.fileName)) &&
-          doc.status === "analyzed",
-      ),
+    isComplete: (ws) => Boolean(ws.declarationDraft?.logementConfirmedAt),
     matchValidation: (item) =>
       item.fieldKey === "property.address" || item.fieldKey === "property.label",
   },

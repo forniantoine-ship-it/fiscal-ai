@@ -10,6 +10,7 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { DocumentUploadZone } from "@/components/lmnp/design-system/DocumentUploadZone";
+import { LogementDocumentStep } from "@/components/lmnp/documents/LogementDocumentStep";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
 function resolveStepId(raw: string | null): DocumentJourneyStepId {
   const allowed = new Set([
     "inpi",
+    "logement",
     "credit-immobilier",
     "bail",
     "taxe-fonciere",
@@ -108,9 +110,7 @@ function DocumentRow({
   );
 }
 
-export function DocumentsWorkspace() {
-  const searchParams = useSearchParams();
-  const stepId = resolveStepId(searchParams.get("step"));
+function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
   const step = getDocumentJourneyStep(stepId);
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showError, showInfo } = useFeedback();
@@ -233,7 +233,7 @@ export function DocumentsWorkspace() {
         </h2>
         {documents.length === 0 ? (
           <p className="mt-3" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Aucun document pour le moment. Commencez par importer votre pièce INPI.
+            Aucun document pour le moment. Commencez par importer votre pièce.
           </p>
         ) : (
           <ul className="mt-4 space-y-3">
@@ -252,4 +252,15 @@ export function DocumentsWorkspace() {
       </Card>
     </div>
   );
+}
+
+export function DocumentsWorkspace() {
+  const searchParams = useSearchParams();
+  const stepId = resolveStepId(searchParams.get("step"));
+
+  if (stepId === "logement") {
+    return <LogementDocumentStep />;
+  }
+
+  return <GenericDocumentStep stepId={stepId} />;
 }

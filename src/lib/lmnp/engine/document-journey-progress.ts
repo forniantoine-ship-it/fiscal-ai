@@ -45,6 +45,10 @@ export function isDocumentStepComplete(
     return Boolean(draft.inpiConfirmedAt);
   }
 
+  if (stepId === "logement") {
+    return Boolean(draft.logementConfirmedAt);
+  }
+
   return ws.documents.some((d) => documentMatchesStep(d, stepId));
 }
 

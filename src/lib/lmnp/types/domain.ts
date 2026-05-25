@@ -70,12 +70,35 @@ export type ExpenseCategory =
   | "management_fees"
   | "other";
 
+export type PropertyType =
+  | "appartement"
+  | "maison"
+  | "meuble-tourisme"
+  | "chambre-hote"
+  | "non-classe";
+
+export interface PropertyBackgroundExtraction {
+  acquisitionPrice?: number;
+  notaryFees?: number;
+  furnitureAmount?: number;
+  coproReferences?: string;
+  amortizationHints?: string;
+  creditHints?: string;
+}
+
 export interface Property {
   id: string;
   label: string;
   address: string;
+  addressLine2?: string;
   city: string;
   postalCode: string;
+  propertyType?: PropertyType;
+  coproperty?: boolean;
+  surface?: number;
+  acquisitionDate?: string;
+  status?: string;
+  notaryDocumentId?: string;
 }
 
 export type JourneyStepId =
@@ -135,6 +158,14 @@ export interface FiscalYear {
   updatedAt: string;
 }
 
+export interface CoOwner {
+  id: string;
+  name: string;
+  percentage: number;
+}
+
+export type LmnpActivityType = "LMNP" | "LMP";
+
 export interface DeclarationDraft {
   completedSteps: string[];
   documentStepsCompleted?: string[];
@@ -143,8 +174,15 @@ export interface DeclarationDraft {
   siret?: string;
   exploitantFirstName?: string;
   exploitantLastName?: string;
+  activityStartDate?: string;
+  activityType?: LmnpActivityType;
+  indivision?: boolean;
+  coOwners?: CoOwner[];
   inpiDocumentId?: string;
   inpiConfirmedAt?: string;
+  logementDocumentId?: string;
+  logementConfirmedAt?: string;
+  propertyBackgroundExtraction?: PropertyBackgroundExtraction;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;
