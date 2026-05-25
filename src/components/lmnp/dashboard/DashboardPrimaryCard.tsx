@@ -8,7 +8,6 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
-import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 
 type DashboardPrimaryCardProps = {
   eyebrow?: string;
@@ -17,18 +16,20 @@ type DashboardPrimaryCardProps = {
   actionHref?: string;
   actionLabel: string;
   onAction?: () => void;
-  showProgress?: boolean;
+  secondaryActionHref?: string;
+  secondaryActionLabel?: string;
   footer?: ReactNode;
 };
 
 export function DashboardPrimaryCard({
-  eyebrow = "Prochaine étape",
+  eyebrow = "Votre prochain document",
   title,
   description,
   actionHref,
   actionLabel,
   onAction,
-  showProgress = true,
+  secondaryActionHref,
+  secondaryActionLabel,
   footer,
 }: DashboardPrimaryCardProps) {
   return (
@@ -36,9 +37,10 @@ export function DashboardPrimaryCard({
       interactive
       className="!p-0 overflow-hidden"
       style={{
-        boxShadow: shadows.card.hover,
+        boxShadow: shadows.hero.floating,
         backgroundImage: [
-          `radial-gradient(ellipse 65% 50% at 0% 0%, ${colors.background.landingGlowSoft} 0%, transparent 60%)`,
+          `radial-gradient(ellipse 72% 56% at 0% 0%, ${colors.orange[100]} 0%, transparent 62%)`,
+          `radial-gradient(ellipse 55% 45% at 100% 100%, ${colors.background.landingGlowSoft} 0%, transparent 58%)`,
           gradients.card.highlight,
         ].join(", "),
       }}
@@ -49,22 +51,25 @@ export function DashboardPrimaryCard({
             ...typography.caption.desktop,
             color: colors.text.accent,
             letterSpacing: typography.letterSpacing.label,
+            textTransform: "uppercase",
           }}
         >
           {eyebrow}
         </p>
         <h2
-          className="mt-2 text-2xl sm:text-3xl"
+          className="mt-3 text-2xl sm:text-[2rem]"
           style={{
             fontFamily: typography.fontFamily.display,
             fontWeight: typography.fontWeight.regular,
+            lineHeight: typography.lineHeight.title,
             color: colors.text.primary,
+            maxWidth: "36rem",
           }}
         >
           {title}
         </h2>
         <p
-          className="mt-3 max-w-xl"
+          className="mt-4 max-w-2xl"
           style={{
             ...typography.body.desktop,
             color: colors.text.secondary,
@@ -73,18 +78,28 @@ export function DashboardPrimaryCard({
         >
           {description}
         </p>
-        {showProgress ? (
-          <div className="mt-6">
-            <WorkspaceProgress label="Avancement du dossier" />
-          </div>
-        ) : null}
-        <div className="mt-8 flex flex-wrap items-center gap-3">
+
+        <div
+          className="mt-8 flex flex-wrap items-center gap-3"
+          style={{
+            padding: spacing.card.md,
+            borderRadius: radius.lg,
+            border: `1px dashed ${colors.border.selected}`,
+            backgroundColor: colors.surface.selected,
+          }}
+        >
           {onAction ? (
             <Button onClick={onAction}>{actionLabel}</Button>
           ) : (
             <Button href={actionHref}>{actionLabel}</Button>
           )}
+          {secondaryActionHref && secondaryActionLabel ? (
+            <Button href={secondaryActionHref} variant="secondary">
+              {secondaryActionLabel}
+            </Button>
+          ) : null}
         </div>
+
         {footer}
       </div>
     </Card>

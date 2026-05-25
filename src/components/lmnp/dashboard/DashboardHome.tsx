@@ -5,18 +5,17 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
+import { gradients } from "@/design-system/theme/gradients";
+import { radius } from "@/design-system/theme/radius";
+import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { DeclarationHowItWorks } from "@/components/lmnp/declaration/DeclarationHowItWorks";
-import { DashboardHero, YearBadge } from "@/components/lmnp/dashboard/DashboardHero";
+import { DashboardAiInsights } from "@/components/lmnp/dashboard/DashboardAiInsights";
+import { DashboardDocumentsSection } from "@/components/lmnp/dashboard/DashboardDocumentsSection";
+import { DashboardHero } from "@/components/lmnp/dashboard/DashboardHero";
 import { DashboardPrimaryCard } from "@/components/lmnp/dashboard/DashboardPrimaryCard";
-import {
-  DashboardAiRecommendationPanel,
-  DashboardAutosavePanel,
-  DashboardFiscalInsightsPanel,
-  DashboardRecentActivityPanel,
-  DashboardRecentDocumentsPanel,
-} from "@/components/lmnp/dashboard/DashboardSidePanels";
+import { DashboardWorkflow } from "@/components/lmnp/dashboard/DashboardWorkflow";
 import { formatNormalizedValue } from "@/lib/lmnp/validation/display";
 import {
   isDocumentJourneyComplete,
@@ -26,43 +25,75 @@ import {
 } from "@/lib/lmnp/engine/document-journey-progress";
 import { LMNP_ROUTES, toFlatLmnpRoute } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
+import type { AutosaveStatus } from "@/design-system/layouts/DashboardLayout";
+import type { NormalizedValue } from "@/lib/lmnp/types";
 
-function DashboardSideColumn() {
-  const { workspace } = useLmnp();
-  const nextHref = toFlatLmnpRoute(workspace.nextAction.href);
-
-  return (
-    <aside className="space-y-5">
-      <DashboardAutosavePanel />
-      <DashboardAiRecommendationPanel
-        assistant={workspace.assistant}
-        href={nextHref}
-        cta={workspace.nextAction.cta}
-      />
-      <DashboardFiscalInsightsPanel insights={workspace.declaration.insights} />
-      <DashboardRecentDocumentsPanel documents={workspace.declaration.recentDocuments} />
-      <DashboardRecentActivityPanel />
-    </aside>
-  );
+function autosaveLabel(status: AutosaveStatus): { label: string | null; active: boolean } {
+  if (status === "saved") return { label: "Dossier enregistré", active: false };
+  if (status === "saving") return { label: "Enregistrement…", active: true };
+  if (status === "error") return { label: "Erreur de sauvegarde", active: false };
+  return { label: null, active: false };
 }
 
-function DashboardGrid({ children }: { children: React.ReactNode }) {
+function ValidationPreview({
+  items,
+}: {
+  items: { id: string; label: string; documentFileName?: string; proposedValue: NormalizedValue }[];
+}) {
+  if (items.length === 0) return null;
+
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
-      <div className="grid gap-6 lg:grid-cols-12 lg:gap-8">
-        <div className="space-y-6 lg:col-span-8">{children}</div>
-        <div className="lg:col-span-4">
-          <DashboardSideColumn />
-        </div>
+    <section>
+      <h2
+        className="mb-2"
+        style={{
+          fontFamily: typography.fontFamily.display,
+          fontWeight: typography.fontWeight.regular,
+          fontSize: typography.fontSize["2xl"],
+          color: colors.text.primary,
+        }}
+      >
+        Montants à confirmer
+      </h2>
+      <p className="mb-5 max-w-2xl" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+        L&apos;IA a extrait ces montants — confirmez ou corrigez en un geste.
+      </p>
+      <ul className="grid gap-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            style={{
+              padding: spacing.card.md,
+              borderRadius: radius.lg,
+              border: `1px solid ${colors.border.selected}`,
+              backgroundImage: gradients.card.interactive,
+              boxShadow: shadows.card.default,
+            }}
+          >
+            <p style={{ ...typography.body.desktop, color: colors.text.primary }}>{item.label}</p>
+            {item.documentFileName ? (
+              <p className="mt-1 truncate" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                {item.documentFileName}
+              </p>
+            ) : null}
+            <p className="mt-3" style={{ ...typography.cardTitle.desktop, color: colors.text.accent }}>
+              {formatNormalizedValue(item.proposedValue)}
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-6">
+        <Button href={LMNP_ROUTES.declarations}>Ouvrir les corrections</Button>
       </div>
-    </div>
+    </section>
   );
 }
 
 export function DashboardHome() {
   const router = useRouter();
-  const { workspace, dispatch } = useLmnp();
-  const { declaration, fiscalYear, assistant, nextAction } = workspace;
+  const { workspace, dispatch, autosaveStatus } = useLmnp();
+  const { declaration, fiscalYear, assistant, nextAction, journey } = workspace;
+  const save = autosaveLabel(autosaveStatus);
 
   const completed = Boolean(fiscalYear.transmittedAt);
   const pending = workspace.pendingValidationCount;
@@ -101,128 +132,143 @@ export function DashboardHome() {
   };
 
   const nextHref = toFlatLmnpRoute(nextAction.href);
+  const currentDocStep = resolveCurrentDocumentStep(ws);
+  const resumeHref = resolveCurrentDocumentStepHref(fiscalYear.id, ws);
+
+  const heroTitle = completed
+    ? "Votre déclaration est transmise"
+    : !started
+      ? "Préparez votre déclaration LMNP"
+      : pending > 0
+        ? "Confirmez les montants détectés"
+        : "Votre déclaration LMNP";
+
+  const heroNextStep = completed
+    ? "Merci — votre liasse a bien été envoyée. Retrouvez vos documents et l'historique de votre dossier."
+    : !started
+      ? "Déposez vos documents. L'IA extrait les informations et vous guide jusqu'à la télétransmission."
+      : pending > 0
+        ? `Il reste ${pending} confirmation${pending > 1 ? "s" : ""} avant de finaliser votre liasse.`
+        : assistant.headline;
+
+  const progressValue = completed ? 100 : journey.percentComplete || declaration.percentComplete;
+
+  let primaryTitle = currentDocStep.screenTitle;
+  let primaryDescription = currentDocStep.explanation;
+  let primaryLabel = "Importer le document";
+  let primaryHref = resumeHref;
+  let primaryEyebrow = "Votre prochain document";
+  let onPrimaryAction: (() => void) | undefined;
 
   if (completed) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-8">
-        <DashboardHero
-          eyebrow={<YearBadge year={fiscalYear.year} />}
-          title="Votre déclaration est transmise"
-          description="Merci — votre liasse a bien été envoyée. Vous pouvez consulter vos documents et l'historique de votre dossier."
-        >
+    primaryTitle = "Consultez votre dossier";
+    primaryDescription = "Vos pièces et montants validés restent accessibles à tout moment.";
+    primaryLabel = "Voir mes documents";
+    primaryHref = LMNP_ROUTES.documents;
+    primaryEyebrow = "Dossier transmis";
+  } else if (!started) {
+    primaryTitle = "Commencez par vos pièces justificatives";
+    primaryDescription =
+      "L'IA lit chaque document, repère les montants utiles et prépare votre déclaration sans saisie manuelle.";
+    primaryLabel = "Commencer";
+    onPrimaryAction = startJourney;
+    primaryHref = undefined;
+    primaryEyebrow = "Première étape";
+  } else if (pending > 0) {
+    primaryTitle = declaration.nextAction.headline;
+    primaryDescription =
+      "Validez les montants détectés par l'IA pour alimenter automatiquement vos revenus, charges et amortissements.";
+    primaryLabel = declaration.nextAction.label;
+    primaryHref = LMNP_ROUTES.declarations;
+    primaryEyebrow = "Corrections en attente";
+  } else if (docJourneyDone) {
+    primaryTitle = nextAction.title;
+    primaryDescription = nextAction.description;
+    primaryLabel = nextAction.cta;
+    primaryHref = nextHref;
+    primaryEyebrow = "Étape suivante";
+  } else {
+    primaryLabel = "Poursuivre l'import";
+    primaryHref = resumeHref;
+  }
+
+  const pendingPreview = workspace.validationItems.filter((item) => item.status === "pending").slice(0, 4);
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-10 pb-16">
+      <DashboardHero
+        year={fiscalYear.year}
+        title={heroTitle}
+        nextStep={heroNextStep}
+        progress={progressValue}
+        progressLabel={completed ? "Dossier finalisé" : "Avancement global"}
+        saveLabel={save.label}
+        saveActive={save.active}
+      >
+        {completed ? (
           <Button href={LMNP_ROUTES.documents} variant="secondary">
             Consulter mes documents
           </Button>
-        </DashboardHero>
-        <DashboardSideColumn />
-      </div>
-    );
-  }
-
-  if (!started) {
-    return (
-      <div className="mx-auto max-w-5xl space-y-8">
-        <DashboardHero
-          eyebrow={<YearBadge year={fiscalYear.year} />}
-          title="Préparez votre déclaration LMNP simplement"
-          description="Déposez vos documents. L'IA extrait les informations, prépare votre déclaration et vous guide jusqu'à la transmission."
-        >
+        ) : !started ? (
           <Button onClick={startJourney}>Commencer</Button>
-        </DashboardHero>
-        <div className="grid gap-6 lg:grid-cols-12 lg:gap-8">
-          <div className="lg:col-span-8">
-            <Card variant="muted" interactive>
-              <DeclarationHowItWorks />
-            </Card>
-          </div>
-          <div className="lg:col-span-4">
-            <DashboardSideColumn />
-          </div>
-        </div>
-      </div>
-    );
-  }
+        ) : pending > 0 ? (
+          <Button href={LMNP_ROUTES.declarations}>{declaration.nextAction.label}</Button>
+        ) : docJourneyDone ? (
+          <Button href={nextHref}>{nextAction.cta}</Button>
+        ) : (
+          <>
+            <Button href={resumeHref}>Poursuivre</Button>
+            <Button href={LMNP_ROUTES.documents} variant="secondary">
+              Importer un document
+            </Button>
+          </>
+        )}
+      </DashboardHero>
 
-  if (pending > 0) {
-    const pendingItems = workspace.validationItems.filter((v) => v.status === "pending");
-    const previewItems = pendingItems.slice(0, 4);
+      <DashboardWorkflow journey={journey} />
 
-    return (
-      <DashboardGrid>
-        <DashboardHero
-          eyebrow={<YearBadge year={fiscalYear.year} />}
-          title="Votre dossier est prêt"
-          description={`Il reste ${pending} confirmation${pending > 1 ? "s" : ""} avant la génération de la liasse.`}
-        />
-        <DashboardPrimaryCard
-          eyebrow="Action prioritaire"
-          title={declaration.nextAction.headline}
-          description="Validez les montants détectés par l'IA pour alimenter automatiquement vos onglets revenus, charges et amortissements."
-          actionHref={LMNP_ROUTES.declarations}
-          actionLabel={declaration.nextAction.label}
-        />
-        <Card className="!p-0 overflow-hidden" variant="muted" interactive>
-          <div className="border-b px-6 py-4" style={{ borderColor: colors.border.subtle }}>
-            <h2 style={{ ...typography.cardTitle.desktop, color: colors.text.primary }}>
-              Montants à confirmer
-            </h2>
-          </div>
-          <ul>
-            {previewItems.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-4 px-6 py-4"
-                style={{ borderBottom: `1px solid ${colors.border.subtle}` }}
-              >
-                <div className="min-w-0">
-                  <p style={{ ...typography.body.desktop, color: colors.text.primary }}>{item.label}</p>
-                  {item.documentFileName ? (
-                    <p className="truncate" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-                      {item.documentFileName}
-                    </p>
-                  ) : null}
-                </div>
-                <p style={{ ...typography.body.desktop, color: colors.text.primary }}>
-                  {formatNormalizedValue(item.proposedValue)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </DashboardGrid>
-    );
-  }
-
-  const currentDocStep = resolveCurrentDocumentStep(ws);
-  const resumeHref = resolveCurrentDocumentStepHref(fiscalYear.id, ws);
-  const primaryTitle = docJourneyDone ? nextAction.title : currentDocStep.screenTitle;
-  const primaryDescription = docJourneyDone
-    ? nextAction.description
-    : currentDocStep.explanation;
-  const primaryLabel = docJourneyDone ? nextAction.cta : "Poursuivre";
-  const primaryHref = docJourneyDone ? nextHref : resumeHref;
-
-  return (
-    <DashboardGrid>
-      <DashboardHero
-        eyebrow={<YearBadge year={fiscalYear.year} />}
-        title="Votre déclaration LMNP"
-        description={assistant.headline}
-      />
       <DashboardPrimaryCard
+        eyebrow={primaryEyebrow}
         title={primaryTitle}
         description={primaryDescription}
         actionHref={primaryHref}
         actionLabel={primaryLabel}
+        onAction={onPrimaryAction}
+        secondaryActionHref={!completed && started ? LMNP_ROUTES.documents : undefined}
+        secondaryActionLabel={!completed && started ? "Voir les documents" : undefined}
         footer={
-          <p className="mt-4" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-            Besoin d&apos;un autre angle ?{" "}
-            <a href={nextHref} style={{ color: colors.text.accent }}>
-              {nextAction.cta}
-            </a>
-          </p>
+          !completed && started && !pending ? (
+            <p className="mt-6" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+              Besoin d&apos;un autre angle ?{" "}
+              <a href={nextHref} style={{ color: colors.text.accent }}>
+                {nextAction.cta}
+              </a>
+            </p>
+          ) : null
         }
       />
-    </DashboardGrid>
+
+      {!started ? (
+        <Card
+          variant="muted"
+          interactive
+          style={{
+            backgroundImage: [
+              `radial-gradient(ellipse 70% 55% at 100% 0%, ${colors.orange[100]} 0%, transparent 62%)`,
+              gradients.card.interactive,
+            ].join(", "),
+            boxShadow: shadows.card.default,
+          }}
+        >
+          <DeclarationHowItWorks />
+        </Card>
+      ) : null}
+
+      {pending > 0 ? <ValidationPreview items={pendingPreview} /> : null}
+
+      {started || workspace.documents.length > 0 ? <DashboardDocumentsSection /> : null}
+
+      <DashboardAiInsights />
+    </div>
   );
 }
