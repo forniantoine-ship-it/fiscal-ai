@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { PublicLayout } from "@/design-system/layouts/PublicLayout";
 import { colors } from "@/design-system/theme/colors";
@@ -11,83 +10,11 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
-
-const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.wide})`;
-
-function PrimaryButton({
-  href,
-  children,
-  className = "",
-}: {
-  href: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-
-  return (
-    <Link
-      href={href}
-      className={`inline-flex min-h-[44px] items-center justify-center ${className}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-      style={{
-        ...typography.button.desktop,
-        color: colors.text.inverse,
-        backgroundImage: pressed
-          ? gradients.button.primaryPressed
-          : hovered
-            ? gradients.button.primaryHover
-            : gradients.button.primary,
-        borderRadius: radius.full,
-        padding: `${spacing.scale[3]} ${spacing.scale[8]}`,
-        boxShadow: hovered ? shadows.button.primaryHover : shadows.button.primary,
-        transition: motions.hover.button,
-      }}
-    >
-      {children}
-    </Link>
-  );
-}
-
-function SecondaryButton({
-  href,
-  children,
-  className = "",
-}: {
-  href: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  const [hovered, setHovered] = useState(false);
-
-  return (
-    <Link
-      href={href}
-      className={`inline-flex min-h-[44px] items-center justify-center ${className}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        ...typography.button.desktop,
-        color: colors.text.secondary,
-        backgroundColor: hovered ? colors.surface.interactive : colors.surface.primary,
-        border: `1px solid ${hovered ? colors.border.strong : colors.border.default}`,
-        borderRadius: radius.full,
-        padding: `${spacing.scale[3]} ${spacing.scale[8]}`,
-        boxShadow: hovered ? shadows.button.secondaryHover : shadows.none,
-        transition: motions.hover.ghost,
-      }}
-    >
-      {children}
-    </Link>
-  );
-}
+import { PrimaryButton, SecondaryButton } from "@/components/landing/LandingButtons";
+import {
+  DEMO_FLOW,
+  HeroDashboardMockup,
+} from "@/components/landing/ProductMockups";
 
 function SectionIntro({
   title,
@@ -114,230 +41,29 @@ function SectionIntro({
         {title}
       </h2>
       {subtitle ? (
-        <p style={{ ...typography.body.desktop, color: colors.text.tertiary }}>
-          {subtitle}
-        </p>
+        <p style={{ ...typography.body.desktop, color: colors.text.tertiary }}>{subtitle}</p>
       ) : null}
     </div>
   );
 }
 
-function TrustPill({ children }: { children: ReactNode }) {
+function TrustPoint({ children }: { children: ReactNode }) {
   return (
     <span
-      className="inline-flex items-center"
       style={{
         ...typography.caption.desktop,
-        color: colors.text.tertiary,
-        gap: spacing.scale[2],
-        padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
-        borderRadius: radius.full,
-        backgroundColor: colors.surface.secondary,
-        border: `1px solid ${colors.border.subtle}`,
+        color: colors.text.muted,
       }}
     >
-      <span
-        aria-hidden
-        className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{ backgroundColor: colors.success.muted }}
-      />
       {children}
     </span>
-  );
-}
-
-function DashboardMockup() {
-  const steps = ["Activité", "Logement", "Crédit", "Revenus", "Validation"];
-  const documents = [
-    { name: "Bail meublé — Appartement Lyon", status: "Analysé", confidence: "98 %" },
-    { name: "Tableau d'amortissement", status: "Analysé", confidence: "96 %" },
-    { name: "Relevé de compte — Loyers 2024", status: "En cours", confidence: "—" },
-  ];
-
-  return (
-    <div
-      className="w-full"
-      style={{
-        borderRadius: radius["2xl"],
-        backgroundImage: gradients.card.elevated,
-        border: `1px solid ${colors.border.subtle}`,
-        boxShadow: shadows.hero.floating,
-        overflow: "hidden",
-        transition: motions.hover.card,
-      }}
-    >
-      <div
-        style={{
-          padding: spacing.scale[4],
-          borderBottom: `1px solid ${colors.border.subtle}`,
-          backgroundColor: colors.surface.primary,
-        }}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center" style={{ gap: spacing.scale[2] }}>
-            <span
-              className="inline-flex h-7 w-7 items-center justify-center"
-              style={{
-                borderRadius: radius.sm,
-                backgroundImage: gradients.button.primary,
-                color: colors.text.inverse,
-                fontSize: typography.fontSize.xs,
-                fontWeight: typography.fontWeight.medium,
-              }}
-            >
-              F
-            </span>
-            <span
-              style={{
-                ...typography.cardTitle.desktop,
-                fontSize: typography.fontSize.base,
-                color: colors.text.primary,
-              }}
-            >
-              Exercice 2024
-            </span>
-          </div>
-          <span
-            style={{
-              ...typography.caption.desktop,
-              color: colors.success.DEFAULT,
-              padding: `${spacing.scale[1]} ${spacing.scale[3]}`,
-              borderRadius: radius.full,
-              backgroundColor: colors.success.light,
-            }}
-          >
-            Enregistré
-          </span>
-        </div>
-      </div>
-
-      <div
-        className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={{
-          padding: `${spacing.scale[3]} ${spacing.scale[4]} 0`,
-          borderBottom: `1px solid ${colors.border.subtle}`,
-        }}
-      >
-        <div className="flex min-w-max" style={{ gap: spacing.scale[5] }}>
-          {steps.map((step, index) => (
-            <span
-              key={step}
-              style={{
-                ...typography.workflow.desktop,
-                color: index === 1 ? colors.text.primary : colors.text.muted,
-                fontWeight: index === 1 ? typography.fontWeight.medium : typography.fontWeight.regular,
-                paddingBottom: spacing.scale[3],
-                borderBottom:
-                  index === 1
-                    ? `2px solid ${colors.orange[500]}`
-                    : "2px solid transparent",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {step}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ padding: spacing.card.md }}>
-        <div
-          className="flex items-center justify-between"
-          style={{ marginBottom: spacing.scale[5] }}
-        >
-          <div>
-            <p
-              style={{
-                ...typography.caption.desktop,
-                color: colors.text.muted,
-                letterSpacing: typography.letterSpacing.caps,
-                textTransform: "uppercase",
-                marginBottom: spacing.scale[1],
-              }}
-            >
-              Progression du dossier
-            </p>
-            <p style={{ ...typography.cardTitle.desktop, color: colors.text.primary }}>
-              68 % complété
-            </p>
-          </div>
-          <span
-            style={{
-              ...typography.caption.desktop,
-              color: colors.orange[600],
-              padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
-              borderRadius: radius.full,
-              backgroundColor: colors.orange[50],
-            }}
-          >
-            3 documents analysés
-          </span>
-        </div>
-
-        <div
-          style={{
-            height: "6px",
-            borderRadius: radius.full,
-            backgroundColor: colors.surface.inset,
-            marginBottom: spacing.scale[6],
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              width: "68%",
-              height: "100%",
-              borderRadius: radius.full,
-              backgroundImage: gradients.workflow.analyzing,
-              transition: motions.workflow.progress,
-            }}
-          />
-        </div>
-
-        <div className="flex flex-col" style={{ gap: spacing.scale[3] }}>
-          {documents.map((doc) => (
-            <div
-              key={doc.name}
-              className="flex items-center justify-between gap-4"
-              style={{
-                padding: spacing.scale[4],
-                borderRadius: radius.lg,
-                backgroundColor: colors.surface.primary,
-                border: `1px solid ${colors.border.subtle}`,
-              }}
-            >
-              <div className="min-w-0">
-                <p
-                  className="truncate"
-                  style={{ ...typography.body.desktop, color: colors.text.primary, fontSize: typography.fontSize.sm }}
-                >
-                  {doc.name}
-                </p>
-                <p style={{ ...typography.caption.desktop, color: colors.text.muted, marginTop: spacing.scale[1] }}>
-                  {doc.status}
-                </p>
-              </div>
-              <span
-                style={{
-                  ...typography.caption.desktop,
-                  color: doc.status === "En cours" ? colors.orange[600] : colors.success.DEFAULT,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {doc.confidence}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }
 
 function HeroSection() {
   return (
     <section
-      className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-16"
+      className="grid grid-cols-1 items-center gap-12 lg:grid-cols-2 lg:gap-20"
       style={{ paddingBottom: spacing.section.gapLanding }}
     >
       <div className="flex flex-col" style={{ gap: spacing.scale[8] }}>
@@ -400,14 +126,23 @@ function HeroSection() {
         </div>
 
         <div className="flex flex-col sm:flex-row" style={{ gap: spacing.scale[3] }}>
-          <PrimaryButton href="/essayer">Commencer ma déclaration</PrimaryButton>
+          <PrimaryButton href="/inscription">Commencer ma déclaration</PrimaryButton>
           <SecondaryButton href="/#demonstration">Voir la démonstration</SecondaryButton>
         </div>
 
-        <div className="flex flex-wrap" style={{ gap: spacing.scale[3] }}>
-          <TrustPill>Télétransmission EDI incluse</TrustPill>
-          <TrustPill>Sauvegarde automatique</TrustPill>
-          <TrustPill>Aucune connaissance comptable nécessaire</TrustPill>
+        <div
+          className="flex flex-wrap items-center"
+          style={{ gap: spacing.scale[4], rowGap: spacing.scale[2] }}
+        >
+          <TrustPoint>Télétransmission EDI incluse</TrustPoint>
+          <span aria-hidden style={{ color: colors.border.default }}>
+            ·
+          </span>
+          <TrustPoint>Sauvegarde automatique</TrustPoint>
+          <span aria-hidden style={{ color: colors.border.default }}>
+            ·
+          </span>
+          <TrustPoint>Aucune connaissance comptable nécessaire</TrustPoint>
         </div>
       </div>
 
@@ -417,7 +152,7 @@ function HeroSection() {
           className="absolute -inset-8 -z-10 opacity-60"
           style={{ backgroundImage: gradients.landing.glowRight }}
         />
-        <DashboardMockup />
+        <HeroDashboardMockup />
       </div>
     </section>
   );
@@ -427,31 +162,30 @@ const HOW_IT_WORKS = [
   {
     step: "01",
     title: "Déposez vos documents",
-    description: "Bail, amortissements, relevés — glissez vos pièces en quelques secondes.",
+    description:
+      "Acte notarié, prêt, revenus, charges…\nImportez simplement vos documents.",
   },
   {
     step: "02",
     title: "L'IA prépare votre dossier",
-    description: "Extraction silencieuse, classement automatique, montants pré-remplis.",
+    description:
+      "L'IA détecte automatiquement les informations nécessaires et prépare votre déclaration.",
   },
   {
     step: "03",
     title: "Vérifiez simplement",
-    description: "Relisez les éléments essentiels. Corrigez si besoin, en toute clarté.",
+    description: "Corrigez ou validez les informations détectées.",
   },
   {
     step: "04",
     title: "Génération et télétransmission",
-    description: "Votre liasse est générée et transmise. Vous gardez le contrôle.",
+    description: "Votre déclaration est générée et télétransmise automatiquement.",
   },
 ] as const;
 
 function HowItWorksSection() {
   return (
-    <section
-      id="fonctionnalites"
-      style={{ paddingBlock: spacing.section.gapLanding }}
-    >
+    <section id="fonctionnement" style={{ paddingBlock: spacing.section.gapLanding }}>
       <SectionIntro
         title="Comment ça marche"
         subtitle="Quatre étapes. Un parcours calme, sans jargon comptable."
@@ -494,7 +228,15 @@ function HowItWorksSection() {
             >
               {item.title}
             </h3>
-            <p style={{ ...typography.body.desktop, color: colors.text.tertiary, fontSize: typography.fontSize.sm }}>
+            <p
+              className="whitespace-pre-line"
+              style={{
+                ...typography.body.desktop,
+                color: colors.text.tertiary,
+                fontSize: typography.fontSize.sm,
+                lineHeight: typography.lineHeight.relaxed,
+              }}
+            >
               {item.description}
             </p>
           </article>
@@ -504,171 +246,82 @@ function HowItWorksSection() {
   );
 }
 
-const DEMO_TABS = [
-  {
-    id: "dashboard",
-    label: "Tableau de bord",
-    title: "Une vue d'ensemble apaisée",
-    description: "Suivez l'avancement de votre dossier sans surcharge visuelle.",
-    metric: "68 % complété",
-    items: ["3 documents analysés", "2 sections validées", "Sauvegarde automatique"],
-  },
-  {
-    id: "upload",
-    label: "Documents",
-    title: "Dépôt de documents simplifié",
-    description: "Glissez vos pièces. L'IA les lit et les classe pour vous.",
-    metric: "Analyse en cours",
-    items: ["Bail meublé — analysé", "Amortissements — analysé", "Relevé bancaire — en cours"],
-  },
-  {
-    id: "amortissements",
-    label: "Amortissements",
-    title: "Amortissements pré-calculés",
-    description: "Les montants sont extraits de vos documents, prêts à vérifier.",
-    metric: "12 480 € amortis",
-    items: ["Immobilisation — bien principal", "Mobilier — inventaire meublé", "Travaux — répartition automatique"],
-  },
-  {
-    id: "validation",
-    label: "Validation",
-    title: "Validation en toute confiance",
-    description: "Chaque montant est visible, expliqué, modifiable avant transmission.",
-    metric: "4 champs à relire",
-    items: ["Revenus locatifs — validé", "Charges — validé", "Intérêts d'emprunt — à confirmer"],
-  },
-] as const;
-
 function DemoSection() {
-  const [active, setActive] = useState<(typeof DEMO_TABS)[number]["id"]>("dashboard");
-  const current = DEMO_TABS.find((tab) => tab.id === active)!;
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % DEMO_FLOW.length);
+    }, 4500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const active = DEMO_FLOW[activeIndex];
+  const ActiveMockup = active.Mockup;
 
   return (
-    <section
-      id="demonstration"
-      style={{ paddingBlock: spacing.section.gapLanding }}
-    >
+    <section id="demonstration" style={{ paddingBlock: spacing.section.gapLanding }}>
       <SectionIntro
-        title="Un logiciel qui vous guide calmement"
-        subtitle="Découvrez l'expérience Fiscal AI — minimaliste, claire, rassurante."
+        title="Une expérience fluide"
+        subtitle="De vos documents à la déclaration prête — sans effort."
       />
 
-      <div
-        className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={{ marginBottom: spacing.scale[8] }}
-      >
-        <div className="flex min-w-max justify-center gap-2">
-          {DEMO_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActive(tab.id)}
-              className="min-h-[44px]"
-              style={{
-                ...typography.navigation.desktop,
-                color: active === tab.id ? colors.text.primary : colors.text.muted,
-                fontWeight: active === tab.id ? typography.fontWeight.medium : typography.fontWeight.regular,
-                padding: `${spacing.scale[2]} ${spacing.scale[5]}`,
-                borderRadius: radius.full,
-                border: `1px solid ${active === tab.id ? colors.border.selected : colors.border.subtle}`,
-                backgroundColor: active === tab.id ? colors.surface.selected : "transparent",
-                transition: motions.workflow.step,
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="grid grid-cols-1 items-start gap-12 lg:grid-cols-12">
+        <div className="lg:col-span-4">
+          <div className="flex flex-col" style={{ gap: spacing.scale[2] }}>
+            {DEMO_FLOW.map((step, index) => {
+              const isActive = index === activeIndex;
+              const isPast = index < activeIndex;
 
-      <div
-        className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2"
-        style={{
-          padding: spacing.card.xl,
-          borderRadius: radius["2xl"],
-          backgroundColor: colors.surface.primary,
-          border: `1px solid ${colors.border.subtle}`,
-          boxShadow: shadows.hero.floating,
-          transition: motions.page.enter,
-        }}
-      >
-        <div>
-          <p
-            style={{
-              ...typography.caption.desktop,
-              color: colors.orange[600],
-              marginBottom: spacing.scale[3],
-            }}
-          >
-            {current.metric}
-          </p>
-          <h3
-            style={{
-              ...typography.sectionTitle.desktop,
-              fontSize: typography.fontSize["3xl"],
-              color: colors.text.primary,
-              marginBottom: spacing.scale[4],
-            }}
-          >
-            {current.title}
-          </h3>
-          <p
-            style={{
-              ...typography.body.desktop,
-              color: colors.text.secondary,
-              marginBottom: spacing.scale[6],
-              lineHeight: typography.lineHeight.relaxed,
-            }}
-          >
-            {current.description}
-          </p>
-          <ul className="flex flex-col" style={{ gap: spacing.scale[3] }}>
-            {current.items.map((item) => (
-              <li
-                key={item}
-                className="flex items-center"
-                style={{ gap: spacing.scale[3], ...typography.body.desktop, color: colors.text.tertiary }}
-              >
-                <span
-                  aria-hidden
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: colors.success.muted }}
-                />
-                {item}
-              </li>
-            ))}
-          </ul>
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => setActiveIndex(index)}
+                  className="flex min-h-[44px] items-center text-left"
+                  style={{
+                    gap: spacing.scale[4],
+                    padding: spacing.scale[4],
+                    borderRadius: radius.lg,
+                    border: `1px solid ${isActive ? colors.border.selected : colors.border.subtle}`,
+                    backgroundColor: isActive ? colors.surface.selected : "transparent",
+                    transition: motions.workflow.step,
+                  }}
+                >
+                  <span
+                    aria-hidden
+                    style={{
+                      ...typography.caption.desktop,
+                      color: isActive ? colors.orange[600] : isPast ? colors.success.DEFAULT : colors.text.muted,
+                      width: "1.5rem",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isPast ? "✓" : index + 1}
+                  </span>
+                  <span
+                    style={{
+                      ...typography.body.desktop,
+                      color: isActive ? colors.text.primary : colors.text.secondary,
+                      fontWeight: isActive ? typography.fontWeight.medium : typography.fontWeight.regular,
+                    }}
+                  >
+                    {step.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div
-          style={{
-            padding: spacing.card.lg,
-            borderRadius: radius.xl,
-            backgroundImage: gradients.card.inset,
-            border: `1px solid ${colors.border.subtle}`,
-            minHeight: "280px",
-          }}
-        >
+        <div className="lg:col-span-8">
           <div
-            className="flex flex-col"
-            style={{ gap: spacing.scale[3] }}
+            key={active.id}
+            style={{
+              animation: "fiscal-fade-in 0.5s ease-out",
+            }}
           >
-            {current.items.map((item, index) => (
-              <div
-                key={item}
-                style={{
-                  padding: spacing.scale[4],
-                  borderRadius: radius.lg,
-                  backgroundColor: colors.surface.primary,
-                  border: `1px solid ${colors.border.subtle}`,
-                  opacity: 1 - index * 0.08,
-                }}
-              >
-                <p style={{ ...typography.body.desktop, color: colors.text.primary, fontSize: typography.fontSize.sm }}>
-                  {item}
-                </p>
-              </div>
-            ))}
+            <ActiveMockup />
           </div>
         </div>
       </div>
@@ -679,36 +332,41 @@ function DemoSection() {
 const DIFFERENTIATORS = [
   {
     title: "Simple",
-    description:
-      "Pas de formulaires interminables. Un parcours guidé, étape par étape, dans un langage clair.",
+    description: "Aucune connaissance comptable nécessaire.",
   },
   {
     title: "Automatique",
-    description:
-      "L'IA extrait et organise vos données en silence. Vous validez, vous ne saisissez plus.",
+    description: "L'IA prépare votre déclaration à partir de vos documents.",
   },
   {
     title: "Transparent",
-    description:
-      "Chaque montant est visible et modifiable. Aucune boîte noire, aucune surprise.",
+    description: "149 € TTC, télétransmission incluse.",
   },
 ] as const;
 
 function DifferentiatorsSection() {
   return (
     <section style={{ paddingBlock: spacing.section.gapLanding }}>
-      <SectionIntro
-        title="Pourquoi c'est différent"
-        subtitle="Conçu pour les propriétaires LMNP, pas pour les experts-comptables."
-      />
+      <div className="mx-auto max-w-2xl text-center" style={{ marginBottom: spacing.section.titleToContent }}>
+        <p
+          style={{
+            ...typography.body.desktop,
+            color: colors.text.secondary,
+            lineHeight: typography.lineHeight.relaxed,
+          }}
+        >
+          Les logiciels LMNP sont souvent complexes.
+          <br />
+          Nous avons conçu une alternative beaucoup plus simple.
+        </p>
+      </div>
       <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
         {DIFFERENTIATORS.map((item) => (
           <article
             key={item.title}
+            className="text-center"
             style={{
               padding: spacing.card.xl,
-              borderRadius: radius.xl,
-              backgroundColor: "transparent",
             }}
           >
             <h3
@@ -723,7 +381,13 @@ function DifferentiatorsSection() {
             >
               {item.title}
             </h3>
-            <p style={{ ...typography.body.desktop, color: colors.text.tertiary, lineHeight: typography.lineHeight.relaxed }}>
+            <p
+              style={{
+                ...typography.body.desktop,
+                color: colors.text.tertiary,
+                lineHeight: typography.lineHeight.relaxed,
+              }}
+            >
               {item.description}
             </p>
           </article>
@@ -746,17 +410,6 @@ function AiSection() {
       }}
     >
       <div className="mx-auto max-w-3xl text-center">
-        <p
-          style={{
-            ...typography.caption.desktop,
-            color: colors.text.muted,
-            letterSpacing: typography.letterSpacing.caps,
-            textTransform: "uppercase",
-            marginBottom: spacing.scale[4],
-          }}
-        >
-          Intelligence discrète
-        </p>
         <h2
           style={{
             ...typography.sectionTitle.desktop,
@@ -765,9 +418,7 @@ function AiSection() {
           }}
           className="max-lg:!text-[30px]"
         >
-          L&apos;IA travaille en silence.
-          <br />
-          Vous gardez la main.
+          Une IA utile et silencieuse.
         </h2>
         <p
           style={{
@@ -776,10 +427,8 @@ function AiSection() {
             lineHeight: typography.lineHeight.relaxed,
           }}
         >
-          Fiscal AI lit vos documents, extrait les montants et prépare votre dossier
-          — sans interface futuriste, sans promesses excessives. Vous vérifiez
-          chaque élément avant la génération. C&apos;est un assistant, pas un
-          remplacement.
+          L&apos;IA analyse vos documents, prépare les amortissements, classe vos charges et
+          structure automatiquement votre dossier LMNP.
         </p>
       </div>
     </section>
@@ -787,47 +436,54 @@ function AiSection() {
 }
 
 const SECURITY_ITEMS = [
-  "Hébergement en France",
-  "Chiffrement des données en transit et au repos",
-  "Sauvegarde automatique continue",
-  "Aucune revente de vos données",
+  {
+    title: "Documents chiffrés",
+    description: "Vos pièces sont protégées tout au long du parcours.",
+  },
+  {
+    title: "Sauvegarde sécurisée",
+    description: "Votre dossier est enregistré automatiquement à chaque étape.",
+  },
+  {
+    title: "Confidentialité",
+    description: "Vos données ne sont jamais revendues ni partagées.",
+  },
+  {
+    title: "Hébergement sécurisé",
+    description: "Infrastructure fiable, hébergée en France.",
+  },
 ] as const;
 
 function SecuritySection() {
   return (
-    <section style={{ paddingBlock: spacing.section.gapLanding }}>
+    <section id="securite" style={{ paddingBlock: spacing.section.gapLanding }}>
       <SectionIntro
-        title="Vos données, protégées"
-        subtitle="La confiance est au cœur de notre approche."
-        align="left"
+        title="Vos documents, en confiance"
+        subtitle="La sécurité de votre dossier est une priorité."
       />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {SECURITY_ITEMS.map((item) => (
           <div
-            key={item}
-            className="flex items-center"
+            key={item.title}
             style={{
-              gap: spacing.scale[4],
-              padding: spacing.scale[5],
+              padding: spacing.scale[6],
               borderRadius: radius.lg,
               border: `1px solid ${colors.border.subtle}`,
               backgroundColor: colors.surface.primary,
             }}
           >
-            <span
-              aria-hidden
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center"
+            <p
               style={{
-                borderRadius: radius.full,
-                backgroundColor: colors.success.light,
-                color: colors.success.DEFAULT,
-                fontSize: typography.fontSize.sm,
+                ...typography.body.desktop,
+                color: colors.text.primary,
+                fontWeight: typography.fontWeight.medium,
+                marginBottom: spacing.scale[2],
               }}
             >
-              ✓
-            </span>
-            <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-              {item}
+              {item.title}
+            </p>
+            <p style={{ ...typography.body.desktop, color: colors.text.tertiary, fontSize: typography.fontSize.sm }}>
+              {item.description}
             </p>
           </div>
         ))}
@@ -836,16 +492,18 @@ function SecuritySection() {
   );
 }
 
+const PRICING_FEATURES = [
+  "Génération déclaration",
+  "Amortissements automatiques",
+  "Télétransmission EDI",
+  "Sauvegarde dossier",
+  "Génération PDF",
+] as const;
+
 function PricingSection() {
   return (
-    <section
-      id="tarifs"
-      style={{ paddingBlock: spacing.section.gapLanding }}
-    >
-      <SectionIntro
-        title="Un tarif clair"
-        subtitle="Tout inclus. Aucun abonnement caché."
-      />
+    <section id="tarifs" style={{ paddingBlock: spacing.section.gapLanding }}>
+      <SectionIntro title="Un tarif clair" subtitle="Tout inclus. Aucun abonnement." />
       <div
         className="mx-auto max-w-md text-center"
         style={{
@@ -858,11 +516,22 @@ function PricingSection() {
       >
         <p
           style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            letterSpacing: typography.letterSpacing.caps,
+            textTransform: "uppercase",
+            marginBottom: spacing.scale[4],
+          }}
+        >
+          Déclaration LMNP
+        </p>
+        <p
+          style={{
             fontFamily: typography.fontFamily.display,
             fontSize: typography.fontSize["5xl"],
             lineHeight: typography.lineHeight.display,
             color: colors.text.primary,
-            marginBottom: spacing.scale[2],
+            marginBottom: spacing.scale[6],
           }}
         >
           149 €{" "}
@@ -870,31 +539,19 @@ function PricingSection() {
             TTC
           </span>
         </p>
-        <p
-          style={{
-            ...typography.body.desktop,
-            color: colors.text.secondary,
-            marginBottom: spacing.scale[6],
-          }}
-        >
-          Déclaration LMNP complète
-          <br />
-          Télétransmission EDI incluse
-        </p>
         <ul
           className="mb-8 flex flex-col text-left"
           style={{ gap: spacing.scale[3], marginBottom: spacing.scale[8] }}
         >
-          {[
-            "Préparation automatique du dossier",
-            "Génération de la liasse fiscale",
-            "Télétransmission aux impôts",
-            "Support par email",
-          ].map((feature) => (
+          {PRICING_FEATURES.map((feature) => (
             <li
               key={feature}
               className="flex items-center"
-              style={{ gap: spacing.scale[3], ...typography.body.desktop, color: colors.text.tertiary }}
+              style={{
+                gap: spacing.scale[3],
+                ...typography.body.desktop,
+                color: colors.text.tertiary,
+              }}
             >
               <span
                 aria-hidden
@@ -905,9 +562,21 @@ function PricingSection() {
             </li>
           ))}
         </ul>
-        <PrimaryButton href="/essayer" className="w-full">
+        <PrimaryButton href="/inscription" className="w-full">
           Commencer ma déclaration
         </PrimaryButton>
+        <p
+          style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            marginTop: spacing.scale[6],
+            lineHeight: typography.lineHeight.relaxed,
+          }}
+        >
+          Plusieurs logements ?
+          <br />
+          Demandez un devis personnalisé.
+        </p>
       </div>
     </section>
   );
@@ -915,39 +584,48 @@ function PricingSection() {
 
 const FAQ_ITEMS = [
   {
-    question: "Ai-je besoin de connaissances comptables ?",
+    question: "Dois-je connaître la comptabilité ?",
     answer:
-      "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les montants extraits, et nous nous occupons de la génération et de la télétransmission.",
+      "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les informations détectées, et nous nous occupons du reste.",
+  },
+  {
+    question: "La télétransmission est-elle incluse ?",
+    answer:
+      "Oui. Les 149 € TTC comprennent la génération de votre déclaration et la télétransmission EDI aux impôts.",
   },
   {
     question: "Quels documents dois-je fournir ?",
     answer:
-      "Typiquement : votre bail meublé, vos relevés de loyers, votre tableau d'amortissement, vos justificatifs de charges et d'emprunt. La liste s'adapte à votre situation.",
+      "Acte notarié, tableau d'amortissement, relevés de loyers, justificatifs de charges et d'emprunt. La liste s'adapte à votre situation.",
   },
   {
-    question: "La télétransmission est-elle vraiment incluse ?",
+    question: "Puis-je corriger les informations ?",
     answer:
-      "Oui. Les 149 € TTC comprennent la préparation du dossier, la génération de la liasse et la télétransmission EDI aux impôts.",
+      "Oui. Chaque montant extrait est visible et modifiable avant validation. Vous gardez le contrôle total sur votre déclaration.",
   },
   {
-    question: "Puis-je modifier les montants proposés ?",
-    answer:
-      "Absolument. Chaque montant extrait est visible et modifiable avant validation. Vous gardez le contrôle total sur votre déclaration.",
-  },
-  {
-    question: "Mes données sont-elles sécurisées ?",
+    question: "Mes documents sont-ils sécurisés ?",
     answer:
       "Vos documents sont chiffrés, hébergés en France, et ne sont jamais revendus. La sauvegarde est automatique tout au long du parcours.",
   },
+  {
+    question: "LMNP et LMP sont-ils compatibles ?",
+    answer:
+      "Fiscal AI est optimisé pour la déclaration LMNP au régime réel. Pour le statut LMP ou des situations complexes, contactez-nous pour un accompagnement personnalisé.",
+  },
+  {
+    question: "Combien de temps cela prend-il ?",
+    answer:
+      "La plupart des dossiers sont prêts en moins d'une heure, une fois vos documents déposés. L'analyse IA est quasi instantanée.",
+  },
+  {
+    question: "Puis-je reprendre mon dossier plus tard ?",
+    answer:
+      "Oui. Votre dossier est sauvegardé automatiquement. Vous pouvez reprendre à tout moment, là où vous vous étiez arrêté.",
+  },
 ] as const;
 
-function FaqItem({
-  question,
-  answer,
-}: {
-  question: string;
-  answer: string;
-}) {
+function FaqItem({ question, answer }: { question: string; answer: string }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -960,10 +638,16 @@ function FaqItem({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="flex w-full min-h-[44px] items-center justify-between gap-4 text-left"
+        className="flex min-h-[44px] w-full items-center justify-between gap-4 text-left"
         aria-expanded={open}
       >
-        <span style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
+        <span
+          style={{
+            ...typography.body.desktop,
+            color: colors.text.primary,
+            fontWeight: typography.fontWeight.medium,
+          }}
+        >
           {question}
         </span>
         <span
@@ -1004,14 +688,42 @@ function FaqItem({
 
 function FaqSection() {
   return (
-    <section
-      id="faq"
-      style={{ paddingBlock: spacing.section.gapLanding }}
-    >
+    <section id="faq" style={{ paddingBlock: spacing.section.gapLanding }}>
       <SectionIntro title="Questions fréquentes" />
       <div className="mx-auto max-w-3xl">
         {FAQ_ITEMS.map((item) => (
           <FaqItem key={item.question} question={item.question} answer={item.answer} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const SOCIAL_PROOF = [
+  "Pensé pour les non comptables",
+  "Une expérience LMNP plus simple",
+  "Déclaration assistée par IA",
+] as const;
+
+function SocialProofSection() {
+  return (
+    <section style={{ paddingBlock: spacing.section.gap }}>
+      <div
+        className="flex flex-wrap items-center justify-center"
+        style={{ gap: spacing.scale[8] }}
+      >
+        {SOCIAL_PROOF.map((item) => (
+          <span
+            key={item}
+            style={{
+              ...typography.caption.desktop,
+              color: colors.text.muted,
+              letterSpacing: typography.letterSpacing.caps,
+              textTransform: "uppercase",
+            }}
+          >
+            {item}
+          </span>
         ))}
       </div>
     </section>
@@ -1035,7 +747,7 @@ function FinalCtaSection() {
         }}
         className="mx-auto max-w-2xl max-lg:!text-[30px]"
       >
-        Prêt à simplifier votre déclaration LMNP ?
+        Votre déclaration LMNP n&apos;a jamais été aussi simple.
       </h2>
       <p
         className="mx-auto max-w-xl"
@@ -1046,13 +758,11 @@ function FinalCtaSection() {
           lineHeight: typography.lineHeight.relaxed,
         }}
       >
-        Rejoignez les propriétaires qui ont choisi un parcours calme, clair et
-        sans stress.
+        Déposez vos documents.
+        <br />
+        L&apos;IA prépare le reste.
       </p>
-      <div className="flex flex-col items-center justify-center sm:flex-row" style={{ gap: spacing.scale[3] }}>
-        <PrimaryButton href="/essayer">Commencer ma déclaration</PrimaryButton>
-        <SecondaryButton href="/contact">Nous contacter</SecondaryButton>
-      </div>
+      <PrimaryButton href="/inscription">Commencer ma déclaration</PrimaryButton>
     </section>
   );
 }
@@ -1068,6 +778,7 @@ export function LandingPage() {
       <SecuritySection />
       <PricingSection />
       <FaqSection />
+      <SocialProofSection />
       <FinalCtaSection />
     </PublicLayout>
   );

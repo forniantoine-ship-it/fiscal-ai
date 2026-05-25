@@ -12,32 +12,21 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
 const NAV_LINKS = [
-  { label: "Fonctionnalités", href: "/#fonctionnalites" },
-  { label: "Tarifs", href: "/tarifs" },
-  { label: "Ressources", href: "/ressources" },
-  { label: "À propos", href: "/a-propos" },
+  { label: "Fonctionnement", href: "/#fonctionnement" },
+  { label: "Démonstration", href: "/#demonstration" },
+  { label: "Sécurité", href: "/#securite" },
+  { label: "FAQ", href: "/#faq" },
+  { label: "Tarifs", href: "/#tarifs" },
+] as const;
+
+const FOOTER_LINKS = [
+  { label: "Mentions légales", href: "/mentions-legales" },
+  { label: "Confidentialité", href: "/confidentialite" },
+  { label: "CGU", href: "/cgu" },
   { label: "Contact", href: "/contact" },
 ] as const;
 
 const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.wide})`;
-
-const FOOTER_LINKS = {
-  product: [
-    { label: "Fonctionnalités", href: "/#fonctionnalites" },
-    { label: "Tarifs", href: "/tarifs" },
-    { label: "Essai gratuit", href: "/essayer" },
-  ],
-  company: [
-    { label: "À propos", href: "/a-propos" },
-    { label: "Contact", href: "/contact" },
-    { label: "Ressources", href: "/ressources" },
-  ],
-  legal: [
-    { label: "Mentions légales", href: "/mentions-legales" },
-    { label: "Confidentialité", href: "/confidentialite" },
-    { label: "CGU", href: "/cgu" },
-  ],
-} as const;
 
 type PublicLayoutProps = {
   children: ReactNode;
@@ -60,9 +49,7 @@ function PrimaryCta({ href, children, className = "", onClick }: PrimaryCtaProps
       ? gradients.button.primaryHover
       : gradients.button.primary;
 
-  const boxShadow = hovered
-    ? shadows.button.primaryHover
-    : shadows.button.primary;
+  const boxShadow = hovered ? shadows.button.primaryHover : shadows.button.primary;
 
   return (
     <Link
@@ -122,35 +109,17 @@ function FiscalLogo() {
   return (
     <Link
       href="/"
-      className="inline-flex items-center gap-2.5"
-      style={{ textDecoration: "none" }}
+      style={{
+        fontFamily: typography.fontFamily.display,
+        fontSize: typography.fontSize.xl,
+        lineHeight: typography.lineHeight.title,
+        letterSpacing: typography.letterSpacing.title,
+        fontWeight: typography.fontWeight.regular,
+        color: colors.text.primary,
+        textDecoration: "none",
+      }}
     >
-      <span
-        aria-hidden
-        className="inline-flex h-8 w-8 items-center justify-center"
-        style={{
-          borderRadius: radius.md,
-          backgroundImage: gradients.button.primary,
-          boxShadow: shadows.button.primary,
-          color: colors.text.inverse,
-          ...typography.caption.desktop,
-          fontWeight: typography.fontWeight.medium,
-        }}
-      >
-        F
-      </span>
-      <span
-        style={{
-          fontFamily: typography.fontFamily.display,
-          fontSize: typography.fontSize.xl,
-          lineHeight: typography.lineHeight.title,
-          letterSpacing: typography.letterSpacing.title,
-          fontWeight: typography.fontWeight.regular,
-          color: colors.text.primary,
-        }}
-      >
-        Fiscal AI
-      </span>
+      Fiscal AI
     </Link>
   );
 }
@@ -167,26 +136,17 @@ function PublicNavbar({
   onCloseMobile: () => void;
 }) {
   return (
-    <header
-      className="sticky top-0 z-50"
-      style={{
-        transition: motions.hover.nav,
-      }}
-    >
+    <header className="fixed inset-x-0 top-0 z-50" style={{ transition: motions.hover.nav }}>
       <div
         className="mx-auto flex w-full items-center justify-between"
         style={{
           maxWidth: spacing.container.max,
           paddingInline: GUTTER,
           paddingBlock: spacing.scale[4],
-          backgroundColor: scrolled
-            ? "rgba(251, 248, 243, 0.82)"
-            : "transparent",
+          backgroundColor: scrolled ? "rgba(251, 248, 243, 0.82)" : "transparent",
           backdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
           WebkitBackdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
-          borderBottom: scrolled
-            ? `1px solid ${colors.border.subtle}`
-            : "1px solid transparent",
+          borderBottom: scrolled ? `1px solid ${colors.border.subtle}` : "1px solid transparent",
           boxShadow: scrolled ? shadows.card.default : shadows.none,
           transition: motions.modal.overlay,
         }}
@@ -195,7 +155,7 @@ function PublicNavbar({
 
         <nav
           aria-label="Navigation principale"
-          className="hidden items-center lg:flex"
+          className="absolute left-1/2 hidden -translate-x-1/2 items-center lg:flex"
           style={{ gap: spacing.scale[8] }}
         >
           {NAV_LINKS.map((link) => (
@@ -205,12 +165,9 @@ function PublicNavbar({
           ))}
         </nav>
 
-        <div
-          className="hidden items-center lg:flex"
-          style={{ gap: spacing.scale[6] }}
-        >
+        <div className="hidden items-center lg:flex" style={{ gap: spacing.scale[6] }}>
           <NavLink href="/connexion">Connexion</NavLink>
-          <PrimaryCta href="/essayer">Essayer gratuitement</PrimaryCta>
+          <PrimaryCta href="/inscription">Commencer ma déclaration</PrimaryCta>
         </div>
 
         <button
@@ -227,16 +184,8 @@ function PublicNavbar({
             transition: motions.hover.icon,
           }}
         >
-          <span className="sr-only">
-            {mobileOpen ? "Fermer" : "Menu"}
-          </span>
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            fill="none"
-            aria-hidden
-          >
+          <span className="sr-only">{mobileOpen ? "Fermer" : "Menu"}</span>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
             {mobileOpen ? (
               <path
                 d="M4 4L14 14M14 4L4 14"
@@ -286,8 +235,8 @@ function PublicNavbar({
             <NavLink href="/connexion" onClick={onCloseMobile}>
               Connexion
             </NavLink>
-            <PrimaryCta href="/essayer" onClick={onCloseMobile}>
-              Essayer gratuitement
+            <PrimaryCta href="/inscription" onClick={onCloseMobile}>
+              Commencer ma déclaration
             </PrimaryCta>
           </nav>
         </div>
@@ -307,82 +256,21 @@ function PublicFooter() {
       }}
     >
       <div
-        className="mx-auto"
+        className="mx-auto flex flex-col items-center justify-between gap-6 sm:flex-row"
         style={{
           maxWidth: spacing.container.max,
           paddingInline: GUTTER,
-          paddingTop: spacing.scale[20],
-          paddingBottom: spacing.scale[10],
+          paddingBlock: spacing.scale[10],
         }}
       >
-        <div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12"
-          style={{ gap: spacing.scale[12] }}
+        <nav
+          aria-label="Liens légaux"
+          className="flex flex-wrap items-center justify-center"
+          style={{ gap: spacing.scale[6] }}
         >
-          <div className="lg:col-span-5">
-            <FiscalLogo />
-            <p
-              className="max-w-sm"
-              style={{
-                ...typography.body.desktop,
-                color: colors.text.tertiary,
-                marginTop: spacing.scale[5],
-              }}
-            >
-              La déclaration LMNP, guidée par l&apos;intelligence. Un
-              accompagnement premium, clair et rassurant.
-            </p>
-          </div>
-
-          <FooterColumn title="Produit" links={FOOTER_LINKS.product} />
-          <FooterColumn title="Entreprise" links={FOOTER_LINKS.company} />
-          <FooterColumn title="Légal" links={FOOTER_LINKS.legal} />
-        </div>
-
-        <div
-          className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"
-          style={{
-            marginTop: spacing.scale[16],
-            paddingTop: spacing.scale[8],
-            borderTop: `1px solid ${colors.border.subtle}`,
-          }}
-        >
-          <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-            © {new Date().getFullYear()} Fiscal AI. Tous droits réservés.
-          </p>
-          <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-            Conçu en France · LMNP simplifié
-          </p>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-function FooterColumn({
-  title,
-  links,
-}: {
-  title: string;
-  links: ReadonlyArray<{ label: string; href: string }>;
-}) {
-  return (
-    <div className="lg:col-span-2">
-      <p
-        style={{
-          ...typography.caption.desktop,
-          color: colors.text.muted,
-          letterSpacing: typography.letterSpacing.caps,
-          textTransform: "uppercase",
-          marginBottom: spacing.scale[4],
-        }}
-      >
-        {title}
-      </p>
-      <ul className="flex flex-col" style={{ gap: spacing.scale[3] }}>
-        {links.map((link) => (
-          <li key={link.href}>
+          {FOOTER_LINKS.map((link) => (
             <Link
+              key={link.href}
               href={link.href}
               style={{
                 ...typography.navigation.desktop,
@@ -393,10 +281,13 @@ function FooterColumn({
             >
               {link.label}
             </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
+          ))}
+        </nav>
+        <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+          Déclaration LMNP assistée par IA.
+        </p>
+      </div>
+    </footer>
   );
 }
 
@@ -438,30 +329,22 @@ export function PublicLayout({ children }: PublicLayoutProps) {
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.landing.atmosphere,
-        }}
+        style={{ backgroundImage: gradients.landing.atmosphere }}
       />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.landing.glowLeft,
-        }}
+        style={{ backgroundImage: gradients.landing.glowLeft }}
       />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.landing.glowRight,
-        }}
+        style={{ backgroundImage: gradients.landing.glowRight }}
       />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.landing.sunsetRight,
-        }}
+        style={{ backgroundImage: gradients.landing.sunsetRight }}
       />
 
       <div className="relative flex min-h-screen flex-col">
@@ -477,7 +360,7 @@ export function PublicLayout({ children }: PublicLayoutProps) {
           style={{
             maxWidth: spacing.container.max,
             paddingInline: GUTTER,
-            paddingTop: spacing.section.pageTop,
+            paddingTop: `calc(${spacing.section.pageTop} + ${spacing.scale[4]})`,
             paddingBottom: spacing.section.pageBottom,
             transition: motions.page.enter,
           }}

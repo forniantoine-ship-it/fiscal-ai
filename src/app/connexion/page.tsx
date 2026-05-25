@@ -1,5 +1,5 @@
-import { ConnexionOnboarding } from "@/components/lmnp/onboarding/ConnexionOnboarding";
+import { ConnexionForm } from "@/components/landing/ConnexionForm";
 
 export default function ConnexionPage() {
-  return <ConnexionOnboarding />;
+  return <ConnexionForm />;
 }
