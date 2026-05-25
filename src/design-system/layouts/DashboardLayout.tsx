@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { colors } from "@/design-system/theme/colors";
+import { appAtmosphereLayers } from "@/design-system/theme/app-atmosphere";
 import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
@@ -13,16 +13,6 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
 const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.desktop})`;
-
-const HORIZONTAL_NAV = [
-  { label: "Tableau de bord", href: "/dashboard" },
-  { label: "Activité LMNP", href: "/activite" },
-  { label: "Documents", href: "/documents" },
-  { label: "Revenus", href: "/revenus" },
-  { label: "Charges", href: "/depenses" },
-  { label: "Amortissements", href: "/amortissements" },
-  { label: "Validation", href: "/declarations" },
-] as const;
 
 export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
 
@@ -33,10 +23,6 @@ export type DashboardLayoutProps = {
   userName?: string;
   userInitials?: string;
 };
-
-function isNavActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
 
 function FiscalMark({ compact = false }: { compact?: boolean }) {
   return (
@@ -79,7 +65,7 @@ function FiscalMark({ compact = false }: { compact?: boolean }) {
 function AutosaveIndicator({ status }: { status: AutosaveStatus }) {
   const copy =
     status === "saved"
-      ? "Enregistré"
+      ? "Dossier enregistré"
       : status === "saving"
         ? "Enregistrement…"
         : status === "error"
@@ -276,70 +262,6 @@ function DashboardTopBar({
   );
 }
 
-function HorizontalNav({ pathname }: { pathname: string }) {
-  return (
-    <nav
-      aria-label="Navigation du dossier"
-      className="w-full overflow-x-auto"
-      style={{
-        borderBottom: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(255, 248, 243, 0.72)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-      }}
-    >
-      <ul
-        className="mx-auto flex w-max min-w-full items-center justify-center"
-        style={{
-          maxWidth: spacing.container.default,
-          paddingInline: GUTTER,
-          gap: spacing.scale[2],
-          paddingBlock: spacing.scale[3],
-        }}
-      >
-        {HORIZONTAL_NAV.map((item) => {
-          const active = isNavActive(pathname, item.href);
-
-          return (
-            <li key={item.href}>
-              <Link
-                href={item.href}
-                style={{
-                  ...(active ? typography.workflow.active : typography.navigation.desktop),
-                  display: "inline-block",
-                  whiteSpace: "nowrap",
-                  color: active ? colors.text.primary : colors.text.tertiary,
-                  padding: `${spacing.scale[2]} ${spacing.scale[4]}`,
-                  borderRadius: radius.full,
-                  border: active ? `1px solid ${colors.border.selected}` : "1px solid transparent",
-                  backgroundColor: active ? colors.surface.selected : "transparent",
-                  boxShadow: active ? shadows.workflow.active : shadows.none,
-                  transition: motions.workflow.step,
-                  textDecoration: "none",
-                }}
-                onMouseEnter={(event) => {
-                  if (!active) {
-                    event.currentTarget.style.backgroundColor = colors.surface.interactive;
-                    event.currentTarget.style.color = colors.text.secondary;
-                  }
-                }}
-                onMouseLeave={(event) => {
-                  if (!active) {
-                    event.currentTarget.style.backgroundColor = "transparent";
-                    event.currentTarget.style.color = colors.text.tertiary;
-                  }
-                }}
-              >
-                {item.label}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
-}
-
 function DashboardFooter() {
   return (
     <footer
@@ -386,8 +308,6 @@ export function DashboardLayout({
   userName,
   userInitials,
 }: DashboardLayoutProps) {
-  const pathname = usePathname();
-
   return (
     <div
       className="relative min-h-screen"
@@ -398,30 +318,9 @@ export function DashboardLayout({
         backgroundSize: "cover",
       }}
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.app.centerLight,
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-[52%] max-w-3xl"
-        style={{ backgroundImage: gradients.app.diffusionLeft }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-[52%] max-w-3xl"
-        style={{ backgroundImage: gradients.app.diffusionRight }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[520px]"
-        style={{
-          backgroundImage: `radial-gradient(ellipse 72% 58% at 50% 0%, ${colors.orange[100]} 0%, ${colors.orange[50]} 34%, transparent 72%)`,
-        }}
-      />
+      {appAtmosphereLayers().map((layer) => (
+        <div key={layer.id} aria-hidden className={layer.className} style={layer.style} />
+      ))}
 
       <div className="relative flex min-h-screen flex-col">
         <header
@@ -438,7 +337,6 @@ export function DashboardLayout({
             userName={userName}
             userInitials={userInitials}
           />
-          <HorizontalNav pathname={pathname} />
         </header>
 
         <main

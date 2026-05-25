@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-
+import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
 import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
@@ -9,7 +8,7 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
-import type { WorkflowStepView } from "@/components/lmnp/dashboard/dashboard-workflow-model";
+import type { DashboardWorkflowStepId, WorkflowStepView } from "@/components/lmnp/dashboard/dashboard-workflow-model";
 
 function stepShadow(status: WorkflowStepView["status"]) {
   if (status === "current") return shadows.workflow.active;
@@ -17,20 +16,73 @@ function stepShadow(status: WorkflowStepView["status"]) {
   return shadows.workflow.default;
 }
 
-function validationBadgeCopy(step: WorkflowStepView) {
-  if (step.validationBadge === "pending") {
-    return `${step.correctionsRemaining} correction${step.correctionsRemaining > 1 ? "s" : ""}`;
+function StepIcon({ id }: { id: DashboardWorkflowStepId }) {
+  const stroke = colors.orange[500];
+  const common = { width: 20, height: 20, viewBox: "0 0 20 20", fill: "none", "aria-hidden": true as const };
+
+  switch (id) {
+    case "dashboard":
+      return (
+        <svg {...common}>
+          <rect x="3" y="3" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
+          <rect x="11" y="3" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
+          <rect x="3" y="11" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
+          <rect x="11" y="11" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
+    case "activite":
+      return (
+        <svg {...common}>
+          <path d="M4 15V8l6-3 6 3v7" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M8 15v-4h4v4" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
+    case "logement":
+      return (
+        <svg {...common}>
+          <path d="M3 10.5 10 4l7 6.5V16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V10.5Z" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
+    case "credit":
+      return (
+        <svg {...common}>
+          <rect x="3" y="5" width="14" height="10" rx="2" stroke={stroke} strokeWidth="1.4" />
+          <path d="M3 9h14" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
+    case "amortissement":
+      return (
+        <svg {...common}>
+          <path d="M5 15V7h4v8M11 15V5h4v10" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "revenus":
+      return (
+        <svg {...common}>
+          <path d="M4 14c2.5-4 4.5-4 6 0s3.5 4 6 0" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "charges":
+      return (
+        <svg {...common}>
+          <path d="M6 5h8M6 10h8M6 15h5" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <path d="M6 10.5 9 13.5 14 7.5" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="10" cy="10" r="7" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
   }
-  if (step.validationBadge === "validated") return "Validé";
-  return "—";
 }
 
-function MetaRow({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function StatusLine({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="flex items-start justify-between gap-3">
-      <span style={{ ...typography.caption.desktop, color: colors.text.muted }}>{label}</span>
-      <span
-        className="text-right"
+    <div className="space-y-1">
+      <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>{label}</p>
+      <p
         style={{
           ...typography.caption.desktop,
           color: accent ? colors.text.accent : colors.text.secondary,
@@ -38,7 +90,7 @@ function MetaRow({ label, value, accent = false }: { label: string; value: strin
         }}
       >
         {value}
-      </span>
+      </p>
     </div>
   );
 }
@@ -46,155 +98,137 @@ function MetaRow({ label, value, accent = false }: { label: string; value: strin
 export function DashboardWorkflow({ steps }: { steps: WorkflowStepView[] }) {
   return (
     <section aria-label="Parcours LMNP">
-      <div className="mb-5 text-center">
-        <p
-          style={{
-            ...typography.caption.desktop,
-            color: colors.text.accent,
-            letterSpacing: typography.letterSpacing.label,
-            textTransform: "uppercase",
-          }}
-        >
-          Votre parcours guidé
-        </p>
-        <h2
-          className="mt-2"
-          style={{
-            fontFamily: typography.fontFamily.display,
-            fontWeight: typography.fontWeight.regular,
-            fontSize: typography.fontSize["2xl"],
-            color: colors.text.primary,
-          }}
-        >
-          De vos documents à la validation
-        </h2>
-      </div>
-
       <div className="relative overflow-x-auto pb-2">
-        <ol className="flex min-w-[1120px] gap-3">
-          {steps.map((step, index) => {
-            const isLast = index === steps.length - 1;
-
-            return (
-              <li key={step.id} className="relative min-w-[220px] flex-1">
-                <Link href={step.href} style={{ textDecoration: "none" }}>
-                  <article
-                    className="flex h-full flex-col overflow-hidden"
-                    style={{
-                      minHeight: "248px",
-                      padding: spacing.card.md,
-                      borderRadius: radius.xl,
-                      border: `1px solid ${
-                        step.status === "current"
-                          ? colors.border.selected
-                          : step.status === "completed"
+        <ol className="flex min-w-[1280px] gap-4">
+          {steps.map((step, index) => (
+            <li key={step.id} className="min-w-[240px] flex-1">
+              <article
+                className="flex h-full flex-col"
+                style={{
+                  minHeight: "320px",
+                  padding: spacing.card.md,
+                  borderRadius: radius.xl,
+                  border: `1px solid ${
+                    step.status === "current"
+                      ? colors.border.selected
+                      : step.status === "completed"
+                        ? colors.success.border
+                        : colors.border.subtle
+                  }`,
+                  backgroundImage:
+                    step.status === "current"
+                      ? [
+                          `radial-gradient(ellipse 90% 70% at 100% 0%, ${colors.orange[100]} 0%, transparent 68%)`,
+                          gradients.card.interactive,
+                        ].join(", ")
+                      : step.status === "completed"
+                        ? gradients.workflow.success
+                        : gradients.card.elevated,
+                  boxShadow: stepShadow(step.status),
+                  transition: motions.hover.card,
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="inline-flex h-10 w-10 items-center justify-center"
+                      style={{
+                        borderRadius: radius.lg,
+                        backgroundColor:
+                          step.status === "completed"
+                            ? colors.success.surface
+                            : step.status === "current"
+                              ? colors.surface.selected
+                              : colors.surface.secondary,
+                        border: `1px solid ${
+                          step.status === "completed"
                             ? colors.success.border
-                            : colors.border.subtle
-                      }`,
-                      backgroundImage:
-                        step.status === "current"
-                          ? [
-                              `radial-gradient(ellipse 90% 70% at 100% 0%, ${colors.orange[200]} 0%, ${colors.orange[100]} 34%, transparent 68%)`,
-                              gradients.card.interactive,
-                            ].join(", ")
-                          : step.status === "completed"
-                            ? gradients.workflow.success
-                            : gradients.card.elevated,
-                      boxShadow: stepShadow(step.status),
-                      transition: motions.hover.card,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
+                            : step.status === "current"
+                              ? colors.border.selected
+                              : colors.border.subtle
+                        }`,
+                      }}
+                    >
+                      <StepIcon id={step.id} />
+                    </span>
+                    <div>
+                      <p
                         style={{
                           ...typography.caption.desktop,
-                          color:
-                            step.status === "completed"
-                              ? colors.success.DEFAULT
-                              : step.status === "current"
-                                ? colors.text.accent
-                                : colors.text.muted,
-                          fontWeight: typography.fontWeight.medium,
+                          color: colors.text.muted,
+                          letterSpacing: typography.letterSpacing.label,
                         }}
                       >
                         {String(index + 1).padStart(2, "0")}
-                      </span>
-                      {step.status === "completed" ? (
-                        <span aria-hidden style={{ color: colors.success.DEFAULT }}>
-                          ✓
-                        </span>
-                      ) : step.status === "current" ? (
-                        <span
-                          className="inline-block h-2.5 w-2.5 rounded-full"
-                          style={{
-                            backgroundColor: colors.orange[500],
-                            animation: motions.analyzing.pulse,
-                          }}
-                        />
-                      ) : null}
+                      </p>
+                      <h3
+                        style={{
+                          fontFamily: typography.fontFamily.display,
+                          fontWeight: typography.fontWeight.regular,
+                          fontSize: typography.fontSize.lg,
+                          color: step.status === "upcoming" ? colors.text.muted : colors.text.primary,
+                        }}
+                      >
+                        {step.label}
+                      </h3>
                     </div>
-
-                    <h3
-                      className="mt-3"
-                      style={{
-                        fontFamily: typography.fontFamily.display,
-                        fontWeight: typography.fontWeight.regular,
-                        fontSize: typography.fontSize.lg,
-                        color: step.status === "upcoming" ? colors.text.muted : colors.text.primary,
-                      }}
-                    >
-                      {step.label}
-                    </h3>
-
-                    <div className="mt-4 space-y-2">
-                      <MetaRow
-                        label="Document"
-                        value={step.documentDetected ?? "En attente"}
-                        accent={Boolean(step.documentDetected)}
-                      />
-                      <MetaRow label="Extraction IA" value={step.extractionState} />
-                      <MetaRow
-                        label="Corrections"
-                        value={
-                          step.correctionsRemaining > 0
-                            ? `${step.correctionsRemaining} restante${step.correctionsRemaining > 1 ? "s" : ""}`
-                            : "Aucune"
-                        }
-                        accent={step.correctionsRemaining > 0}
-                      />
-                      <MetaRow
-                        label="Validation"
-                        value={validationBadgeCopy(step)}
-                        accent={step.validationBadge === "pending"}
-                      />
-                    </div>
-
-                    <div
-                      className="mt-auto pt-4"
+                  </div>
+                  {step.status === "completed" ? (
+                    <span
                       style={{
                         ...typography.caption.desktop,
-                        color: colors.text.muted,
-                        borderTop: `1px solid ${colors.border.subtle}`,
-                        paddingTop: spacing.scale[3],
+                        color: colors.success.DEFAULT,
+                        padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
+                        borderRadius: radius.full,
+                        border: `1px solid ${colors.success.border}`,
+                        backgroundColor: colors.success.surface,
                       }}
                     >
-                      {step.documentPrompt}
-                    </div>
-                  </article>
-                </Link>
-                {!isLast ? (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute right-[-8px] top-1/2 z-10 hidden h-px w-4 lg:block"
-                    style={{
-                      backgroundColor:
-                        step.status === "completed" ? colors.orange[300] : colors.border.default,
-                    }}
+                      Validé
+                    </span>
+                  ) : null}
+                </div>
+
+                <div
+                  className="mt-5 space-y-4"
+                  style={{
+                    padding: spacing.scale[3],
+                    borderRadius: radius.lg,
+                    backgroundColor: colors.surface.primary,
+                    border: `1px solid ${colors.border.subtle}`,
+                  }}
+                >
+                  <StatusLine label="Document demandé" value={step.requestedDocument} accent />
+                  <StatusLine label="Extraction IA" value={step.extractionState} />
+                  <StatusLine
+                    label="Corrections"
+                    value={step.correctionState}
+                    accent={step.correctionsRemaining > 0}
                   />
-                ) : null}
-              </li>
-            );
-          })}
+                  <StatusLine
+                    label="Validation"
+                    value={step.validationState}
+                    accent={step.validationBadge === "pending"}
+                  />
+                </div>
+
+                {step.status === "current" && step.id !== "dashboard" ? (
+                  <div className="mt-auto pt-5">
+                    <Button href={step.uploadHref} className="w-full">
+                      Importer
+                    </Button>
+                  </div>
+                ) : (
+                  <p
+                    className="mt-auto pt-5"
+                    style={{ ...typography.caption.desktop, color: colors.text.muted, lineHeight: typography.lineHeight.relaxed }}
+                  >
+                    {step.documentPrompt}
+                  </p>
+                )}
+              </article>
+            </li>
+          ))}
         </ol>
       </div>
     </section>

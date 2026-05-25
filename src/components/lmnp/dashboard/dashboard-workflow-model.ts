@@ -31,30 +31,23 @@ export type WorkflowStepView = {
   href: string;
   uploadHref: string;
   status: WorkflowStepStatus;
+  requestedDocument: string;
   documentPrompt: string;
   aiExtracts: string[];
   documentDetected: string | null;
   extractionState: string;
+  correctionState: string;
+  validationState: string;
   correctionsRemaining: number;
   validationBadge: "validated" | "pending" | "none";
 };
-
-const STEP_ORDER: DashboardWorkflowStepId[] = [
-  "dashboard",
-  "activite",
-  "logement",
-  "credit",
-  "amortissement",
-  "revenus",
-  "charges",
-  "validation",
-];
 
 type StepDefinition = {
   id: DashboardWorkflowStepId;
   label: string;
   href: string;
   uploadHref: string;
+  requestedDocument: string;
   documentPrompt: string;
   aiExtracts: string[];
   matchDocument: (doc: LmnpDocument) => boolean;
@@ -68,8 +61,9 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Tableau de bord",
     href: LMNP_ROUTES.dashboard,
     uploadHref: LMNP_ROUTES.documents,
-    documentPrompt: "Vue d'ensemble de votre dossier LMNP.",
-    aiExtracts: ["Progression", "Prochaine pièce", "État du dossier"],
+    requestedDocument: "Vue d'ensemble",
+    documentPrompt: "Suivez l'avancement de votre dossier LMNP.",
+    aiExtracts: ["Progression", "Prochaine pièce"],
     matchDocument: () => false,
     isComplete: () => true,
     matchValidation: () => false,
@@ -79,6 +73,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Activité LMNP",
     href: LMNP_ROUTES.activite,
     uploadHref: documentJourneyRoute("inpi"),
+    requestedDocument: "Extrait INPI / Kbis",
     documentPrompt: "Ajoutez votre extrait INPI ou Kbis.",
     aiExtracts: ["SIREN", "Raison sociale", "Régime"],
     matchDocument: (doc) => /inpi|kbis|siren|siret|rcs|extrait/i.test(doc.fileName),
@@ -92,6 +87,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Logement",
     href: LMNP_ROUTES.activite,
     uploadHref: LMNP_ROUTES.documents,
+    requestedDocument: "Acte notarié",
     documentPrompt: "Ajoutez votre acte notarié.",
     aiExtracts: ["Adresse", "Surface", "Date d'acquisition"],
     matchDocument: (doc) =>
@@ -111,6 +107,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Crédit",
     href: LMNP_ROUTES.depenses,
     uploadHref: documentJourneyRoute("credit-immobilier"),
+    requestedDocument: "Tableau d'amortissement",
     documentPrompt: "Déposez votre tableau d'amortissement.",
     aiExtracts: ["Mensualité", "Durée", "Taux", "Intérêts"],
     matchDocument: (doc) =>
@@ -132,6 +129,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Amortissement",
     href: LMNP_ROUTES.amortissements,
     uploadHref: documentJourneyRoute("factures-travaux"),
+    requestedDocument: "Factures travaux / mobilier",
     documentPrompt: "Ajoutez vos factures de travaux ou de mobilier.",
     aiExtracts: ["Mobilier", "Travaux", "Amortissement annuel"],
     matchDocument: (doc) =>
@@ -153,6 +151,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Revenus",
     href: LMNP_ROUTES.revenus,
     uploadHref: documentJourneyRoute("bail"),
+    requestedDocument: "Baux + Loyers",
     documentPrompt: "Ajoutez vos loyers et baux.",
     aiExtracts: ["Loyers annuels", "Bail", "Charges refacturées"],
     matchDocument: (doc) =>
@@ -176,6 +175,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Charges",
     href: LMNP_ROUTES.depenses,
     uploadHref: documentJourneyRoute("taxe-fonciere"),
+    requestedDocument: "Factures + Charges",
     documentPrompt: "Ajoutez taxe foncière, assurance et charges.",
     aiExtracts: ["Taxe foncière", "Assurance", "Copropriété"],
     matchDocument: (doc) =>
@@ -199,6 +199,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     label: "Validation",
     href: LMNP_ROUTES.declarations,
     uploadHref: LMNP_ROUTES.declarations,
+    requestedDocument: "Prêt pour validation finale",
     documentPrompt: "Confirmez ou corrigez les montants extraits par l'IA.",
     aiExtracts: ["Montants détectés", "Cohérence", "Liasse prête"],
     matchDocument: () => false,
@@ -211,10 +212,10 @@ const STEP_DEFINITIONS: StepDefinition[] = [
 ];
 
 function extractionState(doc: LmnpDocument | undefined): string {
-  if (!doc) return "Document attendu";
-  if (doc.status === "uploaded") return "En attente d'analyse IA";
-  if (doc.status === "processing") return "Analyse IA en cours";
-  if (doc.status === "failed") return "Relire le document";
+  if (!doc) return "Extraction en attente";
+  if (doc.status === "uploaded") return "Extraction en attente";
+  if (doc.status === "processing") return "Extraction en cours";
+  if (doc.status === "failed") return "À corriger";
   return "Extraction terminée";
 }
 
@@ -225,6 +226,17 @@ function validationBadge(items: ValidationItem[]): WorkflowStepView["validationB
     return "validated";
   }
   return "none";
+}
+
+function correctionState(pending: number): string {
+  if (pending > 0) return `${pending} à corriger`;
+  return "Aucune";
+}
+
+function validationState(badge: WorkflowStepView["validationBadge"], status: WorkflowStepStatus): string {
+  if (badge === "pending") return "À corriger";
+  if (badge === "validated" || status === "completed") return "Validé";
+  return "En attente";
 }
 
 function resolveFocusStepId(workspace: DashboardWorkspace): DashboardWorkflowStepId {
@@ -254,6 +266,7 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
     const primaryDoc = matchedDocs.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
     const stepValidations = workspace.validationItems.filter(def.matchValidation);
     const pending = stepValidations.filter((item) => item.status === "pending").length;
+    const badge = validationBadge(stepValidations);
 
     let status: WorkflowStepStatus = "upcoming";
     if (def.id === "dashboard") {
@@ -270,12 +283,15 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
       href: def.href,
       uploadHref: def.uploadHref,
       status,
+      requestedDocument: def.requestedDocument,
       documentPrompt: def.documentPrompt,
       aiExtracts: def.aiExtracts,
       documentDetected: primaryDoc?.fileName ?? null,
       extractionState: extractionState(primaryDoc),
+      correctionState: correctionState(pending),
+      validationState: validationState(badge, status),
       correctionsRemaining: pending,
-      validationBadge: validationBadge(stepValidations),
+      validationBadge: badge,
     };
   });
 }
@@ -292,7 +308,7 @@ export function resolveActiveWorkflowStep(workspace: DashboardWorkspace): Workfl
 export function resolveDocumentWorkflowStep(
   doc: LmnpDocument,
   workspace: DashboardWorkspace,
-): WorkflowStepView["label"] {
+): string {
   const match = STEP_DEFINITIONS.find(
     (def) => def.id !== "dashboard" && def.id !== "validation" && def.matchDocument(doc),
   );
@@ -312,4 +328,21 @@ export function resolveDocumentFieldLabels(docId: string, workspace: DashboardWo
     .map((extraction) => FIELD_REGISTRY[extraction.fieldKey]?.label ?? extraction.displayLabel ?? extraction.fieldKey);
 }
 
-export { STEP_ORDER };
+export function resolveDocumentAiStatus(doc: LmnpDocument): string {
+  return extractionState(doc);
+}
+
+export function resolveDocumentValidationState(items: ValidationItem[]): string {
+  const pending = items.filter((item) => item.status === "pending").length;
+  if (pending > 0) return "À corriger";
+  if (items.some((item) => item.status === "approved" || item.status === "corrected")) {
+    return "Validé";
+  }
+  return "En attente";
+}
+
+export function resolveDocumentCorrectionState(items: ValidationItem[]): string {
+  const pending = items.filter((item) => item.status === "pending").length;
+  if (pending > 0) return `${pending} à corriger`;
+  return "Aucune";
+}

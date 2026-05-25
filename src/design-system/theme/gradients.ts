@@ -43,29 +43,49 @@ export const gradients = {
   // ─── 2. Private app background ─────────────────────────────────────────────
 
   app: {
-    /** Centered cream canvas with premium warm edge lighting */
+    /**
+     * Base canvas — cream center column with a continuous warm left→right wash.
+     * Avoids flat cream by blending into orange before the edge diffusions stack.
+     */
     background: [
-      `radial-gradient(ellipse 94% 64% at 50% -1%, ${colors.background.landingGlowSoft} 0%, ${colors.orange[50]} 40%, transparent 74%)`,
-      `radial-gradient(ellipse 80% 92% at 50% 50%, ${colors.background.creamWarm} 0%, ${colors.background.app} 52%, transparent 84%)`,
-      `radial-gradient(ellipse 50% 145% at 0% 50%, ${colors.orange[100]} 0%, ${colors.orange[50]} 30%, transparent 68%)`,
-      `radial-gradient(ellipse 50% 145% at 100% 50%, ${colors.orange[100]} 0%, ${colors.orange[50]} 30%, transparent 68%)`,
-      `radial-gradient(ellipse 44% 128% at 0% 50%, ${colors.background.appDiffusionLeft} 0%, transparent 76%)`,
-      `radial-gradient(ellipse 44% 128% at 100% 50%, ${colors.background.appDiffusionRight} 0%, transparent 76%)`,
-      `linear-gradient(180deg, ${colors.background.appDiffusionCenter} 0%, ${colors.background.app} 38%, ${colors.background.creamSoft} 100%)`,
+      `radial-gradient(ellipse 68% 92% at 50% 46%, ${colors.background.creamWarm} 0%, ${colors.background.app} 46%, ${colors.orange[50]} 72%, transparent 100%)`,
+      `linear-gradient(104deg, ${colors.background.creamWarm} 0%, ${colors.background.app} 18%, ${colors.background.landingGradientStart} 38%, ${colors.background.landingGradientMid} 58%, ${colors.orange[100]} 78%, ${colors.orange[200]} 100%)`,
     ].join(", "),
 
-    /** Top-center warm key light for dashboard atmosphere */
-    centerLight: `radial-gradient(ellipse 70% 54% at 50% 10%, ${colors.background.landingGlowSoft} 0%, ${colors.orange[50]} 36%, transparent 76%)`,
+    /**
+     * Cream center vault — keeps the main content readable while surrounded by warmth.
+     */
+    centerVault: [
+      `radial-gradient(ellipse 62% 78% at 50% 44%, ${colors.background.creamWarm} 0%, ${colors.background.app} 54%, transparent 88%)`,
+      `radial-gradient(ellipse 110% 52% at 50% 0%, ${colors.orange[50]} 0%, transparent 62%)`,
+    ].join(", "),
 
-    /** Side diffusion only — clearly visible orange ambient on both edges */
+    /** @deprecated Use centerVault — kept for compatibility */
+    centerLight: [
+      `radial-gradient(ellipse 62% 78% at 50% 44%, ${colors.background.creamWarm} 0%, ${colors.background.app} 54%, transparent 88%)`,
+      `radial-gradient(ellipse 110% 52% at 50% 0%, ${colors.orange[50]} 0%, transparent 62%)`,
+    ].join(", "),
+
+    /** Full-height left wash — softer counterbalance */
     diffusionLeft: [
-      `radial-gradient(ellipse 62% 118% at -4% 50%, ${colors.orange[200]} 0%, ${colors.orange[100]} 26%, transparent 66%)`,
-      `radial-gradient(ellipse 58% 108% at 0% 50%, ${colors.background.appDiffusionLeft} 0%, ${colors.orange[50]} 42%, transparent 80%)`,
+      `radial-gradient(ellipse 130% 160% at -14% 50%, ${colors.orange[100]} 0%, ${colors.orange[50]} 20%, ${colors.background.landingGlowSoft} 36%, transparent 74%)`,
+      `radial-gradient(ellipse 96% 130% at 0% 72%, ${colors.background.appDiffusionLeft} 0%, ${colors.orange[50]} 32%, transparent 72%)`,
+      `radial-gradient(ellipse 70% 90% at 4% 18%, ${colors.background.landingGlowSoft} 0%, transparent 68%)`,
     ].join(", "),
 
+    /** Full-height right wash — dominant LMNP Easy sunset field */
     diffusionRight: [
-      `radial-gradient(ellipse 62% 118% at 104% 50%, ${colors.orange[200]} 0%, ${colors.orange[100]} 26%, transparent 66%)`,
-      `radial-gradient(ellipse 58% 108% at 100% 50%, ${colors.background.appDiffusionRight} 0%, ${colors.orange[50]} 42%, transparent 80%)`,
+      `radial-gradient(ellipse 140% 170% at 108% 50%, ${colors.orange[200]} 0%, ${colors.orange[100]} 16%, ${colors.background.landingGlow} 30%, ${colors.orange[50]} 46%, transparent 78%)`,
+      `radial-gradient(ellipse 110% 130% at 100% 28%, ${colors.background.landingGradientMid} 0%, ${colors.orange[100]} 26%, transparent 64%)`,
+      `radial-gradient(ellipse 92% 100% at 96% 82%, ${colors.orange[200]} 0%, ${colors.orange[100]} 22%, transparent 66%)`,
+    ].join(", "),
+
+    /** Surrounding warmth — bottom and corners, no isolated hotspots */
+    atmosphere: [
+      `radial-gradient(ellipse 150% 64% at 50% 112%, ${colors.orange[100]} 0%, ${colors.orange[50]} 26%, transparent 60%)`,
+      `radial-gradient(ellipse 88% 56% at 6% 96%, ${colors.orange[50]} 0%, transparent 58%)`,
+      `radial-gradient(ellipse 100% 62% at 94% 96%, ${colors.orange[100]} 0%, ${colors.orange[50]} 28%, transparent 58%)`,
+      `radial-gradient(ellipse 120% 80% at 50% 50%, transparent 42%, ${colors.orange[50]} 88%, transparent 100%)`,
     ].join(", "),
   },
 

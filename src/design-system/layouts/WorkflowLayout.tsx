@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { colors } from "@/design-system/theme/colors";
+import { appAtmosphereLayers } from "@/design-system/theme/app-atmosphere";
 import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
@@ -536,23 +537,9 @@ export function WorkflowLayout({
         backgroundSize: "cover",
       }}
     >
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage: gradients.app.centerLight,
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-[42%] max-w-xl"
-        style={{ backgroundImage: gradients.app.diffusionLeft }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-xl"
-        style={{ backgroundImage: gradients.app.diffusionRight }}
-      />
+      {appAtmosphereLayers().map((layer) => (
+        <div key={layer.id} aria-hidden className={layer.className} style={layer.style} />
+      ))}
 
       <div className="relative flex min-h-screen flex-col">
         <header
