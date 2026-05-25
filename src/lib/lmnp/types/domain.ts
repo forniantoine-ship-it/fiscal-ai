@@ -130,6 +130,33 @@ export interface CreditFinancingData {
   installments: LoanInstallment[];
 }
 
+export type AmortissementAllocation = "charge-immediate" | "immobilisation" | "non-amortizable";
+
+export interface AmortissementComponent {
+  id: string;
+  label: string;
+  category: string;
+  ventilationPercent: number;
+  amount: number;
+  durationYears: number;
+  annualAmortization: number;
+  allocation: AmortissementAllocation;
+  practicedAmortization?: number;
+  vnc?: number;
+  remainingYears?: number;
+  source?: "continuity" | "travaux" | "mobilier" | "dossier";
+}
+
+export interface AmortissementVentilationData {
+  components: AmortissementComponent[];
+  summary: {
+    componentCount: number;
+    travauxTotal: number;
+    mobilierTotal: number;
+    averageDurationYears: number;
+  };
+}
+
 export interface Property {
   id: string;
   label: string;
@@ -231,6 +258,12 @@ export interface DeclarationDraft {
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;
   creditFinancing?: CreditFinancingData;
+  amortissementExistingActivity?: boolean;
+  amortissementContinuityDocumentIds?: string[];
+  amortissementTravauxDocumentIds?: string[];
+  amortissementMobilierDocumentIds?: string[];
+  amortissementConfirmedAt?: string;
+  amortissementVentilation?: AmortissementVentilationData;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;

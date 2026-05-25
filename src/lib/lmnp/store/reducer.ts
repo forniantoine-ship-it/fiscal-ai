@@ -18,6 +18,7 @@ import type {
   PropertyType,
   ValidationItem,
   CreditFinancingData,
+  AmortissementVentilationData,
 } from "../types";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
@@ -117,6 +118,10 @@ export type LmnpAction =
       type: "CONFIRM_CREDIT_FINANCING";
       financing: CreditFinancingData;
       documentId?: string;
+    }
+  | {
+      type: "CONFIRM_AMORTISSEMENT";
+      ventilation: AmortissementVentilationData;
     }
   | { type: "DECLARE_NO_CREDIT" }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
@@ -744,6 +749,22 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           ...draft,
           creditDeclaredNoneAt: nowIso(),
           creditConfirmedAt: undefined,
+        },
+      });
+    }
+
+    case "CONFIRM_AMORTISSEMENT": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const completed = new Set(draft.documentStepsCompleted ?? []);
+      completed.add("amortissements");
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          amortissementConfirmedAt: nowIso(),
+          amortissementVentilation: action.ventilation,
+          documentStepsCompleted: [...completed],
+          completedSteps: [...new Set([...draft.completedSteps, "amortissement"])],
         },
       });
     }

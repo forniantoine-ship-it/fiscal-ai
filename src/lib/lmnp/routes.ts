@@ -7,7 +7,7 @@ export const LMNP_ROUTES = {
   activite: "/documents?step=inpi",
   revenus: "/revenus",
   depenses: "/depenses",
-  amortissements: "/amortissements",
+  amortissements: "/documents?step=amortissements",
   declarations: "/declarations",
   connexion: "/connexion",
 } as const;
@@ -46,7 +46,7 @@ export function declarationFlowPathToRoute(path: string): string {
   if (path === "/activite") return documentJourneyRoute("inpi");
   if (path === "/etape/logement") return documentJourneyRoute("logement");
   if (path.startsWith("/etape/")) return LMNP_ROUTES.dashboard;
-  if (path === "/immobilisations") return LMNP_ROUTES.amortissements;
+  if (path === "/immobilisations") return documentJourneyRoute("amortissements");
   if (path === "/recettes") return LMNP_ROUTES.revenus;
   if (path === "/depenses" || path === "/emprunts") return LMNP_ROUTES.depenses;
   if (path === "/validation" || path === "/paiement" || path === "/teletransmission") {

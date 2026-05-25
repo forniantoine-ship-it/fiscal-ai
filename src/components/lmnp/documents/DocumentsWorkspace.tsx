@@ -12,6 +12,7 @@ import { typography } from "@/design-system/theme/typography";
 import { DocumentUploadZone } from "@/components/lmnp/design-system/DocumentUploadZone";
 import { LogementDocumentStep } from "@/components/lmnp/documents/LogementDocumentStep";
 import { CreditDocumentStep } from "@/components/lmnp/documents/CreditDocumentStep";
+import { AmortissementDocumentStep } from "@/components/lmnp/documents/AmortissementDocumentStep";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
@@ -30,8 +31,9 @@ const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   failed: "Échec de lecture",
 };
 
-function resolveStepId(raw: string | null): DocumentJourneyStepId | "credit" {
+function resolveStepId(raw: string | null): DocumentJourneyStepId | "credit" | "amortissements" {
   if (raw === "credit") return "credit";
+  if (raw === "amortissements") return "amortissements";
   const allowed = new Set([
     "inpi",
     "logement",
@@ -266,6 +268,10 @@ export function DocumentsWorkspace() {
 
   if (stepId === "credit" || stepId === "credit-immobilier") {
     return <CreditDocumentStep />;
+  }
+
+  if (stepId === "amortissements") {
+    return <AmortissementDocumentStep />;
   }
 
   return <GenericDocumentStep stepId={stepId} />;

@@ -115,8 +115,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "amortissement",
     label: "Amortissement",
-    href: LMNP_ROUTES.amortissements,
-    uploadHref: documentJourneyRoute("factures-travaux"),
+    href: documentJourneyRoute("amortissements"),
+    uploadHref: documentJourneyRoute("amortissements"),
     requestedDocument: "Factures travaux / mobilier",
     documentPrompt: "Ajoutez vos factures de travaux ou de mobilier.",
     aiExtracts: ["Mobilier", "Travaux", "Amortissement annuel"],
@@ -124,14 +124,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.category === "amortissement" ||
       doc.documentType === "furniture_invoice" ||
       doc.documentType === "works_invoice",
-    isComplete: (ws) =>
-      ws.documents.some(
-        (doc) =>
-          (doc.category === "amortissement" ||
-            doc.documentType === "furniture_invoice" ||
-            doc.documentType === "works_invoice") &&
-          doc.status === "analyzed",
-      ) || ws.ledgerEntries.some((entry) => entry.domain === "amortization"),
+    isComplete: (ws) => Boolean(ws.declarationDraft?.amortissementConfirmedAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "immobilisations",
   },
   {
@@ -344,6 +337,7 @@ const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
   "taxe-fonciere": "charges",
   assurance: "charges",
   "factures-travaux": "amortissement",
+  amortissements: "amortissement",
 };
 
 /** Primary navigation target when a workflow card is clicked. */
