@@ -157,6 +157,34 @@ export interface AmortissementVentilationData {
   };
 }
 
+export interface RevenusMonthlyEntry {
+  month: string;
+  collectedAmount: number;
+  detectedFees?: number;
+}
+
+export interface RevenusPropertyData {
+  id: string;
+  label: string;
+  propertyId?: string;
+  annualRevenue: number;
+  rentCount: number;
+  detectedFees: number;
+  months: RevenusMonthlyEntry[];
+  hasSecurityDeposit?: boolean;
+  incomplete?: boolean;
+}
+
+export interface RevenusExtractionData {
+  properties: RevenusPropertyData[];
+  summary: {
+    totalRevenue: number;
+    rentCount: number;
+    totalFees: number;
+    hasSecurityDeposit: boolean;
+  };
+}
+
 export interface Property {
   id: string;
   label: string;
@@ -264,6 +292,9 @@ export interface DeclarationDraft {
   amortissementMobilierDocumentIds?: string[];
   amortissementConfirmedAt?: string;
   amortissementVentilation?: AmortissementVentilationData;
+  revenusDocumentIds?: string[];
+  revenusConfirmedAt?: string;
+  revenusExtraction?: RevenusExtractionData;
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;

@@ -130,25 +130,18 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "revenus",
     label: "Revenus",
-    href: LMNP_ROUTES.revenus,
-    uploadHref: documentJourneyRoute("bail"),
-    requestedDocument: "Baux + Loyers",
-    documentPrompt: "Ajoutez vos loyers et baux.",
-    aiExtracts: ["Loyers annuels", "Bail", "Charges refacturées"],
+    href: documentJourneyRoute("revenus"),
+    uploadHref: documentJourneyRoute("revenus"),
+    requestedDocument: "Relevés de loyers",
+    documentPrompt: "Ajoutez vos exports ou relevés de location.",
+    aiExtracts: ["Loyers encaissés", "Périodes", "Frais détectés"],
     matchDocument: (doc) =>
+      doc.category === "revenus" ||
       doc.category === "bail" ||
       doc.documentType === "lease_contract" ||
       doc.documentType === "rent_receipt" ||
       doc.documentType === "rent_bank_statement",
-    isComplete: (ws) =>
-      ws.documents.some(
-        (doc) =>
-          (doc.category === "bail" ||
-            doc.documentType === "lease_contract" ||
-            doc.documentType === "rent_receipt" ||
-            doc.documentType === "rent_bank_statement") &&
-          doc.status === "analyzed",
-      ) || ws.ledgerEntries.some((entry) => entry.domain === "income"),
+    isComplete: (ws) => Boolean(ws.declarationDraft?.revenusConfirmedAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "recettes",
   },
   {
@@ -334,6 +327,7 @@ const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
   credit: "credit",
   "credit-immobilier": "credit",
   bail: "revenus",
+  revenus: "revenus",
   "taxe-fonciere": "charges",
   assurance: "charges",
   "factures-travaux": "amortissement",
