@@ -95,46 +95,43 @@ export const gradients = {
     ].join(", "),
   },
 
-  // ─── 2b. Dashboard background — landing-like immersion, soft sunset only ───
+  // ─── 2b. Dashboard background — bilateral CTA-orange immersion ─────────────
   //
-  // Stronger than generic app shells: bilateral orange diffusion with a
-  // stronger right field, cream-readable center, no dark orange tones.
+  // Symmetrical left/right sunset diffusion using the same hue as primary CTAs
+  // (orange[500]). Cream ivory center, no radial blobs, no asymmetric bias.
 
   dashboard: {
-    /** Full-viewport sunset base — bilateral warmth, stronger right bias */
+    /** Primary cinematic wash — symmetric CTA-orange edges, ivory center */
     background: [
-      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 16%, transparent 84%, ${colors.orange[100]} 94%, ${colors.orange[200]} 100%)`,
-      `linear-gradient(90deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 5%, ${colors.background.landingGlowSoft} 10%, transparent 22%, transparent 78%, ${colors.background.landingGradientMid} 88%, ${colors.background.landingGradientEnd} 94%, ${colors.orange[200]} 100%)`,
-      `linear-gradient(96deg, ${colors.background.landingGlowSoft} 0%, ${colors.background.creamWarm} 12%, ${colors.background.landingGradientStart} 24%, ${colors.background.creamWarm} 36%, ${colors.background.landingGradientStart} 48%, ${colors.background.landingGradientMid} 60%, ${colors.background.landingGradientEnd} 72%, ${colors.orange[200]} 84%, ${colors.orange[100]} 92%, ${colors.orange[200]} 100%)`,
+      `linear-gradient(180deg, ${colors.orange[500]}33 0%, transparent 12%, transparent 88%, ${colors.orange[500]}33 100%)`,
+      `linear-gradient(90deg, ${colors.orange[500]}6B 0%, ${colors.orange[400]}47 7%, #FFF8F0F5 22%, #FFF8F0F5 78%, ${colors.orange[400]}47 93%, ${colors.orange[500]}6B 100%)`,
     ].join(", "),
 
-    /** Continuous viewport warmth — top, bottom, and horizontal edge continuity */
+    /** Full-viewport depth — symmetric vertical + horizontal edge continuity */
     atmosphere: [
-      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, transparent 20%, transparent 80%, ${colors.orange[50]} 94%, ${colors.orange[100]} 100%)`,
-      `linear-gradient(270deg, ${colors.orange[200]} 0%, ${colors.background.landingGradientEnd} 8%, ${colors.background.landingGradientMid} 18%, ${colors.orange[100]} 30%, ${colors.orange[50]} 42%, transparent 58%)`,
-      `linear-gradient(90deg, ${colors.orange[100]} 0%, ${colors.orange[50]} 6%, ${colors.background.landingGlowSoft} 12%, transparent 28%)`,
+      `linear-gradient(180deg, ${colors.orange[500]}38 0%, ${colors.orange[400]}24 8%, transparent 20%, transparent 80%, ${colors.orange[400]}24 92%, ${colors.orange[500]}38 100%)`,
+      `linear-gradient(90deg, ${colors.orange[500]}42 0%, ${colors.orange[400]}2E 10%, transparent 26%, transparent 74%, ${colors.orange[400]}2E 90%, ${colors.orange[500]}42 100%)`,
     ].join(", "),
 
-    /** Left edge — soft premium sunset wash across full height */
+    /** Left edge — strong CTA-orange diffusion fading to center */
     glowLeft: [
-      `linear-gradient(90deg, ${colors.orange[200]} 0%, ${colors.orange[100]} 11%, ${colors.orange[50]} 20%, ${colors.background.landingGlowSoft} 28%, ${colors.background.landingGradientStart} 36%, transparent 54%)`,
-      `linear-gradient(180deg, ${colors.orange[50]} 0%, ${colors.orange[100]} 4%, transparent 18%, transparent 82%, ${colors.orange[100]} 96%, ${colors.orange[50]} 100%)`,
+      `linear-gradient(90deg, ${colors.orange[500]}61 0%, ${colors.orange[400]}47 9%, ${colors.orange[300]}2E 17%, ${colors.orange[200]}1F 24%, transparent 40%)`,
+      `linear-gradient(180deg, ${colors.orange[500]}2E 0%, transparent 16%, transparent 84%, ${colors.orange[500]}2E 100%)`,
     ].join(", "),
 
-    /** Right edge — dominant sunset field, still soft and premium */
+    /** Right edge — identical intensity, mirrored */
     glowRight: [
-      `linear-gradient(270deg, ${colors.orange[200]} 0%, ${colors.background.landingGradientEnd} 6%, ${colors.background.landingGradientMid} 14%, ${colors.orange[100]} 26%, ${colors.orange[50]} 38%, ${colors.background.landingGlow} 48%, transparent 64%)`,
-      `linear-gradient(180deg, ${colors.orange[100]} 0%, ${colors.orange[200]} 6%, transparent 20%, transparent 80%, ${colors.orange[200]} 94%, ${colors.orange[100]} 100%)`,
+      `linear-gradient(270deg, ${colors.orange[500]}61 0%, ${colors.orange[400]}47 9%, ${colors.orange[300]}2E 17%, ${colors.orange[200]}1F 24%, transparent 40%)`,
+      `linear-gradient(180deg, ${colors.orange[500]}2E 0%, transparent 16%, transparent 84%, ${colors.orange[500]}2E 100%)`,
     ].join(", "),
 
-    /** Extra right immersion — diagonal luxury sweep */
-    sunsetRight: [
-      `linear-gradient(270deg, ${colors.background.landingGradientEnd} 0%, ${colors.orange[200]} 12%, ${colors.background.landingGlow} 24%, ${colors.orange[50]} 38%, transparent 56%)`,
-      `linear-gradient(108deg, transparent 30%, ${colors.orange[100]} 50%, ${colors.background.landingGradientMid} 64%, ${colors.orange[200]} 80%, ${colors.background.landingGradientEnd} 96%)`,
+    /** Symmetric edge saturation boost — no right-side bias */
+    edgeDepth: [
+      `linear-gradient(90deg, ${colors.orange[500]}52 0%, ${colors.orange[400]}38 6%, transparent 22%, transparent 78%, ${colors.orange[400]}38 94%, ${colors.orange[500]}52 100%)`,
     ].join(", "),
 
-    /** Narrow cream readability vault — transparent edges keep orange visible */
-    centerVault: `linear-gradient(90deg, transparent 0%, transparent 18%, ${colors.background.creamWarm}35 30%, ${colors.background.creamWarm}88 40%, ${colors.background.creamWarm}cc 46%, ${colors.background.creamWarm} 50%, ${colors.background.creamWarm}cc 54%, ${colors.background.creamWarm}88 60%, ${colors.background.creamWarm}35 70%, transparent 82%, transparent 100%)`,
+    /** Ivory readability vault — keeps center calm and legible */
+    centerVault: `linear-gradient(90deg, transparent 0%, transparent 18%, #FFF8F0A8 28%, #FFF8F0E8 38%, #FFF8F0 46%, #FFF8F0 54%, #FFF8F0E8 62%, #FFF8F0A8 72%, transparent 82%, transparent 100%)`,
   },
 
   // ─── 3. Button gradients ───────────────────────────────────────────────────

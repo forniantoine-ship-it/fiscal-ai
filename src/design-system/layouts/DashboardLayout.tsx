@@ -312,7 +312,7 @@ export function DashboardLayout({
     <div
       className="relative min-h-screen"
       style={{
-        backgroundColor: colors.orange[100],
+        backgroundColor: "#FFF8F0",
         backgroundImage: gradients.dashboard.background,
         backgroundAttachment: "fixed",
         backgroundSize: "cover",
