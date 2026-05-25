@@ -1,16 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
-import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { DeclarationHowItWorks } from "@/components/lmnp/declaration/DeclarationHowItWorks";
-import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
+import { DashboardHero, YearBadge } from "@/components/lmnp/dashboard/DashboardHero";
+import { DashboardPrimaryCard } from "@/components/lmnp/dashboard/DashboardPrimaryCard";
+import {
+  DashboardAiRecommendationPanel,
+  DashboardAutosavePanel,
+  DashboardFiscalInsightsPanel,
+  DashboardRecentActivityPanel,
+  DashboardRecentDocumentsPanel,
+} from "@/components/lmnp/dashboard/DashboardSidePanels";
 import { formatNormalizedValue } from "@/lib/lmnp/validation/display";
 import {
   isDocumentJourneyComplete,
@@ -21,27 +27,42 @@ import {
 import { LMNP_ROUTES, toFlatLmnpRoute } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 
-function YearBadge({ year }: { year: number }) {
+function DashboardSideColumn() {
+  const { workspace } = useLmnp();
+  const nextHref = toFlatLmnpRoute(workspace.nextAction.href);
+
   return (
-    <span
-      style={{
-        ...typography.caption.desktop,
-        color: colors.text.tertiary,
-        letterSpacing: typography.letterSpacing.label,
-        padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
-        borderRadius: radius.full,
-        backgroundColor: colors.surface.secondary,
-      }}
-    >
-      Déclaration LMNP {year}
-    </span>
+    <aside className="space-y-5">
+      <DashboardAutosavePanel />
+      <DashboardAiRecommendationPanel
+        assistant={workspace.assistant}
+        href={nextHref}
+        cta={workspace.nextAction.cta}
+      />
+      <DashboardFiscalInsightsPanel insights={workspace.declaration.insights} />
+      <DashboardRecentDocumentsPanel documents={workspace.declaration.recentDocuments} />
+      <DashboardRecentActivityPanel />
+    </aside>
+  );
+}
+
+function DashboardGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mx-auto max-w-5xl space-y-8">
+      <div className="grid gap-6 lg:grid-cols-12 lg:gap-8">
+        <div className="space-y-6 lg:col-span-8">{children}</div>
+        <div className="lg:col-span-4">
+          <DashboardSideColumn />
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function DashboardHome() {
   const router = useRouter();
   const { workspace, dispatch } = useLmnp();
-  const { declaration, fiscalYear } = workspace;
+  const { declaration, fiscalYear, assistant, nextAction } = workspace;
 
   const completed = Boolean(fiscalYear.transmittedAt);
   const pending = workspace.pendingValidationCount;
@@ -79,31 +100,44 @@ export function DashboardHome() {
     router.push(LMNP_ROUTES.documents);
   };
 
-  const nextHref = toFlatLmnpRoute(declaration.nextAction.href);
+  const nextHref = toFlatLmnpRoute(nextAction.href);
 
   if (completed) {
     return (
-      <div className="mx-auto max-w-xl">
-        <header className="text-center">
-          <YearBadge year={fiscalYear.year} />
-          <h1
-            className="mt-6 text-3xl"
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontWeight: typography.fontWeight.regular,
-              color: colors.text.primary,
-            }}
-          >
-            Votre déclaration est transmise
-          </h1>
-          <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Merci — votre liasse a bien été envoyée.
-          </p>
-        </header>
-        <div className="mt-10 flex justify-center">
+      <div className="mx-auto max-w-3xl space-y-8">
+        <DashboardHero
+          eyebrow={<YearBadge year={fiscalYear.year} />}
+          title="Votre déclaration est transmise"
+          description="Merci — votre liasse a bien été envoyée. Vous pouvez consulter vos documents et l'historique de votre dossier."
+        >
           <Button href={LMNP_ROUTES.documents} variant="secondary">
             Consulter mes documents
           </Button>
+        </DashboardHero>
+        <DashboardSideColumn />
+      </div>
+    );
+  }
+
+  if (!started) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-8">
+        <DashboardHero
+          eyebrow={<YearBadge year={fiscalYear.year} />}
+          title="Préparez votre déclaration LMNP simplement"
+          description="Déposez vos documents. L'IA extrait les informations, prépare votre déclaration et vous guide jusqu'à la transmission."
+        >
+          <Button onClick={startJourney}>Commencer</Button>
+        </DashboardHero>
+        <div className="grid gap-6 lg:grid-cols-12 lg:gap-8">
+          <div className="lg:col-span-8">
+            <Card variant="muted" interactive>
+              <DeclarationHowItWorks />
+            </Card>
+          </div>
+          <div className="lg:col-span-4">
+            <DashboardSideColumn />
+          </div>
         </div>
       </div>
     );
@@ -114,28 +148,20 @@ export function DashboardHome() {
     const previewItems = pendingItems.slice(0, 4);
 
     return (
-      <div className="mx-auto max-w-3xl">
-        <header>
-          <YearBadge year={fiscalYear.year} />
-          <h1
-            className="mt-4 text-3xl sm:text-4xl"
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontWeight: typography.fontWeight.regular,
-              color: colors.text.primary,
-            }}
-          >
-            Votre dossier est prêt
-          </h1>
-          <p className="mt-3 max-w-lg" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Il reste {pending} confirmation{pending > 1 ? "s" : ""} avant la génération de la liasse.
-          </p>
-          <div className="mt-6">
-            <WorkspaceProgress label="Avancement global" />
-          </div>
-        </header>
-
-        <Card className="mt-8 !p-0 overflow-hidden" variant="muted">
+      <DashboardGrid>
+        <DashboardHero
+          eyebrow={<YearBadge year={fiscalYear.year} />}
+          title="Votre dossier est prêt"
+          description={`Il reste ${pending} confirmation${pending > 1 ? "s" : ""} avant la génération de la liasse.`}
+        />
+        <DashboardPrimaryCard
+          eyebrow="Action prioritaire"
+          title={declaration.nextAction.headline}
+          description="Validez les montants détectés par l'IA pour alimenter automatiquement vos onglets revenus, charges et amortissements."
+          actionHref={LMNP_ROUTES.declarations}
+          actionLabel={declaration.nextAction.label}
+        />
+        <Card className="!p-0 overflow-hidden" variant="muted" interactive>
           <div className="border-b px-6 py-4" style={{ borderColor: colors.border.subtle }}>
             <h2 style={{ ...typography.cardTitle.desktop, color: colors.text.primary }}>
               Montants à confirmer
@@ -163,70 +189,40 @@ export function DashboardHome() {
             ))}
           </ul>
         </Card>
-
-        <div className="mt-8 flex justify-end">
-          <Button href={LMNP_ROUTES.declarations}>{declaration.nextAction.label}</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!started) {
-    return (
-      <div className="mx-auto max-w-xl text-center">
-        <YearBadge year={fiscalYear.year} />
-        <h1
-          className="mt-6 text-3xl sm:text-4xl"
-          style={{
-            fontFamily: typography.fontFamily.display,
-            fontWeight: typography.fontWeight.regular,
-            color: colors.text.primary,
-          }}
-        >
-          Préparez votre déclaration LMNP simplement
-        </h1>
-        <p className="mx-auto mt-4 max-w-md" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Déposez vos documents. L&apos;IA extrait les informations, prépare votre déclaration et vous
-          guide jusqu&apos;à la transmission.
-        </p>
-        <DeclarationHowItWorks />
-        <div className="mt-10">
-          <Button onClick={startJourney}>Commencer</Button>
-        </div>
-      </div>
+      </DashboardGrid>
     );
   }
 
   const currentDocStep = resolveCurrentDocumentStep(ws);
   const resumeHref = resolveCurrentDocumentStepHref(fiscalYear.id, ws);
+  const primaryTitle = docJourneyDone ? nextAction.title : currentDocStep.screenTitle;
+  const primaryDescription = docJourneyDone
+    ? nextAction.description
+    : currentDocStep.explanation;
+  const primaryLabel = docJourneyDone ? nextAction.cta : "Poursuivre";
+  const primaryHref = docJourneyDone ? nextHref : resumeHref;
 
   return (
-    <div className="mx-auto max-w-xl text-center">
-      <YearBadge year={fiscalYear.year} />
-      <h1
-        className="mt-6 text-3xl"
-        style={{
-          fontFamily: typography.fontFamily.display,
-          fontWeight: typography.fontWeight.regular,
-          color: colors.text.primary,
-        }}
-      >
-        Votre déclaration LMNP
-      </h1>
-      <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-        {docJourneyDone
-          ? "Poursuivez les dernières étapes de votre dossier."
-          : `Prochaine étape · ${currentDocStep.screenTitle}`}
-      </p>
-      <div className="mt-8">
-        <WorkspaceProgress />
-      </div>
-      <div className="mt-10 flex flex-col items-center gap-3">
-        <Button href={resumeHref}>{docJourneyDone ? workspace.nextAction.cta : "Poursuivre"}</Button>
-        <Link href={nextHref} style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-          Voir la recommandation IA
-        </Link>
-      </div>
-    </div>
+    <DashboardGrid>
+      <DashboardHero
+        eyebrow={<YearBadge year={fiscalYear.year} />}
+        title="Votre déclaration LMNP"
+        description={assistant.headline}
+      />
+      <DashboardPrimaryCard
+        title={primaryTitle}
+        description={primaryDescription}
+        actionHref={primaryHref}
+        actionLabel={primaryLabel}
+        footer={
+          <p className="mt-4" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+            Besoin d&apos;un autre angle ?{" "}
+            <a href={nextHref} style={{ color: colors.text.accent }}>
+              {nextAction.cta}
+            </a>
+          </p>
+        }
+      />
+    </DashboardGrid>
   );
 }
