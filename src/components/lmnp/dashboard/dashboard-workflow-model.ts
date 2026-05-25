@@ -340,3 +340,36 @@ export function resolveDocumentCorrectionState(items: ValidationItem[]): string 
   if (pending > 0) return `${pending} à corriger`;
   return "Aucune";
 }
+
+const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
+  inpi: "activite",
+  logement: "logement",
+  "credit-immobilier": "credit",
+  bail: "revenus",
+  "taxe-fonciere": "charges",
+  assurance: "charges",
+  "factures-travaux": "amortissement",
+};
+
+/** Primary navigation target when a workflow card is clicked. */
+export function resolveWorkflowStepNavigationHref(step: WorkflowStepView): string {
+  if (step.id === "dashboard") return step.href;
+  return step.uploadHref;
+}
+
+/** Highlights the card matching the page the user is currently viewing. */
+export function resolveActiveWorkflowStepFromRoute(
+  pathname: string,
+  stepQuery: string | null,
+): DashboardWorkflowStepId | null {
+  if (pathname === "/dashboard") return "dashboard";
+  if (pathname === "/declarations") return "validation";
+  if (pathname === "/revenus") return "revenus";
+  if (pathname === "/amortissements") return "amortissement";
+
+  if (pathname === "/documents" && stepQuery) {
+    return DOCUMENT_STEP_TO_WORKFLOW_ID[stepQuery] ?? null;
+  }
+
+  return null;
+}

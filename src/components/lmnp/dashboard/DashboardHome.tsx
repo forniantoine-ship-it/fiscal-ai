@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 
@@ -72,7 +73,9 @@ export function DashboardHome() {
           onPrimaryClick={completed ? undefined : onPrimaryClick}
         />
 
-        <DashboardWorkflow steps={workflowSteps} />
+        <Suspense fallback={null}>
+          <DashboardWorkflow steps={workflowSteps} />
+        </Suspense>
 
         <DashboardDocumentsSection />
       </div>
