@@ -129,13 +129,13 @@ export function ConnexionForm() {
             style={{ gap: spacing.scale[3], marginTop: spacing.scale[6] }}
           >
             <Link
-              href="/connexion"
+              href={LMNP_ROUTES.login}
               style={{ ...typography.caption.desktop, color: colors.text.muted }}
             >
               Mot de passe oublié
             </Link>
             <Link
-              href="/inscription"
+              href={LMNP_ROUTES.signup}
               style={{ ...typography.caption.desktop, color: colors.text.accent }}
             >
               Créer un compte

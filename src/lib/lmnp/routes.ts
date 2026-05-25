@@ -11,8 +11,12 @@ export const LMNP_ROUTES = {
   amortissements: "/documents?step=amortissements",
   declarations: "/declarations",
   validation: "/documents?step=validation",
-  connexion: "/connexion",
-  inscription: "/inscription",
+  login: "/login",
+  signup: "/signup",
+  /** Legacy alias — prefer `login`. */
+  connexion: "/login",
+  /** Legacy alias — prefer `signup`. */
+  inscription: "/signup",
 } as const;
 
 const LEGACY_EXERCICE_PREFIX = /^\/app\/exercices\/[^/]+/;

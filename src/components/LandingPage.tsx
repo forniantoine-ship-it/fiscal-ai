@@ -11,6 +11,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { PrimaryButton, SecondaryButton } from "@/components/landing/LandingButtons";
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import {
   DEMO_FLOW,
   HeroDashboardMockup,
@@ -126,7 +127,7 @@ function HeroSection() {
         </div>
 
         <div className="flex flex-col sm:flex-row" style={{ gap: spacing.scale[3] }}>
-          <PrimaryButton href="/inscription">Commencer ma déclaration</PrimaryButton>
+          <PrimaryButton href={LMNP_ROUTES.signup}>Commencer ma déclaration</PrimaryButton>
           <SecondaryButton href="/#demonstration">Voir la démonstration</SecondaryButton>
         </div>
 
@@ -562,7 +563,7 @@ function PricingSection() {
             </li>
           ))}
         </ul>
-        <PrimaryButton href="/inscription" className="w-full">
+        <PrimaryButton href={LMNP_ROUTES.signup} className="w-full">
           Commencer ma déclaration
         </PrimaryButton>
         <p
@@ -762,7 +763,7 @@ function FinalCtaSection() {
         <br />
         L&apos;IA prépare le reste.
       </p>
-      <PrimaryButton href="/inscription">Commencer ma déclaration</PrimaryButton>
+      <PrimaryButton href={LMNP_ROUTES.signup}>Commencer ma déclaration</PrimaryButton>
     </section>
   );
 }

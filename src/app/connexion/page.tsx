@@ -1,5 +1,7 @@
-import { ConnexionForm } from "@/components/landing/ConnexionForm";
+import { redirect } from "next/navigation";
+
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 
 export default function ConnexionPage() {
-  return <ConnexionForm />;
+  redirect(LMNP_ROUTES.login);
 }

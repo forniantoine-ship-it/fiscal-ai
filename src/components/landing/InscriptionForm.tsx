@@ -129,7 +129,7 @@ export function InscriptionForm() {
             style={{ ...typography.caption.desktop, color: colors.text.muted, marginTop: spacing.scale[6] }}
           >
             Déjà un compte ?{" "}
-            <Link href="/connexion" style={{ color: colors.text.accent }}>
+            <Link href={LMNP_ROUTES.login} style={{ color: colors.text.accent }}>
               Se connecter
             </Link>
           </p>

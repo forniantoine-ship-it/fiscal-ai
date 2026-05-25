@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { colors } from "@/design-system/theme/colors";
 import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
@@ -166,8 +167,8 @@ function PublicNavbar({
         </nav>
 
         <div className="hidden items-center lg:flex" style={{ gap: spacing.scale[6] }}>
-          <NavLink href="/connexion">Connexion</NavLink>
-          <PrimaryCta href="/inscription">Commencer ma déclaration</PrimaryCta>
+          <NavLink href={LMNP_ROUTES.login}>Connexion</NavLink>
+          <PrimaryCta href={LMNP_ROUTES.signup}>Commencer ma déclaration</PrimaryCta>
         </div>
 
         <button
@@ -232,10 +233,10 @@ function PublicNavbar({
                 {link.label}
               </NavLink>
             ))}
-            <NavLink href="/connexion" onClick={onCloseMobile}>
+            <NavLink href={LMNP_ROUTES.login} onClick={onCloseMobile}>
               Connexion
             </NavLink>
-            <PrimaryCta href="/inscription" onClick={onCloseMobile}>
+            <PrimaryCta href={LMNP_ROUTES.signup} onClick={onCloseMobile}>
               Commencer ma déclaration
             </PrimaryCta>
           </nav>
