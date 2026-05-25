@@ -6,7 +6,8 @@ import { gradients } from "@/design-system/theme/gradients";
 import { shadows } from "@/design-system/theme/shadows";
 import { typography } from "@/design-system/theme/typography";
 import { useLmnp } from "@/lib/lmnp/store";
-import type { AssistantInsightTone, LmnpWorkspace } from "@/lib/lmnp/types";
+import type { AssistantInsightTone } from "@/lib/lmnp/types";
+import type { DashboardWorkspace } from "@/components/lmnp/dashboard/dashboard-workflow-model";
 
 type InsightCard = {
   id: string;
@@ -50,7 +51,7 @@ function assistantTone(tone: AssistantInsightTone): InsightCard["tone"] {
   return "accent";
 }
 
-function buildInsightCards(workspace: LmnpWorkspace): InsightCard[] {
+function buildInsightCards(workspace: DashboardWorkspace): InsightCard[] {
   const cards: InsightCard[] = [];
   const seen = new Set<string>();
 
@@ -129,7 +130,7 @@ function buildInsightCards(workspace: LmnpWorkspace): InsightCard[] {
 
 export function DashboardAiInsights() {
   const { workspace } = useLmnp();
-  const cards = buildInsightCards(workspace);
+  const cards = buildInsightCards(workspace as DashboardWorkspace);
   if (cards.length === 0) return null;
 
   return (

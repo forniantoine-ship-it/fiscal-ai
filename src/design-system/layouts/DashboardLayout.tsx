@@ -13,16 +13,15 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
 const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.desktop})`;
-const SIDEBAR_WIDTH = "240px";
 
-const SIDEBAR_NAV = [
+const HORIZONTAL_NAV = [
   { label: "Tableau de bord", href: "/dashboard" },
-  { label: "Mon activité", href: "/activite" },
+  { label: "Activité LMNP", href: "/activite" },
   { label: "Documents", href: "/documents" },
-  { label: "Amortissements", href: "/amortissements" },
   { label: "Revenus", href: "/revenus" },
   { label: "Charges", href: "/depenses" },
-  { label: "Déclarations", href: "/declarations" },
+  { label: "Amortissements", href: "/amortissements" },
+  { label: "Validation", href: "/declarations" },
 ] as const;
 
 export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
@@ -241,13 +240,11 @@ function DashboardTopBar({
   autosaveStatus,
   userName,
   userInitials,
-  onMenuToggle,
 }: {
   declarationYear: number | string;
   autosaveStatus: AutosaveStatus;
   userName?: string;
   userInitials?: string;
-  onMenuToggle: () => void;
 }) {
   return (
     <div
@@ -257,31 +254,7 @@ function DashboardTopBar({
         paddingBlock: spacing.scale[5],
       }}
     >
-      <div className="flex items-center" style={{ gap: spacing.scale[4] }}>
-        <button
-          type="button"
-          className="inline-flex lg:hidden"
-          aria-label="Ouvrir le menu"
-          onClick={onMenuToggle}
-          style={{
-            padding: spacing.scale[2],
-            borderRadius: radius.md,
-            border: `1px solid ${colors.border.subtle}`,
-            backgroundColor: colors.surface.primary,
-            color: colors.text.secondary,
-          }}
-        >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
-            <path
-              d="M2.25 4.5h13.5M2.25 9h13.5M2.25 13.5h13.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-        <FiscalMark compact />
-      </div>
+      <FiscalMark />
 
       <div className="flex items-center" style={{ gap: spacing.scale[4] }}>
         <span
@@ -303,56 +276,46 @@ function DashboardTopBar({
   );
 }
 
-function SidebarNav({
-  pathname,
-  mobileOpen,
-  onNavigate,
-}: {
-  pathname: string;
-  mobileOpen: boolean;
-  onNavigate: () => void;
-}) {
+function HorizontalNav({ pathname }: { pathname: string }) {
   return (
     <nav
       aria-label="Navigation du dossier"
-      className={[
-        "fixed inset-y-0 left-0 z-40 flex flex-col lg:static lg:translate-x-0",
-        mobileOpen ? "translate-x-0" : "-translate-x-full",
-      ].join(" ")}
+      className="w-full overflow-x-auto"
       style={{
-        width: SIDEBAR_WIDTH,
-        padding: spacing.scale[4],
-        paddingTop: spacing.scale[6],
-        borderRight: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(251, 248, 243, 0.78)",
+        borderBottom: `1px solid ${colors.border.subtle}`,
+        backgroundColor: "rgba(255, 248, 243, 0.72)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        transition: motions.page.enter,
       }}
     >
-      <div className="mb-6 hidden lg:block">
-        <FiscalMark />
-      </div>
-
-      <ul className="flex flex-col" style={{ gap: spacing.workflow.stepGap }}>
-        {SIDEBAR_NAV.map((item) => {
+      <ul
+        className="mx-auto flex w-max min-w-full items-center justify-center"
+        style={{
+          maxWidth: spacing.container.default,
+          paddingInline: GUTTER,
+          gap: spacing.scale[2],
+          paddingBlock: spacing.scale[3],
+        }}
+      >
+        {HORIZONTAL_NAV.map((item) => {
           const active = isNavActive(pathname, item.href);
 
           return (
             <li key={item.href}>
               <Link
                 href={item.href}
-                onClick={onNavigate}
-                className="relative block"
                 style={{
                   ...(active ? typography.workflow.active : typography.navigation.desktop),
+                  display: "inline-block",
+                  whiteSpace: "nowrap",
                   color: active ? colors.text.primary : colors.text.tertiary,
-                  padding: spacing.workflow.stepPadding,
-                  paddingLeft: active ? spacing.scale[4] : spacing.workflow.stepPadding,
-                  borderRadius: radius.md,
-                  backgroundColor: active ? colors.surface.selected : "transparent",
+                  padding: `${spacing.scale[2]} ${spacing.scale[4]}`,
+                  borderRadius: radius.full,
                   border: active ? `1px solid ${colors.border.selected}` : "1px solid transparent",
+                  backgroundColor: active ? colors.surface.selected : "transparent",
+                  boxShadow: active ? shadows.workflow.active : shadows.none,
                   transition: motions.workflow.step,
+                  textDecoration: "none",
                 }}
                 onMouseEnter={(event) => {
                   if (!active) {
@@ -367,19 +330,6 @@ function SidebarNav({
                   }
                 }}
               >
-                {active ? (
-                  <span
-                    aria-hidden
-                    className="absolute left-0 top-1/2 -translate-y-1/2"
-                    style={{
-                      width: "3px",
-                      height: "60%",
-                      borderRadius: radius.full,
-                      backgroundColor: colors.orange[500],
-                      boxShadow: `0 0 10px ${colors.orange[200]}`,
-                    }}
-                  />
-                ) : null}
                 {item.label}
               </Link>
             </li>
@@ -437,11 +387,6 @@ export function DashboardLayout({
   userInitials,
 }: DashboardLayoutProps) {
   const pathname = usePathname();
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-
-  useEffect(() => {
-    setMobileNavOpen(false);
-  }, [pathname]);
 
   return (
     <div
@@ -462,64 +407,54 @@ export function DashboardLayout({
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-[42%] max-w-xl"
+        className="pointer-events-none absolute inset-y-0 left-0 w-[52%] max-w-3xl"
         style={{ backgroundImage: gradients.app.diffusionLeft }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 right-0 w-[42%] max-w-xl"
+        className="pointer-events-none absolute inset-y-0 right-0 w-[52%] max-w-3xl"
         style={{ backgroundImage: gradients.app.diffusionRight }}
       />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[520px]"
+        style={{
+          backgroundImage: `radial-gradient(ellipse 72% 58% at 50% 0%, ${colors.orange[100]} 0%, ${colors.orange[50]} 34%, transparent 72%)`,
+        }}
+      />
 
-      <div className="relative flex min-h-screen">
-        {mobileNavOpen ? (
-          <button
-            type="button"
-            aria-label="Fermer le menu"
-            className="fixed inset-0 z-30 bg-black/10 lg:hidden"
-            onClick={() => setMobileNavOpen(false)}
+      <div className="relative flex min-h-screen flex-col">
+        <header
+          style={{
+            borderBottom: `1px solid ${colors.border.subtle}`,
+            backgroundColor: "rgba(251, 248, 243, 0.84)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+          }}
+        >
+          <DashboardTopBar
+            declarationYear={declarationYear}
+            autosaveStatus={autosaveStatus}
+            userName={userName}
+            userInitials={userInitials}
           />
-        ) : null}
+          <HorizontalNav pathname={pathname} />
+        </header>
 
-        <SidebarNav
-          pathname={pathname}
-          mobileOpen={mobileNavOpen}
-          onNavigate={() => setMobileNavOpen(false)}
-        />
+        <main
+          className="mx-auto w-full flex-1"
+          style={{
+            maxWidth: spacing.container.default,
+            paddingInline: GUTTER,
+            paddingTop: spacing.responsive.headerToMain.desktop,
+            paddingBottom: spacing.section.gap,
+            transition: motions.page.enter,
+          }}
+        >
+          <div style={{ transition: motions.workflow.content }}>{children}</div>
+        </main>
 
-        <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <header
-            style={{
-              borderBottom: `1px solid ${colors.border.subtle}`,
-              backgroundColor: "rgba(251, 248, 243, 0.84)",
-              backdropFilter: "blur(16px)",
-              WebkitBackdropFilter: "blur(16px)",
-            }}
-          >
-            <DashboardTopBar
-              declarationYear={declarationYear}
-              autosaveStatus={autosaveStatus}
-              userName={userName}
-              userInitials={userInitials}
-              onMenuToggle={() => setMobileNavOpen((open) => !open)}
-            />
-          </header>
-
-          <main
-            className="mx-auto w-full flex-1"
-            style={{
-              maxWidth: spacing.container.default,
-              paddingInline: GUTTER,
-              paddingTop: spacing.responsive.headerToMain.desktop,
-              paddingBottom: spacing.section.gap,
-              transition: motions.page.enter,
-            }}
-          >
-            <div style={{ transition: motions.workflow.content }}>{children}</div>
-          </main>
-
-          <DashboardFooter />
-        </div>
+        <DashboardFooter />
       </div>
     </div>
   );

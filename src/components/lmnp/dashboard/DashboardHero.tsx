@@ -11,8 +11,6 @@ import { typography } from "@/design-system/theme/typography";
 
 type DashboardHeroProps = {
   year: number;
-  title: string;
-  nextStep: string;
   progress: number;
   progressLabel?: string;
   saveLabel?: string | null;
@@ -20,10 +18,15 @@ type DashboardHeroProps = {
   children?: ReactNode;
 };
 
+const HERO_TITLE = "Votre déclaration LMNP";
+const HERO_EXPLANATION = [
+  "Déposez les documents demandés.",
+  "L'IA extrait automatiquement les données importantes.",
+  "Vous n'avez plus qu'à corriger ou valider.",
+].join("\n");
+
 export function DashboardHero({
   year,
-  title,
-  nextStep,
   progress,
   progressLabel = "Avancement du dossier",
   saveLabel,
@@ -32,21 +35,21 @@ export function DashboardHero({
 }: DashboardHeroProps) {
   return (
     <section
-      className="relative overflow-hidden"
+      className="relative mx-auto max-w-3xl overflow-hidden text-center"
       style={{
         borderRadius: radius.xl,
         border: `1px solid ${colors.border.selected}`,
         boxShadow: shadows.hero.floating,
         padding: spacing.card.lg,
         backgroundImage: [
-          `radial-gradient(ellipse 78% 58% at 100% 0%, ${colors.orange[200]} 0%, ${colors.orange[100]} 28%, transparent 64%)`,
-          `radial-gradient(ellipse 62% 50% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 58%)`,
-          `radial-gradient(ellipse 50% 40% at 50% 0%, ${colors.orange[50]} 0%, transparent 72%)`,
+          `radial-gradient(ellipse 88% 62% at 50% 0%, ${colors.orange[200]} 0%, ${colors.orange[100]} 32%, transparent 68%)`,
+          `radial-gradient(ellipse 70% 50% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 58%)`,
+          `radial-gradient(ellipse 70% 50% at 100% 100%, ${colors.orange[100]} 0%, transparent 58%)`,
           gradients.card.elevated,
         ].join(", "),
       }}
     >
-      <div className="relative flex flex-wrap items-center justify-between gap-3">
+      <div className="relative flex flex-wrap items-center justify-center gap-3">
         <YearBadge year={year} />
         {saveLabel ? (
           <span
@@ -72,44 +75,35 @@ export function DashboardHero({
         ) : null}
       </div>
 
-      <p
-        className="relative mt-5"
-        style={{
-          ...typography.caption.desktop,
-          color: colors.text.accent,
-          letterSpacing: typography.letterSpacing.label,
-        }}
-      >
-        Prochaine étape
-      </p>
       <h1
-        className="relative mt-2 text-3xl sm:text-4xl lg:text-[2.75rem]"
+        className="relative mx-auto mt-6 max-w-2xl text-3xl sm:text-4xl lg:text-[2.85rem]"
         style={{
           fontFamily: typography.fontFamily.display,
           fontWeight: typography.fontWeight.regular,
           lineHeight: typography.lineHeight.title,
           color: colors.text.primary,
-          maxWidth: "34rem",
         }}
       >
-        {title}
+        {HERO_TITLE}
       </h1>
       <p
-        className="relative mt-3 max-w-2xl"
+        className="relative mx-auto mt-4 max-w-xl whitespace-pre-line"
         style={{
           ...typography.body.desktop,
           color: colors.text.secondary,
           lineHeight: typography.lineHeight.relaxed,
         }}
       >
-        {nextStep}
+        {HERO_EXPLANATION}
       </p>
 
-      <div className="relative mt-8 max-w-xl">
+      <div className="relative mx-auto mt-8 max-w-md text-left">
         <ProgressBar value={progress} label={progressLabel} />
       </div>
 
-      {children ? <div className="relative mt-8 flex flex-wrap items-center gap-3">{children}</div> : null}
+      {children ? (
+        <div className="relative mt-8 flex flex-wrap items-center justify-center gap-3">{children}</div>
+      ) : null}
     </section>
   );
 }
