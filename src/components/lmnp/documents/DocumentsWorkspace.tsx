@@ -215,7 +215,7 @@ export function DocumentsWorkspace() {
 
       <WorkspaceProgress label="Progression documents & dossier" />
 
-      <Card>
+      <Card interactive>
         <DocumentUploadZone hint={step.uploadHint} onFiles={handleUpload} />
         <div className="mt-4 flex items-center justify-between gap-4">
           <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
@@ -227,7 +227,7 @@ export function DocumentsWorkspace() {
         </div>
       </Card>
 
-      <Card variant="muted">
+      <Card variant="muted" interactive>
         <h2 style={{ ...typography.cardTitle.desktop, color: colors.text.primary }}>
           Documents déposés ({documents.length})
         </h2>

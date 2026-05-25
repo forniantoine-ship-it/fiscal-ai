@@ -3,6 +3,14 @@
 import { useEffect, useState } from "react";
 import type { NormalizedValue, ValidationItem } from "@/lib/lmnp/types";
 import { formatMoney, moneyFromInput } from "@/lib/lmnp/types/values";
+import { Button } from "@/design-system/components/Button";
+import { Card } from "@/design-system/components/Card";
+import { Input } from "@/design-system/components/Input";
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { shadows } from "@/design-system/theme/shadows";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 
 interface CorrectionModalProps {
   item: ValidationItem | null;
@@ -49,16 +57,19 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center">
-      <div
-        className="glass w-full max-w-md rounded-2xl p-6 shadow-xl"
-        role="dialog"
-        aria-labelledby="correction-title"
-      >
-        <h2 id="correction-title" className="text-lg font-semibold text-stone-900">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      style={{ backgroundColor: `${colors.overlay.scrim}66` }}
+    >
+      <div role="dialog" aria-labelledby="correction-title" className="w-full max-w-md">
+        <Card className="!p-6" style={{ boxShadow: shadows.modal.elevated, borderRadius: radius.xl }}>
+        <h2
+          id="correction-title"
+          style={{ ...typography.cardTitle.desktop, color: colors.text.primary }}
+        >
           Modifier : {item.label}
         </h2>
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
           Proposition IA :{" "}
           {item.proposedValue.type === "money"
             ? formatMoney(item.proposedValue)
@@ -68,57 +79,58 @@ export function CorrectionModal({ item, onClose, onSave }: CorrectionModalProps)
           {item.documentFileName && ` · ${item.documentFileName}`}
         </p>
 
-        <label className="mt-4 block text-sm font-medium text-stone-700">
-          Votre valeur
-          <input
-            type={isMoney ? "text" : "text"}
+        <label className="mt-4 block">
+          <span style={{ ...typography.caption.desktop, color: colors.text.secondary }}>Votre valeur</span>
+          <Input
+            type="text"
             inputMode={isMoney ? "decimal" : "text"}
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
+            onChange={(event) => {
+              setInput(event.target.value);
               setInputError(null);
             }}
-            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-stone-900 outline-none focus:border-accent/40"
+            className="mt-2"
             placeholder={isMoney ? "0,00" : ""}
           />
         </label>
 
-        {inputError && (
-          <p className="mt-2 text-xs text-red-400">{inputError}</p>
-        )}
+        {inputError ? (
+          <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
+            {inputError}
+          </p>
+        ) : null}
 
-        <label className="mt-3 block text-sm font-medium text-stone-700">
-          Note (optionnel)
-          <input
+        <label className="mt-3 block">
+          <span style={{ ...typography.caption.desktop, color: colors.text.secondary }}>Note (optionnel)</span>
+          <Input
             type="text"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
-            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-2 text-sm text-stone-900 outline-none focus:border-accent/40"
+            onChange={(event) => setNote(event.target.value)}
+            className="mt-2"
             placeholder="Ex. remboursement partiel"
           />
         </label>
 
-        <p className="mt-3 rounded-lg bg-stone-100/80 p-3 text-xs text-stone-500">
-          Cette valeur sera enregistrée dans l&apos;onglet métier correspondant, marquée « Validé par
-          IA + vous ».
+        <p
+          className="mt-3 rounded-xl p-3"
+          style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            backgroundColor: colors.surface.secondary,
+          }}
+        >
+          Cette valeur sera enregistrée dans l&apos;onglet métier correspondant, marquée « Validé par IA + vous ».
         </p>
 
         <div className="mt-6 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-full border border-stone-200 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-          >
+          <Button variant="secondary" onClick={onClose} className="flex-1">
             Annuler
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex-1 rounded-full bg-accent py-2.5 text-sm font-semibold text-white hover:opacity-90"
-          >
+          </Button>
+          <Button onClick={handleSave} className="flex-1">
             Enregistrer
-          </button>
+          </Button>
         </div>
+        </Card>
       </div>
     </div>
   );

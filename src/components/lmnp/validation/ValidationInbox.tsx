@@ -7,6 +7,10 @@ import { groupValidationByDocument } from "@/lib/lmnp/validation/grouping";
 import { getTabLabelForField } from "@/lib/lmnp/validation/ledger-display";
 import { LMNP_ROUTES, lmnpTabRoute } from "@/lib/lmnp/routes";
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { EmptyState } from "@/components/lmnp/shared/EmptyState";
 import { DocumentValidationCard } from "./DocumentValidationCard";
@@ -111,7 +115,7 @@ export function ValidationInbox() {
         />
       ) : (
         <>
-          <p className="text-sm text-stone-600">
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
             {pending.length > 0
               ? `${pending.length} montant${pending.length !== 1 ? "s" : ""} à confirmer — seuls les montants haute confiance sans alerte sont synchronisés automatiquement.`
               : "Complétez les documents ci-dessous par saisie manuelle."}
@@ -134,10 +138,21 @@ export function ValidationInbox() {
 
       {done.length > 0 && (
         <section>
-          <h3 className="mb-3 text-sm font-medium text-stone-500">
+          <h3
+            className="mb-3"
+            style={{ ...typography.body.desktop, color: colors.text.muted, fontWeight: typography.fontWeight.medium }}
+          >
             Historique ({done.length})
           </h3>
-          <ul className="space-y-2 rounded-2xl border border-stone-200 bg-stone-50 p-2">
+          <ul
+            className="space-y-2"
+            style={{
+              borderRadius: radius.xl,
+              border: `1px solid ${colors.border.subtle}`,
+              backgroundColor: colors.surface.secondary,
+              padding: spacing.scale[2],
+            }}
+          >
             {done.map((item) => (
               <ValidationFieldRowDone key={item.id} item={item} />
             ))}

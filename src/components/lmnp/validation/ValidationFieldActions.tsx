@@ -1,3 +1,7 @@
+"use client";
+
+import { Button } from "@/design-system/components/Button";
+
 interface ValidationFieldActionsProps {
   onApprove: () => void;
   onCorrect: () => void;
@@ -13,31 +17,25 @@ export function ValidationFieldActions({
   compact = false,
   approveLabel = "Approuver",
 }: ValidationFieldActionsProps) {
-  const btn = compact ? "px-3 py-1.5 text-xs" : "px-4 py-2 text-sm";
-
   return (
     <div className={`flex flex-wrap gap-2 ${compact ? "" : "mt-4"}`}>
-      <button
-        type="button"
-        onClick={onApprove}
-        className={`rounded-full bg-accent font-semibold text-white hover:opacity-90 ${btn}`}
-      >
+      <Button onClick={onApprove} className={compact ? "!min-h-[36px] !px-3 !py-1.5 !text-xs" : ""}>
         {approveLabel}
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="secondary"
         onClick={onCorrect}
-        className={`rounded-full border border-stone-200 font-medium text-stone-700 hover:bg-stone-100 ${btn}`}
+        className={compact ? "!min-h-[36px] !px-3 !py-1.5 !text-xs" : ""}
       >
         Corriger
-      </button>
-      <button
-        type="button"
+      </Button>
+      <Button
+        variant="ghost"
         onClick={onReject}
-        className={`rounded-full font-medium text-stone-500 hover:bg-red-500/10 hover:text-red-400 ${btn}`}
+        className={compact ? "!min-h-[36px] !px-3 !py-1.5 !text-xs" : ""}
       >
         Rejeter
-      </button>
+      </Button>
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import type { NormalizedValue } from "@/lib/lmnp/types";
 import { formatNormalizedValue } from "@/lib/lmnp/validation/display";
+import { colors } from "@/design-system/theme/colors";
+import { typography } from "@/design-system/theme/typography";
 
 interface NormalizedValueDisplayProps {
   value: NormalizedValue;
@@ -14,9 +16,13 @@ export function NormalizedValueDisplay({
 }: NormalizedValueDisplayProps) {
   return (
     <span
-      className={`font-semibold tabular-nums ${
-        size === "lg" ? "text-lg text-stone-900" : "text-sm text-stone-800"
-      } ${muted ? "text-stone-500 line-through decoration-stone-400" : ""}`}
+      className="tabular-nums"
+      style={{
+        ...(size === "lg" ? typography.cardTitle.desktop : typography.body.desktop),
+        color: muted ? colors.text.muted : colors.text.primary,
+        fontWeight: typography.fontWeight.medium,
+        textDecoration: muted ? "line-through" : undefined,
+      }}
     >
       {formatNormalizedValue(value)}
     </span>

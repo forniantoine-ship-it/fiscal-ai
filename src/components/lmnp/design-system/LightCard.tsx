@@ -1,16 +1,17 @@
 import type { ReactNode } from "react";
 
+import { Card, type CardProps } from "@/design-system/components/Card";
+
 interface LightCardProps {
   children: ReactNode;
   className?: string;
+  variant?: CardProps["variant"];
 }
 
-export function LightCard({ children, className = "" }: LightCardProps) {
+export function LightCard({ children, className = "", variant = "default" }: LightCardProps) {
   return (
-    <div
-      className={`rounded-[var(--radius-xl)] bg-card px-6 py-5 shadow-[var(--shadow-soft)] ${className}`}
-    >
+    <Card className={className} variant={variant} interactive>
       {children}
-    </div>
+    </Card>
   );
 }

@@ -1,5 +1,11 @@
 "use client";
 
+import { Button } from "@/design-system/components/Button";
+import { Card } from "@/design-system/components/Card";
+import { colors } from "@/design-system/theme/colors";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
+
 interface ValidationSummaryBarProps {
   pendingCount: number;
   highConfidenceCount: number;
@@ -16,48 +22,76 @@ export function ValidationSummaryBar({
   onBulkApproveHighConfidence,
 }: ValidationSummaryBarProps) {
   return (
-    <div className="glass grid gap-4 rounded-2xl p-4 sm:grid-cols-2 lg:grid-cols-4 lg:p-5">
-      <Stat label="Documents analysés" value={analyzedDocumentsCount} accent="text-stone-900" />
-      <Stat label="À confirmer" value={pendingCount} accent="text-amber-400" />
+    <Card variant="muted" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Stat label="Documents analysés" value={analyzedDocumentsCount} tone="primary" />
+      <Stat label="À confirmer" value={pendingCount} tone="warning" />
       <Stat
         label="Pré-validés ≥ 95 %"
         value={highConfidenceCount}
-        accent="text-accent"
+        tone="accent"
         hint="Lecture nette par l'IA"
       />
-      <Stat label="Déjà validés" value={validatedCount} accent="text-accent" />
+      <Stat label="Déjà validés" value={validatedCount} tone="success" />
 
-      {highConfidenceCount > 0 && pendingCount > 0 && (
+      {highConfidenceCount > 0 && pendingCount > 0 ? (
         <div className="flex items-center sm:col-span-2 lg:col-span-4">
-          <button
-            type="button"
-            onClick={onBulkApproveHighConfidence}
-            className="w-full rounded-full border border-accent/25 bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent-muted sm:w-auto"
-          >
+          <Button variant="secondary" onClick={onBulkApproveHighConfidence}>
             Valider tous les champs ≥ 95 % ({highConfidenceCount})
-          </button>
+          </Button>
         </div>
-      )}
-    </div>
+      ) : null}
+    </Card>
   );
 }
 
 function Stat({
   label,
   value,
-  accent,
+  tone,
   hint,
 }: {
   label: string;
   value: number;
-  accent: string;
+  tone: "primary" | "warning" | "accent" | "success";
   hint?: string;
 }) {
+  const valueColor =
+    tone === "warning"
+      ? colors.warning.DEFAULT
+      : tone === "accent"
+        ? colors.text.accent
+        : tone === "success"
+          ? colors.success.DEFAULT
+          : colors.text.primary;
+
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wider text-stone-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold tabular-nums ${accent}`}>{value}</p>
-      {hint && <p className="mt-0.5 text-[10px] text-stone-500">{hint}</p>}
+      <p
+        style={{
+          ...typography.caption.desktop,
+          color: colors.text.muted,
+          letterSpacing: typography.letterSpacing.label,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </p>
+      <p
+        className="mt-1 tabular-nums"
+        style={{
+          fontFamily: typography.fontFamily.display,
+          fontSize: typography.fontSize["2xl"],
+          lineHeight: typography.lineHeight.title,
+          color: valueColor,
+        }}
+      >
+        {value}
+      </p>
+      {hint ? (
+        <p className="mt-0.5" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

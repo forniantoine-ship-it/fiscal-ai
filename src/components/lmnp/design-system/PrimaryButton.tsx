@@ -1,39 +1,5 @@
-import Link from "next/link";
-import type { ReactNode } from "react";
+import { Button, type ButtonProps } from "@/design-system/components/Button";
 
-interface PrimaryButtonProps {
-  href?: string;
-  onClick?: () => void;
-  children: ReactNode;
-  className?: string;
-  disabled?: boolean;
-  type?: "button" | "submit";
-}
-
-const base =
-  "inline-flex items-center justify-center gap-2 rounded-full bg-primary px-6 py-2.5 text-[13px] font-medium text-primary-foreground transition-colors duration-200 hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/40 disabled:opacity-45";
-
-export function PrimaryButton({
-  href,
-  onClick,
-  children,
-  className = "",
-  disabled,
-  type = "button",
-}: PrimaryButtonProps) {
-  const classes = `${base} ${className}`;
-
-  if (href && !disabled) {
-    return (
-      <Link href={href} className={classes}>
-        {children}
-      </Link>
-    );
-  }
-
-  return (
-    <button type={type} onClick={onClick} disabled={disabled} className={classes}>
-      {children}
-    </button>
-  );
+export function PrimaryButton(props: Omit<ButtonProps, "variant">) {
+  return <Button variant="primary" {...props} />;
 }

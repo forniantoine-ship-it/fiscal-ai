@@ -6,6 +6,12 @@ import type { FieldKey } from "@/lib/lmnp/types/field-keys";
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
 import { moneyFromInput, textValue } from "@/lib/lmnp/types/values";
 import { useLmnp } from "@/lib/lmnp/store";
+import { Button } from "@/design-system/components/Button";
+import { Input, Select } from "@/design-system/components/Input";
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 
 const SUGGESTED_FIELDS: Partial<Record<DocumentType, FieldKey[]>> = {
   lease_contract: ["income.annualRent", "property.address"],
@@ -63,10 +69,25 @@ export function ManualExtractionFallback({ document, warnings = [] }: ManualExtr
   };
 
   return (
-    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 sm:p-5">
+    <div
+      style={{
+        borderRadius: radius.lg,
+        border: `1px solid ${colors.warning.border}`,
+        backgroundColor: colors.warning.surface,
+        padding: spacing.scale[5],
+      }}
+    >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div
+          className="flex h-10 w-10 shrink-0 items-center justify-center"
+          style={{
+            borderRadius: radius.lg,
+            backgroundColor: colors.surface.primary,
+            color: colors.warning.DEFAULT,
+            border: `1px solid ${colors.warning.border}`,
+          }}
+        >
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -76,73 +97,84 @@ export function ManualExtractionFallback({ document, warnings = [] }: ManualExtr
           </svg>
         </div>
         <div className="min-w-0 flex-1">
-          <h4 className="text-sm font-medium text-amber-200">Saisie manuelle recommandée</h4>
-          <p className="mt-1 text-xs text-stone-500">
+          <h4 style={{ ...typography.body.desktop, color: colors.warning.DEFAULT, fontWeight: typography.fontWeight.medium }}>
+            Saisie manuelle recommandée
+          </h4>
+          <p className="mt-1" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             {warnings[0] ??
               "Aucun montant fiable n'a pu être extrait automatiquement. Mieux vaut saisir vous-même que d'importer une valeur incorrecte."}
           </p>
         </div>
       </div>
 
-      {warnings.length > 1 && (
-        <ul className="mt-3 space-y-1 rounded-lg bg-stone-100 px-3 py-2 text-xs text-stone-500">
+      {warnings.length > 1 ? (
+        <ul
+          className="mt-3 space-y-1"
+          style={{
+            borderRadius: radius.md,
+            backgroundColor: colors.surface.inset,
+            padding: spacing.scale[3],
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+          }}
+        >
           {warnings.slice(1).map((w) => (
             <li key={w}>· {w}</li>
           ))}
         </ul>
-      )}
+      ) : null}
 
       <div className="mt-4 space-y-3">
-        <label className="block text-xs font-medium text-stone-600">
-          Champ à renseigner
-          <select
+        <label className="block">
+          <span style={{ ...typography.caption.desktop, color: colors.text.secondary }}>Champ à renseigner</span>
+          <Select
             value={selectedField}
-            onChange={(e) => {
-              setSelectedField(e.target.value as FieldKey);
+            onChange={(event) => {
+              setSelectedField(event.target.value as FieldKey);
               setInput("");
               setError(null);
             }}
-            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-amber-500/40"
+            className="mt-2"
           >
             {suggested.map((key) => (
-              <option key={key} value={key} className="bg-white">
+              <option key={key} value={key}>
                 {FIELD_REGISTRY[key].label}
               </option>
             ))}
-          </select>
+          </Select>
         </label>
 
-        <label className="block text-xs font-medium text-stone-600">
-          {selectedField === "property.address" ? "Adresse" : "Montant (€)"}
-          <input
+        <label className="block">
+          <span style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+            {selectedField === "property.address" ? "Adresse" : "Montant (€)"}
+          </span>
+          <Input
             type="text"
             inputMode={selectedField === "property.address" ? "text" : "decimal"}
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
+            onChange={(event) => {
+              setInput(event.target.value);
               setError(null);
             }}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+            onKeyDown={(event) => event.key === "Enter" && handleAdd()}
             placeholder={selectedField === "property.address" ? "12 rue Example, 69001 Lyon" : "0,00"}
-            className="mt-1 w-full rounded-xl border border-stone-200 bg-stone-100 px-3 py-2.5 text-sm text-stone-900 outline-none focus:border-amber-500/40"
+            className="mt-2"
           />
         </label>
 
-        {error && <p className="text-xs text-red-400">{error}</p>}
+        {error ? (
+          <p style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>{error}</p>
+        ) : null}
 
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="w-full rounded-full bg-amber-500/15 py-2.5 text-sm font-medium text-amber-300 ring-1 ring-amber-500/30 hover:bg-amber-500/25"
-        >
+        <Button onClick={handleAdd} variant="secondary" className="w-full">
           Ajouter pour validation
-        </button>
+        </Button>
 
-        {addedCount > 0 && (
-          <p className="text-center text-xs text-accent/90">
+        {addedCount > 0 ? (
+          <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.accent }}>
             {addedCount} champ{addedCount > 1 ? "s" : ""} ajouté{addedCount > 1 ? "s" : ""} — confirmez ci-dessus
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   );

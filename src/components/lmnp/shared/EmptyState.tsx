@@ -1,5 +1,11 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
+
+import { Button } from "@/design-system/components/Button";
+import { Card } from "@/design-system/components/Card";
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 
 interface EmptyStateProps {
   title: string;
@@ -18,41 +24,47 @@ export function EmptyState({
   secondaryAction,
   variant = "default",
 }: EmptyStateProps) {
-  const borderClass =
-    variant === "success"
-      ? "border-accent/20 bg-accent/5"
-      : "border-stone-200 bg-stone-100/80";
+  const isSuccess = variant === "success";
 
   return (
-    <div className={`rounded-2xl border p-10 text-center ${borderClass}`}>
-      {icon && <div className="mb-4 flex justify-center text-stone-500">{icon}</div>}
+    <Card
+      className="text-center"
+      style={{
+        padding: spacing.scale[10],
+        border: `1px solid ${isSuccess ? colors.success.border : colors.border.subtle}`,
+        backgroundColor: isSuccess ? colors.success.surface : colors.surface.secondary,
+      }}
+    >
+      {icon ? (
+        <div className="mb-4 flex justify-center" style={{ color: colors.text.muted }}>
+          {icon}
+        </div>
+      ) : null}
       <p
-        className={`text-lg font-semibold ${variant === "success" ? "text-accent" : "text-stone-800"}`}
+        style={{
+          ...typography.cardTitle.desktop,
+          color: isSuccess ? colors.success.DEFAULT : colors.text.primary,
+        }}
       >
         {title}
       </p>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-stone-500">{description}</p>
-      {(primaryAction || secondaryAction) && (
+      <p
+        className="mx-auto mt-2 max-w-md"
+        style={{ ...typography.body.desktop, color: colors.text.secondary, lineHeight: typography.lineHeight.relaxed }}
+      >
+        {description}
+      </p>
+      {primaryAction || secondaryAction ? (
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          {primaryAction && (
-            <Link
-              href={primaryAction.href}
-              className="inline-flex rounded-full bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-            >
-              {primaryAction.label}
-            </Link>
-          )}
-          {secondaryAction && (
-            <Link
-              href={secondaryAction.href}
-              className="inline-flex rounded-full border border-stone-200 px-5 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-100"
-            >
+          {primaryAction ? <Button href={primaryAction.href}>{primaryAction.label}</Button> : null}
+          {secondaryAction ? (
+            <Button href={secondaryAction.href} variant="secondary">
               {secondaryAction.label}
-            </Link>
-          )}
+            </Button>
+          ) : null}
         </div>
-      )}
-    </div>
+      ) : null}
+    </Card>
   );
 }
 
