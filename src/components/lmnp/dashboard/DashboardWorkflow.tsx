@@ -244,7 +244,7 @@ function WorkflowStepCard({
                 backgroundColor: colors.success.surface,
               }}
             >
-              Validé
+              Configuré
             </span>
           ) : null}
         </div>
@@ -276,6 +276,18 @@ function WorkflowStepCard({
           <div className="mt-auto pt-5">
             <ImporterCta />
           </div>
+        ) : step.status === "completed" && step.dossierSummary ? (
+          <p
+            className="mt-auto pt-5"
+            style={{
+              fontFamily: typography.fontFamily.display,
+              fontSize: typography.fontSize.base,
+              color: colors.success.DEFAULT,
+              lineHeight: typography.lineHeight.relaxed,
+            }}
+          >
+            {step.dossierSummary}
+          </p>
         ) : (
           <p
             className="mt-auto pt-5"

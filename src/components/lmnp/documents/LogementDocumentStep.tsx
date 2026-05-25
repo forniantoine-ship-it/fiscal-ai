@@ -13,6 +13,7 @@ import {
   type LogementFieldKey,
   type LogementFormValues,
 } from "@/components/lmnp/logement/LogementProfileFields";
+import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
@@ -30,6 +31,7 @@ import {
   MOCK_LOGEMENT_UNCERTAIN_FIELDS,
   suggestsMultipleProperties,
 } from "@/lib/lmnp/services/logement-profile";
+import { buildLogementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -81,14 +83,16 @@ export function LogementDocumentStep() {
   const [uncertainFields, setUncertainFields] = useState<LogementFieldKey[]>([]);
   const [multiPropertyDetected, setMultiPropertyDetected] = useState(false);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
+  const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState<LogementFormValues>(() =>
     logementFromWorkspace(workspace),
   );
 
   const isProcessing = hasUploaded && !confirmed && !aiAnimationDone && !multiPropertyDetected;
   const isFailed = logementDoc?.status === "failed" && !aiAnimationDone && !multiPropertyDetected;
+  const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
   const showExtractionForm =
-    aiAnimationDone && !isProcessing && !multiPropertyDetected && !validatedSuccess && !confirmed;
+    aiAnimationDone && !isProcessing && !multiPropertyDetected && !showConfiguredCard;
 
   const applyExtractedForm = useCallback(() => {
     setFormValues(MOCK_LOGEMENT_FORM);
@@ -116,6 +120,7 @@ export function LogementDocumentStep() {
     if (confirmed) {
       setHasUploaded(true);
       setValidatedSuccess(true);
+      setIsEditing(false);
       setAiAnimationDone(true);
       setFormValues(logementFromWorkspace(workspace));
       setVisibleSections(2);
@@ -235,6 +240,7 @@ export function LogementDocumentStep() {
       documentId: logementDoc?.id,
     });
     setValidatedSuccess(true);
+    setIsEditing(false);
     showSuccess(
       "Logement configuré",
       "Vos données seront réutilisées pour le crédit, les amortissements et les charges.",
@@ -306,41 +312,19 @@ export function LogementDocumentStep() {
         />
       ) : null}
 
-      {validatedSuccess ? (
-        <div
-          className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.success.border}`,
-            backgroundColor: colors.success.surface,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-            textAlign: "center",
+      {showConfiguredCard ? (
+        <ConfiguredDossierCard
+          title="✓ Logement configuré"
+          rows={buildLogementConfiguredSummary(
+            formValues,
+            draft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+          )}
+          onEdit={() => {
+            setIsEditing(true);
+            setVisibleSections(2);
+            setFormValues(logementFromWorkspace(workspace));
           }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.success.DEFAULT,
-            }}
-          >
-            ✓ Logement configuré
-          </p>
-          <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Les données détectées seront automatiquement réutilisées pour :
-          </p>
-          <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left">
-            {["le crédit", "les amortissements", "les charges"].map((item) => (
-              <li key={item} style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-                · {item}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-8 flex justify-center">
-            <Button href={LMNP_ROUTES.dashboard}>Retour au tableau de bord</Button>
-          </div>
-        </div>
+        />
       ) : null}
 
       {isFailed ? (

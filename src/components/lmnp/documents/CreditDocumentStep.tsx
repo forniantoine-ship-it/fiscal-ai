@@ -9,6 +9,7 @@ import { CreditHero } from "@/components/lmnp/credit/CreditHero";
 import {
   DOCUMENT_WORKFLOW_CARD_STYLE,
 } from "@/components/lmnp/documents/document-workflow-shared";
+import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
@@ -30,6 +31,7 @@ import {
   type CreditFieldKey,
   type CreditFormValues,
 } from "@/lib/lmnp/services/credit-profile";
+import { buildCreditConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -89,13 +91,17 @@ export function CreditDocumentStep() {
   const [uncertainFields, setUncertainFields] = useState<CreditFieldKey[]>([]);
   const [detectedLoansCount, setDetectedLoansCount] = useState(1);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
+  const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState<CreditFormValues>(() => creditFromDraft(draft));
 
   const isProcessing = hasUploaded && !confirmed && !aiAnimationDone && !noCreditDeclared;
   const isFailed = creditDoc?.status === "failed" && !aiAnimationDone;
-  const showExtractionForm =
-    aiAnimationDone && !isProcessing && !validatedSuccess && !confirmed && !noCreditDeclared;
   const showInitialExtras = !hasUploaded && !confirmed && !noCreditDeclared;
+  const showConfiguredCard =
+    ((validatedSuccess || confirmed) && !isEditing) ||
+    (noCreditDeclared && !hasUploaded && !isEditing);
+  const showExtractionForm =
+    aiAnimationDone && !isProcessing && !showConfiguredCard && !noCreditDeclared;
 
   const applyExtractedForm = useCallback((multiLoan: boolean) => {
     setFormValues(multiLoan ? MOCK_CREDIT_FORM : { ...MOCK_CREDIT_FORM, loans: [MOCK_CREDIT_FORM.loans[0]] });
@@ -125,6 +131,7 @@ export function CreditDocumentStep() {
     if (confirmed) {
       setHasUploaded(true);
       setValidatedSuccess(true);
+      setIsEditing(false);
       setAiAnimationDone(true);
       setFormValues(creditFromDraft(draft));
       setVisibleSections(2);
@@ -251,6 +258,7 @@ export function CreditDocumentStep() {
       documentId: creditDoc?.id,
     });
     setValidatedSuccess(true);
+    setIsEditing(false);
     showSuccess(
       "Financement configuré",
       "Vos données seront réutilisées pour les amortissements, les charges et les prochaines déclarations.",
@@ -278,30 +286,34 @@ export function CreditDocumentStep() {
         />
       </div>
 
-      {noCreditDeclared && !hasUploaded ? (
-        <div
-          className="w-full text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.success.border}`,
-            backgroundColor: colors.success.surface,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
+      {showConfiguredCard ? (
+        <ConfiguredDossierCard
+          title="✓ Crédit configuré"
+          rows={
+            noCreditDeclared && !confirmed
+              ? [{ label: "Statut", value: "Aucun financement déclaré" }]
+              : buildCreditConfiguredSummary(formValues, detectedLoansCount).rows
+          }
+          footnote={
+            noCreditDeclared && !confirmed
+              ? "Vous pourrez déposer vos documents de prêt à tout moment."
+              : buildCreditConfiguredSummary(formValues, detectedLoansCount).footnote
+          }
+          onEdit={() => {
+            setIsEditing(true);
+            if (noCreditDeclared && !hasUploaded) {
+              setNoCreditDeclared(false);
+              dispatch({
+                type: "DECLARATION_PATCH_DRAFT",
+                patch: { creditDeclaredNoneAt: undefined },
+              });
+              return;
+            }
+            setVisibleSections(2);
+            setFormValues(creditFromDraft(draft));
+            setDetectedLoansCount(draft?.creditFinancing?.loans.length ?? 1);
           }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.success.DEFAULT,
-            }}
-          >
-            ✓ Aucun financement déclaré
-          </p>
-          <p className="mt-3" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Vous pourrez déposer vos documents de prêt à tout moment depuis cette page.
-          </p>
-        </div>
+        />
       ) : null}
 
       {isProcessing ? (
@@ -323,42 +335,6 @@ export function CreditDocumentStep() {
         />
       ) : null}
 
-      {validatedSuccess ? (
-        <div
-          className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.success.border}`,
-            backgroundColor: colors.success.surface,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-            textAlign: "center",
-          }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.success.DEFAULT,
-            }}
-          >
-            ✓ Financement configuré
-          </p>
-          <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Les données détectées seront automatiquement réutilisées pour :
-          </p>
-          <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left">
-            {["les amortissements", "les charges", "les prochaines déclarations"].map((item) => (
-              <li key={item} style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-                · {item}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-8 flex justify-center">
-            <Button href={LMNP_ROUTES.dashboard}>Retour au tableau de bord</Button>
-          </div>
-        </div>
-      ) : null}
 
       {isFailed ? (
         <div

@@ -12,6 +12,7 @@ import { AmortissementVentilationTable } from "@/components/lmnp/amortissement/A
 import {
   DOCUMENT_WORKFLOW_CARD_STYLE,
 } from "@/components/lmnp/documents/document-workflow-shared";
+import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
@@ -30,6 +31,7 @@ import {
   type AmortissementVentilationData,
   type ExtractedInvoice,
 } from "@/lib/lmnp/services/amortissement-profile";
+import { buildAmortissementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -75,6 +77,7 @@ export function AmortissementDocumentStep() {
   const [aiAnimationDone, setAiAnimationDone] = useState(false);
   const [showVentilationTable, setShowVentilationTable] = useState(false);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
+  const [isEditing, setIsEditing] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [extractedInvoices, setExtractedInvoices] = useState<ExtractedInvoice[]>(MOCK_EXTRACTED_INVOICES);
   const [ventilation, setVentilation] = useState<AmortissementVentilationData | undefined>(() =>
@@ -131,8 +134,9 @@ export function AmortissementDocumentStep() {
     documentsReady;
   const isProcessing = canRunAi;
   const isFailed = hasFailed && !aiAnimationDone && !manualMode && readyForAnalysis;
-  const showSummary = aiAnimationDone && !showVentilationTable && !validatedSuccess && !confirmed;
-  const showTable = showVentilationTable && !validatedSuccess && !confirmed;
+  const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
+  const showSummary = aiAnimationDone && !showVentilationTable && !showConfiguredCard;
+  const showTable = showVentilationTable && !showConfiguredCard;
 
   const showContinuitySection = activityAnswered && needsContinuity && !continuityReady;
   const showTravauxSection = activityAnswered && continuityReady && !travauxReady;
@@ -195,6 +199,7 @@ export function AmortissementDocumentStep() {
   useEffect(() => {
     if (confirmed) {
       setValidatedSuccess(true);
+      setIsEditing(false);
       setAiAnimationDone(true);
       setShowVentilationTable(true);
       setVentilation(ventilationFromDraft(draft));
@@ -295,6 +300,7 @@ export function AmortissementDocumentStep() {
       ventilation,
     });
     setValidatedSuccess(true);
+    setIsEditing(false);
     showSuccess(
       "Amortissements préparés",
       "Vos données seront réutilisées pour les prochaines années fiscales.",
@@ -376,7 +382,7 @@ export function AmortissementDocumentStep() {
         <ActiviteAiProcessing onComplete={handleAiAnimationComplete} steps={AMORTISSEMENT_AI_STEPS} />
       ) : null}
 
-      {aiAnimationDone && !showVentilationTable && !validatedSuccess ? (
+      {aiAnimationDone && !showVentilationTable && !showConfiguredCard ? (
         <AmortissementItemCards
           invoices={extractedInvoices}
           cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
@@ -401,45 +407,19 @@ export function AmortissementDocumentStep() {
         />
       ) : null}
 
-      {validatedSuccess ? (
-        <div
-          className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.success.border}`,
-            backgroundColor: colors.success.surface,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-            textAlign: "center",
+      {showConfiguredCard && ventilation ? (
+        <ConfiguredDossierCard
+          title="✓ Amortissements configurés"
+          rows={buildAmortissementConfiguredSummary(
+            ventilation,
+            draft?.propertyBackgroundExtraction?.acquisitionPrice,
+          )}
+          onEdit={() => {
+            setIsEditing(true);
+            setShowVentilationTable(true);
+            setVentilation(ventilationFromDraft(draft) ?? ventilation);
           }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.success.DEFAULT,
-            }}
-          >
-            ✓ Amortissements préparés
-          </p>
-          <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Le logiciel utilisera automatiquement ces données pour :
-          </p>
-          <ul className="mx-auto mt-3 max-w-sm space-y-1 text-left">
-            {[
-              "les prochaines années fiscales",
-              "les calculs futurs",
-              "la continuité comptable",
-            ].map((item) => (
-              <li key={item} style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-                · {item}
-              </li>
-            ))}
-          </ul>
-          <div className="mt-8 flex justify-center">
-            <Button href={LMNP_ROUTES.dashboard}>Retour au tableau de bord</Button>
-          </div>
-        </div>
+        />
       ) : null}
 
       {isFailed ? (

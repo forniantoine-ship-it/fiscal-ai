@@ -10,6 +10,7 @@ import {
 import { RevenusHero } from "@/components/lmnp/revenus/RevenusHero";
 import { RevenusPropertyCards } from "@/components/lmnp/revenus/RevenusPropertyCards";
 import { RevenusSummaryCard } from "@/components/lmnp/revenus/RevenusSummaryCard";
+import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
@@ -24,6 +25,7 @@ import {
   resolveRevenusDocuments,
   type RevenusExtractionData,
 } from "@/lib/lmnp/services/revenus-profile";
+import { buildRevenusConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -61,6 +63,7 @@ export function RevenusDocumentStep() {
   );
   const [aiAnimationDone, setAiAnimationDone] = useState(false);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
+  const [isEditing, setIsEditing] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [extraction, setExtraction] = useState<RevenusExtractionData | undefined>(() =>
     revenusFromDraft(draft),
@@ -75,8 +78,9 @@ export function RevenusDocumentStep() {
 
   const isProcessing = hasUploaded && !confirmed && !aiAnimationDone && !manualMode && uploadedCount > 0;
   const isFailed = hasFailed && !aiAnimationDone && !manualMode && hasUploaded;
+  const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
   const showRevenueContent =
-    aiAnimationDone && !validatedSuccess && !confirmed && Boolean(extraction);
+    aiAnimationDone && !showConfiguredCard && Boolean(extraction);
   const incomplete = extraction ? isRevenusExtractionIncomplete(extraction) : false;
 
   const handleAiAnimationComplete = useCallback(() => {
@@ -89,6 +93,7 @@ export function RevenusDocumentStep() {
     if (confirmed) {
       setHasUploaded(true);
       setValidatedSuccess(true);
+      setIsEditing(false);
       setAiAnimationDone(true);
       setExtraction(revenusFromDraft(draft));
       return;
@@ -200,6 +205,7 @@ export function RevenusDocumentStep() {
       documentIds,
     });
     setValidatedSuccess(true);
+    setIsEditing(false);
     showSuccess(
       "Revenus locatifs préparés",
       "Les revenus détectés seront automatiquement utilisés pour préparer votre déclaration.",
@@ -240,34 +246,19 @@ export function RevenusDocumentStep() {
         </>
       ) : null}
 
-      {validatedSuccess ? (
-        <div
-          className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.success.border}`,
-            backgroundColor: colors.success.surface,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-            textAlign: "center",
+      {showConfiguredCard && extraction ? (
+        <ConfiguredDossierCard
+          title="✓ Revenus configurés"
+          rows={buildRevenusConfiguredSummary(
+            extraction,
+            revenusDocs,
+            workspace.fiscalYear.year,
+          )}
+          onEdit={() => {
+            setIsEditing(true);
+            setExtraction(revenusFromDraft(draft) ?? extraction);
           }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.success.DEFAULT,
-            }}
-          >
-            ✓ Revenus locatifs préparés
-          </p>
-          <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Les revenus détectés seront automatiquement utilisés pour préparer votre déclaration.
-          </p>
-          <div className="mt-8 flex justify-center">
-            <Button href={LMNP_ROUTES.dashboard}>Retour au tableau de bord</Button>
-          </div>
-        </div>
+        />
       ) : null}
 
       {isFailed ? (

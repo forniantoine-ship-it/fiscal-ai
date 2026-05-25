@@ -1,6 +1,14 @@
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
 import type { DeclarationProgress } from "@/lib/lmnp/engine/declaration-progress";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
+import {
+  resolveActiviteDashboardSummary,
+  resolveAmortissementDashboardSummary,
+  resolveChargesDashboardSummary,
+  resolveCreditDashboardSummary,
+  resolveLogementDashboardSummary,
+  resolveRevenusDashboardSummary,
+} from "@/lib/lmnp/services/configured-dossier-summaries";
 import type {
   DeclarationDraft,
   LmnpDocument,
@@ -40,6 +48,7 @@ export type WorkflowStepView = {
   validationState: string;
   correctionsRemaining: number;
   validationBadge: "validated" | "pending" | "none";
+  dossierSummary: string | null;
 };
 
 type StepDefinition = {
@@ -77,9 +86,7 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     documentPrompt: "Ajoutez votre extrait INPI ou Kbis.",
     aiExtracts: ["SIREN", "Raison sociale", "Régime"],
     matchDocument: (doc) => /inpi|kbis|siren|siret|rcs|extrait/i.test(doc.fileName),
-    isComplete: (ws) =>
-      Boolean(ws.declarationDraft?.siren?.trim()) ||
-      ws.documents.some((doc) => /inpi|kbis|siren|siret|rcs|extrait/i.test(doc.fileName) && doc.status === "analyzed"),
+    isComplete: (ws) => Boolean(ws.declarationDraft?.inpiConfirmedAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "activite",
   },
   {
@@ -223,6 +230,37 @@ function resolveFocusStepId(workspace: DashboardWorkspace): DashboardWorkflowSte
   return "validation";
 }
 
+function resolveStepDossierSummary(
+  stepId: DashboardWorkflowStepId,
+  workspace: DashboardWorkspace,
+): string | null {
+  const draft = workspace.declarationDraft;
+  const primaryProperty = workspace.properties.find((property) =>
+    workspace.fiscalYear.propertyIds.includes(property.id),
+  );
+
+  switch (stepId) {
+    case "activite":
+      return resolveActiviteDashboardSummary(
+        draft,
+        primaryProperty,
+        workspace.fiscalYear.regime,
+      );
+    case "logement":
+      return resolveLogementDashboardSummary(draft, primaryProperty);
+    case "credit":
+      return resolveCreditDashboardSummary(draft);
+    case "revenus":
+      return resolveRevenusDashboardSummary(draft);
+    case "charges":
+      return resolveChargesDashboardSummary(draft);
+    case "amortissement":
+      return resolveAmortissementDashboardSummary(draft);
+    default:
+      return null;
+  }
+}
+
 export function resolveDashboardWorkflow(workspace: DashboardWorkspace): WorkflowStepView[] {
   const focusStepId = resolveFocusStepId(workspace);
   const journeyStarted = workspace.documents.length > 0 || Boolean(workspace.declarationDraft?.journeyStartedAt);
@@ -258,6 +296,7 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
       validationState: validationState(badge, status),
       correctionsRemaining: pending,
       validationBadge: badge,
+      dossierSummary: status === "completed" ? resolveStepDossierSummary(def.id, workspace) : null,
     };
   });
 }
