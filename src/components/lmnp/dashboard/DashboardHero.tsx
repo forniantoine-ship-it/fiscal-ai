@@ -10,6 +10,8 @@ import { typography } from "@/design-system/theme/typography";
 
 type DashboardHeroProps = {
   year: number;
+  title: string;
+  explanation: string;
   progress: number;
   progressLabel?: string;
   saveLabel?: string | null;
@@ -19,15 +21,10 @@ type DashboardHeroProps = {
   onPrimaryClick?: () => void;
 };
 
-const HERO_TITLE = "Votre déclaration LMNP";
-const HERO_EXPLANATION = [
-  "Déposez les documents demandés par l'IA.",
-  "L'IA extrait automatiquement les données importantes.",
-  "Vous n'avez plus qu'à corriger ou valider.",
-].join("\n");
-
 export function DashboardHero({
   year,
+  title,
+  explanation,
   progress,
   progressLabel = "Avancement du dossier",
   saveLabel,
@@ -67,7 +64,7 @@ export function DashboardHero({
           color: colors.text.primary,
         }}
       >
-        {HERO_TITLE}
+        {title}
       </h1>
       <p
         className="relative mx-auto mt-5 max-w-xl whitespace-pre-line"
@@ -77,7 +74,7 @@ export function DashboardHero({
           lineHeight: typography.lineHeight.relaxed,
         }}
       >
-        {HERO_EXPLANATION}
+        {explanation}
       </p>
 
       <div className="relative mx-auto mt-10 max-w-md text-left">

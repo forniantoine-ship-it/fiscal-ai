@@ -12,6 +12,10 @@ import { RevenusPropertyCards } from "@/components/lmnp/revenus/RevenusPropertyC
 import { RevenusSummaryCard } from "@/components/lmnp/revenus/RevenusSummaryCard";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -27,7 +31,6 @@ import {
 } from "@/lib/lmnp/services/revenus-profile";
 import { buildRevenusConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 
 const REVENUS_UPLOAD_CATEGORY = "revenus" as const;
@@ -209,15 +212,12 @@ export function RevenusDocumentStep() {
     showSuccess(
       "Revenus locatifs préparés",
       "Les revenus détectés seront automatiquement utilisés pour préparer votre déclaration.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <RevenusHero
@@ -247,18 +247,21 @@ export function RevenusDocumentStep() {
       ) : null}
 
       {showConfiguredCard && extraction ? (
-        <ConfiguredDossierCard
-          title="✓ Revenus configurés"
-          rows={buildRevenusConfiguredSummary(
-            extraction,
-            revenusDocs,
-            workspace.fiscalYear.year,
-          )}
-          onEdit={() => {
-            setIsEditing(true);
-            setExtraction(revenusFromDraft(draft) ?? extraction);
-          }}
-        />
+        <>
+          <ConfiguredDossierCard
+            title="✓ Revenus configurés"
+            rows={buildRevenusConfiguredSummary(
+              extraction,
+              revenusDocs,
+              workspace.fiscalYear.year,
+            )}
+            onEdit={() => {
+              setIsEditing(true);
+              setExtraction(revenusFromDraft(draft) ?? extraction);
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="revenus" />
+        </>
       ) : null}
 
       {isFailed ? (

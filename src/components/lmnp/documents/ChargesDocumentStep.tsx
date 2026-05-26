@@ -13,6 +13,10 @@ import {
 } from "@/components/lmnp/documents/document-workflow-shared";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -31,7 +35,6 @@ import {
 } from "@/lib/lmnp/services/charges-profile";
 import { buildChargesConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 
 const CHARGES_UPLOAD_CATEGORY = "charges" as const;
@@ -320,15 +323,12 @@ export function ChargesDocumentStep() {
     showSuccess(
       "Charges préparées",
       "Les charges détectées seront automatiquement utilisées pour préparer votre déclaration.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <ChargesHero
@@ -377,14 +377,17 @@ export function ChargesDocumentStep() {
       ) : null}
 
       {showConfiguredCard && extraction ? (
-        <ConfiguredDossierCard
-          title="✓ Charges configurées"
-          rows={buildChargesConfiguredSummary(extraction).rows}
-          onEdit={() => {
-            setIsEditing(true);
-            setExtraction(chargesFromDraft(draft) ?? extraction);
-          }}
-        />
+        <>
+          <ConfiguredDossierCard
+            title="✓ Charges configurées"
+            rows={buildChargesConfiguredSummary(extraction).rows}
+            onEdit={() => {
+              setIsEditing(true);
+              setExtraction(chargesFromDraft(draft) ?? extraction);
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="charges" />
+        </>
       ) : null}
 
       {isFailed ? (

@@ -66,18 +66,6 @@ type StepDefinition = {
 
 const STEP_DEFINITIONS: StepDefinition[] = [
   {
-    id: "dashboard",
-    label: "Tableau de bord",
-    href: LMNP_ROUTES.dashboard,
-    uploadHref: LMNP_ROUTES.documents,
-    requestedDocument: "Vue d'ensemble",
-    documentPrompt: "Suivez l'avancement de votre dossier LMNP.",
-    aiExtracts: ["Progression", "Prochaine pièce"],
-    matchDocument: () => false,
-    isComplete: () => true,
-    matchValidation: () => false,
-  },
-  {
     id: "activite",
     label: "Activité LMNP",
     href: documentJourneyRoute("inpi"),
@@ -120,21 +108,6 @@ const STEP_DEFINITIONS: StepDefinition[] = [
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "emprunts",
   },
   {
-    id: "amortissement",
-    label: "Amortissement",
-    href: documentJourneyRoute("amortissements"),
-    uploadHref: documentJourneyRoute("amortissements"),
-    requestedDocument: "Factures travaux / mobilier",
-    documentPrompt: "Ajoutez vos factures de travaux ou de mobilier.",
-    aiExtracts: ["Mobilier", "Travaux", "Amortissement annuel"],
-    matchDocument: (doc) =>
-      doc.category === "amortissement" ||
-      doc.documentType === "furniture_invoice" ||
-      doc.documentType === "works_invoice",
-    isComplete: (ws) => Boolean(ws.declarationDraft?.amortissementConfirmedAt),
-    matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "immobilisations",
-  },
-  {
     id: "revenus",
     label: "Revenus",
     href: documentJourneyRoute("revenus"),
@@ -166,6 +139,21 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.documentType === "condo_charges",
     isComplete: (ws) => Boolean(ws.declarationDraft?.chargesConfirmedAt),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "depenses",
+  },
+  {
+    id: "amortissement",
+    label: "Amortissement",
+    href: documentJourneyRoute("amortissements"),
+    uploadHref: documentJourneyRoute("amortissements"),
+    requestedDocument: "Factures travaux / mobilier",
+    documentPrompt: "Ajoutez vos factures de travaux ou de mobilier.",
+    aiExtracts: ["Mobilier", "Travaux", "Amortissement annuel"],
+    matchDocument: (doc) =>
+      doc.category === "amortissement" ||
+      doc.documentType === "furniture_invoice" ||
+      doc.documentType === "works_invoice",
+    isComplete: (ws) => Boolean(ws.declarationDraft?.amortissementConfirmedAt),
+    matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "immobilisations",
   },
   {
     id: "validation",
@@ -214,7 +202,7 @@ function validationState(badge: WorkflowStepView["validationBadge"], status: Wor
 
 function resolveFocusStepId(workspace: DashboardWorkspace): DashboardWorkflowStepId {
   for (const def of STEP_DEFINITIONS) {
-    if (def.id === "dashboard" || def.id === "validation") continue;
+    if (def.id === "validation") continue;
     const pending = workspace.validationItems.filter(
       (item) => def.matchValidation(item) && item.status === "pending",
     ).length;
@@ -222,7 +210,7 @@ function resolveFocusStepId(workspace: DashboardWorkspace): DashboardWorkflowSte
   }
 
   for (const def of STEP_DEFINITIONS) {
-    if (def.id === "dashboard" || def.id === "validation") continue;
+    if (def.id === "validation") continue;
     if (!def.isComplete(workspace)) return def.id;
   }
 
@@ -273,11 +261,11 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
     const badge = validationBadge(stepValidations);
 
     let status: WorkflowStepStatus = "upcoming";
-    if (def.id === "dashboard") {
-      status = !journeyStarted ? "current" : "completed";
-    } else if (def.isComplete(workspace)) {
+    if (def.isComplete(workspace)) {
       status = "completed";
     } else if (def.id === focusStepId) {
+      status = "current";
+    } else if (!journeyStarted && def.id === "activite") {
       status = "current";
     }
 
@@ -304,7 +292,7 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
 export function resolveActiveWorkflowStep(workspace: DashboardWorkspace): WorkflowStepView {
   const steps = resolveDashboardWorkflow(workspace);
   return (
-    steps.find((step) => step.status === "current" && step.id !== "dashboard") ??
+    steps.find((step) => step.status === "current") ??
     steps.find((step) => step.id === "activite") ??
     steps[steps.length - 1]
   );
@@ -315,7 +303,7 @@ export function resolveDocumentWorkflowStep(
   workspace: DashboardWorkspace,
 ): string {
   const match = STEP_DEFINITIONS.find(
-    (def) => def.id !== "dashboard" && def.id !== "validation" && def.matchDocument(doc),
+    (def) => def.id !== "validation" && def.matchDocument(doc),
   );
   if (match) return match.label;
 
@@ -369,7 +357,6 @@ const DOCUMENT_STEP_TO_WORKFLOW_ID: Record<string, DashboardWorkflowStepId> = {
 
 /** Primary navigation target when a workflow card is clicked. */
 export function resolveWorkflowStepNavigationHref(step: WorkflowStepView): string {
-  if (step.id === "dashboard") return step.href;
   return step.uploadHref;
 }
 
@@ -378,7 +365,7 @@ export function resolveActiveWorkflowStepFromRoute(
   pathname: string,
   stepQuery: string | null,
 ): DashboardWorkflowStepId | null {
-  if (pathname === "/dashboard") return "dashboard";
+  if (pathname === "/dashboard") return null;
   if (pathname === "/declarations") return "validation";
   if (pathname === "/documents" && stepQuery === "validation") return "validation";
   if (pathname === "/revenus") return "revenus";

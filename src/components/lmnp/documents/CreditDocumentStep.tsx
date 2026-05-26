@@ -11,6 +11,10 @@ import {
 } from "@/components/lmnp/documents/document-workflow-shared";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -33,7 +37,6 @@ import {
 } from "@/lib/lmnp/services/credit-profile";
 import { buildCreditConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { LmnpDocument } from "@/lib/lmnp/types";
 
@@ -262,7 +265,6 @@ export function CreditDocumentStep() {
     showSuccess(
       "Financement configuré",
       "Vos données seront réutilisées pour les amortissements, les charges et les prochaines déclarations.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
@@ -270,9 +272,7 @@ export function CreditDocumentStep() {
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <CreditHero
@@ -287,33 +287,36 @@ export function CreditDocumentStep() {
       </div>
 
       {showConfiguredCard ? (
-        <ConfiguredDossierCard
-          title="✓ Crédit configuré"
-          rows={
-            noCreditDeclared && !confirmed
-              ? [{ label: "Statut", value: "Aucun financement déclaré" }]
-              : buildCreditConfiguredSummary(formValues, detectedLoansCount).rows
-          }
-          footnote={
-            noCreditDeclared && !confirmed
-              ? "Vous pourrez déposer vos documents de prêt à tout moment."
-              : buildCreditConfiguredSummary(formValues, detectedLoansCount).footnote
-          }
-          onEdit={() => {
-            setIsEditing(true);
-            if (noCreditDeclared && !hasUploaded) {
-              setNoCreditDeclared(false);
-              dispatch({
-                type: "DECLARATION_PATCH_DRAFT",
-                patch: { creditDeclaredNoneAt: undefined },
-              });
-              return;
+        <>
+          <ConfiguredDossierCard
+            title="✓ Crédit configuré"
+            rows={
+              noCreditDeclared && !confirmed
+                ? [{ label: "Statut", value: "Aucun financement déclaré" }]
+                : buildCreditConfiguredSummary(formValues, detectedLoansCount).rows
             }
-            setVisibleSections(2);
-            setFormValues(creditFromDraft(draft));
-            setDetectedLoansCount(draft?.creditFinancing?.loans.length ?? 1);
-          }}
-        />
+            footnote={
+              noCreditDeclared && !confirmed
+                ? "Vous pourrez déposer vos documents de prêt à tout moment."
+                : buildCreditConfiguredSummary(formValues, detectedLoansCount).footnote
+            }
+            onEdit={() => {
+              setIsEditing(true);
+              if (noCreditDeclared && !hasUploaded) {
+                setNoCreditDeclared(false);
+                dispatch({
+                  type: "DECLARATION_PATCH_DRAFT",
+                  patch: { creditDeclaredNoneAt: undefined },
+                });
+                return;
+              }
+              setVisibleSections(2);
+              setFormValues(creditFromDraft(draft));
+              setDetectedLoansCount(draft?.creditFinancing?.loans.length ?? 1);
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="credit" />
+        </>
       ) : null}
 
       {isProcessing ? (

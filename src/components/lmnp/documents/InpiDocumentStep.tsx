@@ -16,6 +16,10 @@ import {
 } from "@/components/lmnp/activite/ActiviteProfileFields";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { gradients } from "@/design-system/theme/gradients";
 import { radius } from "@/design-system/theme/radius";
@@ -29,7 +33,6 @@ import {
 } from "@/lib/lmnp/services/inpi-profile";
 import { buildActiviteConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { LmnpDocument } from "@/lib/lmnp/types";
 
@@ -242,7 +245,6 @@ export function InpiDocumentStep() {
     showSuccess(
       "Informations enregistrées",
       "Votre activité LMNP est prête pour la suite du dossier.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
@@ -258,9 +260,7 @@ export function InpiDocumentStep() {
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <ActiviteHero
@@ -313,15 +313,18 @@ export function InpiDocumentStep() {
       ) : null}
 
       {showConfiguredCard ? (
-        <ConfiguredDossierCard
-          title="✓ Activité configurée"
-          rows={buildActiviteConfiguredSummary(formValues)}
-          onEdit={() => {
-            setIsEditing(true);
-            setVisibleSections(4);
-            setFormValues(profileToFormValues(profileFromDraft(workspace)));
-          }}
-        />
+        <>
+          <ConfiguredDossierCard
+            title="✓ Activité configurée"
+            rows={buildActiviteConfiguredSummary(formValues)}
+            onEdit={() => {
+              setIsEditing(true);
+              setVisibleSections(4);
+              setFormValues(profileToFormValues(profileFromDraft(workspace)));
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="activite" />
+        </>
       ) : null}
 
       {isFailed ? (

@@ -15,6 +15,10 @@ import {
 } from "@/components/lmnp/logement/LogementProfileFields";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -33,7 +37,6 @@ import {
 } from "@/lib/lmnp/services/logement-profile";
 import { buildLogementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { LmnpDocument } from "@/lib/lmnp/types";
 
@@ -244,7 +247,6 @@ export function LogementDocumentStep() {
     showSuccess(
       "Logement configuré",
       "Vos données seront réutilisées pour le crédit, les amortissements et les charges.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
@@ -252,9 +254,7 @@ export function LogementDocumentStep() {
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <LogementHero
@@ -313,18 +313,21 @@ export function LogementDocumentStep() {
       ) : null}
 
       {showConfiguredCard ? (
-        <ConfiguredDossierCard
-          title="✓ Logement configuré"
-          rows={buildLogementConfiguredSummary(
-            formValues,
-            draft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
-          )}
-          onEdit={() => {
-            setIsEditing(true);
-            setVisibleSections(2);
-            setFormValues(logementFromWorkspace(workspace));
-          }}
-        />
+        <>
+          <ConfiguredDossierCard
+            title="✓ Logement configuré"
+            rows={buildLogementConfiguredSummary(
+              formValues,
+              draft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+            )}
+            onEdit={() => {
+              setIsEditing(true);
+              setVisibleSections(2);
+              setFormValues(logementFromWorkspace(workspace));
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="logement" />
+        </>
       ) : null}
 
       {isFailed ? (

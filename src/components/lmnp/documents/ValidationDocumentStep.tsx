@@ -19,6 +19,7 @@ import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/Va
 import { ValidationStatusCards } from "@/components/lmnp/validation-workflow/ValidationStatusCards";
 import { ValidationSupportFooter } from "@/components/lmnp/validation-workflow/ValidationSupportFooter";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import { WorkflowPageBackLink } from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -89,9 +90,7 @@ export function ValidationDocumentStep() {
   if (generated && paid) {
     return (
       <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-        <div className="flex w-full justify-center">
-          <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-        </div>
+        <WorkflowPageBackLink />
         <div
           className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both] text-center"
           style={{
@@ -124,9 +123,7 @@ export function ValidationDocumentStep() {
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       {phase === "generating" ? (
         <ActiviteAiProcessing

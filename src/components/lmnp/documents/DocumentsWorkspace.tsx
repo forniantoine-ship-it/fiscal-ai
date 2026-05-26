@@ -18,6 +18,7 @@ import { RevenusDocumentStep } from "@/components/lmnp/documents/RevenusDocument
 import { ChargesDocumentStep } from "@/components/lmnp/documents/ChargesDocumentStep";
 import { ValidationDocumentStep } from "@/components/lmnp/documents/ValidationDocumentStep";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import { WorkflowPageBackLink } from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
   getDocumentJourneyStep,
@@ -234,9 +235,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
           <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             {isBusy ? "Analyse IA en cours…" : "PDF ou images — dépôt multiple accepté"}
           </p>
-          <Button href={LMNP_ROUTES.dashboard} variant="secondary">
-            Tableau de bord
-          </Button>
+          <WorkflowPageBackLink />
         </div>
       </Card>
 

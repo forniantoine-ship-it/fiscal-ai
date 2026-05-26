@@ -15,6 +15,10 @@ import {
 } from "@/components/lmnp/documents/document-workflow-shared";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import {
+  WorkflowPageBackLink,
+  WorkflowProgressionActions,
+} from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -34,7 +38,6 @@ import {
 } from "@/lib/lmnp/services/amortissement-profile";
 import { buildAmortissementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
-import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
 
@@ -334,15 +337,12 @@ export function AmortissementDocumentStep() {
     showSuccess(
       "Amortissements préparés",
       "Vos données seront réutilisées pour les prochaines années fiscales.",
-      LMNP_ROUTES.dashboard,
     );
   }
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
-      <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
-      </div>
+      <WorkflowPageBackLink />
 
       <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
         <AmortissementHero
@@ -446,18 +446,21 @@ export function AmortissementDocumentStep() {
       ) : null}
 
       {showConfiguredCard && ventilation ? (
-        <ConfiguredDossierCard
-          title="✓ Amortissements configurés"
-          rows={buildAmortissementConfiguredSummary(
-            ventilation,
-            draft?.propertyBackgroundExtraction?.acquisitionPrice,
-          )}
-          onEdit={() => {
-            setIsEditing(true);
-            setShowVentilationTable(true);
-            setVentilation(ventilationFromDraft(draft) ?? ventilation);
-          }}
-        />
+        <>
+          <ConfiguredDossierCard
+            title="✓ Amortissements configurés"
+            rows={buildAmortissementConfiguredSummary(
+              ventilation,
+              draft?.propertyBackgroundExtraction?.acquisitionPrice,
+            )}
+            onEdit={() => {
+              setIsEditing(true);
+              setShowVentilationTable(true);
+              setVentilation(ventilationFromDraft(draft) ?? ventilation);
+            }}
+          />
+          <WorkflowProgressionActions currentStepId="amortissement" />
+        </>
       ) : null}
 
       {isFailed ? (

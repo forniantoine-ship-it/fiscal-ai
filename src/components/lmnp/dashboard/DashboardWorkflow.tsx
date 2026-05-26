@@ -58,15 +58,6 @@ function StepIcon({ id }: { id: DashboardWorkflowStepId }) {
   const common = { width: 20, height: 20, viewBox: "0 0 20 20", fill: "none", "aria-hidden": true as const };
 
   switch (id) {
-    case "dashboard":
-      return (
-        <svg {...common}>
-          <rect x="3" y="3" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
-          <rect x="11" y="3" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
-          <rect x="3" y="11" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
-          <rect x="11" y="11" width="6" height="6" rx="1.5" stroke={stroke} strokeWidth="1.4" />
-        </svg>
-      );
     case "activite":
       return (
         <svg {...common}>
@@ -272,7 +263,7 @@ function WorkflowStepCard({
           />
         </div>
 
-        {step.status === "current" && step.id !== "dashboard" ? (
+        {step.status === "current" ? (
           <div className="mt-auto pt-5">
             <ImporterCta />
           </div>
@@ -312,7 +303,7 @@ export function DashboardWorkflow({ steps }: { steps: WorkflowStepView[] }) {
   return (
     <section aria-label="Parcours LMNP">
       <div className="relative overflow-x-auto pb-2">
-        <ol className="flex min-w-[1280px] gap-4">
+        <ol className="flex min-w-[1120px] gap-4">
           {steps.map((step, index) => (
             <li key={step.id} className="min-w-[240px] flex-1">
               <WorkflowStepCard
