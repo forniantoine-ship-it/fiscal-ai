@@ -23,7 +23,10 @@ import type {
   ChargesExtractionData,
   ChargesAmortizationSuggestion,
 } from "../types";
-import { resolveChargesAmortizationDecisions } from "../services/charges-profile";
+import {
+  normalizeChargesExtraction,
+  resolveChargesAmortizationDecisions,
+} from "../services/charges-profile";
 import {
   suggestionToAmortissementComponent,
   suggestionToFromChargesItem,
@@ -158,7 +161,7 @@ function findChargesAmortizationSuggestion(
 ): ChargesAmortizationSuggestion | undefined {
   return (
     draft.chargesAmortizationDecisions?.find((item) => item.id === suggestionId) ??
-    draft.chargesExtraction?.amortizationSuggestions.find((item) => item.id === suggestionId)
+    draft.chargesExtraction?.amortizationSuggestions?.find((item) => item.id === suggestionId)
   );
 }
 
@@ -833,17 +836,22 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       const draft = state.declarationDraft ?? { completedSteps: [] };
       const completed = new Set(draft.documentStepsCompleted ?? []);
       completed.add("charges");
+      const chargesExtraction = normalizeChargesExtraction(action.extraction);
+      const chargesAmortizationDecisions = resolveChargesAmortizationDecisions(
+        chargesExtraction,
+        draft,
+      );
       return finalizeState({
         ...state,
         declarationDraft: {
           ...draft,
           chargesDocumentIds: action.documentIds ?? draft.chargesDocumentIds,
           chargesConfirmedAt: nowIso(),
-          chargesExtraction: action.extraction,
-          chargesAmortizationDecisions: resolveChargesAmortizationDecisions(
-            action.extraction,
-            draft,
-          ),
+          chargesExtraction: {
+            ...chargesExtraction,
+            amortizationSuggestions: chargesAmortizationDecisions,
+          },
+          chargesAmortizationDecisions,
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "charges"])],
         },
@@ -871,11 +879,12 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
       const component = suggestionToAmortissementComponent(updated);
       const ventilation = draft.amortissementVentilation;
+      const ventilationComponents = ventilation?.components ?? [];
       const nextVentilation = ventilation
         ? {
             ...ventilation,
             components: [
-              ...ventilation.components.filter((row) => row.id !== component.id),
+              ...ventilationComponents.filter((row) => row.id !== component.id),
               component,
             ],
           }
@@ -887,11 +896,20 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           }
         : undefined;
 
+      const chargesAmortizationDecisions = upsertChargesAmortizationDecision(draft, updated);
+      const chargesExtraction = draft.chargesExtraction
+        ? {
+            ...normalizeChargesExtraction(draft.chargesExtraction),
+            amortizationSuggestions: chargesAmortizationDecisions,
+          }
+        : undefined;
+
       return finalizeState({
         ...state,
         declarationDraft: {
           ...draft,
-          chargesAmortizationDecisions: upsertChargesAmortizationDecision(draft, updated),
+          chargesAmortizationDecisions,
+          chargesExtraction,
           amortissementFromCharges: fromCharges,
           amortissementVentilation,
         },
@@ -909,11 +927,20 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         decidedAt: nowIso(),
       };
 
+      const chargesAmortizationDecisions = upsertChargesAmortizationDecision(draft, updated);
+      const chargesExtraction = draft.chargesExtraction
+        ? {
+            ...normalizeChargesExtraction(draft.chargesExtraction),
+            amortizationSuggestions: chargesAmortizationDecisions,
+          }
+        : undefined;
+
       return finalizeState({
         ...state,
         declarationDraft: {
           ...draft,
-          chargesAmortizationDecisions: upsertChargesAmortizationDecision(draft, updated),
+          chargesAmortizationDecisions,
+          chargesExtraction,
         },
       });
     }

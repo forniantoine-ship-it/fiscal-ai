@@ -373,31 +373,54 @@ export function buildChargesExtraction(
   };
 }
 
+export function normalizeChargesExtraction(
+  extraction: ChargesExtractionData,
+): ChargesExtractionData {
+  const categories = extraction.categories ?? [];
+  const suggestions = extraction.amortizationSuggestions ?? [];
+  const summary = extraction.summary ?? recalculateChargesSummary(categories, 0);
+
+  return {
+    ...extraction,
+    categories,
+    amortizationSuggestions: suggestions,
+    recoveredFromOtherSteps: extraction.recoveredFromOtherSteps ?? 0,
+    summary,
+  };
+}
+
 export function resolveChargesAmortizationDecisions(
   extraction: ChargesExtractionData,
   draft?: DeclarationDraft,
 ): ChargesAmortizationSuggestion[] {
-  return mergeSuggestionsIntoDecisions(
+  const normalized = normalizeChargesExtraction(extraction);
+  const merged = mergeSuggestionsIntoDecisions(
     draft?.chargesAmortizationDecisions,
-    extraction.amortizationSuggestions,
+    normalized.amortizationSuggestions,
+  );
+
+  if (merged.length > 0) return merged;
+
+  return buildAmortizationSuggestionsFromCategories(
+    normalized.categories,
+    draft?.chargesAmortizationDecisions,
   );
 }
 
 export function chargesFromDraft(draft?: DeclarationDraft): ChargesExtractionData | undefined {
   const raw = draft?.chargesExtraction;
   if (!raw) return undefined;
-  if (raw.amortizationSuggestions?.length) {
-    return {
-      ...raw,
-      amortizationSuggestions: resolveChargesAmortizationDecisions(raw, draft),
-    };
-  }
+
+  const normalized = normalizeChargesExtraction(raw);
+  const categories = normalized.categories ?? [];
+
   return {
-    ...raw,
-    amortizationSuggestions: buildAmortizationSuggestionsFromCategories(
-      raw.categories,
-      draft?.chargesAmortizationDecisions,
-    ),
+    ...normalized,
+    categories,
+    amortizationSuggestions:
+      normalized.amortizationSuggestions.length > 0
+        ? resolveChargesAmortizationDecisions(normalized, draft)
+        : buildAmortizationSuggestionsFromCategories(categories, draft?.chargesAmortizationDecisions),
   };
 }
 

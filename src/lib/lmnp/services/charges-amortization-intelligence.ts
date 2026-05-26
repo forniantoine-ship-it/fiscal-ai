@@ -181,18 +181,18 @@ export function buildAmortizationSuggestionsFromCategories(
 }
 
 export function pendingAmortizationSuggestions(
-  suggestions: ChargesAmortizationSuggestion[],
+  suggestions?: ChargesAmortizationSuggestion[],
 ): ChargesAmortizationSuggestion[] {
-  return suggestions.filter((item) => item.status === "pending");
+  return (suggestions ?? []).filter((item) => item.status === "pending");
 }
 
 export function mergeSuggestionsIntoDecisions(
   current: ChargesAmortizationSuggestion[] | undefined,
-  nextDetected: ChargesAmortizationSuggestion[],
+  nextDetected?: ChargesAmortizationSuggestion[],
 ): ChargesAmortizationSuggestion[] {
   const byLine = new Map((current ?? []).map((item) => [item.expenseLineId, item]));
 
-  for (const item of nextDetected) {
+  for (const item of nextDetected ?? []) {
     const existing = byLine.get(item.expenseLineId);
     if (existing) {
       byLine.set(item.expenseLineId, {
