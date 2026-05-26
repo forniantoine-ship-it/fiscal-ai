@@ -173,7 +173,9 @@ export function buildAmortizationSuggestionsFromCategories(
       }
 
       const suggestion = buildSuggestionFromLine(expenseLine, cat.category);
-      if (suggestion) detected.push(suggestion);
+      if (!suggestion) continue;
+
+      detected.push(suggestion);
     }
   }
 

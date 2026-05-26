@@ -20,6 +20,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { pendingAmortizationSuggestions } from "@/lib/lmnp/services/charges-amortization-intelligence";
 import {
+  buildChargesDraftPatch,
   buildChargesExtraction,
   chargesFromDraft,
   countChargesDocuments,
@@ -109,11 +110,22 @@ export function ChargesDocumentStep() {
     [amortizationDecisions],
   );
 
+  const persistChargesExtraction = useCallback(
+    (nextExtraction: ChargesExtractionData) => {
+      setExtraction(nextExtraction);
+      dispatch({
+        type: "DECLARATION_PATCH_DRAFT",
+        patch: buildChargesDraftPatch(nextExtraction, workspace.declarationDraft),
+      });
+    },
+    [dispatch, workspace.declarationDraft],
+  );
+
   const handleAiAnimationComplete = useCallback(() => {
     const nextExtraction = buildChargesExtraction(workspace.properties, draft);
-    setExtraction(nextExtraction);
+    persistChargesExtraction(nextExtraction);
     setAiAnimationDone(true);
-  }, [workspace.properties, draft]);
+  }, [workspace.properties, draft, persistChargesExtraction]);
 
   useEffect(() => {
     if (!chargesConfirmedAt) {
@@ -191,7 +203,7 @@ export function ChargesDocumentStep() {
     ) {
       setHasUploaded(true);
       setAiAnimationDone(true);
-      setExtraction(buildChargesExtraction(workspace.properties, draft));
+      persistChargesExtraction(buildChargesExtraction(workspace.properties, draft));
     }
   }, [
     draft?.chargesDocumentIds?.length,
@@ -200,6 +212,7 @@ export function ChargesDocumentStep() {
     confirmed,
     workspace.properties,
     draft,
+    persistChargesExtraction,
   ]);
 
   function handleUpload(files: File[]) {
@@ -234,7 +247,7 @@ export function ChargesDocumentStep() {
   function handleManualContinue() {
     setManualMode(true);
     setAiAnimationDone(true);
-    setExtraction(buildChargesExtraction(workspace.properties, draft));
+    persistChargesExtraction(buildChargesExtraction(workspace.properties, draft));
   }
 
   useEffect(() => {
@@ -242,13 +255,37 @@ export function ChargesDocumentStep() {
     if (lastAmortizationRefreshKeyRef.current === amortizationDecisionsKey) return;
 
     lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
-    setExtraction(buildChargesExtraction(workspace.properties, workspace.declarationDraft));
-  }, [amortizationDecisionsKey, aiAnimationDone, confirmed, workspace.properties, draft]);
+
+    const draftState = workspace.declarationDraft;
+    const decisions = draftState?.chargesAmortizationDecisions;
+    setExtraction((prev) => {
+      const base =
+        prev ??
+        (draftState?.chargesExtraction
+          ? chargesFromDraft(draftState)
+          : buildChargesExtraction(workspace.properties, draftState));
+      if (!base) return prev;
+      return {
+        ...base,
+        amortizationSuggestions:
+          decisions && decisions.length > 0
+            ? decisions
+            : resolveChargesAmortizationDecisions(base, draftState),
+      };
+    });
+  }, [amortizationDecisionsKey, aiAnimationDone, confirmed, workspace.properties, workspace.declarationDraft]);
 
   function handleTransferSuggestion(suggestionId: string) {
+    const suggestion = amortizationDecisions.find((item) => item.id === suggestionId);
+    if (!suggestion) return;
+
     setTransferringId(suggestionId);
     window.setTimeout(() => {
-      dispatch({ type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION", suggestionId });
+      dispatch({
+        type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION",
+        suggestionId,
+        suggestion,
+      });
       setTransferringId(null);
       setTransferConfirmedId(suggestionId);
       window.setTimeout(() => setTransferConfirmedId(null), 2200);
@@ -256,7 +293,14 @@ export function ChargesDocumentStep() {
   }
 
   function handleKeepSuggestion(suggestionId: string) {
-    dispatch({ type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION", suggestionId });
+    const suggestion = amortizationDecisions.find((item) => item.id === suggestionId);
+    if (!suggestion) return;
+
+    dispatch({
+      type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION",
+      suggestionId,
+      suggestion,
+    });
   }
 
   function handleConfirm() {

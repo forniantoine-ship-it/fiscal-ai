@@ -389,6 +389,22 @@ export function normalizeChargesExtraction(
   };
 }
 
+export function buildChargesDraftPatch(
+  extraction: ChargesExtractionData,
+  draft?: DeclarationDraft,
+): Pick<DeclarationDraft, "chargesExtraction" | "chargesAmortizationDecisions"> {
+  const normalized = normalizeChargesExtraction(extraction);
+  const chargesAmortizationDecisions = resolveChargesAmortizationDecisions(normalized, draft);
+
+  return {
+    chargesExtraction: {
+      ...normalized,
+      amortizationSuggestions: chargesAmortizationDecisions,
+    },
+    chargesAmortizationDecisions,
+  };
+}
+
 export function resolveChargesAmortizationDecisions(
   extraction: ChargesExtractionData,
   draft?: DeclarationDraft,

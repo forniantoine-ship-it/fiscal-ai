@@ -145,8 +145,16 @@ export type LmnpAction =
       extraction: ChargesExtractionData;
       documentIds?: string[];
     }
-  | { type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION"; suggestionId: string }
-  | { type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION"; suggestionId: string }
+  | {
+      type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION";
+      suggestionId: string;
+      suggestion?: ChargesAmortizationSuggestion;
+    }
+  | {
+      type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION";
+      suggestionId: string;
+      suggestion?: ChargesAmortizationSuggestion;
+    }
   | { type: "DECLARE_NO_CREDIT" }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
   | { type: "START_DOCUMENT_JOURNEY" };
@@ -860,7 +868,8 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
-      const suggestion = findChargesAmortizationSuggestion(draft, action.suggestionId);
+      const suggestion =
+        action.suggestion ?? findChargesAmortizationSuggestion(draft, action.suggestionId);
       if (!suggestion) return state;
 
       const at = nowIso();
@@ -897,12 +906,22 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         : undefined;
 
       const chargesAmortizationDecisions = upsertChargesAmortizationDecision(draft, updated);
-      const chargesExtraction = draft.chargesExtraction
-        ? {
-            ...normalizeChargesExtraction(draft.chargesExtraction),
-            amortizationSuggestions: chargesAmortizationDecisions,
-          }
-        : undefined;
+      const chargesExtraction = {
+        ...normalizeChargesExtraction(
+          draft.chargesExtraction ?? {
+            categories: [],
+            recoveredFromOtherSteps: 0,
+            amortizationSuggestions: [],
+            summary: {
+              totalCharges: updated.amount,
+              categoryCount: 0,
+              recoverableTotal: updated.amount,
+              nonRecoverableTotal: 0,
+            },
+          },
+        ),
+        amortizationSuggestions: chargesAmortizationDecisions,
+      };
 
       return finalizeState({
         ...state,
@@ -918,7 +937,8 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "KEEP_CHARGES_AMORTIZATION_SUGGESTION": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
-      const suggestion = findChargesAmortizationSuggestion(draft, action.suggestionId);
+      const suggestion =
+        action.suggestion ?? findChargesAmortizationSuggestion(draft, action.suggestionId);
       if (!suggestion) return state;
 
       const updated: ChargesAmortizationSuggestion = {
@@ -928,12 +948,22 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       };
 
       const chargesAmortizationDecisions = upsertChargesAmortizationDecision(draft, updated);
-      const chargesExtraction = draft.chargesExtraction
-        ? {
-            ...normalizeChargesExtraction(draft.chargesExtraction),
-            amortizationSuggestions: chargesAmortizationDecisions,
-          }
-        : undefined;
+      const chargesExtraction = {
+        ...normalizeChargesExtraction(
+          draft.chargesExtraction ?? {
+            categories: [],
+            recoveredFromOtherSteps: 0,
+            amortizationSuggestions: [],
+            summary: {
+              totalCharges: updated.amount,
+              categoryCount: 0,
+              recoverableTotal: updated.amount,
+              nonRecoverableTotal: 0,
+            },
+          },
+        ),
+        amortizationSuggestions: chargesAmortizationDecisions,
+      };
 
       return finalizeState({
         ...state,
