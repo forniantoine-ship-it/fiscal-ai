@@ -47,9 +47,12 @@ export function ChargesDocumentStep() {
   const { showSuccess, showInfo } = useFeedback();
   const analyzingRef = useRef(false);
   const pendingUploadRef = useRef(false);
+  const syncedConfirmedAtRef = useRef<string | undefined>(undefined);
+  const lastAmortizationRefreshKeyRef = useRef<string>("");
 
   const draft = workspace.declarationDraft;
-  const confirmed = Boolean(draft?.chargesConfirmedAt);
+  const chargesConfirmedAt = draft?.chargesConfirmedAt;
+  const confirmed = Boolean(chargesConfirmedAt);
 
   const chargesDocs = useMemo(
     () => resolveChargesDocuments(workspace.documents, draft?.chargesDocumentIds),
@@ -88,10 +91,18 @@ export function ChargesDocumentStep() {
     aiAnimationDone && !showConfiguredCard && Boolean(extraction);
   const incomplete = extraction ? isChargesExtractionIncomplete(extraction) : false;
 
+  const amortizationDecisionsKey = useMemo(
+    () =>
+      (draft?.chargesAmortizationDecisions ?? [])
+        .map((item) => `${item.expenseLineId}:${item.status}`)
+        .join("|"),
+    [draft?.chargesAmortizationDecisions],
+  );
+
   const amortizationDecisions = useMemo(() => {
     if (!extraction) return [];
     return resolveChargesAmortizationDecisions(extraction, draft);
-  }, [extraction, draft]);
+  }, [extraction, amortizationDecisionsKey, draft?.chargesExtraction]);
 
   const pendingSuggestions = useMemo(
     () => pendingAmortizationSuggestions(amortizationDecisions),
@@ -105,21 +116,34 @@ export function ChargesDocumentStep() {
   }, [workspace.properties, draft]);
 
   useEffect(() => {
-    if (confirmed) {
-      setHasUploaded(true);
-      setValidatedSuccess(true);
-      setIsEditing(false);
-      setAiAnimationDone(true);
-      setExtraction(chargesFromDraft(draft));
+    if (!chargesConfirmedAt) {
+      syncedConfirmedAtRef.current = undefined;
       return;
     }
 
-    if (draft?.chargesExtraction && !extraction) {
-      setExtraction(draft.chargesExtraction);
-      setAiAnimationDone(true);
-      setHasUploaded(true);
+    if (syncedConfirmedAtRef.current === chargesConfirmedAt) return;
+    syncedConfirmedAtRef.current = chargesConfirmedAt;
+
+    setHasUploaded(true);
+    setValidatedSuccess(true);
+    setIsEditing(false);
+    setAiAnimationDone(true);
+
+    const fromDraft = chargesFromDraft(draft);
+    if (fromDraft) {
+      setExtraction((current) => current ?? fromDraft);
     }
-  }, [confirmed, draft, extraction]);
+  }, [chargesConfirmedAt, draft]);
+
+  useEffect(() => {
+    if (chargesConfirmedAt) return;
+    const saved = draft?.chargesExtraction;
+    if (!saved) return;
+
+    setExtraction((current) => current ?? saved);
+    setAiAnimationDone((prev) => prev || true);
+    setHasUploaded((prev) => prev || true);
+  }, [chargesConfirmedAt, draft?.chargesExtraction]);
 
   useEffect(() => {
     if (!pendingUploadRef.current || chargesDocs.length === 0) return;
@@ -186,6 +210,7 @@ export function ChargesDocumentStep() {
     setManualMode(false);
     setHasUploaded(true);
     pendingUploadRef.current = true;
+    lastAmortizationRefreshKeyRef.current = "";
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
@@ -214,14 +239,11 @@ export function ChargesDocumentStep() {
 
   useEffect(() => {
     if (!aiAnimationDone || confirmed) return;
+    if (lastAmortizationRefreshKeyRef.current === amortizationDecisionsKey) return;
+
+    lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
     setExtraction(buildChargesExtraction(workspace.properties, workspace.declarationDraft));
-  }, [
-    workspace.declarationDraft?.chargesAmortizationDecisions,
-    aiAnimationDone,
-    confirmed,
-    workspace.properties,
-    workspace.declarationDraft,
-  ]);
+  }, [amortizationDecisionsKey, aiAnimationDone, confirmed, workspace.properties, draft]);
 
   function handleTransferSuggestion(suggestionId: string) {
     setTransferringId(suggestionId);
