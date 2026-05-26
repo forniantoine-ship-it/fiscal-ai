@@ -6,6 +6,10 @@ import type {
   LmnpDocument,
 } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import {
+  assessExpenseAmortizationCandidate,
+  suggestionToAmortissementComponent,
+} from "./charges-amortization-intelligence";
 
 export type { AmortissementAllocation, AmortissementComponent, AmortissementVentilationData };
 
@@ -77,8 +81,16 @@ export function allocationLabel(allocation: AmortissementAllocation): string {
   return "Immobilisation";
 }
 
-export function suggestAllocation(amount: number): AmortissementAllocation {
-  return amount < 600 ? "charge-immediate" : "immobilisation";
+export function suggestAllocation(amount: number, label?: string): AmortissementAllocation {
+  if (label) {
+    const assessment = assessExpenseAmortizationCandidate(
+      { label, amount },
+      "works_deductible",
+    );
+    if (assessment?.eligible) return "immobilisation";
+    return "charge-immediate";
+  }
+  return "charge-immediate";
 }
 
 function computeAnnual(amount: number, durationYears: number, allocation: AmortissementAllocation): number {
@@ -240,7 +252,15 @@ export function buildVentilationFromDossier(
     .filter((inv) => inv.allocation === "immobilisation")
     .map(invoiceToComponent);
 
-  const components = [...base, ...invoiceComponents];
+  const transferredDecisions =
+    workspace.declarationDraft?.chargesAmortizationDecisions?.filter(
+      (item) => item.status === "transferred",
+    ) ?? [];
+  const fromChargesComponents = transferredDecisions.map((item) =>
+    suggestionToAmortissementComponent(item),
+  );
+
+  const components = [...base, ...invoiceComponents, ...fromChargesComponents];
   const travauxTotal = invoices.filter((i) => i.type === "travaux").reduce((sum, i) => sum + i.amount, 0);
   const mobilierTotal = invoices.filter((i) => i.type === "mobilier").reduce((sum, i) => sum + i.amount, 0);
   const amortizable = components.filter((c) => c.allocation === "immobilisation");

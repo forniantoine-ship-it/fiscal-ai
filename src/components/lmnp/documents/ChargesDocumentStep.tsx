@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
+import { ChargesAmortizationSuggestions } from "@/components/lmnp/charges/ChargesAmortizationSuggestions";
 import { ChargesCategoryCards } from "@/components/lmnp/charges/ChargesCategoryCards";
 import { ChargesHero } from "@/components/lmnp/charges/ChargesHero";
 import { ChargesSummaryCard } from "@/components/lmnp/charges/ChargesSummaryCard";
@@ -17,11 +18,13 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import { pendingAmortizationSuggestions } from "@/lib/lmnp/services/charges-amortization-intelligence";
 import {
   buildChargesExtraction,
   chargesFromDraft,
   countChargesDocuments,
   isChargesExtractionIncomplete,
+  resolveChargesAmortizationDecisions,
   resolveChargesDocuments,
   type ChargesExtractionData,
 } from "@/lib/lmnp/services/charges-profile";
@@ -68,6 +71,8 @@ export function ChargesDocumentStep() {
   const [extraction, setExtraction] = useState<ChargesExtractionData | undefined>(() =>
     chargesFromDraft(draft),
   );
+  const [transferringId, setTransferringId] = useState<string | null>(null);
+  const [transferConfirmedId, setTransferConfirmedId] = useState<string | null>(null);
 
   const pendingDocIds = useMemo(
     () => chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
@@ -82,6 +87,16 @@ export function ChargesDocumentStep() {
   const showChargesContent =
     aiAnimationDone && !showConfiguredCard && Boolean(extraction);
   const incomplete = extraction ? isChargesExtractionIncomplete(extraction) : false;
+
+  const amortizationDecisions = useMemo(() => {
+    if (!extraction) return [];
+    return resolveChargesAmortizationDecisions(extraction, draft);
+  }, [extraction, draft]);
+
+  const pendingSuggestions = useMemo(
+    () => pendingAmortizationSuggestions(amortizationDecisions),
+    [amortizationDecisions],
+  );
 
   const handleAiAnimationComplete = useCallback(() => {
     const nextExtraction = buildChargesExtraction(workspace.properties, draft);
@@ -197,12 +212,41 @@ export function ChargesDocumentStep() {
     setExtraction(buildChargesExtraction(workspace.properties, draft));
   }
 
+  useEffect(() => {
+    if (!aiAnimationDone || confirmed) return;
+    setExtraction(buildChargesExtraction(workspace.properties, workspace.declarationDraft));
+  }, [
+    workspace.declarationDraft?.chargesAmortizationDecisions,
+    aiAnimationDone,
+    confirmed,
+    workspace.properties,
+    workspace.declarationDraft,
+  ]);
+
+  function handleTransferSuggestion(suggestionId: string) {
+    setTransferringId(suggestionId);
+    window.setTimeout(() => {
+      dispatch({ type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION", suggestionId });
+      setTransferringId(null);
+      setTransferConfirmedId(suggestionId);
+      window.setTimeout(() => setTransferConfirmedId(null), 2200);
+    }, 900);
+  }
+
+  function handleKeepSuggestion(suggestionId: string) {
+    dispatch({ type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION", suggestionId });
+  }
+
   function handleConfirm() {
     if (!extraction) return;
     const documentIds = chargesDocs.map((doc) => doc.id);
+    const extractionWithDecisions: ChargesExtractionData = {
+      ...extraction,
+      amortizationSuggestions: amortizationDecisions,
+    };
     dispatch({
       type: "CONFIRM_CHARGES",
-      extraction,
+      extraction: extractionWithDecisions,
       documentIds,
     });
     setValidatedSuccess(true);
@@ -246,8 +290,23 @@ export function ChargesDocumentStep() {
             cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
             showIncompleteWarning={incomplete}
             onConfirm={handleConfirm}
-            showConfirm
+            showConfirm={pendingSuggestions.length === 0}
           />
+          <ChargesAmortizationSuggestions
+            suggestions={amortizationDecisions}
+            onTransfer={handleTransferSuggestion}
+            onKeepAsCharge={handleKeepSuggestion}
+            transferringId={transferringId}
+            transferConfirmedId={transferConfirmedId}
+          />
+          {pendingSuggestions.length > 0 ? (
+            <p
+              className="mx-auto max-w-md text-center"
+              style={{ ...typography.caption.desktop, color: colors.text.muted }}
+            >
+              Vous pourrez confirmer vos charges une fois les suggestions examinées.
+            </p>
+          ) : null}
         </>
       ) : null}
 

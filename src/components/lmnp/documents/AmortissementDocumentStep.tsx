@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
+import { AmortissementFromChargesSection } from "@/components/lmnp/amortissement/AmortissementFromChargesSection";
 import { AmortissementHero } from "@/components/lmnp/amortissement/AmortissementHero";
 import { AmortissementItemCards } from "@/components/lmnp/amortissement/AmortissementItemCards";
 import { AmortissementSummaryCard } from "@/components/lmnp/amortissement/AmortissementSummaryCard";
@@ -134,9 +135,13 @@ export function AmortissementDocumentStep() {
     documentsReady;
   const isProcessing = canRunAi;
   const isFailed = hasFailed && !aiAnimationDone && !manualMode && readyForAnalysis;
+  const fromChargesItems = draft?.amortissementFromCharges ?? [];
+
   const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
   const showSummary = aiAnimationDone && !showVentilationTable && !showConfiguredCard;
   const showTable = showVentilationTable && !showConfiguredCard;
+  const showFromChargesSection =
+    fromChargesItems.length > 0 && (aiAnimationDone || showConfiguredCard || showVentilationTable);
 
   const showContinuitySection = activityAnswered && needsContinuity && !continuityReady;
   const showTravauxSection = activityAnswered && continuityReady && !travauxReady;
@@ -293,6 +298,31 @@ export function AmortissementDocumentStep() {
     });
   }
 
+  function handleEditFromCharges(itemId: string) {
+    const item = fromChargesItems.find((entry) => entry.id === itemId);
+    if (!item) return;
+
+    setIsEditing(true);
+    setShowVentilationTable(true);
+    setValidatedSuccess(false);
+
+    if (!ventilation) {
+      const nextVentilation = buildVentilationFromDossier(
+        {
+          fiscalYear: workspace.fiscalYear,
+          properties: workspace.properties,
+          documents: workspace.documents,
+          extractions: workspace.extractions,
+          validationItems: workspace.validationItems,
+          ledgerEntries: workspace.ledgerEntries,
+          declarationDraft: workspace.declarationDraft,
+        },
+        extractedInvoices,
+      );
+      setVentilation(nextVentilation);
+    }
+  }
+
   function handleConfirm() {
     if (!ventilation) return;
     dispatch({
@@ -387,6 +417,14 @@ export function AmortissementDocumentStep() {
           invoices={extractedInvoices}
           cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
           visible={travauxCount > 0 || mobilierCount > 0 || manualMode}
+        />
+      ) : null}
+
+      {showFromChargesSection ? (
+        <AmortissementFromChargesSection
+          items={fromChargesItems}
+          onEdit={handleEditFromCharges}
+          cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
         />
       ) : null}
 

@@ -21,7 +21,14 @@ import type {
   AmortissementVentilationData,
   RevenusExtractionData,
   ChargesExtractionData,
+  ChargesAmortizationSuggestion,
 } from "../types";
+import { resolveChargesAmortizationDecisions } from "../services/charges-profile";
+import {
+  suggestionToAmortissementComponent,
+  suggestionToFromChargesItem,
+} from "../services/charges-amortization-intelligence";
+import { recalculateVentilationSummary } from "../services/amortissement-profile";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
 import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/field-keys";
@@ -135,12 +142,36 @@ export type LmnpAction =
       extraction: ChargesExtractionData;
       documentIds?: string[];
     }
+  | { type: "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION"; suggestionId: string }
+  | { type: "KEEP_CHARGES_AMORTIZATION_SUGGESTION"; suggestionId: string }
   | { type: "DECLARE_NO_CREDIT" }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
   | { type: "START_DOCUMENT_JOURNEY" };
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function findChargesAmortizationSuggestion(
+  draft: DeclarationDraft,
+  suggestionId: string,
+): ChargesAmortizationSuggestion | undefined {
+  return (
+    draft.chargesAmortizationDecisions?.find((item) => item.id === suggestionId) ??
+    draft.chargesExtraction?.amortizationSuggestions.find((item) => item.id === suggestionId)
+  );
+}
+
+function upsertChargesAmortizationDecision(
+  draft: DeclarationDraft,
+  updated: ChargesAmortizationSuggestion,
+): ChargesAmortizationSuggestion[] {
+  const existing = draft.chargesAmortizationDecisions ?? [];
+  const index = existing.findIndex((item) => item.id === updated.id);
+  if (index < 0) return [...existing, updated];
+  const next = [...existing];
+  next[index] = updated;
+  return next;
 }
 
 function touchFiscalYear(
@@ -809,8 +840,80 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           chargesDocumentIds: action.documentIds ?? draft.chargesDocumentIds,
           chargesConfirmedAt: nowIso(),
           chargesExtraction: action.extraction,
+          chargesAmortizationDecisions: resolveChargesAmortizationDecisions(
+            action.extraction,
+            draft,
+          ),
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "charges"])],
+        },
+      });
+    }
+
+    case "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const suggestion = findChargesAmortizationSuggestion(draft, action.suggestionId);
+      if (!suggestion) return state;
+
+      const at = nowIso();
+      const updated: ChargesAmortizationSuggestion = {
+        ...suggestion,
+        status: "transferred",
+        decidedAt: at,
+        transferredAt: at,
+      };
+      const fromChargesItem = suggestionToFromChargesItem(updated, at);
+      const existingFromCharges = draft.amortissementFromCharges ?? [];
+      const fromCharges = [
+        ...existingFromCharges.filter((item) => item.suggestionId !== updated.id),
+        fromChargesItem,
+      ];
+
+      const component = suggestionToAmortissementComponent(updated);
+      const ventilation = draft.amortissementVentilation;
+      const nextVentilation = ventilation
+        ? {
+            ...ventilation,
+            components: [
+              ...ventilation.components.filter((row) => row.id !== component.id),
+              component,
+            ],
+          }
+        : undefined;
+      const amortissementVentilation = nextVentilation
+        ? {
+            ...nextVentilation,
+            summary: recalculateVentilationSummary(nextVentilation.components),
+          }
+        : undefined;
+
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          chargesAmortizationDecisions: upsertChargesAmortizationDecision(draft, updated),
+          amortissementFromCharges: fromCharges,
+          amortissementVentilation,
+        },
+      });
+    }
+
+    case "KEEP_CHARGES_AMORTIZATION_SUGGESTION": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const suggestion = findChargesAmortizationSuggestion(draft, action.suggestionId);
+      if (!suggestion) return state;
+
+      const updated: ChargesAmortizationSuggestion = {
+        ...suggestion,
+        status: "kept_as_charge",
+        decidedAt: nowIso(),
+      };
+
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          chargesAmortizationDecisions: upsertChargesAmortizationDecision(draft, updated),
         },
       });
     }

@@ -1,4 +1,5 @@
 import type {
+  ChargesAmortizationSuggestion,
   ChargesCategoryData,
   ChargesExtractionData,
   ChargesExpenseLine,
@@ -7,6 +8,10 @@ import type {
   LmnpDocument,
   Property,
 } from "../types";
+import {
+  buildAmortizationSuggestionsFromCategories,
+  mergeSuggestionsIntoDecisions,
+} from "./charges-amortization-intelligence";
 
 export type { ChargesCategoryData, ChargesExtractionData, ChargesExpenseLine };
 
@@ -75,7 +80,6 @@ function line(
   return {
     id: partial.id ?? `line-${Math.random().toString(36).slice(2, 9)}`,
     ...partial,
-    suggestsImmobilization: partial.suggestsImmobilization ?? partial.amount > 600,
   };
 }
 
@@ -175,7 +179,6 @@ function recoveredFromAmortissement(draft?: DeclarationDraft, primaryLabel?: str
       amount: item.amount,
       propertyLabel: primaryLabel,
       recoverable: true,
-      suggestsImmobilization: item.amount > 600,
       source: "amortissement",
     }),
   );
@@ -262,6 +265,7 @@ function mockUploadedCategories(primary?: Property): ChargesCategoryData[] {
       propertyLabel: label,
       lines: [
         line({
+          id: "line-internet",
           label: "Abonnement internet",
           amount: 480,
           date: "2025-12-01",
@@ -271,12 +275,30 @@ function mockUploadedCategories(primary?: Property): ChargesCategoryData[] {
           source: "upload",
         }),
         line({
+          id: "line-cuisine-equipee",
+          label: "Cuisine équipée",
+          amount: 4200,
+          date: "2025-04-12",
+          propertyLabel: label,
+          recoverable: true,
+          source: "upload",
+        }),
+        line({
+          id: "line-sdb",
           label: "Réfection salle de bain",
           amount: 1850,
           date: "2025-06-18",
           propertyLabel: label,
           recoverable: true,
-          suggestsImmobilization: true,
+          source: "upload",
+        }),
+        line({
+          id: "line-peinture",
+          label: "Retouche peinture salon",
+          amount: 450,
+          date: "2025-08-03",
+          propertyLabel: label,
+          recoverable: true,
           source: "upload",
         }),
       ],
@@ -338,16 +360,45 @@ export function buildChargesExtraction(
   const recoveredCount = recovered.reduce((sum, cat) => sum + cat.lines.length, 0);
 
   const categories = mergeCategories([...recovered, ...mockUploadedCategories(primary)]);
+  const amortizationSuggestions = buildAmortizationSuggestionsFromCategories(
+    categories,
+    draft?.chargesAmortizationDecisions,
+  );
 
   return {
     categories,
     recoveredFromOtherSteps: recoveredCount,
+    amortizationSuggestions,
     summary: recalculateChargesSummary(categories, recoveredCount),
   };
 }
 
+export function resolveChargesAmortizationDecisions(
+  extraction: ChargesExtractionData,
+  draft?: DeclarationDraft,
+): ChargesAmortizationSuggestion[] {
+  return mergeSuggestionsIntoDecisions(
+    draft?.chargesAmortizationDecisions,
+    extraction.amortizationSuggestions,
+  );
+}
+
 export function chargesFromDraft(draft?: DeclarationDraft): ChargesExtractionData | undefined {
-  return draft?.chargesExtraction;
+  const raw = draft?.chargesExtraction;
+  if (!raw) return undefined;
+  if (raw.amortizationSuggestions?.length) {
+    return {
+      ...raw,
+      amortizationSuggestions: resolveChargesAmortizationDecisions(raw, draft),
+    };
+  }
+  return {
+    ...raw,
+    amortizationSuggestions: buildAmortizationSuggestionsFromCategories(
+      raw.categories,
+      draft?.chargesAmortizationDecisions,
+    ),
+  };
 }
 
 export function isChargesExtractionIncomplete(data: ChargesExtractionData): boolean {

@@ -144,7 +144,7 @@ export interface AmortissementComponent {
   practicedAmortization?: number;
   vnc?: number;
   remainingYears?: number;
-  source?: "continuity" | "travaux" | "mobilier" | "dossier";
+  source?: "continuity" | "travaux" | "mobilier" | "dossier" | "charges";
 }
 
 export interface AmortissementVentilationData {
@@ -196,8 +196,43 @@ export interface ChargesExpenseLine {
   propertyLabel?: string;
   recoverable: boolean;
   recurring?: boolean;
-  suggestsImmobilization?: boolean;
   source?: ChargesExpenseSource;
+}
+
+export type ChargesAmortizationSuggestionStatus = "pending" | "transferred" | "kept_as_charge";
+
+export type ChargesAmortizationWorkType =
+  | "operating_charge"
+  | "light_maintenance"
+  | "durable_improvement"
+  | "furniture"
+  | "equipment";
+
+export interface ChargesAmortizationSuggestion {
+  id: string;
+  expenseLineId: string;
+  label: string;
+  amount: number;
+  propertyLabel?: string;
+  amortCategory: string;
+  durationYears: number;
+  natureSummary: string;
+  workType: ChargesAmortizationWorkType;
+  status: ChargesAmortizationSuggestionStatus;
+  decidedAt?: string;
+  transferredAt?: string;
+}
+
+export interface AmortissementFromChargesItem {
+  id: string;
+  suggestionId: string;
+  expenseLineId: string;
+  label: string;
+  category: string;
+  amount: number;
+  durationYears: number;
+  propertyLabel?: string;
+  transferredAt: string;
 }
 
 export interface ChargesCategoryData {
@@ -214,6 +249,7 @@ export interface ChargesCategoryData {
 export interface ChargesExtractionData {
   categories: ChargesCategoryData[];
   recoveredFromOtherSteps: number;
+  amortizationSuggestions: ChargesAmortizationSuggestion[];
   summary: {
     totalCharges: number;
     categoryCount: number;
@@ -335,6 +371,8 @@ export interface DeclarationDraft {
   chargesDocumentIds?: string[];
   chargesConfirmedAt?: string;
   chargesExtraction?: ChargesExtractionData;
+  chargesAmortizationDecisions?: ChargesAmortizationSuggestion[];
+  amortissementFromCharges?: AmortissementFromChargesItem[];
   usagesPersonnelsConfirmed?: boolean;
   baremeCarburantConfirmed?: boolean;
   regimeSocial?: string;

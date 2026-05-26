@@ -13,7 +13,6 @@ import {
   type ChargesCategoryData,
   type ChargesExpenseLine,
 } from "@/lib/lmnp/services/charges-profile";
-import { documentJourneyRoute } from "@/lib/lmnp/routes";
 
 type ChargesCategoryCardsProps = {
   categories: ChargesCategoryData[];
@@ -54,7 +53,6 @@ export function ChargesCategoryCards({
 
       {categories.map((cat, index) => {
         const expanded = expandedIds.has(cat.id);
-        const hasImmobilization = cat.lines.some((line) => line.suggestsImmobilization);
 
         return (
           <section
@@ -106,7 +104,6 @@ export function ChargesCategoryCards({
 
             <div className="mt-3 flex flex-wrap gap-2">
               {cat.recurring ? <IntelligentBadge label="Charge récurrente détectée" /> : null}
-              {hasImmobilization ? <IntelligentBadge label="Immobilisation suggérée" accent /> : null}
               {cat.lines.some((line) => line.source && line.source !== "upload") ? (
                 <IntelligentBadge label="Récupéré automatiquement" />
               ) : null}
@@ -121,14 +118,6 @@ export function ChargesCategoryCards({
             ) : (
               <ExpenseDetailList lines={cat.lines} />
             )}
-
-            {expanded && hasImmobilization ? (
-              <div className="mt-6 flex justify-center">
-                <Button href={documentJourneyRoute("amortissements")} variant="secondary">
-                  Transférer vers Amortissements
-                </Button>
-              </div>
-            ) : null}
           </section>
         );
       })}
@@ -142,16 +131,16 @@ export function ChargesCategoryCards({
   );
 }
 
-function IntelligentBadge({ label, accent = false }: { label: string; accent?: boolean }) {
+function IntelligentBadge({ label }: { label: string }) {
   return (
     <span
       style={{
         ...typography.caption.desktop,
-        color: accent ? colors.text.accent : colors.text.muted,
+        color: colors.text.muted,
         padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
         borderRadius: radius.full,
-        border: `1px solid ${accent ? colors.orange[200] : colors.border.subtle}`,
-        backgroundColor: accent ? colors.orange[50] : colors.surface.primary,
+        border: `1px solid ${colors.border.subtle}`,
+        backgroundColor: colors.surface.primary,
       }}
     >
       {label}
