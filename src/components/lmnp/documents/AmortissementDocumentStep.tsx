@@ -82,6 +82,11 @@ export function AmortissementDocumentStep() {
     travaux: 0,
     mobilier: 0,
   });
+  const [sectionContinued, setSectionContinued] = useState({
+    continuity: false,
+    travaux: false,
+    mobilier: false,
+  });
   const [readyForAnalysis, setReadyForAnalysis] = useState(false);
   const [aiAnimationDone, setAiAnimationDone] = useState(false);
   const [showVentilationTable, setShowVentilationTable] = useState(false);
@@ -106,6 +111,13 @@ export function AmortissementDocumentStep() {
     [workspace.documents],
   );
 
+  const continuityDisplayCount =
+    sectionUploadCounts.continuity > 0 ? sectionUploadCounts.continuity : continuityDocs.length;
+  const travauxDisplayCount =
+    sectionUploadCounts.travaux > 0 ? sectionUploadCounts.travaux : travauxDocs.length;
+  const mobilierDisplayCount =
+    sectionUploadCounts.mobilier > 0 ? sectionUploadCounts.mobilier : mobilierDocs.length;
+
   const continuityCount = Math.max(continuityDocs.length, sectionUploadCounts.continuity);
   const travauxCount = Math.max(travauxDocs.length, sectionUploadCounts.travaux);
   const mobilierCount = Math.max(mobilierDocs.length, sectionUploadCounts.mobilier);
@@ -114,23 +126,24 @@ export function AmortissementDocumentStep() {
   const activityAnswered = existingActivity !== null;
   const needsContinuity = existingActivity === "yes";
   const continuityReady =
-    !needsContinuity || continuityCount > 0 || continuitySkipped;
-  const travauxReady = travauxCount > 0 || travauxSkipped;
-  const mobilierReady = mobilierCount > 0 || mobilierSkipped;
-  const uploadsComplete = continuityReady && travauxReady && mobilierReady;
+    !needsContinuity || continuitySkipped || sectionUploadCounts.continuity > 0;
+  const travauxReady = travauxSkipped || sectionUploadCounts.travaux > 0;
+  const mobilierReady = mobilierSkipped || sectionUploadCounts.mobilier > 0;
+  const allSectionsReady = continuityReady && travauxReady && mobilierReady;
+  const uploadsComplete = allSectionsReady;
 
   const pendingDocIds = useMemo(
-    () =>
-      [...continuityDocs, ...travauxDocs, ...mobilierDocs]
-        .filter((doc) => doc.status === "uploaded")
-        .map((doc) => doc.id),
-    [continuityDocs, travauxDocs, mobilierDocs],
+    () => relevantDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
+    [relevantDocs],
   );
 
-  const relevantDocs = useMemo(
-    () => [...continuityDocs, ...travauxDocs, ...mobilierDocs],
-    [continuityDocs, travauxDocs, mobilierDocs],
-  );
+  const relevantDocs = useMemo(() => {
+    const matched = [...continuityDocs, ...travauxDocs, ...mobilierDocs];
+    if (matched.length > 0 || totalUploadedCount === 0) return matched;
+    return workspace.documents.filter(
+      (doc) => doc.category === "amortissement" || doc.category === "charges",
+    );
+  }, [continuityDocs, travauxDocs, mobilierDocs, totalUploadedCount, workspace.documents]);
 
   const hasProcessing = relevantDocs.some((doc) => doc.status === "processing");
   const hasFailed = relevantDocs.some((doc) => doc.status === "failed");
@@ -152,9 +165,21 @@ export function AmortissementDocumentStep() {
   const showFromChargesSection =
     fromChargesItems.length > 0 && (aiAnimationDone || showConfiguredCard || showVentilationTable);
 
+  const continuityStepDone = !needsContinuity || continuitySkipped || sectionContinued.continuity;
+  const travauxStepDone = travauxSkipped || sectionContinued.travaux;
+  const mobilierStepDone = mobilierSkipped || sectionContinued.mobilier;
+
+  const continuityCanContinue =
+    sectionUploadCounts.continuity > 0 && !sectionContinued.continuity;
+  const travauxCanContinue = sectionUploadCounts.travaux > 0 && !sectionContinued.travaux;
+  const mobilierCanContinue =
+    sectionUploadCounts.mobilier > 0 && !sectionContinued.mobilier && allSectionsReady;
+  const showMobilierLaunchAnalysis = mobilierCanContinue;
+
   const showContinuitySection = activityAnswered && needsContinuity && !continuitySkipped;
-  const showTravauxSection = activityAnswered && continuityReady && !travauxSkipped;
-  const showMobilierSection = activityAnswered && continuityReady && travauxReady && !mobilierSkipped;
+  const showTravauxSection = activityAnswered && continuityStepDone && !travauxSkipped;
+  const showMobilierSection =
+    activityAnswered && continuityStepDone && travauxStepDone && !mobilierSkipped;
 
   const persistActivity = useCallback(
     (value: "yes" | "no") => {
@@ -171,6 +196,7 @@ export function AmortissementDocumentStep() {
     setContinuitySkipped(false);
     setTravauxSkipped(false);
     setMobilierSkipped(false);
+    setSectionContinued({ continuity: false, travaux: false, mobilier: false });
     setReadyForAnalysis(false);
     setAiAnimationDone(false);
     setShowVentilationTable(false);
@@ -205,10 +231,63 @@ export function AmortissementDocumentStep() {
   }, [pendingDocIds.join(","), hasProcessing, runAnalysis]);
 
   useEffect(() => {
-    if (activityAnswered && uploadsComplete && !readyForAnalysis && !confirmed) {
+    if (activityAnswered && allSectionsReady && !readyForAnalysis && !confirmed) {
       setReadyForAnalysis(true);
     }
-  }, [activityAnswered, uploadsComplete, readyForAnalysis, confirmed]);
+  }, [activityAnswered, allSectionsReady, readyForAnalysis, confirmed]);
+
+  useEffect(() => {
+    console.log("[AmortissementDocumentStep] workflow state", {
+      continuityReady,
+      travauxReady,
+      mobilierReady,
+      uploadsComplete,
+      allSectionsReady,
+      sectionContinued,
+      sectionUploadCounts,
+      continuityDisplayCount,
+      travauxDisplayCount,
+      mobilierDisplayCount,
+      continuityDocs: continuityDocs.length,
+      travauxDocs: travauxDocs.length,
+      mobilierDocs: mobilierDocs.length,
+      relevantDocs: relevantDocs.length,
+      continuityCanContinue,
+      travauxCanContinue,
+      mobilierCanContinue,
+      showMobilierLaunchAnalysis,
+      showContinueButton: {
+        continuity: continuityCanContinue,
+        travaux: travauxCanContinue,
+        mobilier: showMobilierLaunchAnalysis,
+      },
+      readyForAnalysis,
+      documentsReady,
+      canRunAi,
+    });
+  }, [
+    continuityReady,
+    travauxReady,
+    mobilierReady,
+    uploadsComplete,
+    allSectionsReady,
+    sectionContinued,
+    sectionUploadCounts,
+    continuityDisplayCount,
+    travauxDisplayCount,
+    mobilierDisplayCount,
+    continuityDocs.length,
+    travauxDocs.length,
+    mobilierDocs.length,
+    relevantDocs.length,
+    continuityCanContinue,
+    travauxCanContinue,
+    mobilierCanContinue,
+    showMobilierLaunchAnalysis,
+    readyForAnalysis,
+    documentsReady,
+    canRunAi,
+  ]);
 
   useEffect(() => {
     if (confirmed) {
@@ -228,6 +307,14 @@ export function AmortissementDocumentStep() {
     }
   }, [confirmed, draft, ventilation]);
 
+  const handleSectionContinue = (section: "continuity" | "travaux" | "mobilier") => {
+    setSectionContinued((current) => ({ ...current, [section]: true }));
+
+    if (allSectionsReady && !confirmed) {
+      setReadyForAnalysis(true);
+    }
+  };
+
   const handleUpload = (
     files: File[],
     category: DocumentCategory,
@@ -244,6 +331,10 @@ export function AmortissementDocumentStep() {
     setSectionUploadCounts((current) => ({
       ...current,
       [section]: current[section] + files.length,
+    }));
+    setSectionContinued((current) => ({
+      ...current,
+      [section]: false,
     }));
 
     dispatch({
@@ -390,9 +481,11 @@ export function AmortissementDocumentStep() {
       <AmortissementUploadSection
         title="Documents de continuité comptable"
         helper="Ancienne liasse fiscale, tableau d'amortissements ou export comptable utile."
-        uploadedCount={continuityCount}
+        uploadedCount={continuityDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
         onFiles={(files) => handleUpload(files, "amortissement", "continuity")}
+        canContinue={continuityCanContinue}
+        onContinue={() => handleSectionContinue("continuity")}
         onSkip={() => setContinuitySkipped(true)}
         skipLabel="Continuer sans document de continuité"
         visible={showContinuitySection}
@@ -401,9 +494,11 @@ export function AmortissementDocumentStep() {
 
       <AmortissementUploadSection
         title="Ajoutez vos factures de travaux"
-        uploadedCount={travauxCount}
+        uploadedCount={travauxDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
         onFiles={(files) => handleUpload(files, "charges", "travaux")}
+        canContinue={travauxCanContinue}
+        onContinue={() => handleSectionContinue("travaux")}
         onSkip={() => setTravauxSkipped(true)}
         skipLabel="Je n'ai pas de factures de travaux"
         visible={showTravauxSection}
@@ -413,9 +508,12 @@ export function AmortissementDocumentStep() {
 
       <AmortissementUploadSection
         title="Ajoutez vos factures de mobilier"
-        uploadedCount={mobilierCount}
+        uploadedCount={mobilierDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
         onFiles={(files) => handleUpload(files, "amortissement", "mobilier")}
+        canContinue={showMobilierLaunchAnalysis}
+        onContinue={() => handleSectionContinue("mobilier")}
+        continueLabel="Lancer l'analyse"
         onSkip={() => setMobilierSkipped(true)}
         skipLabel="Je n'ai pas de factures de mobilier"
         visible={showMobilierSection}

@@ -5,7 +5,6 @@ import { uploadDocument } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
-import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -19,6 +18,9 @@ type AmortissementUploadSectionProps = {
   uploadedCount?: number;
   uploadedFileName?: string;
   onFiles: (files: File[]) => void;
+  onContinue?: () => void;
+  continueLabel?: string;
+  canContinue?: boolean;
   onSkip?: () => void;
   skipLabel?: string;
   disabled?: boolean;
@@ -34,6 +36,9 @@ export function AmortissementUploadSection({
   uploadedCount = 0,
   uploadedFileName,
   onFiles,
+  onContinue,
+  continueLabel = "Continuer",
+  canContinue = false,
   onSkip,
   skipLabel,
   disabled = false,
@@ -147,7 +152,12 @@ export function AmortissementUploadSection({
               {uploadedFileName}
             </p>
           ) : null}
-          <div className="mt-4 flex justify-center">
+          <div className="mt-4 flex flex-col items-center gap-3">
+            {canContinue && onContinue ? (
+              <Button disabled={disabled} onClick={onContinue}>
+                {continueLabel}
+              </Button>
+            ) : null}
             <Button variant="secondary" disabled={disabled} onClick={openFilePicker}>
               Ajouter un autre document
             </Button>
