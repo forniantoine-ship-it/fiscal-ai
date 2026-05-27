@@ -173,13 +173,24 @@ export function AmortissementDocumentStep() {
     sectionUploadCounts.continuity > 0 && !sectionContinued.continuity;
   const travauxCanContinue = sectionUploadCounts.travaux > 0 && !sectionContinued.travaux;
   const mobilierCanContinue =
-    sectionUploadCounts.mobilier > 0 && !sectionContinued.mobilier && allSectionsReady;
+    allSectionsReady &&
+    !sectionContinued.mobilier &&
+    (sectionUploadCounts.mobilier > 0 || mobilierDisplayCount > 0);
   const showMobilierLaunchAnalysis = mobilierCanContinue;
 
   const showContinuitySection = activityAnswered && needsContinuity && !continuitySkipped;
-  const showTravauxSection = activityAnswered && continuityStepDone && !travauxSkipped;
+  const showTravauxSection =
+    activityAnswered && !travauxSkipped && (continuityStepDone || allSectionsReady);
   const showMobilierSection =
-    activityAnswered && continuityStepDone && travauxStepDone && !mobilierSkipped;
+    activityAnswered && !mobilierSkipped && (travauxStepDone || allSectionsReady);
+
+  const showAnalysisCTA =
+    allSectionsReady && !aiAnimationDone && !confirmed && !manualMode && !isProcessing;
+  const showFooterAnalysisCTA =
+    showAnalysisCTA && !(showMobilierSection && showMobilierLaunchAnalysis);
+  const showResultsPanel = showSummary && Boolean(ventilation);
+  const showNextStepCTA = showConfiguredCard && Boolean(ventilation);
+  const showFooterActions = showFooterAnalysisCTA || showNextStepCTA;
 
   const persistActivity = useCallback(
     (value: "yes" | "no") => {
@@ -256,6 +267,15 @@ export function AmortissementDocumentStep() {
       travauxCanContinue,
       mobilierCanContinue,
       showMobilierLaunchAnalysis,
+      showAnalysisCTA,
+      showFooterAnalysisCTA,
+      showResultsPanel,
+      showNextStepCTA,
+      showFooterActions,
+      showSummary,
+      showConfiguredCard,
+      isProcessing,
+      aiAnimationDone,
       showContinueButton: {
         continuity: continuityCanContinue,
         travaux: travauxCanContinue,
@@ -284,6 +304,15 @@ export function AmortissementDocumentStep() {
     travauxCanContinue,
     mobilierCanContinue,
     showMobilierLaunchAnalysis,
+    showAnalysisCTA,
+    showFooterAnalysisCTA,
+    showResultsPanel,
+    showNextStepCTA,
+    showFooterActions,
+    showSummary,
+    showConfiguredCard,
+    isProcessing,
+    aiAnimationDone,
     readyForAnalysis,
     documentsReady,
     canRunAi,
@@ -314,6 +343,11 @@ export function AmortissementDocumentStep() {
       setReadyForAnalysis(true);
     }
   };
+
+  function handleLaunchAnalysis() {
+    if (!allSectionsReady || confirmed || manualMode) return;
+    setReadyForAnalysis(true);
+  }
 
   const handleUpload = (
     files: File[],
@@ -541,9 +575,9 @@ export function AmortissementDocumentStep() {
         />
       ) : null}
 
-      {showSummary && ventilation ? (
+      {showResultsPanel ? (
         <AmortissementSummaryCard
-          summary={ventilation.summary}
+          summary={ventilation!.summary}
           cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
           onShowVentilation={() => setShowVentilationTable(true)}
         />
@@ -556,6 +590,15 @@ export function AmortissementDocumentStep() {
           onConfirm={handleConfirm}
           cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
         />
+      ) : null}
+
+      {showFooterActions ? (
+        <div className="flex w-full flex-col items-center gap-4 animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]">
+          {showFooterAnalysisCTA ? (
+            <Button onClick={handleLaunchAnalysis}>Lancer l&apos;analyse</Button>
+          ) : null}
+          {showNextStepCTA ? <WorkflowProgressionActions currentStepId="amortissement" /> : null}
+        </div>
       ) : null}
 
       {showConfiguredCard && ventilation ? (
@@ -572,7 +615,6 @@ export function AmortissementDocumentStep() {
               setVentilation(ventilationFromDraft(draft) ?? ventilation);
             }}
           />
-          <WorkflowProgressionActions currentStepId="amortissement" />
         </>
       ) : null}
 
