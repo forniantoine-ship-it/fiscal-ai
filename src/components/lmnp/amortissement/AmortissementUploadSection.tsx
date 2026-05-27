@@ -1,7 +1,8 @@
 "use client";
 
 import { useRef, useState, type DragEvent, type KeyboardEvent } from "react";
-
+import { uploadDocument } from "@/lib/uploadDocument";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
 import { gradients } from "@/design-system/theme/gradients";
@@ -49,9 +50,36 @@ export function AmortissementUploadSection({
   const isUploaded = uploadedCount > 0;
   const active = !disabled && (dragging || hovered);
 
-  const handleFiles = (list: FileList | null) => {
+  const handleFiles = async (list: FileList | null) => {
     if (!list?.length || disabled) return;
-    onFiles(Array.from(list));
+  
+    const files = Array.from(list);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.error("[AmortissementUploadSection] upload aborted: user not authenticated");
+      alert("Utilisateur non connecté");
+      return;
+    }
+
+    const uploadedFiles: File[] = [];
+
+    for (const file of files) {
+      const path = await uploadDocument(file, user.id);
+      if (path) {
+        uploadedFiles.push(file);
+      }
+    }
+
+    if (uploadedFiles.length === 0) {
+      console.error("[AmortissementUploadSection] upload failed: no files stored in Supabase");
+      return;
+    }
+
+    onFiles(uploadedFiles);
   };
 
   const prevent = (event: DragEvent) => {

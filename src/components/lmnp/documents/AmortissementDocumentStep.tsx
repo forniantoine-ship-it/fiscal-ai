@@ -77,6 +77,11 @@ export function AmortissementDocumentStep() {
   const [continuitySkipped, setContinuitySkipped] = useState(false);
   const [travauxSkipped, setTravauxSkipped] = useState(false);
   const [mobilierSkipped, setMobilierSkipped] = useState(false);
+  const [sectionUploadCounts, setSectionUploadCounts] = useState({
+    continuity: 0,
+    travaux: 0,
+    mobilier: 0,
+  });
   const [readyForAnalysis, setReadyForAnalysis] = useState(false);
   const [aiAnimationDone, setAiAnimationDone] = useState(false);
   const [showVentilationTable, setShowVentilationTable] = useState(false);
@@ -101,14 +106,15 @@ export function AmortissementDocumentStep() {
     [workspace.documents],
   );
 
-  const continuityCount = continuityDocs.length;
-  const travauxCount = travauxDocs.length;
-  const mobilierCount = mobilierDocs.length;
+  const continuityCount = Math.max(continuityDocs.length, sectionUploadCounts.continuity);
+  const travauxCount = Math.max(travauxDocs.length, sectionUploadCounts.travaux);
+  const mobilierCount = Math.max(mobilierDocs.length, sectionUploadCounts.mobilier);
   const totalUploadedCount = continuityCount + travauxCount + mobilierCount;
 
   const activityAnswered = existingActivity !== null;
   const needsContinuity = existingActivity === "yes";
-  const continuityReady = !needsContinuity || continuityCount > 0 || continuitySkipped;
+  const continuityReady =
+    !needsContinuity || continuityCount > 0 || continuitySkipped;
   const travauxReady = travauxCount > 0 || travauxSkipped;
   const mobilierReady = mobilierCount > 0 || mobilierSkipped;
   const uploadsComplete = continuityReady && travauxReady && mobilierReady;
@@ -146,9 +152,9 @@ export function AmortissementDocumentStep() {
   const showFromChargesSection =
     fromChargesItems.length > 0 && (aiAnimationDone || showConfiguredCard || showVentilationTable);
 
-  const showContinuitySection = activityAnswered && needsContinuity && !continuityReady;
-  const showTravauxSection = activityAnswered && continuityReady && !travauxReady;
-  const showMobilierSection = activityAnswered && continuityReady && travauxReady && !mobilierReady;
+  const showContinuitySection = activityAnswered && needsContinuity && !continuitySkipped;
+  const showTravauxSection = activityAnswered && continuityReady && !travauxSkipped;
+  const showMobilierSection = activityAnswered && continuityReady && travauxReady && !mobilierSkipped;
 
   const persistActivity = useCallback(
     (value: "yes" | "no") => {
@@ -222,7 +228,11 @@ export function AmortissementDocumentStep() {
     }
   }, [confirmed, draft, ventilation]);
 
-  const handleUpload = (files: File[], category: DocumentCategory) => {
+  const handleUpload = (
+    files: File[],
+    category: DocumentCategory,
+    section: "continuity" | "travaux" | "mobilier",
+  ) => {
     if (!files.length) return;
 
     setValidatedSuccess(false);
@@ -230,6 +240,11 @@ export function AmortissementDocumentStep() {
     setShowVentilationTable(false);
     setManualMode(false);
     setReadyForAnalysis(false);
+
+    setSectionUploadCounts((current) => ({
+      ...current,
+      [section]: current[section] + files.length,
+    }));
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
@@ -377,7 +392,7 @@ export function AmortissementDocumentStep() {
         helper="Ancienne liasse fiscale, tableau d'amortissements ou export comptable utile."
         uploadedCount={continuityCount}
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
-        onFiles={(files) => handleUpload(files, "amortissement")}
+        onFiles={(files) => handleUpload(files, "amortissement", "continuity")}
         onSkip={() => setContinuitySkipped(true)}
         skipLabel="Continuer sans document de continuité"
         visible={showContinuitySection}
@@ -388,7 +403,7 @@ export function AmortissementDocumentStep() {
         title="Ajoutez vos factures de travaux"
         uploadedCount={travauxCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
-        onFiles={(files) => handleUpload(files, "charges")}
+        onFiles={(files) => handleUpload(files, "charges", "travaux")}
         onSkip={() => setTravauxSkipped(true)}
         skipLabel="Je n'ai pas de factures de travaux"
         visible={showTravauxSection}
@@ -400,7 +415,7 @@ export function AmortissementDocumentStep() {
         title="Ajoutez vos factures de mobilier"
         uploadedCount={mobilierCount}
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
-        onFiles={(files) => handleUpload(files, "amortissement")}
+        onFiles={(files) => handleUpload(files, "amortissement", "mobilier")}
         onSkip={() => setMobilierSkipped(true)}
         skipLabel="Je n'ai pas de factures de mobilier"
         visible={showMobilierSection}

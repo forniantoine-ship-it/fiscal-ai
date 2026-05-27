@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { uploadDocument } from "@/lib/uploadDocument";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
 import {
@@ -165,8 +166,32 @@ export function RevenusDocumentStep() {
     workspace.properties,
   ]);
 
-  function handleUpload(files: File[]) {
+  async function handleUpload(files: File[]) {
     if (!files.length) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.error("[RevenusDocumentStep] upload aborted: user not authenticated");
+      alert("Utilisateur non connecté");
+      return;
+    }
+
+    const uploadedFiles: File[] = [];
+
+    for (const file of files) {
+      const path = await uploadDocument(file, user.id);
+      if (path) {
+        uploadedFiles.push(file);
+      }
+    }
+
+    if (uploadedFiles.length === 0) {
+      console.error("[RevenusDocumentStep] upload failed: no files stored in Supabase");
+      return;
+    }
 
     setValidatedSuccess(false);
     setAiAnimationDone(false);
@@ -176,11 +201,11 @@ export function RevenusDocumentStep() {
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: files.map((file) => ({ file, category: REVENUS_UPLOAD_CATEGORY })),
+      files: uploadedFiles.map((file) => ({ file, category: REVENUS_UPLOAD_CATEGORY })),
     });
 
     showInfo(
-      `${files.length} fichier${files.length > 1 ? "s" : ""} reçu${files.length > 1 ? "s" : ""}`,
+      `${uploadedFiles.length} fichier${uploadedFiles.length > 1 ? "s" : ""} reçu${uploadedFiles.length > 1 ? "s" : ""}`,
       "L'IA prépare vos revenus locatifs.",
     );
   }

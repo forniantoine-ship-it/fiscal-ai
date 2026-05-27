@@ -1,5 +1,6 @@
 "use client";
-
+import { uploadDocument } from "@/lib/uploadDocument";
+import { supabase } from "@/lib/supabase";
 import { useRef, useState, type DragEvent } from "react";
 
 import { colors } from "@/design-system/theme/colors";
@@ -21,18 +22,57 @@ export type UploadZoneProps = {
 export function UploadZone({
   onFiles,
   hint = "PDF ou images — dépôt multiple accepté",
-  title = "Déposer vos documents",
+  title = "TEST SUPABASE UPLOAD",
   accept = ".pdf,image/*",
   multiple = true,
   className = "",
 }: UploadZoneProps) {
+
+  console.log("REAL UPLOADZONE");
+
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const handleFiles = (list: FileList | null) => {
+  const handleFiles = async (list: FileList | null) => {
     if (!list?.length) return;
-    onFiles(Array.from(list));
+  
+    const files = Array.from(list);
+    console.log("UPLOAD START", files);
+  
+    try {
+      const response = await supabase.auth.getUser();
+    
+      console.log("USER RESPONSE", response);
+    
+      const user = response.data.user;
+    
+      if (!user) {
+        alert("Utilisateur non connecté");
+        return;
+      }
+    
+      const uploadedFiles: File[] = [];
+
+      for (const file of files) {
+        const path = await uploadDocument(file, user.id);
+        if (path) {
+          uploadedFiles.push(file);
+        }
+      }
+
+      if (uploadedFiles.length === 0) {
+        console.error("[UploadZone] upload failed: no files stored in Supabase");
+        return;
+      }
+
+      onFiles(uploadedFiles);
+    
+    } catch (e) {
+      console.error("AUTH ERROR", e);
+      alert("AUTH ERROR");
+    }
+
   };
 
   const prevent = (event: DragEvent) => {
@@ -102,4 +142,4 @@ export function UploadZone({
   );
 }
 
-export default UploadZone;
+
