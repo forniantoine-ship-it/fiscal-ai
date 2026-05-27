@@ -13,15 +13,43 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { createLmnpDossier, setCurrentDossierId } from "@/lib/lmnp/dossier";
+import { supabase } from "@/lib/supabase";
 
 export function InscriptionForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    router.push(LMNP_ROUTES.documents);
+  
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    
+    const user = data.session?.user;
+    
+    if (user) {
+      const dossier = await createLmnpDossier(user.id);
+
+      if (!dossier) {
+        console.error("DOSSIER ERROR: creation failed");
+      } else {
+        setCurrentDossierId(dossier.id);
+        console.log("[dossier] signup dossier ready", { dossierId: dossier.id });
+      }
+    }
+  
+    
+  
+    router.push("/dashboard");
   };
 
   return (

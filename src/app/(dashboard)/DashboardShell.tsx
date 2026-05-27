@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { FeedbackProvider } from "@/components/lmnp/shared/FeedbackProvider";
 import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
+import { DossierProvider } from "@/lib/lmnp/dossier";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
 
 function DashboardLayoutBridge({ children }: { children: ReactNode }) {
@@ -21,10 +22,12 @@ function DashboardLayoutBridge({ children }: { children: ReactNode }) {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
-    <LmnpProvider>
-      <FeedbackProvider>
-        <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
-      </FeedbackProvider>
-    </LmnpProvider>
+    <DossierProvider>
+      <LmnpProvider>
+        <FeedbackProvider>
+          <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
+        </FeedbackProvider>
+      </LmnpProvider>
+    </DossierProvider>
   );
 }
