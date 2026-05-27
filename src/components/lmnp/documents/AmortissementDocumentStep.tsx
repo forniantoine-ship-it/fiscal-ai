@@ -88,6 +88,7 @@ export function AmortissementDocumentStep() {
     mobilier: false,
   });
   const [readyForAnalysis, setReadyForAnalysis] = useState(false);
+  const [analysisTriggered, setAnalysisTriggered] = useState(false);
   const [aiAnimationDone, setAiAnimationDone] = useState(false);
   const [showVentilationTable, setShowVentilationTable] = useState(false);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
@@ -150,13 +151,10 @@ export function AmortissementDocumentStep() {
   const documentsReady =
     totalUploadedCount === 0 || allDocumentsAnalyzed(relevantDocs);
   const canRunAi =
-    readyForAnalysis &&
-    !aiAnimationDone &&
-    !confirmed &&
-    !manualMode &&
-    documentsReady;
+    analysisTriggered && !aiAnimationDone && !confirmed && !manualMode;
   const isProcessing = canRunAi;
-  const isFailed = hasFailed && !aiAnimationDone && !manualMode && readyForAnalysis;
+  const isFailed =
+    hasFailed && !aiAnimationDone && !manualMode && (readyForAnalysis || analysisTriggered);
   const fromChargesItems = draft?.amortissementFromCharges ?? [];
 
   const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
@@ -209,6 +207,7 @@ export function AmortissementDocumentStep() {
     setMobilierSkipped(false);
     setSectionContinued({ continuity: false, travaux: false, mobilier: false });
     setReadyForAnalysis(false);
+    setAnalysisTriggered(false);
     setAiAnimationDone(false);
     setShowVentilationTable(false);
     setValidatedSuccess(false);
@@ -242,10 +241,10 @@ export function AmortissementDocumentStep() {
   }, [pendingDocIds.join(","), hasProcessing, runAnalysis]);
 
   useEffect(() => {
-    if (activityAnswered && allSectionsReady && !readyForAnalysis && !confirmed) {
-      setReadyForAnalysis(true);
+    if (isProcessing) {
+      console.log("[analysis] animation triggered");
     }
-  }, [activityAnswered, allSectionsReady, readyForAnalysis, confirmed]);
+  }, [isProcessing]);
 
   useEffect(() => {
     console.log("[AmortissementDocumentStep] workflow state", {
@@ -282,6 +281,7 @@ export function AmortissementDocumentStep() {
         mobilier: showMobilierLaunchAnalysis,
       },
       readyForAnalysis,
+      analysisTriggered,
       documentsReady,
       canRunAi,
     });
@@ -314,6 +314,7 @@ export function AmortissementDocumentStep() {
     isProcessing,
     aiAnimationDone,
     readyForAnalysis,
+    analysisTriggered,
     documentsReady,
     canRunAi,
   ]);
@@ -339,14 +340,30 @@ export function AmortissementDocumentStep() {
   const handleSectionContinue = (section: "continuity" | "travaux" | "mobilier") => {
     setSectionContinued((current) => ({ ...current, [section]: true }));
 
-    if (allSectionsReady && !confirmed) {
-      setReadyForAnalysis(true);
+    if (section === "mobilier") {
+      handleLaunchAnalysis();
     }
   };
 
   function handleLaunchAnalysis() {
-    if (!allSectionsReady || confirmed || manualMode) return;
+    console.log("[analysis] handleLaunchAnalysis start", {
+      allSectionsReady,
+      confirmed,
+      manualMode,
+      aiAnimationDone,
+      analysisTriggered,
+      documentsReady,
+    });
+
+    if (!allSectionsReady || confirmed || manualMode || aiAnimationDone || analysisTriggered) {
+      console.log("[analysis] handleLaunchAnalysis blocked");
+      return;
+    }
+
     setReadyForAnalysis(true);
+    setAnalysisTriggered(true);
+    console.log("[analysis] readyForAnalysis set");
+    console.log("[analysis] processing started");
   }
 
   const handleUpload = (
@@ -361,6 +378,7 @@ export function AmortissementDocumentStep() {
     setShowVentilationTable(false);
     setManualMode(false);
     setReadyForAnalysis(false);
+    setAnalysisTriggered(false);
 
     setSectionUploadCounts((current) => ({
       ...current,
@@ -383,6 +401,7 @@ export function AmortissementDocumentStep() {
   };
 
   const handleAiAnimationComplete = useCallback(() => {
+    console.log("[analysis] summary generation triggered");
     const nextVentilation = buildVentilationFromDossier(
       {
         fiscalYear: workspace.fiscalYear,
@@ -409,6 +428,7 @@ export function AmortissementDocumentStep() {
     setAiAnimationDone(false);
     setShowVentilationTable(false);
     setReadyForAnalysis(true);
+    setAnalysisTriggered(true);
   }
 
   function handleManualContinue() {
@@ -595,7 +615,14 @@ export function AmortissementDocumentStep() {
       {showFooterActions ? (
         <div className="flex w-full flex-col items-center gap-4 animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]">
           {showFooterAnalysisCTA ? (
-            <Button onClick={handleLaunchAnalysis}>Lancer l&apos;analyse</Button>
+            <Button
+              onClick={() => {
+                console.log("[analysis] button clicked");
+                handleLaunchAnalysis();
+              }}
+            >
+              Lancer l&apos;analyse
+            </Button>
           ) : null}
           {showNextStepCTA ? <WorkflowProgressionActions currentStepId="amortissement" /> : null}
         </div>
