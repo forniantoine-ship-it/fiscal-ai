@@ -1,32 +1,63 @@
-const STORAGE_KEY = "fiscal-ai-current-dossier-id";
+import { getBoundAuthUserId } from "@/lib/lmnp/auth/auth-boundary";
+
+const STORAGE_KEY_PREFIX = "fiscal-ai-current-dossier-id:";
 
 let currentDossierId: string | null = null;
+let currentDossierUserId: string | null = null;
 const listeners = new Set<(dossierId: string | null) => void>();
 
-function readStoredDossierId(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(STORAGE_KEY);
+function storageKeyForUser(userId: string) {
+  return `${STORAGE_KEY_PREFIX}${userId}`;
 }
 
-function persistDossierId(dossierId: string | null) {
+export function clearDossierSessionForAuthReset() {
+  currentDossierId = null;
+  currentDossierUserId = null;
+
   if (typeof window === "undefined") return;
-  if (dossierId) {
-    sessionStorage.setItem(STORAGE_KEY, dossierId);
-  } else {
-    sessionStorage.removeItem(STORAGE_KEY);
+
+  for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = sessionStorage.key(index);
+    if (key?.startsWith(STORAGE_KEY_PREFIX)) {
+      sessionStorage.removeItem(key);
+    }
   }
 }
 
-export function getCurrentDossierId(): string | null {
-  if (currentDossierId) return currentDossierId;
-  const stored = readStoredDossierId();
-  if (stored) currentDossierId = stored;
-  return currentDossierId;
+export function getCurrentDossierId(explicitUserId?: string | null): string | null {
+  const userId = explicitUserId ?? getBoundAuthUserId();
+  if (!userId) return null;
+
+  if (currentDossierUserId === userId && currentDossierId) {
+    return currentDossierId;
+  }
+
+  if (typeof window === "undefined") return null;
+
+  const stored = sessionStorage.getItem(storageKeyForUser(userId));
+  if (!stored) return null;
+
+  currentDossierId = stored;
+  currentDossierUserId = userId;
+  return stored;
 }
 
-export function setCurrentDossierId(dossierId: string | null) {
+export function setCurrentDossierId(dossierId: string | null, explicitUserId?: string | null) {
+  const userId = explicitUserId ?? getBoundAuthUserId();
+  if (!userId) return;
+
   currentDossierId = dossierId;
-  persistDossierId(dossierId);
+  currentDossierUserId = userId;
+
+  if (typeof window === "undefined") return;
+
+  const key = storageKeyForUser(userId);
+  if (dossierId) {
+    sessionStorage.setItem(key, dossierId);
+  } else {
+    sessionStorage.removeItem(key);
+  }
+
   listeners.forEach((listener) => listener(dossierId));
 }
 

@@ -46,6 +46,7 @@ export interface LmnpState extends PersistedWorkspace {
 
 export type LmnpAction =
   | { type: "HYDRATE"; payload: PersistedWorkspace; files?: FileRegistry }
+  | { type: "AUTH_SESSION_RESET" }
   | { type: "REGISTER_FILE"; documentId: string; file: File }
   | {
       type: "UPLOAD_DOCUMENTS";
@@ -413,6 +414,12 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         ...state,
         ...action.payload,
         fileRegistry: action.files ?? state.fileRegistry,
+      });
+
+    case "AUTH_SESSION_RESET":
+      return finalizeState({
+        ...createDefaultWorkspace(),
+        fileRegistry: new Map(),
       });
 
     case "REGISTER_FILE": {

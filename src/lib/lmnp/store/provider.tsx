@@ -26,6 +26,7 @@ import {
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
+import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
@@ -61,32 +62,43 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const authUserIdRef = useRef<string | null>(null);
   const pendingFileLoadsRef = useRef(new Set<string>());
 
   useEffect(() => {
-    let cancelled = false;
+    return subscribeAuthBoundary(async ({ userId, previousUserId, userChanged }) => {
+      if (userChanged && previousUserId) {
+        await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
+      }
 
-    void (async () => {
-      const { workspace, fileRegistry } = await hydrateLmnpStore();
-      if (cancelled) return;
+      authUserIdRef.current = userId;
+      setIsReady(false);
+      pendingFileLoadsRef.current.clear();
 
+      if (!userId) {
+        dispatch({ type: "AUTH_SESSION_RESET" });
+        markAutosaveSaved();
+        setIsReady(true);
+        return;
+      }
+
+      const { workspace, fileRegistry } = await hydrateLmnpStore(userId);
       if (workspace) {
         dispatch({ type: "HYDRATE", payload: workspace, files: fileRegistry });
+      } else {
+        dispatch({ type: "AUTH_SESSION_RESET" });
       }
+
       markAutosaveSaved();
       setIsReady(true);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    });
   }, []);
 
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
   useEffect(() => {
     if (!isReady) return;
-    scheduleSaveWorkspace(toPersisted(state));
+    scheduleSaveWorkspace(toPersisted(state), authUserIdRef.current);
   }, [
     isReady,
     state.fiscalYear,
@@ -99,18 +111,19 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     if (!isReady) return;
-    void syncDocumentBlobs(state.documents, state.fileRegistry);
+    void syncDocumentBlobs(state.documents, state.fileRegistry, authUserIdRef.current);
   }, [isReady, state.documents, state.fileRegistry]);
 
   useEffect(() => {
     if (!isReady) return;
 
     const flush = () => {
-      scheduleSaveWorkspace(toPersisted(stateRef.current));
-      void flushWorkspaceSave();
+      scheduleSaveWorkspace(toPersisted(stateRef.current), authUserIdRef.current);
+      void flushWorkspaceSave(authUserIdRef.current, toPersisted(stateRef.current));
       void syncDocumentBlobs(
         stateRef.current.documents,
         stateRef.current.fileRegistry,
+        authUserIdRef.current,
       );
     };
 

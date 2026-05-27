@@ -8,10 +8,13 @@ import type {
   ValidationItem,
 } from "../types";
 import type { FileRegistry } from "./reducer";
+import { getBoundAuthUserId } from "@/lib/lmnp/auth/auth-boundary";
 import {
   deleteDocumentBlob,
+  deleteWorkspaceRecord,
   getAllDocumentBlobs,
   getDocumentBlob,
+  getLegacyWorkspaceRecord,
   getWorkspaceRecord,
   putDocumentBlob,
   putWorkspaceRecord,
@@ -37,7 +40,7 @@ export interface HydratedLmnpStore {
 }
 
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingWorkspace: PersistedWorkspace | null = null;
+let pendingWorkspace: { userId: string; data: PersistedWorkspace } | null = null;
 
 export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
 
@@ -93,20 +96,28 @@ function clearLegacyWorkspace(): void {
   }
 }
 
-async function loadWorkspaceFromIndexedDb(): Promise<PersistedWorkspace | null> {
-  const record = await getWorkspaceRecord();
+async function loadWorkspaceFromIndexedDb(userId: string): Promise<PersistedWorkspace | null> {
+  const record = await getWorkspaceRecord(userId);
   if (!record?.data || !isValidWorkspace(record.data)) return null;
   return record.data;
 }
 
-async function migrateLegacyWorkspaceIfNeeded(): Promise<PersistedWorkspace | null> {
-  const fromIdb = await loadWorkspaceFromIndexedDb();
+async function migrateLegacyWorkspaceIfNeeded(userId: string): Promise<PersistedWorkspace | null> {
+  const fromIdb = await loadWorkspaceFromIndexedDb(userId);
   if (fromIdb) return fromIdb;
+
+  const legacyRecord = await getLegacyWorkspaceRecord();
+  if (legacyRecord?.data && isValidWorkspace(legacyRecord.data)) {
+    await putWorkspaceRecord(userId, legacyRecord.data);
+    await deleteWorkspaceRecord("active");
+    clearLegacyWorkspace();
+    return legacyRecord.data;
+  }
 
   const legacy = loadLegacyWorkspace();
   if (!legacy) return null;
 
-  await putWorkspaceRecord(legacy);
+  await putWorkspaceRecord(userId, legacy);
   clearLegacyWorkspace();
   return legacy;
 }
@@ -143,23 +154,29 @@ async function recordToFile(record: DocumentBlobRecord): Promise<File | null> {
 
 async function loadFileRegistry(
   documents: LmnpDocument[],
+  userId: string,
 ): Promise<FileRegistry> {
   const registry: FileRegistry = new Map();
   const docById = new Map(documents.map((d) => [d.id, d]));
   const blobs = await getAllDocumentBlobs();
 
   for (const record of blobs) {
-    const doc = docById.get(record.documentId);
-    if (!doc) {
-      void deleteDocumentBlob(record.documentId);
+    if (record.userId && record.userId !== userId) {
       continue;
     }
+
+    const doc = docById.get(record.documentId);
+    if (!doc) {
+      if (!record.userId || record.userId === userId) {
+        void deleteDocumentBlob(record.documentId);
+      }
+      continue;
+    }
+
     const file = await recordToFile(record);
     if (!file) continue;
     registry.set(record.documentId, file);
-    if (doc) {
-      persistedBlobFingerprints.set(record.documentId, blobFingerprint(file, doc));
-    }
+    persistedBlobFingerprints.set(record.documentId, blobFingerprint(file, doc));
   }
 
   return registry;
@@ -179,78 +196,94 @@ export async function loadDocumentFile(documentId: string): Promise<File | null>
 }
 
 /** Loads workspace metadata from IndexedDB (migrates legacy localStorage once). */
-export async function loadWorkspace(): Promise<PersistedWorkspace | null> {
+export async function loadWorkspace(userId: string): Promise<PersistedWorkspace | null> {
   if (typeof window === "undefined") return null;
   try {
-    return await migrateLegacyWorkspaceIfNeeded();
+    return await migrateLegacyWorkspaceIfNeeded(userId);
   } catch (error) {
-    console.error("[lmnp] loadWorkspace failed", error);
+    console.error("[lmnp] loadWorkspace failed", { userId, error });
     return loadLegacyWorkspace();
   }
 }
 
-/** Offline-first hydration: workspace metadata + document blobs. */
-export async function hydrateLmnpStore(): Promise<HydratedLmnpStore> {
+/** Offline-first hydration: workspace metadata + document blobs for one auth user. */
+export async function hydrateLmnpStore(userId: string | null): Promise<HydratedLmnpStore> {
   if (typeof window === "undefined") {
     return { workspace: null, fileRegistry: new Map() };
   }
 
+  if (!userId) {
+    return { workspace: null, fileRegistry: new Map() };
+  }
+
   try {
-    const workspace = await loadWorkspace();
+    const workspace = await loadWorkspace(userId);
     if (!workspace) return { workspace: null, fileRegistry: new Map() };
 
-    const loaded = await loadFileRegistry(workspace.documents);
+    const loaded = await loadFileRegistry(workspace.documents, userId);
     const fileRegistry = await ensureDocumentFilesLoaded(workspace.documents, loaded);
     return { workspace, fileRegistry };
   } catch (error) {
-    console.error("[lmnp] IndexedDB hydration failed, using defaults", error);
-    const legacy = loadLegacyWorkspace();
-    return { workspace: legacy, fileRegistry: new Map() };
+    console.error("[lmnp] IndexedDB hydration failed, using defaults", { userId, error });
+    return { workspace: null, fileRegistry: new Map() };
   }
 }
 
-export async function saveWorkspace(data: PersistedWorkspace): Promise<void> {
+export async function saveWorkspace(userId: string, data: PersistedWorkspace): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    await putWorkspaceRecord(data);
+    await putWorkspaceRecord(userId, data);
     notifyAutosaveStatus("saved");
   } catch (error) {
-    console.error("[lmnp] Failed to persist workspace", error);
+    console.error("[lmnp] Failed to persist workspace", { userId, error });
     notifyAutosaveStatus("error");
   }
 }
 
 /** Debounced workspace write — keeps UI instant while batching disk I/O. */
-export function scheduleSaveWorkspace(data: PersistedWorkspace): void {
-  pendingWorkspace = data;
+export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string | null): void {
+  if (!userId) return;
+
+  pendingWorkspace = { userId, data };
   notifyAutosaveStatus("saving");
   if (saveWorkspaceTimer) clearTimeout(saveWorkspaceTimer);
   saveWorkspaceTimer = setTimeout(() => {
     saveWorkspaceTimer = null;
     const snapshot = pendingWorkspace;
     pendingWorkspace = null;
-    if (snapshot) void saveWorkspace(snapshot);
+    if (snapshot) void saveWorkspace(snapshot.userId, snapshot.data);
   }, 350);
 }
 
-/** Flush pending workspace write (tab close / hide). */
-export async function flushWorkspaceSave(): Promise<void> {
+/** Flush pending workspace write (tab close / hide / auth switch). */
+export async function flushWorkspaceSave(
+  userId: string | null,
+  data?: PersistedWorkspace,
+): Promise<void> {
   if (saveWorkspaceTimer) {
     clearTimeout(saveWorkspaceTimer);
     saveWorkspaceTimer = null;
   }
+
   if (pendingWorkspace) {
     const snapshot = pendingWorkspace;
     pendingWorkspace = null;
-    await saveWorkspace(snapshot);
+    await saveWorkspace(snapshot.userId, snapshot.data);
+    return;
+  }
+
+  if (userId && data) {
+    await saveWorkspace(userId, data);
   }
 }
 
 export async function persistDocumentFile(
   document: LmnpDocument,
   file: File,
+  userId?: string | null,
 ): Promise<void> {
   if (typeof window === "undefined") return;
+  const ownerUserId = userId ?? getBoundAuthUserId();
   try {
     const data = await file.arrayBuffer();
     const mimeType = resolveDocumentMimeType(document.fileName, file.type || document.mimeType);
@@ -261,6 +294,7 @@ export async function persistDocumentFile(
       mimeType,
       sizeBytes: data.byteLength,
       uploadedAt: document.uploadedAt,
+      userId: ownerUserId ?? undefined,
       data,
     });
   } catch (error) {
@@ -288,9 +322,11 @@ function blobFingerprint(file: File, doc: LmnpDocument): string {
 export async function syncDocumentBlobs(
   documents: LmnpDocument[],
   fileRegistry: FileRegistry,
+  userId?: string | null,
 ): Promise<void> {
   if (typeof window === "undefined") return;
 
+  const ownerUserId = userId ?? getBoundAuthUserId();
   const activeIds = new Set(documents.map((d) => d.id));
   const docById = new Map(documents.map((d) => [d.id, d]));
 
@@ -304,7 +340,7 @@ export async function syncDocumentBlobs(
 
     blobSyncInFlight.add(documentId);
     try {
-      await persistDocumentFile(doc, file);
+      await persistDocumentFile(doc, file, ownerUserId);
       persistedBlobFingerprints.set(documentId, fingerprint);
     } finally {
       blobSyncInFlight.delete(documentId);
@@ -319,8 +355,13 @@ export async function syncDocumentBlobs(
     const stored = await getAllDocumentBlobs();
     await Promise.all(
       stored
-        .filter((r) => !activeIds.has(r.documentId))
-        .map((r) => deleteDocumentBlob(r.documentId)),
+        .filter((record) => {
+          if (ownerUserId && record.userId && record.userId !== ownerUserId) {
+            return false;
+          }
+          return !activeIds.has(record.documentId);
+        })
+        .map((record) => deleteDocumentBlob(record.documentId)),
     );
   } catch (error) {
     console.error("[lmnp] Failed to prune orphan document blobs", error);

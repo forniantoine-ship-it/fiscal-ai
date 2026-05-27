@@ -42,7 +42,7 @@ export function InscriptionForm() {
       if (!dossier) {
         console.error("DOSSIER ERROR: creation failed");
       } else {
-        setCurrentDossierId(dossier.id);
+        setCurrentDossierId(dossier.id, user.id);
         console.log("[dossier] signup dossier ready", { dossierId: dossier.id });
       }
     }

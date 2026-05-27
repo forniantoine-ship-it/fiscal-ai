@@ -7,8 +7,12 @@ export const STORE_META = "meta";
 export const STORE_WORKSPACE = "workspace";
 export const STORE_DOCUMENT_BLOBS = "document-blobs";
 
-const WORKSPACE_KEY = "active";
+const LEGACY_WORKSPACE_KEY = "active";
 const SCHEMA_META_KEY = "schema";
+
+export function workspaceKeyForUser(userId: string): string {
+  return `user:${userId}`;
+}
 
 export const LMNP_SCHEMA_VERSION = 1;
 
@@ -114,22 +118,30 @@ export function idbGetAll<T>(storeName: string): Promise<T[]> {
 }
 
 export interface WorkspaceRecord {
-  id: typeof WORKSPACE_KEY;
+  id: string;
   data: unknown;
   updatedAt: string;
 }
 
-export function putWorkspaceRecord(data: unknown): Promise<void> {
+export function putWorkspaceRecord(userId: string, data: unknown): Promise<void> {
   const record: WorkspaceRecord = {
-    id: WORKSPACE_KEY,
+    id: workspaceKeyForUser(userId),
     data,
     updatedAt: new Date().toISOString(),
   };
   return idbPut(STORE_WORKSPACE, record).then(() => undefined);
 }
 
-export function getWorkspaceRecord(): Promise<WorkspaceRecord | undefined> {
-  return idbGet<WorkspaceRecord>(STORE_WORKSPACE, WORKSPACE_KEY);
+export function getWorkspaceRecord(userId: string): Promise<WorkspaceRecord | undefined> {
+  return idbGet<WorkspaceRecord>(STORE_WORKSPACE, workspaceKeyForUser(userId));
+}
+
+export function getLegacyWorkspaceRecord(): Promise<WorkspaceRecord | undefined> {
+  return idbGet<WorkspaceRecord>(STORE_WORKSPACE, LEGACY_WORKSPACE_KEY);
+}
+
+export function deleteWorkspaceRecord(id: string): Promise<void> {
+  return idbDelete(STORE_WORKSPACE, id);
 }
 
 export interface DocumentBlobRecord {
@@ -139,6 +151,7 @@ export interface DocumentBlobRecord {
   mimeType: string;
   sizeBytes: number;
   uploadedAt: string;
+  userId?: string;
   /** Binary payload (preferred). */
   data?: ArrayBuffer;
   /** Legacy records written before ArrayBuffer storage. */

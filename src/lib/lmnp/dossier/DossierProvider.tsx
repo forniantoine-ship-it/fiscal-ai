@@ -11,9 +11,9 @@ import {
 } from "react";
 
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
-import { supabase } from "@/lib/supabase";
+import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 
-import { getCurrentDossierId, setCurrentDossierId } from "./current-dossier";
+import { setCurrentDossierId } from "./current-dossier";
 import {
   ensureActiveDossier,
   fetchDocumentsForDossier,
@@ -31,29 +31,26 @@ type DossierContextValue = {
 
 const DossierContext = createContext<DossierContextValue | null>(null);
 
-async function loadActiveDossierState(): Promise<{
+async function loadActiveDossierState(userId: string | null): Promise<{
   dossier: LmnpDossier | null;
   documents: SupabaseDocumentRow[];
 }> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  if (!userId) {
     setCurrentDossierId(null);
     return { dossier: null, documents: [] };
   }
 
-  const dossier = await ensureActiveDossier(user.id);
+  const dossier = await ensureActiveDossier(userId);
   if (!dossier) {
-    setCurrentDossierId(null);
+    setCurrentDossierId(null, userId);
     return { dossier: null, documents: [] };
   }
 
-  setCurrentDossierId(dossier.id);
+  setCurrentDossierId(dossier.id, userId);
   const documents = await fetchDocumentsForDossier(dossier.id);
 
   console.log("[dossier] state restored", {
+    userId,
     dossierId: dossier.id,
     documentCount: documents.length,
   });
@@ -62,52 +59,37 @@ async function loadActiveDossierState(): Promise<{
 }
 
 export function DossierProvider({ children }: { children: ReactNode }) {
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [dossier, setDossier] = useState<LmnpDossier | null>(null);
   const [documents, setDocuments] = useState<SupabaseDocumentRow[]>([]);
   const [isReady, setIsReady] = useState(false);
 
   const refreshDossier = useCallback(async () => {
-    const next = await loadActiveDossierState();
+    const next = await loadActiveDossierState(authUserId);
     setDossier(next.dossier);
     setDocuments(next.documents);
-  }, []);
+  }, [authUserId]);
 
   useEffect(() => {
-    let cancelled = false;
+    return subscribeAuthBoundary(async ({ userId, userChanged }) => {
+      setAuthUserId(userId);
+      setIsReady(false);
 
-    void (async () => {
-      const next = await loadActiveDossierState();
-      if (cancelled) return;
+      if (userChanged) {
+        setDossier(null);
+        setDocuments([]);
+      }
+
+      const next = await loadActiveDossierState(userId);
       setDossier(next.dossier);
       setDocuments(next.documents);
       setIsReady(true);
-    })();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (cancelled) return;
-
-      if (!session?.user) {
-        setCurrentDossierId(null);
-        setDossier(null);
-        setDocuments([]);
-        setIsReady(true);
-        return;
-      }
-
-      void refreshDossier();
     });
-
-    return () => {
-      cancelled = true;
-      subscription.unsubscribe();
-    };
-  }, [refreshDossier]);
+  }, []);
 
   const value = useMemo(
     () => ({
-      currentDossierId: dossier?.id ?? getCurrentDossierId(),
+      currentDossierId: dossier?.id ?? null,
       dossier,
       documents,
       isReady,
