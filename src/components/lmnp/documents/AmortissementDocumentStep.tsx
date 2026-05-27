@@ -132,11 +132,6 @@ export function AmortissementDocumentStep() {
   const allSectionsReady = continuityReady && travauxReady && mobilierReady;
   const uploadsComplete = allSectionsReady;
 
-  const pendingDocIds = useMemo(
-    () => relevantDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
-    [relevantDocs],
-  );
-
   const relevantDocs = useMemo(() => {
     const matched = [...continuityDocs, ...travauxDocs, ...mobilierDocs];
     if (matched.length > 0 || totalUploadedCount === 0) return matched;
@@ -144,6 +139,11 @@ export function AmortissementDocumentStep() {
       (doc) => doc.category === "amortissement" || doc.category === "charges",
     );
   }, [continuityDocs, travauxDocs, mobilierDocs, totalUploadedCount, workspace.documents]);
+
+  const pendingDocIds = useMemo(
+    () => relevantDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
+    [relevantDocs],
+  );
 
   const hasProcessing = relevantDocs.some((doc) => doc.status === "processing");
   const hasFailed = relevantDocs.some((doc) => doc.status === "failed");
