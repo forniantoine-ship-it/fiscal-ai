@@ -1,5 +1,5 @@
 "use client";
-import { uploadDocument } from "@/lib/uploadDocument";
+import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import { useRef, useState, type DragEvent } from "react";
 
@@ -11,7 +11,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
 export type UploadZoneProps = {
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[], meta?: { supabaseDocumentIds: string[] }) => void;
   hint?: string;
   title?: string;
   accept?: string;
@@ -52,21 +52,15 @@ export function UploadZone({
         return;
       }
     
-      const uploadedFiles: File[] = [];
-
-      for (const file of files) {
-        const path = await uploadDocument(file, user.id);
-        if (path) {
-          uploadedFiles.push(file);
-        }
-      }
+      const { files: uploadedFiles, documentIds: supabaseDocumentIds } =
+        await uploadFilesForUser(files, user.id);
 
       if (uploadedFiles.length === 0) {
         console.error("[UploadZone] upload failed: no files stored in Supabase");
         return;
       }
 
-      onFiles(uploadedFiles);
+      onFiles(uploadedFiles, { supabaseDocumentIds });
     
     } catch (e) {
       console.error("AUTH ERROR", e);

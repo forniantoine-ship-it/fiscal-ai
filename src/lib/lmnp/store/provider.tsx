@@ -27,6 +27,11 @@ import {
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
+import {
+  ensureActiveDossier,
+  fetchDocumentsForDossier,
+  reconcileWorkspaceDocuments,
+} from "@/lib/lmnp/dossier";
 
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
@@ -67,30 +72,61 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return subscribeAuthBoundary(async ({ userId, previousUserId, userChanged }) => {
-      if (userChanged && previousUserId) {
-        await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
-      }
+      try {
+        if (userChanged && previousUserId) {
+          await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
+        }
 
-      authUserIdRef.current = userId;
-      setIsReady(false);
-      pendingFileLoadsRef.current.clear();
+        authUserIdRef.current = userId;
+        setIsReady(false);
+        pendingFileLoadsRef.current.clear();
 
-      if (!userId) {
-        dispatch({ type: "AUTH_SESSION_RESET" });
+        if (!userId) {
+          dispatch({ type: "AUTH_SESSION_RESET" });
+          markAutosaveSaved();
+          return;
+        }
+
+        const { workspace, fileRegistry } = await hydrateLmnpStore(userId);
+        const baseWorkspace = workspace ?? createDefaultWorkspace();
+
+        const dossier = await ensureActiveDossier(userId);
+        const supabaseDocuments = dossier ? await fetchDocumentsForDossier(dossier.id) : [];
+        const reconciliation = reconcileWorkspaceDocuments({
+          localDocuments: baseWorkspace.documents,
+          supabaseDocuments,
+          fiscalYearId: baseWorkspace.fiscalYear.id,
+          propertyId: baseWorkspace.fiscalYear.propertyIds[0],
+          localBlobDocumentIds: new Set(fileRegistry.keys()),
+        });
+
+        console.log("[workspace] reconciliation completed", {
+          userId,
+          localCount: baseWorkspace.documents.length,
+          supabaseCount: supabaseDocuments.length,
+          mergedCount: reconciliation.documents.length,
+        });
+
+        if (workspace) {
+          console.log("[workspace] restored existing workspace", { userId });
+        } else {
+          console.log("[workspace] initialized fresh workspace", { userId });
+        }
+
+        dispatch({
+          type: "HYDRATE",
+          payload: {
+            ...baseWorkspace,
+            documents: reconciliation.documents,
+          },
+          files: fileRegistry,
+        });
+
         markAutosaveSaved();
+      } finally {
+        console.log("[workspace] hydration completed", { userId: authUserIdRef.current });
         setIsReady(true);
-        return;
       }
-
-      const { workspace, fileRegistry } = await hydrateLmnpStore(userId);
-      if (workspace) {
-        dispatch({ type: "HYDRATE", payload: workspace, files: fileRegistry });
-      } else {
-        dispatch({ type: "AUTH_SESSION_RESET" });
-      }
-
-      markAutosaveSaved();
-      setIsReady(true);
     });
   }, []);
 

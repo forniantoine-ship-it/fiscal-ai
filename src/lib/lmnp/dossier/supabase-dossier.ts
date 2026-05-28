@@ -104,5 +104,10 @@ export async function fetchDocumentsForDossier(dossierId: string): Promise<Supab
     return [];
   }
 
-  return (data ?? []) as SupabaseDocumentRow[];
+  const documents = (data ?? []) as SupabaseDocumentRow[];
+  console.log("[documents] fetched from Supabase", {
+    dossierId,
+    count: documents.length,
+  });
+  return documents;
 }

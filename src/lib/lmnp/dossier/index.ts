@@ -8,3 +8,4 @@ export {
   type LmnpDossier,
   type SupabaseDocumentRow,
 } from "./supabase-dossier";
+export { reconcileWorkspaceDocuments } from "./reconcile-workspace-documents";

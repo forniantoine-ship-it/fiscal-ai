@@ -403,6 +403,10 @@ export interface LmnpDocument {
   documentType: DocumentType;
   status: DocumentStatus;
   uploadedAt: string;
+  /** Supabase Storage path when the document was uploaded remotely. */
+  storagePath?: string;
+  /** True when restored from Supabase without a local IndexedDB blob. */
+  remoteRestored?: boolean;
   ocrMeta?: DocumentOcrMeta;
 }
 

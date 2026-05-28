@@ -10,9 +10,7 @@ import { AmortissementItemCards } from "@/components/lmnp/amortissement/Amortiss
 import { AmortissementSummaryCard } from "@/components/lmnp/amortissement/AmortissementSummaryCard";
 import { AmortissementUploadSection } from "@/components/lmnp/amortissement/AmortissementUploadSection";
 import { AmortissementVentilationTable } from "@/components/lmnp/amortissement/AmortissementVentilationTable";
-import {
-  DOCUMENT_WORKFLOW_CARD_STYLE,
-} from "@/components/lmnp/documents/document-workflow-shared";
+import { DocumentExtractionSummary } from "@/components/lmnp/documents/DocumentExtractionSummary";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import {
@@ -26,6 +24,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import {
   buildVentilationFromDossier,
+  countAmortissementDocuments,
   isContinuityDocument,
   isMobilierDocument,
   isTravauxDocument,
@@ -37,7 +36,14 @@ import {
   type ExtractedInvoice,
 } from "@/lib/lmnp/services/amortissement-profile";
 import { buildAmortissementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
-import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
+import {
+  DOCUMENT_WORKFLOW_CARD_STYLE,
+} from "@/components/lmnp/documents/document-workflow-shared";
+import { runBulkDocumentExtraction } from "@/lib/ai/extract-document-client";
+import type { ExtractDocumentResult } from "@/lib/ai/document-types";
+import type { ResolvedDocumentClassification } from "@/lib/ai/document-classification-types";
+import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
+import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
 
@@ -55,6 +61,10 @@ function latestDocumentName(documents: LmnpDocument[], matcher: (doc: LmnpDocume
   return [...documents]
     .filter(matcher)
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0]?.fileName;
+}
+
+function fileUploadKey(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
 function allDocumentsAnalyzed(documents: LmnpDocument[]): boolean {
@@ -95,6 +105,11 @@ export function AmortissementDocumentStep() {
   const [isEditing, setIsEditing] = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [extractedInvoices, setExtractedInvoices] = useState<ExtractedInvoice[]>(MOCK_EXTRACTED_INVOICES);
+  const [extractionResults, setExtractionResults] = useState<ExtractDocumentResult[]>([]);
+  const [extractionFileNames, setExtractionFileNames] = useState<string[]>([]);
+  const [extractionProcessing, setExtractionProcessing] = useState(false);
+  const [extractionProgressLabel, setExtractionProgressLabel] = useState<string>();
+  const [supabaseDocByFileKey, setSupabaseDocByFileKey] = useState<Record<string, string>>({});
   const [ventilation, setVentilation] = useState<AmortissementVentilationData | undefined>(() =>
     ventilationFromDraft(draft),
   );
@@ -145,6 +160,23 @@ export function AmortissementDocumentStep() {
     () => relevantDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
     [relevantDocs],
   );
+
+  useEffect(() => {
+    const hasRemoteRestored = workspace.documents.some((doc) => doc.remoteRestored);
+    if (!hasRemoteRestored) return;
+
+    setSectionUploadCounts((current) => ({
+      continuity: Math.max(
+        current.continuity,
+        countAmortissementDocuments(workspace.documents, "continuity"),
+      ),
+      travaux: Math.max(current.travaux, countAmortissementDocuments(workspace.documents, "travaux")),
+      mobilier: Math.max(
+        current.mobilier,
+        countAmortissementDocuments(workspace.documents, "mobilier"),
+      ),
+    }));
+  }, [workspace.documents]);
 
   const hasProcessing = relevantDocs.some((doc) => doc.status === "processing");
   const hasFailed = relevantDocs.some((doc) => doc.status === "failed");
@@ -215,30 +247,185 @@ export function AmortissementDocumentStep() {
     persistActivity(value);
   };
 
-  const runAnalysis = useCallback(
+  const handleClassificationResolved = useCallback(
+    (extractionRowId: string, classification: ResolvedDocumentClassification) => {
+      setExtractionResults((current) =>
+        current.map((result) =>
+          result.id === extractionRowId ? { ...result, classification } : result,
+        ),
+      );
+    },
+    [],
+  );
+
+  const runExtraction = useCallback(
     async (documentIds: string[]) => {
-      if (!documentIds.length || analyzingRef.current) return;
+      if (!documentIds.length) {
+        console.log("[analysis] extraction skipped", {
+          source: "AmortissementDocumentStep.runExtraction",
+          reason: "empty documentIds",
+        });
+        return;
+      }
+      if (analyzingRef.current) {
+        console.log("[analysis] extraction skipped", {
+          source: "AmortissementDocumentStep.runExtraction",
+          reason: "already analyzing",
+          documentIds,
+        });
+        return;
+      }
+
+      const dossierId = getCurrentDossierId();
+      if (!dossierId) {
+        console.log("[analysis] extraction skipped", {
+          source: "AmortissementDocumentStep.runExtraction",
+          reason: "no active dossier_id",
+          documentIds,
+        });
+        console.error("[extract] aborted: no active dossier_id");
+        return;
+      }
+
+      console.log("[analysis] trigger requested", {
+        source: "AmortissementDocumentStep.runExtraction",
+        documentIds,
+        dossierId,
+        pipeline: "runBulkDocumentExtraction",
+      });
+
       analyzingRef.current = true;
+      setExtractionProcessing(true);
+      setExtractionResults([]);
+      setExtractionProgressLabel("Préparation de l'analyse…");
+
+      const processedDocIds: string[] = [];
+      const items: Array<{
+        file: File;
+        documentId?: string | null;
+        label: string;
+        legacyDocumentCategory?: string;
+      }> = [];
+
+      for (const docId of documentIds) {
+        const doc = relevantDocs.find((d) => d.id === docId);
+        if (!doc) continue;
+
+        try {
+          const file = await resolveDocumentFile(doc, getFile);
+          processedDocIds.push(docId);
+          items.push({
+            file,
+            documentId: supabaseDocByFileKey[fileUploadKey(file)] ?? doc.id,
+            label: doc.fileName,
+            legacyDocumentCategory: doc.category,
+          });
+
+          dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "processing" });
+        } catch (err) {
+          console.error("[extract] file resolve failed", {
+            docId,
+            fileName: doc.fileName,
+            storagePath: doc.storagePath,
+            err,
+          });
+          dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "failed" });
+        }
+      }
+
+      if (!items.length) {
+        console.log("[analysis] no analyzable documents", {
+          source: "AmortissementDocumentStep.runExtraction",
+          reason: "no resolvable files after download",
+          documentIds,
+        });
+        analyzingRef.current = false;
+        setExtractionProcessing(false);
+        setExtractionProgressLabel(undefined);
+        return;
+      }
+
+      setExtractionFileNames(items.map((item) => item.label));
 
       try {
-        await runBulkDocumentAnalysis({
-          documents: workspace.documents,
-          documentIds,
-          getFile,
-          dispatch,
-          fiscalYear: workspace.fiscalYear.year,
+        const { results, succeeded, failed } = await runBulkDocumentExtraction({
+          items,
+          dossierId,
+          onProgress: (index, total, label) => {
+            setExtractionProgressLabel(`Analyse ${index + 1}/${total} : ${label}`);
+          },
         });
+
+        setExtractionResults(results);
+
+        processedDocIds.forEach((docId, index) => {
+          const result = results[index];
+          dispatch({
+            type: "DOCUMENT_SET_STATUS",
+            documentId: docId,
+            status: result?.extractionStatus === "completed" ? "analyzed" : "failed",
+          });
+        });
+
+        console.log("[analysis] extraction completed", {
+          source: "AmortissementDocumentStep.runExtraction",
+          pipeline: "runBulkDocumentExtraction",
+          succeeded,
+          failed,
+        });
+        console.log("[extract] batch complete", { succeeded, failed });
       } finally {
+        setExtractionProcessing(false);
+        setExtractionProgressLabel(undefined);
         analyzingRef.current = false;
       }
     },
-    [workspace.documents, workspace.fiscalYear.year, getFile, dispatch],
+    [relevantDocs, getFile, dispatch, supabaseDocByFileKey],
   );
 
   useEffect(() => {
-    if (!pendingDocIds.length || hasProcessing || analyzingRef.current) return;
-    void runAnalysis(pendingDocIds);
-  }, [pendingDocIds.join(","), hasProcessing, runAnalysis]);
+    if (!analysisTriggered) {
+      if (pendingDocIds.length > 0) {
+        console.log("[analysis] extraction skipped", {
+          source: "AmortissementDocumentStep.useEffect",
+          reason: "analysisTriggered is false — user has not launched analysis yet",
+          pendingDocIds,
+        });
+      }
+      return;
+    }
+    if (!pendingDocIds.length) {
+      console.log("[analysis] no analyzable documents", {
+        source: "AmortissementDocumentStep.useEffect",
+        reason: "no pending uploaded docs",
+        relevantDocCount: relevantDocs.length,
+      });
+      return;
+    }
+    if (hasProcessing) {
+      console.log("[analysis] extraction skipped", {
+        source: "AmortissementDocumentStep.useEffect",
+        reason: "hasProcessing",
+        pendingDocIds,
+      });
+      return;
+    }
+    if (analyzingRef.current) {
+      console.log("[analysis] extraction skipped", {
+        source: "AmortissementDocumentStep.useEffect",
+        reason: "analyzingRef already set",
+        pendingDocIds,
+      });
+      return;
+    }
+
+    console.log("[analysis] trigger requested", {
+      source: "AmortissementDocumentStep.useEffect",
+      pendingDocIds,
+      pipeline: "runBulkDocumentExtraction",
+    });
+    void runExtraction(pendingDocIds);
+  }, [analysisTriggered, pendingDocIds.join(","), hasProcessing, runExtraction, relevantDocs.length, pendingDocIds]);
 
   useEffect(() => {
     if (isProcessing) {
@@ -370,6 +557,7 @@ export function AmortissementDocumentStep() {
     files: File[],
     category: DocumentCategory,
     section: "continuity" | "travaux" | "mobilier",
+    meta?: { supabaseDocumentIds: string[] },
   ) => {
     if (!files.length) return;
 
@@ -379,6 +567,21 @@ export function AmortissementDocumentStep() {
     setManualMode(false);
     setReadyForAnalysis(false);
     setAnalysisTriggered(false);
+    setExtractionResults([]);
+    setExtractionFileNames([]);
+
+    if (meta?.supabaseDocumentIds?.length) {
+      setSupabaseDocByFileKey((current) => {
+        const next = { ...current };
+        files.forEach((file, index) => {
+          const supabaseDocumentId = meta.supabaseDocumentIds[index];
+          if (supabaseDocumentId) {
+            next[fileUploadKey(file)] = supabaseDocumentId;
+          }
+        });
+        return next;
+      });
+    }
 
     setSectionUploadCounts((current) => ({
       ...current,
@@ -429,6 +632,7 @@ export function AmortissementDocumentStep() {
     setShowVentilationTable(false);
     setReadyForAnalysis(true);
     setAnalysisTriggered(true);
+    setExtractionResults([]);
   }
 
   function handleManualContinue() {
@@ -537,7 +741,7 @@ export function AmortissementDocumentStep() {
         helper="Ancienne liasse fiscale, tableau d'amortissements ou export comptable utile."
         uploadedCount={continuityDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
-        onFiles={(files) => handleUpload(files, "amortissement", "continuity")}
+        onFiles={(files, meta) => handleUpload(files, "amortissement", "continuity", meta)}
         canContinue={continuityCanContinue}
         onContinue={() => handleSectionContinue("continuity")}
         onSkip={() => setContinuitySkipped(true)}
@@ -550,7 +754,7 @@ export function AmortissementDocumentStep() {
         title="Ajoutez vos factures de travaux"
         uploadedCount={travauxDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
-        onFiles={(files) => handleUpload(files, "charges", "travaux")}
+        onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
         canContinue={travauxCanContinue}
         onContinue={() => handleSectionContinue("travaux")}
         onSkip={() => setTravauxSkipped(true)}
@@ -564,7 +768,7 @@ export function AmortissementDocumentStep() {
         title="Ajoutez vos factures de mobilier"
         uploadedCount={mobilierDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
-        onFiles={(files) => handleUpload(files, "amortissement", "mobilier")}
+        onFiles={(files, meta) => handleUpload(files, "amortissement", "mobilier", meta)}
         canContinue={showMobilierLaunchAnalysis}
         onContinue={() => handleSectionContinue("mobilier")}
         continueLabel="Lancer l'analyse"
@@ -577,6 +781,17 @@ export function AmortissementDocumentStep() {
 
       {isProcessing ? (
         <ActiviteAiProcessing onComplete={handleAiAnimationComplete} steps={AMORTISSEMENT_AI_STEPS} />
+      ) : null}
+
+      {analysisTriggered || extractionResults.length > 0 ? (
+        <DocumentExtractionSummary
+          results={extractionResults}
+          fileNames={extractionFileNames}
+          isProcessing={extractionProcessing}
+          progressLabel={extractionProgressLabel}
+          cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+          onClassificationResolved={handleClassificationResolved}
+        />
       ) : null}
 
       {aiAnimationDone && !showVentilationTable && !showConfiguredCard ? (

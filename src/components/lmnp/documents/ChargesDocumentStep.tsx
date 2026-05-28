@@ -23,6 +23,8 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { pendingAmortizationSuggestions } from "@/lib/lmnp/services/charges-amortization-intelligence";
+import { uploadFilesForUser } from "@/lib/uploadDocument";
+import { supabase } from "@/lib/supabase";
 import {
   buildChargesDraftPatch,
   buildChargesExtraction,
@@ -174,8 +176,29 @@ export function ChargesDocumentStep() {
 
   const runAnalysis = useCallback(
     async (documentIds: string[]) => {
-      if (!documentIds.length || analyzingRef.current) return;
+      if (!documentIds.length) {
+        console.log("[analysis] extraction skipped", {
+          source: "ChargesDocumentStep.runAnalysis",
+          reason: "empty documentIds",
+        });
+        return;
+      }
+      if (analyzingRef.current) {
+        console.log("[analysis] extraction skipped", {
+          source: "ChargesDocumentStep.runAnalysis",
+          reason: "already analyzing",
+          documentIds,
+        });
+        return;
+      }
       analyzingRef.current = true;
+
+      console.log("[analysis] trigger requested", {
+        source: "ChargesDocumentStep.runAnalysis",
+        documentIds,
+        pipeline: "runBulkDocumentAnalysis",
+        note: "Charges does NOT call runBulkDocumentExtraction",
+      });
 
       try {
         await runBulkDocumentAnalysis({
@@ -193,9 +216,42 @@ export function ChargesDocumentStep() {
   );
 
   useEffect(() => {
-    if (!pendingDocIds.length || hasProcessing || analyzingRef.current) return;
+    if (!pendingDocIds.length) {
+      if (hasUploaded || chargesDocs.length > 0) {
+        console.log("[analysis] no analyzable documents", {
+          source: "ChargesDocumentStep.useEffect",
+          reason: "no pending uploaded docs",
+          hasUploaded,
+          chargesDocCount: chargesDocs.length,
+          chargesDocStatuses: chargesDocs.map((doc) => ({ id: doc.id, status: doc.status })),
+        });
+      }
+      return;
+    }
+    if (hasProcessing) {
+      console.log("[analysis] extraction skipped", {
+        source: "ChargesDocumentStep.useEffect",
+        reason: "hasProcessing",
+        pendingDocIds,
+      });
+      return;
+    }
+    if (analyzingRef.current) {
+      console.log("[analysis] extraction skipped", {
+        source: "ChargesDocumentStep.useEffect",
+        reason: "analyzingRef already set",
+        pendingDocIds,
+      });
+      return;
+    }
+
+    console.log("[analysis] trigger requested", {
+      source: "ChargesDocumentStep.useEffect",
+      pendingDocIds,
+      pipeline: "runBulkDocumentAnalysis",
+    });
     void runAnalysis(pendingDocIds);
-  }, [pendingDocIds.join(","), hasProcessing, runAnalysis]);
+  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, chargesDocs, hasUploaded]);
 
   useEffect(() => {
     if (
@@ -218,8 +274,25 @@ export function ChargesDocumentStep() {
     persistChargesExtraction,
   ]);
 
-  function handleUpload(files: File[]) {
+  async function handleUpload(files: File[]) {
     if (!files.length) return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.error("[ChargesDocumentStep] upload aborted: user not authenticated");
+      alert("Utilisateur non connecté");
+      return;
+    }
+
+    const { files: uploadedFiles } = await uploadFilesForUser(files, user.id);
+
+    if (uploadedFiles.length === 0) {
+      console.error("[ChargesDocumentStep] upload failed: no files stored in Supabase");
+      return;
+    }
 
     setValidatedSuccess(false);
     setAiAnimationDone(false);
@@ -230,11 +303,19 @@ export function ChargesDocumentStep() {
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: files.map((file) => ({ file, category: CHARGES_UPLOAD_CATEGORY })),
+      files: uploadedFiles.map((file) => ({ file, category: CHARGES_UPLOAD_CATEGORY })),
+    });
+
+    console.log("[analysis] trigger requested", {
+      source: "ChargesDocumentStep.handleUpload",
+      uploadedCount: uploadedFiles.length,
+      fileNames: uploadedFiles.map((file) => file.name),
+      pipeline: "runBulkDocumentAnalysis",
+      note: "upload complete — analysis deferred to useEffect when pendingDocIds populate",
     });
 
     showInfo(
-      `${files.length} fichier${files.length > 1 ? "s" : ""} reçu${files.length > 1 ? "s" : ""}`,
+      `${uploadedFiles.length} fichier${uploadedFiles.length > 1 ? "s" : ""} reçu${uploadedFiles.length > 1 ? "s" : ""}`,
       "L'IA prépare vos charges déductibles.",
     );
   }

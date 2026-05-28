@@ -142,10 +142,30 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
 
   const runAnalysisForIds = useCallback(
     async (documentIds: string[]) => {
-      if (documentIds.length === 0 || analyzingRef.current) return;
+      if (documentIds.length === 0) {
+        console.log("[analysis] no analyzable documents", {
+          source: "DocumentsWorkspace.runAnalysisForIds",
+          reason: "empty documentIds",
+        });
+        return;
+      }
+      if (analyzingRef.current) {
+        console.log("[analysis] extraction skipped", {
+          source: "DocumentsWorkspace.runAnalysisForIds",
+          reason: "already analyzing",
+          documentIds,
+        });
+        return;
+      }
       analyzingRef.current = true;
       setIsAnalyzing(true);
       showInfo("Analyse en cours", "L'IA lit vos documents et extrait les montants.");
+
+      console.log("[analysis] trigger requested", {
+        source: "DocumentsWorkspace.runAnalysisForIds",
+        documentIds,
+        pipeline: "runBulkDocumentAnalysis",
+      });
 
       try {
         const { succeeded, failed } = await runBulkDocumentAnalysis({
@@ -179,14 +199,40 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
   );
 
   useEffect(() => {
-    if (uploadedIds.length === 0 || hasProcessing || isAnalyzing) return;
+    if (uploadedIds.length === 0) {
+      return;
+    }
+    if (hasProcessing) {
+      console.log("[analysis] extraction skipped", {
+        source: "DocumentsWorkspace.useEffect",
+        reason: "hasProcessing",
+        uploadedIds,
+      });
+      return;
+    }
+    if (isAnalyzing) {
+      console.log("[analysis] extraction skipped", {
+        source: "DocumentsWorkspace.useEffect",
+        reason: "isAnalyzing",
+        uploadedIds,
+      });
+      return;
+    }
+
+    console.log("[analysis] trigger requested", {
+      source: "DocumentsWorkspace.useEffect",
+      uploadedIds,
+      pipeline: "runBulkDocumentAnalysis",
+    });
+
     const timer = window.setTimeout(() => {
       void runAnalysisForIds(uploadedIds);
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [uploadedIds.join(","), hasProcessing, isAnalyzing, runAnalysisForIds]);
+  }, [uploadedIds.join(","), hasProcessing, isAnalyzing, runAnalysisForIds, uploadedIds]);
 
   function handleUpload(files: File[]) {
+    console.log("HANDLE UPLOAD", files);
     if (!files.length) return;
     dispatch({
       type: "UPLOAD_DOCUMENTS",

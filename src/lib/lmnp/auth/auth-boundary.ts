@@ -17,6 +17,7 @@ type AuthBoundaryListener = (payload: AuthBoundaryPayload) => void | Promise<voi
 
 let boundAuthUserId: string | null = null;
 let subscriptionStarted = false;
+let lastPayload: AuthBoundaryPayload | null = null;
 const listeners = new Set<AuthBoundaryListener>();
 
 function readStoredBoundAuthUserId(): string | null {
@@ -65,6 +66,8 @@ async function emitAuthBoundary(event: AuthChangeEvent, session: Session | null)
     userChanged,
   };
 
+  lastPayload = payload;
+
   await Promise.all([...listeners].map((listener) => listener(payload)));
 }
 
@@ -85,5 +88,10 @@ function ensureAuthBoundarySubscription() {
 export function subscribeAuthBoundary(listener: AuthBoundaryListener): () => void {
   listeners.add(listener);
   ensureAuthBoundarySubscription();
+
+  if (lastPayload) {
+    void Promise.resolve(listener(lastPayload));
+  }
+
   return () => listeners.delete(listener);
 }
