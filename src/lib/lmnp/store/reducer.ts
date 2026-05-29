@@ -31,6 +31,9 @@ import {
   suggestionToAmortissementComponent,
   suggestionToFromChargesItem,
 } from "../services/charges-amortization-intelligence";
+import { processGovernedExtraction } from "../services/governed-field-prefill";
+import type { FiscalTunnel } from "@/lib/documents/tunnel-field-ownership";
+import type { GovernedFieldExtractedBy } from "@/lib/documents/types/governed-field";
 import { recalculateVentilationSummary } from "../services/amortissement-profile";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
@@ -91,6 +94,14 @@ export type LmnpAction =
   | { type: "JOURNEY_MARK_PAID" }
   | { type: "JOURNEY_MARK_TRANSMITTED" }
   | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
+  | {
+      type: "APPLY_GOVERNED_EXTRACTION";
+      sourceTunnel: FiscalTunnel;
+      documentId: string;
+      sourceDocument: string;
+      extractedBy: GovernedFieldExtractedBy;
+      payload: Record<string, unknown>;
+    }
   | { type: "DECLARATION_COMPLETE_STEP"; stepId: string }
   | { type: "CREATE_NEW_DECLARATION" }
   | {
@@ -100,13 +111,14 @@ export type LmnpAction =
         siret?: string;
         firstName?: string;
         lastName?: string;
-        address?: string;
-        city?: string;
-        postalCode?: string;
-        activityStartDate?: string;
-        activityType?: "LMNP" | "LMP";
-        indivision?: boolean;
-        coOwners?: { id: string; name: string; percentage: number }[];
+        email?: string;
+        telephone?: string;
+        personalAddress?: string;
+        personalCity?: string;
+        personalPostalCode?: string;
+        establishmentAddress?: string;
+        establishmentCity?: string;
+        establishmentPostalCode?: string;
       };
       documentId?: string;
     }
@@ -410,6 +422,7 @@ function finalizeState(state: LmnpState): LmnpState {
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
   switch (action.type) {
     case "HYDRATE":
+      console.log("[hydration-restore-only]", { scope: "workspace", action: "HYDRATE" });
       return finalizeState({
         ...state,
         ...action.payload,
@@ -678,6 +691,34 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       });
     }
 
+    case "APPLY_GOVERNED_EXTRACTION": {
+      const draft = state.declarationDraft ?? { completedSteps: [] };
+      const result = processGovernedExtraction({
+        draft,
+        sourceTunnel: action.sourceTunnel,
+        documentId: action.documentId,
+        sourceDocument: action.sourceDocument,
+        extractedBy: action.extractedBy,
+        payload: action.payload,
+      });
+
+      console.log("[execution-event]", {
+        action: "governed_extraction",
+        sourceTunnel: action.sourceTunnel,
+        appliedFields: result.appliedFields,
+      });
+
+      return finalizeState({
+        ...state,
+        declarationDraft: {
+          ...draft,
+          governedFields: result.governedFields,
+          ...(result.creditFormPatch ? { creditWorkspaceForm: result.creditFormPatch } : {}),
+          ...(result.logementFormPatch ? { logementWorkspaceForm: result.logementFormPatch } : {}),
+        },
+      });
+    }
+
     case "DECLARATION_COMPLETE_STEP": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
       const completed = new Set(draft.completedSteps);
@@ -712,36 +753,33 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "CONFIRM_INPI_PROFILE": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
-      const propertyId = state.fiscalYear.propertyIds[0];
-      const properties = state.properties.map((p) =>
-        p.id === propertyId
-          ? {
-              ...p,
-              address: action.profile.address?.trim() ?? p.address,
-              city: action.profile.city?.trim() ?? p.city,
-              postalCode: action.profile.postalCode?.trim() ?? p.postalCode,
-            }
-          : p,
-      );
       const completed = new Set(draft.documentStepsCompleted ?? []);
       completed.add("inpi");
       return finalizeState({
         ...state,
-        properties,
         declarationDraft: {
           ...draft,
           siren: action.profile.siren?.trim() ?? draft.siren,
           siret: action.profile.siret?.trim() ?? draft.siret,
           exploitantFirstName: action.profile.firstName?.trim() ?? draft.exploitantFirstName,
           exploitantLastName: action.profile.lastName?.trim() ?? draft.exploitantLastName,
-          activityStartDate: action.profile.activityStartDate?.trim() ?? draft.activityStartDate,
-          activityType: action.profile.activityType ?? draft.activityType,
-          indivision: action.profile.indivision ?? draft.indivision,
-          coOwners: action.profile.coOwners ?? draft.coOwners,
+          exploitantEmail: action.profile.email?.trim() ?? draft.exploitantEmail,
+          exploitantTelephone: action.profile.telephone?.trim() ?? draft.exploitantTelephone,
+          personalAddress: action.profile.personalAddress?.trim() ?? draft.personalAddress,
+          personalCity: action.profile.personalCity?.trim() ?? draft.personalCity,
+          personalPostalCode:
+            action.profile.personalPostalCode?.trim() ?? draft.personalPostalCode,
+          establishmentAddress:
+            action.profile.establishmentAddress?.trim() ?? draft.establishmentAddress,
+          establishmentCity: action.profile.establishmentCity?.trim() ?? draft.establishmentCity,
+          establishmentPostalCode:
+            action.profile.establishmentPostalCode?.trim() ?? draft.establishmentPostalCode,
+          activityType: "LMNP",
           inpiDocumentId: action.documentId ?? draft.inpiDocumentId,
+          inpiGptPrefillAppliedAt: draft.inpiGptPrefillAppliedAt ?? nowIso(),
           inpiConfirmedAt: nowIso(),
           documentStepsCompleted: [...completed],
-          completedSteps: [...new Set([...draft.completedSteps, "siren", "exploitant", "logement"])],
+          completedSteps: [...new Set([...draft.completedSteps, "siren", "exploitant"])],
         },
       });
     }

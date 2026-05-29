@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import { FeedbackProvider } from "@/components/lmnp/shared/FeedbackProvider";
 import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";

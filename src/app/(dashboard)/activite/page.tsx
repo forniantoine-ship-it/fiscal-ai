@@ -1,11 +1,7 @@
-import { TabPlaceholder } from "@/components/lmnp/shared/TabPlaceholder";
+import { redirect } from "next/navigation";
+
+import { documentJourneyRoute } from "@/lib/lmnp/routes";
 
 export default function ActivitePage() {
-  return (
-    <TabPlaceholder
-      eyebrow="Mon activité"
-      title="Profil LMNP"
-      description="Retrouvez ici les informations issues de votre extrait INPI et le résumé de votre activité locative meublée."
-    />
-  );
+  redirect(documentJourneyRoute("inpi"));
 }

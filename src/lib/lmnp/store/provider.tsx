@@ -28,11 +28,15 @@ import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from ".
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 import {
+  logWorkspaceHydrationComplete,
+  logWorkspaceHydrationStart,
+} from "@/lib/lmnp/hydration";
+import { LmnpHydrationProvider } from "@/lib/lmnp/hydration";
+import {
   ensureActiveDossier,
   fetchDocumentsForDossier,
   reconcileWorkspaceDocuments,
 } from "@/lib/lmnp/dossier";
-
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
   dispatch: (action: LmnpAction) => void;
@@ -57,6 +61,7 @@ function toPersisted(state: LmnpState) {
 
 export function LmnpProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
+  const [isHydratingWorkspace, setIsHydratingWorkspace] = useState(true);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
   const [state, dispatch] = useReducer(
     lmnpReducer,
@@ -79,6 +84,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
         authUserIdRef.current = userId;
         setIsReady(false);
+        setIsHydratingWorkspace(true);
+        logWorkspaceHydrationStart();
         pendingFileLoadsRef.current.clear();
 
         if (!userId) {
@@ -124,6 +131,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
         markAutosaveSaved();
       } finally {
+        logWorkspaceHydrationComplete();
+        setIsHydratingWorkspace(false);
         console.log("[workspace] hydration completed", { userId: authUserIdRef.current });
         setIsReady(true);
       }
@@ -218,10 +227,24 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   );
 
   if (!isReady) {
-    return <AppLoadingSkeleton message="Restauration de votre dossier…" />;
+    return (
+      <LmnpHydrationProvider
+        isHydratingWorkspace={isHydratingWorkspace}
+        setWorkspaceHydrating={setIsHydratingWorkspace}
+      >
+        <AppLoadingSkeleton message="Restauration de votre dossier…" />
+      </LmnpHydrationProvider>
+    );
   }
 
-  return <LmnpContext.Provider value={value}>{children}</LmnpContext.Provider>;
+  return (
+    <LmnpHydrationProvider
+      isHydratingWorkspace={isHydratingWorkspace}
+      setWorkspaceHydrating={setIsHydratingWorkspace}
+    >
+      <LmnpContext.Provider value={value}>{children}</LmnpContext.Provider>
+    </LmnpHydrationProvider>
+  );
 }
 
 export function useLmnp(): LmnpContextValue {

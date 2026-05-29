@@ -10,13 +10,17 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { DocumentUploadZone } from "@/components/lmnp/design-system/DocumentUploadZone";
-import { LogementDocumentStep } from "@/components/lmnp/documents/LogementDocumentStep";
-import { CreditDocumentStep } from "@/components/lmnp/documents/CreditDocumentStep";
-import { AmortissementDocumentStep } from "@/components/lmnp/documents/AmortissementDocumentStep";
-import { InpiDocumentStep } from "@/components/lmnp/documents/InpiDocumentStep";
-import { RevenusDocumentStep } from "@/components/lmnp/documents/RevenusDocumentStep";
-import { ChargesDocumentStep } from "@/components/lmnp/documents/ChargesDocumentStep";
-import { ValidationDocumentStep } from "@/components/lmnp/documents/ValidationDocumentStep";
+import { PersistentTunnelPanel } from "@/components/lmnp/documents/PersistentTunnelPanel";
+import type { PersistedTunnelId } from "@/components/lmnp/documents/documents-workspace.types";
+import {
+  FrozenActiviteDocumentStep,
+  FrozenAmortissementDocumentStep,
+  FrozenChargesDocumentStep,
+  FrozenCreditDocumentStep,
+  FrozenLogementDocumentStep,
+  FrozenRevenusDocumentStep,
+  FrozenValidationDocumentStep,
+} from "@/components/lmnp/documents/memoized-tunnel-steps";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
 import { WorkflowPageBackLink } from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
@@ -35,6 +39,9 @@ const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   analyzed: "Analysé",
   failed: "Échec de lecture",
 };
+
+/** Survives DocumentsWorkspace remounts within the same browser session. */
+const visitedPersistedTunnels = new Set<PersistedTunnelId>();
 
 function resolveStepId(
   raw: string | null,
@@ -55,6 +62,19 @@ function resolveStepId(
   ]);
   if (raw && allowed.has(raw)) return raw as DocumentJourneyStepId;
   return "inpi";
+}
+
+function resolvePersistedTunnel(
+  stepId: ReturnType<typeof resolveStepId>,
+): PersistedTunnelId | "generic" {
+  if (stepId === "credit-immobilier" || stepId === "credit") return "credit";
+  if (stepId === "inpi") return "inpi";
+  if (stepId === "logement") return "logement";
+  if (stepId === "amortissements") return "amortissements";
+  if (stepId === "revenus") return "revenus";
+  if (stepId === "charges") return "charges";
+  if (stepId === "validation") return "validation";
+  return "generic";
 }
 
 function DocumentRow({
@@ -232,7 +252,6 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
   }, [uploadedIds.join(","), hasProcessing, isAnalyzing, runAnalysisForIds, uploadedIds]);
 
   function handleUpload(files: File[]) {
-    console.log("HANDLE UPLOAD", files);
     if (!files.length) return;
     dispatch({
       type: "UPLOAD_DOCUMENTS",
@@ -315,34 +334,81 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
 export function DocumentsWorkspace() {
   const searchParams = useSearchParams();
   const stepId = resolveStepId(searchParams.get("step"));
+  const activeTunnel = resolvePersistedTunnel(stepId);
 
-  if (stepId === "logement") {
-    return <LogementDocumentStep />;
+  if (activeTunnel !== "generic") {
+    visitedPersistedTunnels.add(activeTunnel);
   }
 
-  if (stepId === "credit" || stepId === "credit-immobilier") {
-    return <CreditDocumentStep />;
-  }
+  const shouldMount = (tunnel: PersistedTunnelId) => visitedPersistedTunnels.has(tunnel);
 
-  if (stepId === "amortissements") {
-    return <AmortissementDocumentStep />;
-  }
+  const isInpiActive = activeTunnel === "inpi";
+  const isLogementActive = activeTunnel === "logement";
+  const isCreditActive = activeTunnel === "credit";
+  const isAmortissementsActive = activeTunnel === "amortissements";
+  const isRevenusActive = activeTunnel === "revenus";
+  const isChargesActive = activeTunnel === "charges";
+  const isValidationActive = activeTunnel === "validation";
 
-  if (stepId === "revenus") {
-    return <RevenusDocumentStep />;
-  }
+  const tunnelPanels = (
+    <>
+      {shouldMount("inpi") ? (
+        <PersistentTunnelPanel tunnel="inpi" active={isInpiActive}>
+          <FrozenActiviteDocumentStep isActive={isInpiActive} />
+        </PersistentTunnelPanel>
+      ) : null}
 
-  if (stepId === "charges") {
-    return <ChargesDocumentStep />;
-  }
+      {shouldMount("logement") ? (
+        <PersistentTunnelPanel tunnel="logement" active={isLogementActive}>
+          <FrozenLogementDocumentStep isActive={isLogementActive} />
+        </PersistentTunnelPanel>
+      ) : null}
 
-  if (stepId === "inpi") {
-    return <InpiDocumentStep />;
-  }
+      {shouldMount("credit") ? (
+        <PersistentTunnelPanel tunnel="credit" active={isCreditActive}>
+          <FrozenCreditDocumentStep isActive={isCreditActive} />
+        </PersistentTunnelPanel>
+      ) : null}
 
-  if (stepId === "validation") {
-    return <ValidationDocumentStep />;
-  }
+      {shouldMount("amortissements") ? (
+        <PersistentTunnelPanel tunnel="amortissements" active={isAmortissementsActive}>
+          <FrozenAmortissementDocumentStep isActive={isAmortissementsActive} />
+        </PersistentTunnelPanel>
+      ) : null}
 
-  return <GenericDocumentStep stepId={stepId} />;
+      {shouldMount("revenus") ? (
+        <PersistentTunnelPanel tunnel="revenus" active={isRevenusActive}>
+          <FrozenRevenusDocumentStep isActive={isRevenusActive} />
+        </PersistentTunnelPanel>
+      ) : null}
+
+      {shouldMount("charges") ? (
+        <PersistentTunnelPanel tunnel="charges" active={isChargesActive}>
+          <FrozenChargesDocumentStep isActive={isChargesActive} />
+        </PersistentTunnelPanel>
+      ) : null}
+
+      {shouldMount("validation") ? (
+        <PersistentTunnelPanel tunnel="validation" active={isValidationActive}>
+          <FrozenValidationDocumentStep isActive={isValidationActive} />
+        </PersistentTunnelPanel>
+      ) : null}
+
+      {activeTunnel === "generic" ? (
+        <GenericDocumentStep stepId={stepId as DocumentJourneyStepId} />
+      ) : null}
+    </>
+  );
+
+  return (
+    <>
+      {activeTunnel !== "generic" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr" }}>
+          {tunnelPanels}
+        </div>
+      ) : (
+        tunnelPanels
+      )}
+    </>
+  );
 }

@@ -10,6 +10,10 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import {
+  LOGEMENT_FADE_IN,
+  logementMotionStyle,
+} from "@/components/lmnp/logement/logement-visual-isolation";
 
 export type LogementHeroUploadState = "idle" | "uploaded";
 
@@ -36,6 +40,8 @@ export function LogementHero({
   uploadedFileName,
   uploadedCount = 1,
 }: LogementHeroProps) {
+  console.count("[LogementHero render]");
+
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -161,7 +167,7 @@ export function LogementHero({
             padding: `${spacing.scale[6]} ${spacing.scale[5]}`,
             cursor: disabled ? "default" : "pointer",
             opacity: disabled ? 0.6 : 1,
-            transition: motions.hover.card,
+            ...logementMotionStyle(motions.hover.card),
           }}
           onClick={openFilePicker}
           onKeyDown={handleKeyDown}
@@ -206,11 +212,13 @@ function UploadedSummary({
   onAddAnother: () => void;
   disabled?: boolean;
 }) {
+  console.count("[LogementHero.UploadedSummary render]");
+
   const label = count === 1 ? "1 document importé" : `${count} documents importés`;
 
   return (
     <div
-      className="relative mx-auto mt-5 max-w-md animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+      className={`relative mx-auto mt-5 max-w-md ${LOGEMENT_FADE_IN}`}
       style={{
         borderRadius: radius.md,
         border: `1px solid ${colors.success.muted}`,
@@ -256,6 +264,8 @@ function SuccessPill() {
 }
 
 function UploadIcon({ active }: { active: boolean }) {
+  console.count("[LogementHero.UploadIcon render]");
+
   return (
     <span
       aria-hidden
@@ -265,7 +275,7 @@ function UploadIcon({ active }: { active: boolean }) {
         backgroundColor: active ? colors.orange[100] : colors.surface.primary,
         color: active ? colors.orange[500] : colors.text.muted,
         boxShadow: active ? `0 0 0 4px ${colors.orange[50]}` : "none",
-        transition: motions.hover.card,
+        ...logementMotionStyle(motions.hover.card),
       }}
     >
       <svg

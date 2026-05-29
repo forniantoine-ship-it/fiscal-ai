@@ -346,19 +346,44 @@ export interface DeclarationDraft {
   siret?: string;
   exploitantFirstName?: string;
   exploitantLastName?: string;
+  exploitantEmail?: string;
+  exploitantTelephone?: string;
+  personalAddress?: string;
+  personalCity?: string;
+  personalPostalCode?: string;
+  /** @deprecated Use personalAddress — kept for hydration of older workspaces */
+  entrepreneurAddress?: string;
+  entrepreneurCity?: string;
+  entrepreneurPostalCode?: string;
+  establishmentAddress?: string;
+  establishmentCity?: string;
+  establishmentPostalCode?: string;
   activityStartDate?: string;
   activityType?: LmnpActivityType;
   indivision?: boolean;
   coOwners?: CoOwner[];
   inpiDocumentId?: string;
+  /** Set after first GPT prefill — blocks automatic re-extraction on hydration. */
+  inpiGptPrefillAppliedAt?: string;
+  /** Per-field locks: user edits always win over GPT re-prefill. */
+  activiteUserValidatedFields?: Partial<Record<string, boolean>>;
+  /**
+   * Cross-tunnel governed field store — canonical metadata per extracted field.
+   * @see GovernedFieldMetadata in @/lib/documents/types/governed-field
+   */
+  governedFields?: Record<string, import("@/lib/documents/types/governed-field").GovernedFieldMetadata>;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;
+  /** In-progress logement form — restored passively on tunnel navigation. */
+  logementWorkspaceForm?: import("@/lib/lmnp/services/logement-profile").LogementFormValues;
   propertyBackgroundExtraction?: PropertyBackgroundExtraction;
   creditDocumentId?: string;
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;
   creditFinancing?: CreditFinancingData;
+  /** In-progress credit form — restored passively on tunnel navigation. */
+  creditWorkspaceForm?: import("@/lib/lmnp/services/credit-profile").CreditFormValues;
   amortissementExistingActivity?: boolean;
   amortissementContinuityDocumentIds?: string[];
   amortissementTravauxDocumentIds?: string[];

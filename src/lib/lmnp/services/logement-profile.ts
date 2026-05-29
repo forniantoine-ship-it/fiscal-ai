@@ -33,6 +33,11 @@ export function suggestsMultipleProperties(fileName: string): boolean {
   return /multi|plusieurs|2\s*biens|deux\s*biens|multi[-\s]?propri/i.test(fileName);
 }
 
+/** Loan-offer documents uploaded in the Logement tunnel may infer Crédit fields. */
+export function isLoanOfferInLogementTunnel(fileName: string): boolean {
+  return /offre|pret|pr[eê]t|amortissement|tableau/i.test(fileName);
+}
+
 export function isLogementDocument(doc: LmnpDocument, linkedDocumentId?: string): boolean {
   if (linkedDocumentId && doc.id === linkedDocumentId) return true;
   return (

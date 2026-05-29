@@ -1,14 +1,22 @@
-import type { Extraction, LmnpDocument } from "../types";
+import type { LmnpDocument } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import { ACTIVITE_ACTIVITY_TYPE, ACTIVITE_FISCAL_REGIME } from "../constants/activite-product";
 
+/** Activité tunnel profile — entrepreneur identity + fiscal registration only. */
 export interface InpiProfile {
-  siren?: string;
-  siret?: string;
   firstName?: string;
   lastName?: string;
-  address?: string;
-  city?: string;
-  postalCode?: string;
+  siren?: string;
+  /** Internal storage only — not shown in Activité UI. */
+  siret?: string;
+  email?: string;
+  telephone?: string;
+  personalAddress?: string;
+  personalCity?: string;
+  personalPostalCode?: string;
+  establishmentAddress?: string;
+  establishmentCity?: string;
+  establishmentPostalCode?: string;
 }
 
 export interface InpiDetectionResult {
@@ -18,7 +26,13 @@ export interface InpiDetectionResult {
 
 const SIREN_RE = /\b(\d{3}\s?\d{3}\s?\d{3})\b/;
 const SIRET_RE = /\b(\d{3}\s?\d{3}\s?\d{3}\s?\d{5})\b/;
-const POSTAL_RE = /\b(\d{5})\b/;
+
+const INPI_DOC_PATTERN = /inpi|kbis|siren|siret|rcs|extrait/i;
+
+export function isInpiDocument(doc: LmnpDocument, inpiDocumentId?: string): boolean {
+  if (inpiDocumentId && doc.id === inpiDocumentId) return true;
+  return INPI_DOC_PATTERN.test(doc.fileName);
+}
 
 function digitsOnly(value: string): string {
   return value.replace(/\D/g, "");
@@ -31,72 +45,78 @@ function extractFromText(blob: string): Partial<InpiProfile> {
   if (siret) out.siret = digitsOnly(siret[1]);
   if (siren) out.siren = digitsOnly(siren[1]).slice(0, 9);
   if (out.siret && !out.siren) out.siren = out.siret.slice(0, 9);
-
-  const postal = blob.match(POSTAL_RE);
-  if (postal) out.postalCode = postal[1];
-
   return out;
 }
 
-function extractFromExtractions(extractions: Extraction[]): Partial<InpiProfile> {
-  const out: Partial<InpiProfile> = {};
-  let textBlob = "";
-
-  for (const e of extractions) {
-    const raw = e.rawValue ?? "";
-    textBlob += ` ${raw}`;
-    if (e.ocrFieldKey === "supplierName" || e.displayLabel?.toLowerCase().includes("fournisseur")) {
-      const parts = raw.trim().split(/\s+/);
-      if (parts.length >= 2) {
-        out.firstName = parts[0];
-        out.lastName = parts.slice(1).join(" ");
-      } else if (parts.length === 1) {
-        out.lastName = parts[0];
-      }
-    }
-    if (e.ocrFieldKey === "address" || raw.length > 12) {
-      if (!out.address && /\d/.test(raw)) out.address = raw;
-    }
-  }
-
-  return { ...out, ...extractFromText(textBlob) };
-}
-
-/** Déduit le profil exploitant depuis le document INPI et les extractions OCR. */
 export function buildInpiDetection(
   ws: PersistedWorkspace,
   document: LmnpDocument,
 ): InpiDetectionResult {
   const draft = ws.declarationDraft ?? { completedSteps: [] };
-  const extractions = ws.extractions.filter((e) => e.documentId === document.id);
+  const profile = profileFromDraft(ws);
 
-  const fromOcr = extractFromExtractions(extractions);
-  const fromName = extractFromText(document.fileName);
-
-  const profile: InpiProfile = {
-    siren: draft.siren ?? fromOcr.siren ?? fromName.siren,
-    siret: draft.siret ?? fromOcr.siret ?? fromName.siret,
-    firstName: draft.exploitantFirstName ?? fromOcr.firstName,
-    lastName: draft.exploitantLastName ?? fromOcr.lastName,
-    address: ws.properties[0]?.address || fromOcr.address,
-    city: ws.properties[0]?.city || fromOcr.city,
-    postalCode: ws.properties[0]?.postalCode || fromOcr.postalCode,
+  const fromText = extractFromText(document.fileName);
+  const merged: InpiProfile = {
+    ...profile,
+    siren: profile.siren ?? fromText.siren,
+    siret: profile.siret ?? fromText.siret,
   };
 
-  if (!profile.firstName && !profile.lastName && document.fileName) {
-    const base = document.fileName.replace(/\.[^.]+$/, "").replace(/[_-]/g, " ");
-    const tokens = base.split(/\s+/).filter((t) => t.length > 1 && !/inpi|kbis|siren/i.test(t));
-    if (tokens.length >= 2) {
-      profile.firstName = tokens[0];
-      profile.lastName = tokens.slice(1, 3).join(" ");
-    }
-  }
-
   const checks = [
-    { id: "siret", label: "SIRET identifié", ok: Boolean(profile.siret || profile.siren) },
-    { id: "exploitant", label: "Exploitant détecté", ok: Boolean(profile.firstName || profile.lastName) },
-    { id: "address", label: "Adresse récupérée", ok: Boolean(profile.address || profile.postalCode) },
+    { id: "siren", label: "SIREN identifié", ok: Boolean(merged.siren) },
+    { id: "exploitant", label: "Exploitant détecté", ok: Boolean(merged.firstName || merged.lastName) },
+    {
+      id: "personal-address",
+      label: "Coordonnées personnelles",
+      ok: Boolean(merged.personalAddress || merged.personalPostalCode),
+    },
   ];
 
-  return { profile, checks };
+  return { profile: merged, checks };
+}
+
+export function withActiviteMockFallbacks(profile: InpiProfile): InpiProfile {
+  return {
+    ...profile,
+    siren: profile.siren ?? "829456123",
+    firstName: profile.firstName ?? "Marie",
+    lastName: profile.lastName ?? "Dupont",
+    email: profile.email ?? "marie.dupont@example.com",
+    telephone: profile.telephone ?? "06 12 34 56 78",
+    personalAddress: profile.personalAddress ?? "4 allée Malbec",
+    personalCity: profile.personalCity ?? "Saint-Médard-d'Eyrans",
+    personalPostalCode: profile.personalPostalCode ?? "33650",
+  };
+}
+
+export function profileFromDraft(ws: PersistedWorkspace): InpiProfile {
+  const draft = ws.declarationDraft ?? { completedSteps: [] };
+
+  return {
+    siren: draft.siren,
+    siret: draft.siret,
+    firstName: draft.exploitantFirstName,
+    lastName: draft.exploitantLastName,
+    email: draft.exploitantEmail,
+    telephone: draft.exploitantTelephone,
+    personalAddress: draft.personalAddress ?? draft.entrepreneurAddress,
+    personalCity: draft.personalCity ?? draft.entrepreneurCity,
+    personalPostalCode: draft.personalPostalCode ?? draft.entrepreneurPostalCode,
+    establishmentAddress: draft.establishmentAddress,
+    establishmentCity: draft.establishmentCity,
+    establishmentPostalCode: draft.establishmentPostalCode,
+  };
+}
+
+/** Values persisted on confirm — includes internal product constants. */
+export function activiteProfileForStorage(values: InpiProfile): {
+  profile: InpiProfile;
+  activityType: typeof ACTIVITE_ACTIVITY_TYPE;
+  fiscalRegime: typeof ACTIVITE_FISCAL_REGIME;
+} {
+  return {
+    profile: values,
+    activityType: ACTIVITE_ACTIVITY_TYPE,
+    fiscalRegime: ACTIVITE_FISCAL_REGIME,
+  };
 }

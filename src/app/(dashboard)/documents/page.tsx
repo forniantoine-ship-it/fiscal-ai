@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 
-import { DocumentsWorkspace } from "@/components/lmnp/documents/DocumentsWorkspace";
+import { DocumentsPageClient } from "@/components/lmnp/documents/DocumentsPageClient";
 
 export default function DocumentsPage() {
   return (
     <Suspense fallback={<p>Chargement…</p>}>
-      <DocumentsWorkspace />
+      <DocumentsPageClient />
     </Suspense>
   );
 }

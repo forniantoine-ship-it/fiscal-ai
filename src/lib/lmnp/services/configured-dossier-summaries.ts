@@ -100,19 +100,20 @@ function topChargeCategories(extraction?: ChargesExtractionData, limit = 3): str
 }
 
 export function buildActiviteConfiguredSummary(values: ActiviteFormValues): ConfiguredSummaryRow[] {
-  const rows: ConfiguredSummaryRow[] = [];
+  const rows: ConfiguredSummaryRow[] = [{ label: "Régime", value: "LMNP réel simplifié" }];
 
-  if (values.activityType) {
-    rows.push({ label: "Type d'activité", value: values.activityType });
-  }
-  if (values.regimeFiscal) {
-    rows.push({ label: "Régime fiscal", value: regimeShortLabel(values.regimeFiscal) });
-  }
-  if (values.city?.trim()) {
-    rows.push({ label: "Ville", value: values.city.trim() });
+  if (values.firstName?.trim() || values.lastName?.trim()) {
+    rows.push({
+      label: "Exploitant",
+      value: [values.firstName, values.lastName].filter(Boolean).join(" ").trim(),
+    });
   }
   if (values.siren?.trim()) {
     rows.push({ label: "SIREN", value: formatSiren(values.siren) });
+  }
+  const personalCity = values.personalCity?.trim();
+  if (personalCity) {
+    rows.push({ label: "Ville", value: personalCity });
   }
 
   return rows;

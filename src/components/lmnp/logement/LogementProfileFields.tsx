@@ -10,8 +10,14 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import type { PropertyType } from "@/lib/lmnp/types";
 import type { LogementFieldKey, LogementFormValues } from "@/lib/lmnp/services/logement-profile";
+import {
+  LOGEMENT_FADE_IN,
+  logementDelayStyle,
+  logementMotionStyle,
+} from "@/components/lmnp/logement/logement-visual-isolation";
 
 function LightField({
+  field,
   label,
   value,
   onChange,
@@ -21,6 +27,7 @@ function LightField({
   uncertain = false,
   autocompleteHint = false,
 }: {
+  field: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -30,13 +37,16 @@ function LightField({
   uncertain?: boolean;
   autocompleteHint?: boolean;
 }) {
+  console.count("[LogementProfileFields.LightField render]");
+  console.log("[field-runtime]", { field, value, typeofValue: typeof value });
+
   const [focused, setFocused] = useState(false);
   const showReview = uncertain && !focused && !value.trim();
 
   return (
     <label
-      className="block animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-      style={{ animationDelay: `${delayMs}ms`, paddingBlock: spacing.scale[2] }}
+      className={`block ${LOGEMENT_FADE_IN}`}
+      style={{ ...logementDelayStyle(delayMs), paddingBlock: spacing.scale[2] }}
     >
       <span style={{ ...typography.caption.desktop, color: colors.text.muted }}>{label}</span>
       <div className="relative mt-2">
@@ -79,7 +89,7 @@ function LightField({
               : showReview
                 ? `0 0 0 3px ${colors.orange[50]}`
                 : "none",
-            transition: motions.hover.card,
+            ...logementMotionStyle(motions.hover.card),
           }}
         />
       </div>
@@ -98,24 +108,29 @@ function LightField({
 }
 
 function LightSelect({
+  field,
   label,
   value,
   onChange,
   options,
   delayMs = 0,
 }: {
+  field: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
   delayMs?: number;
 }) {
+  console.count("[LogementProfileFields.LightSelect render]");
+  console.log("[field-runtime]", { field, value, typeofValue: typeof value });
+
   const [focused, setFocused] = useState(false);
 
   return (
     <label
-      className="block animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-      style={{ animationDelay: `${delayMs}ms`, paddingBlock: spacing.scale[2] }}
+      className={`block ${LOGEMENT_FADE_IN}`}
+      style={{ ...logementDelayStyle(delayMs), paddingBlock: spacing.scale[2] }}
     >
       <span style={{ ...typography.caption.desktop, color: colors.text.muted }}>{label}</span>
       <select
@@ -132,7 +147,7 @@ function LightSelect({
           borderRadius: radius.md,
           padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
           boxShadow: focused ? `0 0 0 3px ${colors.orange[100]}` : "none",
-          transition: motions.hover.card,
+          ...logementMotionStyle(motions.hover.card),
         }}
       >
         {options.map((option) => (
@@ -146,9 +161,11 @@ function LightSelect({
 }
 
 function SectionTitle({ children }: { children: string }) {
+  console.count("[LogementProfileFields.SectionTitle render]");
+
   return (
     <p
-      className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+      className={LOGEMENT_FADE_IN}
       style={{
         ...typography.caption.desktop,
         color: colors.text.accent,
@@ -185,6 +202,16 @@ export function LogementProfileFields({
   uncertainFields = [],
   showConfirm = true,
 }: LogementProfileFieldsProps) {
+  console.count("[LogementProfileFields render]");
+  console.log("[logement-form-props]", {
+    address: values.address,
+    city: values.city,
+    postalCode: values.postalCode,
+    acquisitionDate: values.acquisitionDate,
+    surface: values.surface,
+    propertyType: values.propertyType,
+  });
+
   const uncertain = new Set(uncertainFields);
 
   const update = (patch: Partial<LogementFormValues>) => {
@@ -209,6 +236,7 @@ export function LogementProfileFields({
         <>
           <SectionTitle>Identité logement</SectionTitle>
           <LightField
+            field="label"
             label="Nom du logement"
             value={values.label}
             onChange={(label) => update({ label })}
@@ -217,6 +245,7 @@ export function LogementProfileFields({
             delayMs={60}
           />
           <LightField
+            field="address"
             label="Adresse"
             value={values.address}
             onChange={(address) => update({ address })}
@@ -226,6 +255,7 @@ export function LogementProfileFields({
             delayMs={120}
           />
           <LightField
+            field="addressLine2"
             label="Complément adresse"
             value={values.addressLine2}
             onChange={(addressLine2) => update({ addressLine2 })}
@@ -234,6 +264,7 @@ export function LogementProfileFields({
             delayMs={180}
           />
           <LightField
+            field="city"
             label="Ville"
             value={values.city}
             onChange={(city) => update({ city })}
@@ -242,6 +273,7 @@ export function LogementProfileFields({
             delayMs={240}
           />
           <LightField
+            field="postalCode"
             label="Code postal"
             value={values.postalCode}
             onChange={(postalCode) => update({ postalCode })}
@@ -256,6 +288,7 @@ export function LogementProfileFields({
         <>
           <SectionTitle>Caractéristiques</SectionTitle>
           <LightSelect
+            field="propertyType"
             label="Type de propriété"
             value={values.propertyType}
             onChange={(propertyType) => update({ propertyType: propertyType as PropertyType })}
@@ -263,8 +296,8 @@ export function LogementProfileFields({
             delayMs={60}
           />
           <div
-            className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-            style={{ animationDelay: "120ms", paddingBlock: spacing.scale[2] }}
+            className={LOGEMENT_FADE_IN}
+            style={{ ...logementDelayStyle(120), paddingBlock: spacing.scale[2] }}
           >
             <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>Copropriété</p>
             <div className="mt-3 flex gap-3">
@@ -283,7 +316,7 @@ export function LogementProfileFields({
                       border: `1px solid ${selected ? colors.border.selected : colors.border.subtle}`,
                       backgroundColor: selected ? colors.surface.selected : colors.surface.primary,
                       color: selected ? colors.text.primary : colors.text.secondary,
-                      transition: motions.hover.button,
+                      ...logementMotionStyle(motions.hover.button),
                     }}
                   >
                     {choice}
@@ -293,6 +326,7 @@ export function LogementProfileFields({
             </div>
           </div>
           <LightField
+            field="surface"
             label="Surface"
             value={values.surface}
             onChange={(surface) => update({ surface })}
@@ -301,6 +335,7 @@ export function LogementProfileFields({
             delayMs={180}
           />
           <LightField
+            field="acquisitionDate"
             label="Date acquisition"
             type="date"
             value={values.acquisitionDate}
@@ -309,6 +344,7 @@ export function LogementProfileFields({
             delayMs={240}
           />
           <LightField
+            field="status"
             label="Statut"
             value={values.status}
             onChange={(status) => update({ status })}
@@ -321,7 +357,7 @@ export function LogementProfileFields({
 
       {showIncompleteWarning ? (
         <p
-          className="mt-8 animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+          className={`mt-8 ${LOGEMENT_FADE_IN}`}
           style={{ ...typography.caption.desktop, color: colors.text.muted }}
         >
           Certaines informations restent à compléter.
@@ -329,7 +365,7 @@ export function LogementProfileFields({
       ) : null}
 
       {showConfirm && visibleSections >= 2 ? (
-        <div className="mt-10 flex justify-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]">
+        <div className={`mt-10 flex justify-center ${LOGEMENT_FADE_IN}`}>
           <Button onClick={onConfirm} disabled={confirmDisabled}>
             Confirmer les informations
           </Button>
@@ -342,7 +378,7 @@ export function LogementProfileFields({
 
   return (
     <section
-      className="relative w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+      className={`relative w-full ${LOGEMENT_FADE_IN}`}
       style={cardStyle}
     >
       <h2
