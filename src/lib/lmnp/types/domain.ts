@@ -100,6 +100,10 @@ export interface LoanProfile {
   deferralType?: LoanDeferralType;
   deferralMonths?: number;
   fees: number;
+  /** One-time guarantee costs (e.g. caution, hypothèque). */
+  loanGuaranteeFees?: number;
+  /** One-time bank application / dossier fees at loan origination. */
+  loanApplicationFees?: number;
   startDate: string;
   firstPaymentDate: string;
   remainingCapital: number;
@@ -120,7 +124,8 @@ export interface CreditFinancingSummary {
   fiscalYearLabel: string;
   annualInterest: number;
   annualInsurance: number;
-  annualFinancingCharges: number;
+  /** @deprecated Ambiguous aggregate — prefer annualInterest + annualInsurance. */
+  annualFinancingCharges?: number;
   remainingCapital: number;
 }
 
@@ -159,31 +164,174 @@ export interface AmortissementVentilationData {
 
 export interface RevenusMonthlyEntry {
   month: string;
+  monthKey?: string;
   collectedAmount: number;
   detectedFees?: number;
+  events?: RevenueEvent[];
+  missing?: boolean;
+}
+
+export type RevenueEventCategory =
+  | "rent"
+  | "platform_payout"
+  | "charges"
+  | "fee"
+  | "refund"
+  | "unknown";
+
+export type RevenueEventRecurrence = "monthly" | "annual" | "one_shot" | null;
+
+export interface RevenueEvent {
+  id: string;
+  date: string | null;
+  amount: number;
+  category: RevenueEventCategory;
+  sourceDocumentId?: string;
+  sourceType?: string;
+  label?: string;
+  confidence?: number;
+  recurrence?: RevenueEventRecurrence;
+  mergedFromIds?: string[];
+  deduplicated?: boolean;
 }
 
 export interface RevenusPropertyData {
   id: string;
   label: string;
   propertyId?: string;
+  events: RevenueEvent[];
   annualRevenue: number;
   rentCount: number;
   detectedFees: number;
   months: RevenusMonthlyEntry[];
   hasSecurityDeposit?: boolean;
   incomplete?: boolean;
+  missingMonths?: string[];
+  deduplicatedCount?: number;
+  annualTotalHint?: number | null;
 }
 
 export interface RevenusExtractionData {
   properties: RevenusPropertyData[];
+  events?: RevenueEvent[];
   summary: {
     totalRevenue: number;
     rentCount: number;
     totalFees: number;
     hasSecurityDeposit: boolean;
+    eventCount?: number;
+    missingMonthCount?: number;
+    deduplicatedCount?: number;
+    lowConfidenceCount?: number;
   };
+  deduplicationNotes?: string[];
 }
+
+export type RevenueMonthlyGridRow = {
+  monthKey: string;
+  month: string;
+  loyers: number;
+  autresRevenus: number;
+  charges: number;
+};
+
+export type RevenueTransactionDirection = "credit" | "debit";
+
+export type RevenueLineKind = "atomic" | "total" | "subtotal" | "balance" | "summary";
+
+export type RevenueRawLineSourceType =
+  | "bank_statement"
+  | "excel"
+  | "rent_receipt"
+  | "attestation"
+  | "platform_export";
+
+export type RevenueTransactionCategory =
+  | "rent"
+  | "additional_income"
+  | "deposit"
+  | "caf_subsidy"
+  | "reimbursement"
+  | "internal_transfer"
+  | "owner_contribution"
+  | "owner_transfer"
+  | "platform_payout"
+  | "charges"
+  | "fee"
+  | "unknown";
+
+/** Atomic line extracted from a document — never a document total. */
+export interface RevenueRawLine {
+  id?: string;
+  date?: string | null;
+  label?: string;
+  amount: number;
+  direction: RevenueTransactionDirection;
+  sourceDocumentId: string;
+  sourceType: RevenueRawLineSourceType | string;
+  confidence: number;
+  accountContext?: string;
+  counterparty?: string;
+  lineKind?: RevenueLineKind;
+  explicitlyMarkedAsRent?: boolean;
+  /** Column header from a structured table (e.g. "Loyer", "Complément"). */
+  sourceColumnHeader?: string;
+  structuredTable?: boolean;
+  monthLabel?: string;
+}
+
+export interface RevenueTransaction {
+  id: string;
+  date: string | null;
+  description: string;
+  label?: string;
+  amount: number;
+  direction: RevenueTransactionDirection;
+  category: RevenueTransactionCategory;
+  confidence?: number;
+  accountContext?: string;
+  counterparty?: string;
+  clusterId?: string;
+  recurrenceScore?: number;
+  userValidated?: boolean;
+  lineKind?: RevenueLineKind;
+  explicitlyMarkedAsRent?: boolean;
+  sourceDocumentId?: string;
+  sourceType?: string;
+  deduplicated?: boolean;
+  mergedFromIds?: string[];
+  /** Mapped deterministically from a structured table column header. */
+  structuredMapping?: boolean;
+}
+
+export type RevenuePropertySession = {
+  id: string;
+  label: string;
+  propertyId?: string;
+  rows: RevenueMonthlyGridRow[];
+  transactions?: RevenueTransaction[];
+  lowConfidenceTransactions?: RevenueTransaction[];
+  isolatedTransactions?: RevenueTransaction[];
+  /** When true, AI aggregation must not overwrite user-edited grid rows. */
+  gridUserEdited?: boolean;
+};
+
+export type RevenueGptSession = {
+  properties: RevenuePropertySession[];
+  mode?: "upload" | "manual";
+  ui?: {
+    expandedPropertyIds?: string[];
+  };
+  meta?: {
+    deduplicatedCount?: number;
+    hasSecurityDeposit?: boolean;
+    lowConfidenceCount?: number;
+    transactionCount?: number;
+    gridSource?: "ocr_lines" | "mock_lines" | "persisted_session" | "user_manual";
+  };
+  /** Legacy raw events — not used for grid rendering. */
+  events?: RevenueEvent[];
+};
 
 export type ChargesExpenseSource = "upload" | "credit" | "revenus" | "amortissement";
 
@@ -384,6 +532,10 @@ export interface DeclarationDraft {
   creditFinancing?: CreditFinancingData;
   /** In-progress credit form — restored passively on tunnel navigation. */
   creditWorkspaceForm?: import("@/lib/lmnp/services/credit-profile").CreditFormValues;
+  /** Persisted GPT extraction session (amortization + loan offer) — no rerun on navigation. */
+  creditGptSession?: import("@/lib/lmnp/services/credit-gpt-ui-prefill").CreditExtractionSession;
+  /** Fields manually edited by the user — preserved over GPT re-hydration. */
+  creditUserValidatedFields?: Partial<Record<string, boolean>>;
   amortissementExistingActivity?: boolean;
   amortissementContinuityDocumentIds?: string[];
   amortissementTravauxDocumentIds?: string[];
@@ -393,6 +545,7 @@ export interface DeclarationDraft {
   revenusDocumentIds?: string[];
   revenusConfirmedAt?: string;
   revenusExtraction?: RevenusExtractionData;
+  revenueGptSession?: RevenueGptSession;
   chargesDocumentIds?: string[];
   chargesConfirmedAt?: string;
   chargesExtraction?: ChargesExtractionData;
