@@ -1,3 +1,157 @@
+// ---------------------------------------------------------------------------
+// Business Engine (Layers 1–5)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Core domain types
+// ---------------------------------------------------------------------------
+
+export type {
+  // Layer 0 — Page segmentation
+  PageType,
+  PageClassification,
+  // Layer 1 — Accounting facts
+  AccountingCategory,
+  ExtractedAccountingFact,
+  // Layer 2 — WorkGroup
+  WorkGroup,
+  WorkGroupStatus,
+  WorkGroupAuditEvent,
+  // Layer 3 — Business Assets
+  BusinessAsset,
+  FiscalTreatmentType,
+  // Layer 4 — Fiscal decisions
+  FiscalDecision,
+  // Layer 5 — Amortization
+  AmortizationSchedule,
+  AmortizationScheduleRow,
+  // Layer 6 — Declaration
+  FiscalDeclaration,
+  PropertyFiscalSummary,
+  // Knowledge + Guidance
+  FiscalKnowledgeRule,
+  GuidanceMessage,
+  GuidanceType,
+  GuidanceSeverity,
+  // Aggregates
+  BusinessEngineResult,
+} from "./business-engine.types";
+
+// ---------------------------------------------------------------------------
+// Layer 0 — Page segmentation
+// ---------------------------------------------------------------------------
+
+export {
+  classifyPageText,
+  classifyDocumentPages,
+  filterAccountingPages,
+  getExcludedPageIndices,
+  buildPageClassificationSummary,
+  getPageTypeLabelFr,
+} from "./page-segmentation";
+
+// ---------------------------------------------------------------------------
+// Layer 2 — WorkGroup engine
+// ---------------------------------------------------------------------------
+
+export {
+  proposeWorkGroups,
+  confirmWorkGroup,
+  rejectWorkGroup,
+  splitWorkGroupToSolos,
+} from "./work-group-engine";
+
+// ---------------------------------------------------------------------------
+// Layer 2 — WorkGroup lifecycle
+// ---------------------------------------------------------------------------
+
+export {
+  computeGroupFingerprint,
+  isRejectedGrouping,
+  addRejectionFingerprint,
+  initializeAuditTrail,
+  confirmWorkGroupWithAudit,
+  rejectWorkGroupWithAudit,
+  editWorkGroupMetadata,
+  manualMergeInvoices,
+  splitInvoiceFromGroup,
+  mergeWorkGroups,
+  proposeWorkGroupsSafe,
+} from "./work-group-lifecycle";
+
+// ---------------------------------------------------------------------------
+// Layer 3 — Business Asset engine
+// ---------------------------------------------------------------------------
+
+export {
+  workGroupToBusinessAsset,
+  mergeWorkGroupsToBusinessAsset,
+  buildAmortizationSchedule,
+  getAnnualAmortizationForYear,
+  buildBusinessEngineResult,
+  decideFiscalTreatment,
+  resolveAmortizationYears,
+  CATEGORY_AMORTIZATION_YEARS,
+  CATEGORY_LABELS_FR,
+} from "./business-asset-engine";
+
+// ---------------------------------------------------------------------------
+// Layer 4 — Fiscal decision engine
+// ---------------------------------------------------------------------------
+
+export {
+  applyFiscalDecision,
+  buildFiscalExplanation,
+  buildFiscalSummary,
+  buildAmortizationGuidanceText,
+  getCategoryDurationLabel,
+  type FiscalSummary,
+} from "./fiscal-decision-engine";
+
+// ---------------------------------------------------------------------------
+// Layer 5 — Fiscal knowledge rules
+// ---------------------------------------------------------------------------
+
+export {
+  FISCAL_KNOWLEDGE_RULES,
+  getKnowledgeRule,
+  renderExplanationTemplate,
+  generateConsistentExplanation,
+  getDurationRangeLabel,
+  isDurationReasonable,
+  getDurationWarning,
+} from "./fiscal-knowledge-rules";
+
+// ---------------------------------------------------------------------------
+// Layer 6 — Declaration aggregation
+// ---------------------------------------------------------------------------
+
+export {
+  buildPropertyFiscalSummary,
+  buildFiscalDeclaration,
+  aggregateByCategory,
+  buildDeclarationSummaryText,
+  checkDeclarationReadiness,
+  type CategoryAggregation,
+  type ChargeItem,
+} from "./declaration-aggregation-engine";
+
+// ---------------------------------------------------------------------------
+// Smart user guidance
+// ---------------------------------------------------------------------------
+
+export {
+  generateWorkGroupGuidance,
+  generateAssetGuidance,
+  generateDeclarationGuidance,
+  getPrimaryGuidance,
+  assetNeedsAttention,
+} from "./user-guidance-engine";
+
+// ---------------------------------------------------------------------------
+// Existing workspace engine
+// ---------------------------------------------------------------------------
+
 export { buildEngineContext, getRequiredFields, hasActiveLedgerForField } from "./context";
 export { recomputeAlerts } from "./alerts";
 export { computeUserConfidence, pickNextAction, getConfidenceBand } from "./confidence";
