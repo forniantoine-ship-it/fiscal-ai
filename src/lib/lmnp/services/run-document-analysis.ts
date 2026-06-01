@@ -32,6 +32,16 @@ export async function runBulkDocumentAnalysis(params: {
     documentCount: documentIds.length,
     note: "vision OCR path — does NOT call classifier or invoice-extractor",
   });
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  console.log("[charges-runBulk-entry]", {
+    docs: documents
+      .filter((d) => documentIds.includes(d.id))
+      .map((d) => ({
+        id: d.id,
+        fileName: d.fileName,
+        status: d.status,
+      })),
+  });
 
   for (const docId of documentIds) {
     const doc = documents.find((d) => d.id === docId);
@@ -44,12 +54,32 @@ export async function runBulkDocumentAnalysis(params: {
       continue;
     }
 
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-ocr-start]", {
+      reason: "runBulkDocumentAnalysis",
+      documentIds: [docId],
+      fileName: doc.fileName,
+      currentStatus: doc.status,
+    });
+
     dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "processing" });
 
     try {
       const file = await resolveDocumentFile(doc, getFile);
 
       const result = await analyzeDocumentWithVision(doc, file, fiscalYear);
+      const ocrTextLength = result.extractions
+        .map((entry) => entry.rawValue)
+        .join("\n").length;
+      console.log("[charges-pno-debug] OCR analysis applied", {
+        documentId: docId,
+        fileName: doc.fileName,
+        detectedDocumentType: result.documentType,
+        category: result.category,
+        extractionCount: result.extractions.length,
+        ocrTextLength,
+        fieldKeys: result.extractions.map((entry) => entry.fieldKey),
+      });
       dispatch({ type: "APPLY_DOCUMENT_ANALYSIS", documentId: docId, result });
       succeeded++;
     } catch (err) {

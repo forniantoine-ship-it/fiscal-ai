@@ -1,4 +1,4 @@
-import { monthKeyFromDate, monthLabelFromKey } from "./revenue-aggregation";
+import { monthKeyForTransaction, monthLabelFromKey } from "./revenue-aggregation";
 import {
   enrichTransactionsWithClusters,
   LOW_CONFIDENCE_THRESHOLD,
@@ -41,6 +41,32 @@ const AUTRES_CATEGORIES = new Set<RevenueTransactionCategory>([
   "reimbursement",
 ]);
 const CHARGE_CATEGORIES = new Set<RevenueTransactionCategory>(["charges", "fee"]);
+
+function isComplementTransaction(transaction: RevenueTransaction): boolean {
+  return (
+    transaction.category === "additional_income" ||
+    /compl[eé]ment/i.test(transaction.label ?? transaction.description)
+  );
+}
+
+function logComplementGridMapping(
+  stage: "aggregate_input" | "aggregate_skip" | "aggregate_bucket",
+  transaction: RevenueTransaction,
+  detail: Record<string, unknown>,
+): void {
+  if (!isComplementTransaction(transaction)) return;
+  console.log("[revenue-grid-mapping]", {
+    stage,
+    transactionId: transaction.id,
+    category: transaction.category,
+    confidence: transaction.confidence ?? null,
+    amount: transaction.amount,
+    date: transaction.date,
+    monthLabel: transaction.monthLabel ?? null,
+    structuredMapping: transaction.structuredMapping ?? false,
+    ...detail,
+  });
+}
 
 export function transactionCategoryLabel(category: RevenueTransactionCategory): string {
   switch (category) {
@@ -170,8 +196,19 @@ export function aggregateTransactionsToGrid(
   const monthBuckets = new Map<string, { loyers: number; autresRevenus: number; charges: number }>();
 
   for (const transaction of transactions) {
-    const monthKey = monthKeyFromDate(transaction.date, fiscalYear);
-    if (!monthKey) continue;
+    logComplementGridMapping("aggregate_input", transaction, {
+      direction: transaction.direction,
+      userValidated: transaction.userValidated ?? false,
+    });
+
+    const monthKey = monthKeyForTransaction(transaction, fiscalYear);
+    if (!monthKey) {
+      logComplementGridMapping("aggregate_skip", transaction, {
+        reason: "missing_month_key",
+        fiscalYear,
+      });
+      continue;
+    }
 
     const bucket = monthBuckets.get(monthKey) ?? { loyers: 0, autresRevenus: 0, charges: 0 };
     const rawValue = String(transaction.amount);
@@ -182,17 +219,47 @@ export function aggregateTransactionsToGrid(
       looksLikeCalendarInteger(rawValue) ||
       isDateDerivedAmount(parsedAmount, rawValue)
     ) {
+      logComplementGridMapping("aggregate_skip", transaction, {
+        reason: "date_guard_rejected_amount",
+        monthKey,
+        rawValue,
+      });
       continue;
     }
 
     if (transaction.direction === "credit") {
       if (LOYER_CATEGORIES.has(transaction.category)) bucket.loyers += parsedAmount;
-      else if (AUTRES_CATEGORIES.has(transaction.category)) bucket.autresRevenus += parsedAmount;
-      else if (transaction.category === "unknown" && transaction.userValidated) {
+      else if (AUTRES_CATEGORIES.has(transaction.category)) {
         bucket.autresRevenus += parsedAmount;
+        logComplementGridMapping("aggregate_bucket", transaction, {
+          monthKey,
+          column: "autresRevenus",
+          bucketValue: bucket.autresRevenus,
+        });
+      } else if (transaction.category === "unknown" && transaction.userValidated) {
+        bucket.autresRevenus += parsedAmount;
+        logComplementGridMapping("aggregate_bucket", transaction, {
+          monthKey,
+          column: "autresRevenus",
+          bucketValue: bucket.autresRevenus,
+          via: "user_validated_unknown",
+        });
+      } else {
+        logComplementGridMapping("aggregate_skip", transaction, {
+          reason: "category_not_mapped_to_autres",
+          monthKey,
+          category: transaction.category,
+        });
       }
     } else if (CHARGE_CATEGORIES.has(transaction.category)) {
       bucket.charges += parsedAmount;
+    } else {
+      logComplementGridMapping("aggregate_skip", transaction, {
+        reason: "non_credit_non_charge",
+        monthKey,
+        direction: transaction.direction,
+        category: transaction.category,
+      });
     }
 
     monthBuckets.set(monthKey, bucket);
@@ -265,7 +332,7 @@ export function processPropertyTransactions(
     : partitionTransactions(highConfidence);
 
   const rows =
-    preserveUserGrid && existingRows
+    preserveUserGrid && existingRows && !isStructuredBatch
       ? existingRows
       : aggregateTransactionsToGrid(gridCandidates, fiscalYear, existingRows);
 
@@ -274,13 +341,14 @@ export function processPropertyTransactions(
     gridCandidateCount: gridCandidates.length,
     lowConfidenceCount: lowConfidence.length,
     isolatedCount: isolated.length,
-    preserveUserGrid,
+    preserveUserGrid: preserveUserGrid && !isStructuredBatch,
+    structuredTable: isStructuredBatch,
     populatedMonths: rows.filter(
       (row) => row.loyers > 0 || row.autresRevenus > 0 || row.charges > 0,
     ).length,
   });
 
-  if (preserveUserGrid) {
+  if (preserveUserGrid && !isStructuredBatch) {
     logRevenueSourceOfTruth("user_grid_edit", {
       fn: "processPropertyTransactions",
       action: "skipped_grid_overwrite",

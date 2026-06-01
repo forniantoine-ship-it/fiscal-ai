@@ -1,5 +1,11 @@
 import { normalizeOcrText } from "@/lib/documents/normalizers";
 import {
+  incrementCreditPipelineCounter,
+  measureCreditPipelineAwait,
+  measureCreditPipelineSync,
+  traceCreditPipelineStep,
+} from "@/lib/lmnp/services/credit-pipeline-timing";
+import {
   computeOcrQualityMetrics,
   isOcrQualityAcceptable,
   logOcrQuality,
@@ -46,48 +52,62 @@ function finalizeResult(params: {
   pageCount: number;
   fallbackReason?: string;
 }): ResolveDocumentTextResult {
-  const normalized = normalizeOcrText(params.rawText);
-  const quality = computeOcrQualityMetrics(normalized);
-  const ok = isOcrQualityAcceptable(quality);
+  return measureCreditPipelineSync(
+    "ocr_quality_finalize",
+    () => {
+      const normalized = normalizeOcrText(params.rawText);
+      const quality = computeOcrQualityMetrics(normalized);
+      const ok = isOcrQualityAcceptable(quality);
 
-  logOcrQuality(quality, ok);
+      logOcrQuality(quality, ok);
 
-  console.log("[ocr-strategy] resolved", {
-    provider: params.provider,
-    pageCount: params.pageCount,
-    textLength: quality.textLength,
-    newlineCount: quality.newlineCount,
-    alphaRatio: quality.alphaRatio,
-    digitRatio: quality.digitRatio,
-    ok,
-    fallbackReason: params.fallbackReason ?? null,
-  });
+      console.log("[ocr-strategy] resolved", {
+        provider: params.provider,
+        pageCount: params.pageCount,
+        textLength: quality.textLength,
+        newlineCount: quality.newlineCount,
+        alphaRatio: quality.alphaRatio,
+        digitRatio: quality.digitRatio,
+        ok,
+        fallbackReason: params.fallbackReason ?? null,
+      });
 
-  return {
-    rawText: normalized,
-    provider: params.provider,
-    quality,
-    ok,
-    pageCount: params.pageCount,
-    fallbackReason: params.fallbackReason,
-  };
+      return {
+        rawText: normalized,
+        provider: params.provider,
+        quality,
+        ok,
+        pageCount: params.pageCount,
+        fallbackReason: params.fallbackReason,
+      };
+    },
+    {
+      provider: params.provider,
+      pageCount: params.pageCount,
+      fallbackReason: params.fallbackReason,
+    },
+  );
 }
 
 /**
  * Chooses the best OCR strategy: native PDF text, then vision OCR on rasterized pages.
  */
 export async function resolveDocumentText(file: File): Promise<ResolveDocumentTextResult> {
-  console.log("[ocr-strategy] start", {
+  traceCreditPipelineStep("ocr_strategy_start", {
     fileName: file.name,
     mimeType: file.type,
     sizeBytes: file.size,
   });
 
   if (isPdfFile(file)) {
-    const { text: nativeText, pageCount } = await extractNativePdfText(file);
+    const { text: nativeText, pageCount } = await measureCreditPipelineAwait(
+      "pdf_native_text_extraction",
+      extractNativePdfText(file),
+      { fileName: file.name },
+    );
 
     if (nativeText.length > NATIVE_PDF_TEXT_MIN_LENGTH) {
-      console.log("[ocr-strategy] using native PDF text", {
+      traceCreditPipelineStep("ocr_strategy_native_pdf_sufficient", {
         textLength: nativeText.length,
         threshold: NATIVE_PDF_TEXT_MIN_LENGTH,
       });
@@ -98,14 +118,29 @@ export async function resolveDocumentText(file: File): Promise<ResolveDocumentTe
       });
     }
 
-    console.log("[ocr-strategy] native PDF text insufficient, fallback to vision", {
+    traceCreditPipelineStep("ocr_strategy_native_insufficient_fallback_vision", {
       textLength: nativeText.length,
       threshold: NATIVE_PDF_TEXT_MIN_LENGTH,
     });
 
-    const images = await fileToRasterImages(file);
-    const visionText = await requestVisionOcrText(images, { fileName: file.name });
-    const combined = [nativeText, visionText].filter(Boolean).join("\n\n");
+    const images = await measureCreditPipelineAwait(
+      "pdf_page_rasterization_all_pages",
+      fileToRasterImages(file),
+      { fileName: file.name },
+    );
+
+    incrementCreditPipelineCounter("vision_ocr_requests");
+    const visionText = await measureCreditPipelineAwait(
+      "ocr_vision_request",
+      requestVisionOcrText(images, { fileName: file.name }),
+      { pageCount: images.length },
+    );
+
+    const combined = measureCreditPipelineSync(
+      "ocr_native_vision_text_merge",
+      () => [nativeText, visionText].filter(Boolean).join("\n\n"),
+      { nativeLength: nativeText.length, visionLength: visionText.length },
+    );
 
     return finalizeResult({
       rawText: combined || visionText,
@@ -115,8 +150,18 @@ export async function resolveDocumentText(file: File): Promise<ResolveDocumentTe
     });
   }
 
-  const images = await fileToRasterImages(file);
-  const visionText = await requestVisionOcrText(images, { fileName: file.name });
+  const images = await measureCreditPipelineAwait(
+    "pdf_page_rasterization_all_pages",
+    fileToRasterImages(file),
+    { fileName: file.name, nonPdf: true },
+  );
+
+  incrementCreditPipelineCounter("vision_ocr_requests");
+  const visionText = await measureCreditPipelineAwait(
+    "ocr_vision_request",
+    requestVisionOcrText(images, { fileName: file.name }),
+    { pageCount: images.length },
+  );
 
   return finalizeResult({
     rawText: visionText,
@@ -142,6 +187,10 @@ export async function resolveDocumentTextOrThrow(file: File): Promise<ResolveDoc
   } catch (err) {
     if (err instanceof DocumentOcrFailedError) throw err;
     if (err instanceof VisionOcrError) {
+      traceCreditPipelineStep("ocr_vision_failed", {
+        status: err.status,
+        message: err.message,
+      });
       console.error("[ocr-strategy] vision OCR failed", { status: err.status, message: err.message });
     }
     throw err;

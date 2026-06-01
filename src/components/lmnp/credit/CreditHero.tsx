@@ -27,9 +27,9 @@ type CreditHeroProps = {
 const HERO_BADGE = "Financement";
 const HERO_TITLE = "Ajoutez vos documents de prêt";
 const HERO_EXPLANATION =
-  "Déposez votre offre de prêt ou votre tableau d'amortissement.\nL'IA détecte automatiquement les informations nécessaires et prépare les échéances de l'année fiscale sélectionnée.\nVous pourrez corriger ou compléter les informations ensuite.";
+  "Déposez votre tableau d'amortissement.\nIl permet à l'IA de calculer automatiquement les intérêts et charges déductibles de l'année fiscale.";
 const HERO_HELPER =
-  "Certaines informations ont été préremplies depuis votre acte notarié.";
+  "Ajoutez votre offre de prêt pour compléter les informations du financement.";
 const UPLOAD_PROMPT = "Glissez votre document ici ou cliquez pour importer";
 
 export function CreditHero({

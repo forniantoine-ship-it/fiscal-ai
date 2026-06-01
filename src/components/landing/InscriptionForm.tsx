@@ -12,44 +12,37 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import {
+  logAuthRedirectDashboard,
+  signUpWithSession,
+} from "@/lib/lmnp/auth/auth-session";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { createLmnpDossier, setCurrentDossierId } from "@/lib/lmnp/dossier";
-import { supabase } from "@/lib/supabase";
 
 export function InscriptionForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-  
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    
-    if (error) {
-      alert(error.message);
-      return;
-    }
-    
-    const user = data.session?.user;
-    
-    if (user) {
-      const dossier = await createLmnpDossier(user.id);
+    if (submitting) return;
 
-      if (!dossier) {
-        console.error("DOSSIER ERROR: creation failed");
-      } else {
-        setCurrentDossierId(dossier.id, user.id);
-        console.log("[dossier] signup dossier ready", { dossierId: dossier.id });
+    setSubmitting(true);
+
+    try {
+      const result = await signUpWithSession(email, password);
+
+      if (!result.ok) {
+        alert(result.error);
+        return;
       }
+
+      logAuthRedirectDashboard();
+      router.push(LMNP_ROUTES.dashboard);
+    } finally {
+      setSubmitting(false);
     }
-  
-    
-  
-    router.push("/dashboard");
   };
 
   return (
@@ -147,8 +140,8 @@ export function InscriptionForm() {
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              Commencer ma déclaration
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Création en cours…" : "Commencer ma déclaration"}
             </Button>
           </form>
 

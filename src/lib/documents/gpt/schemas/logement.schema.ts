@@ -17,5 +17,5 @@ export const LOGEMENT_GPT_FIELD_KEYS = [
   "propertyCity",
   "propertyPostalCode",
   "acquisitionDate",
-  "acquisitionPrice",
+  "propertyPurchasePrice",
 ] as const;

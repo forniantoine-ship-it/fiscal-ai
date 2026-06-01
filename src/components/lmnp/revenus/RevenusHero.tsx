@@ -15,27 +15,35 @@ export type RevenusHeroUploadState = "idle" | "uploaded";
 
 type RevenusHeroProps = {
   onFiles: (files: File[]) => void;
+  onManualEntry?: () => void;
   disabled?: boolean;
   uploadState?: RevenusHeroUploadState;
   uploadedFileName?: string;
   uploadedCount?: number;
-  detectedRentCount?: number;
+  detectedEventCount?: number;
+  showManualLink?: boolean;
 };
 
 const HERO_BADGE = "Revenus locatifs";
-const HERO_TITLE = "Ajoutez vos revenus locatifs";
+const HERO_TITLE = "Reconstituez vos revenus locatifs";
 const HERO_EXPLANATION =
-  "Déposez vos exports ou relevés de location.\nL'IA détecte automatiquement les loyers et prépare les informations nécessaires pour votre déclaration.\nVous pourrez corriger ou compléter les informations ensuite.";
-const UPLOAD_PROMPT = "Glissez vos documents ici ou cliquez pour importer";
-const UPLOAD_HINT = "CSV, quittances, PDF plateformes, relevés locatifs — dépôt multiple accepté";
+  "Déposez tout ce qui prouve vos encaissements : exports, relevés, captures, tableurs, attestations.\nL'IA détecte les événements de revenus pour l'année fiscale et les regroupe intelligemment.\nVous pourrez corriger ou compléter chaque montant ensuite.";
+const UPLOAD_PROMPT = "Glissez vos fichiers ici ou cliquez pour importer";
+const UPLOAD_HINT =
+  "PDF, Excel, CSV, captures, relevés bancaires, exports Airbnb ou Booking — formats mixtes acceptés";
+
+const ACCEPTED_FILE_TYPES =
+  ".pdf,image/*,.csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 export function RevenusHero({
   onFiles,
+  onManualEntry,
   disabled = false,
   uploadState = "idle",
   uploadedFileName,
   uploadedCount = 1,
-  detectedRentCount,
+  detectedEventCount,
+  showManualLink = false,
 }: RevenusHeroProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -83,7 +91,7 @@ export function RevenusHero({
         ref={inputRef}
         type="file"
         multiple
-        accept=".pdf,image/*,.csv,text/csv"
+        accept={ACCEPTED_FILE_TYPES}
         className="hidden"
         disabled={disabled}
         onChange={(event) => handleFiles(event.target.files)}
@@ -134,7 +142,7 @@ export function RevenusHero({
         <UploadedSummary
           fileName={uploadedFileName}
           documentCount={uploadedCount}
-          rentCount={detectedRentCount}
+          eventCount={detectedEventCount}
           onAddAnother={openFilePicker}
           disabled={disabled}
         />
@@ -193,6 +201,14 @@ export function RevenusHero({
           </p>
         </div>
       )}
+
+      {showManualLink && !isUploaded ? (
+        <div className="relative mt-5 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <Button variant="secondary" onClick={onManualEntry} disabled={disabled}>
+            Saisir mes revenus manuellement
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -200,22 +216,22 @@ export function RevenusHero({
 function UploadedSummary({
   fileName,
   documentCount,
-  rentCount,
+  eventCount,
   onAddAnother,
   disabled,
 }: {
   fileName?: string;
   documentCount: number;
-  rentCount?: number;
+  eventCount?: number;
   onAddAnother: () => void;
   disabled?: boolean;
 }) {
   const docLabel =
-    documentCount === 1 ? "1 document importé" : `${documentCount} documents importés`;
-  const rentLabel =
-    rentCount && rentCount > 0
-      ? `${rentCount} loyer${rentCount > 1 ? "s" : ""} en cours d'analyse`
-      : "Analyse des revenus en cours";
+    documentCount === 1 ? "1 source importée" : `${documentCount} sources importées`;
+  const eventLabel =
+    eventCount && eventCount > 0
+      ? `${eventCount} événement${eventCount > 1 ? "s" : ""} de revenu détecté${eventCount > 1 ? "s" : ""}`
+      : "Reconstruction des revenus en cours";
 
   return (
     <div
@@ -229,7 +245,7 @@ function UploadedSummary({
       }}
     >
       <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
-        {rentLabel}
+        {eventLabel}
       </p>
       <p className="mt-1" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
         {docLabel}
@@ -241,7 +257,7 @@ function UploadedSummary({
       ) : null}
       <div className="mt-4 flex justify-center">
         <Button variant="secondary" disabled={disabled} onClick={onAddAnother}>
-          Ajouter un autre document
+          Ajouter une autre source
         </Button>
       </div>
     </div>

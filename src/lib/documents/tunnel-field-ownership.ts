@@ -51,6 +51,7 @@ export type CanonicalFieldKey =
   | "annualInterest"
   | "lenderName"
   | "loanScheduleDate"
+  | "annualInsurance"
   // — Mobilier / charges —
   | "invoiceAmount"
   | "invoiceDate"
@@ -210,6 +211,7 @@ export const FIELD_OWNERSHIP: Record<CanonicalFieldKey, FiscalTunnel> = {
   annualInterest: "credit",
   lenderName: "credit",
   loanScheduleDate: "credit",
+  annualInsurance: "credit",
   invoiceAmount: "mobilier",
   invoiceDate: "mobilier",
   supplierName: "mobilier",
@@ -234,6 +236,8 @@ export const EXTRACTION_KEY_ALIASES: Record<string, CanonicalFieldKey> = {
   adresseEtablissement: "establishmentAddress",
   propertyAddress: "propertyAddress",
   address: "propertyAddress",
+  propertyPurchasePrice: "acquisitionPrice",
+  acquisitionPrice: "acquisitionPrice",
 };
 
 const FIELD_OWNER: Partial<Record<CanonicalFieldKey, FiscalTunnel>> = FIELD_OWNERSHIP;

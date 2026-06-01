@@ -286,6 +286,36 @@ export function LogementProfileFields({
 
       {visibleSections >= 2 ? (
         <>
+          <SectionTitle>Acquisition</SectionTitle>
+          <LightField
+            field="propertyPurchasePrice"
+            label="Prix du bien (hors frais, travaux et mobilier)"
+            value={values.propertyPurchasePrice}
+            onChange={(propertyPurchasePrice) => update({ propertyPurchasePrice })}
+            placeholder="245 000"
+            uncertain={uncertain.has("propertyPurchasePrice")}
+            delayMs={60}
+          />
+          <div className="grid gap-0 sm:grid-cols-2 sm:gap-x-4">
+            <LightField
+              field="notaryFees"
+              label="Frais de notaire"
+              value={values.notaryFees}
+              onChange={(notaryFees) => update({ notaryFees })}
+              placeholder="18 500"
+              uncertain={uncertain.has("notaryFees")}
+              delayMs={120}
+            />
+            <LightField
+              field="acquisitionDate"
+              label="Date acquisition"
+              type="date"
+              value={values.acquisitionDate}
+              onChange={(acquisitionDate) => update({ acquisitionDate })}
+              uncertain={uncertain.has("acquisitionDate")}
+              delayMs={180}
+            />
+          </div>
           <SectionTitle>Caractéristiques</SectionTitle>
           <LightSelect
             field="propertyType"
@@ -335,22 +365,13 @@ export function LogementProfileFields({
             delayMs={180}
           />
           <LightField
-            field="acquisitionDate"
-            label="Date acquisition"
-            type="date"
-            value={values.acquisitionDate}
-            onChange={(acquisitionDate) => update({ acquisitionDate })}
-            uncertain={uncertain.has("acquisitionDate")}
-            delayMs={240}
-          />
-          <LightField
             field="status"
             label="Statut"
             value={values.status}
             onChange={(status) => update({ status })}
             placeholder="Loué meublé"
             uncertain={uncertain.has("status")}
-            delayMs={300}
+            delayMs={240}
           />
         </>
       ) : null}

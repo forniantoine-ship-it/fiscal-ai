@@ -1,8 +1,22 @@
 import type { CreditFormValues } from "@/lib/lmnp/services/credit-profile";
-import { creditFromDraft } from "@/lib/lmnp/services/credit-profile";
+import { creditFromDraft, readCreditUserValidatedFields } from "@/lib/lmnp/services/credit-gpt-ui-prefill";
 import type { LogementFormValues } from "@/lib/lmnp/services/logement-profile";
-import { logementFromWorkspace, propertyToFormValues } from "@/lib/lmnp/services/logement-profile";
-import type { DeclarationDraft } from "@/lib/lmnp/types";
+import {
+  logementBackgroundFromFormValues,
+  logementFromWorkspace,
+  normalizeLogementFormValues,
+  propertyToFormValues,
+} from "@/lib/lmnp/services/logement-profile";
+import {
+  createEmptyRevenueSession,
+  hasRevenueSessionData,
+} from "@/lib/lmnp/services/revenue-gpt-ui-prefill";
+import {
+  logRevenueGridSource,
+  logRevenueHydrationBranch,
+  logRevenueSourceOfTruth,
+} from "@/lib/lmnp/services/revenus-runtime-trace";
+import type { DeclarationDraft, RevenueGptSession } from "@/lib/lmnp/types";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 export type LogementUiHydration = {
@@ -22,28 +36,36 @@ export function logementWorkflowComplete(draft?: DeclarationDraft): boolean {
 }
 
 /**
- * Read-only restore — persisted draft/workspace only.
- * Does NOT merge governedFields, rerun GPT, or cross-tunnel prefill.
+ * Read-only restore — session-first (draft.creditGptSession), then confirmed financing.
+ * Does NOT prefer stale creditWorkspaceForm snapshots over extraction.
  */
-export function restoreCreditFormPassive(draft?: DeclarationDraft): CreditFormValues {
-  if (draft?.creditWorkspaceForm) {
-    return draft.creditWorkspaceForm;
-  }
-  return creditFromDraft(draft);
+export function restoreCreditFormPassive(
+  draft?: DeclarationDraft,
+  revenueYear?: number,
+): CreditFormValues {
+  return creditFromDraft(draft, revenueYear, readCreditUserValidatedFields(draft));
 }
 
 export function restoreLogementFormPassive(workspace: PersistedWorkspace): LogementFormValues {
   const draft = workspace.declarationDraft;
   if (draft?.logementWorkspaceForm) {
-    console.log("[logement-passive-restore]", { source: "logementWorkspaceForm" });
-    return draft.logementWorkspaceForm;
+    return normalizeLogementFormValues(
+      draft.logementWorkspaceForm,
+      draft.propertyBackgroundExtraction,
+    );
   }
   if (draft?.logementConfirmedAt) {
     console.log("[logement-passive-restore]", { source: "confirmed_property" });
-    return logementFromWorkspace(workspace);
+    return normalizeLogementFormValues(
+      logementFromWorkspace(workspace),
+      draft.propertyBackgroundExtraction,
+    );
   }
   console.log("[logement-passive-restore]", { source: "empty_property" });
-  return propertyToFormValues(workspace.properties[0]);
+  return normalizeLogementFormValues(
+    propertyToFormValues(workspace.properties[0]),
+    draft?.propertyBackgroundExtraction,
+  );
 }
 
 /** One-time passive UI restore — mirrors hydrateActiviteFormFromWorkspace. */
@@ -67,6 +89,54 @@ export function creditWorkspaceFormPatch(values: CreditFormValues): Partial<Decl
   return { creditWorkspaceForm: values };
 }
 
-export function logementWorkspaceFormPatch(values: LogementFormValues): Partial<DeclarationDraft> {
-  return { logementWorkspaceForm: values };
+export function logementWorkspaceFormPatch(
+  values: LogementFormValues,
+  existingBackground?: import("@/lib/lmnp/types").PropertyBackgroundExtraction,
+): Partial<DeclarationDraft> {
+  return {
+    logementWorkspaceForm: values,
+    propertyBackgroundExtraction: logementBackgroundFromFormValues(values, existingBackground),
+  };
+}
+
+export function restoreRevenueSessionPassive(
+  draft: DeclarationDraft | undefined,
+  fiscalYear: number,
+  properties: PersistedWorkspace["properties"],
+): RevenueGptSession {
+  if (draft?.revenueGptSession?.properties.length) {
+    logRevenueHydrationBranch("revenue_gpt_session", {
+      fn: "restoreRevenueSessionPassive",
+      propertyCount: draft.revenueGptSession.properties.length,
+    });
+    logRevenueGridSource("persisted_session", { fn: "restoreRevenueSessionPassive" });
+    logRevenueSourceOfTruth("persisted_revenue_gpt_session", {
+      fn: "restoreRevenueSessionPassive",
+    });
+    return draft.revenueGptSession;
+  }
+
+  if (draft?.revenusConfirmedAt || hasRevenueSessionData(draft?.revenueGptSession)) {
+    logRevenueHydrationBranch("confirmed_empty_fallback", {
+      fn: "restoreRevenueSessionPassive",
+    });
+    return draft?.revenueGptSession ?? createEmptyRevenueSession(properties, fiscalYear);
+  }
+
+  logRevenueHydrationBranch("create_empty_session", {
+    fn: "restoreRevenueSessionPassive",
+  });
+  logRevenueGridSource("user_manual", { fn: "restoreRevenueSessionPassive" });
+  logRevenueSourceOfTruth("manual_empty_session", {
+    fn: "restoreRevenueSessionPassive",
+  });
+  return createEmptyRevenueSession(properties, fiscalYear);
+}
+
+export function hasPersistedRevenueSession(draft?: DeclarationDraft): boolean {
+  return Boolean(draft?.revenueGptSession?.properties.length);
+}
+
+export function revenueSessionPatch(session: RevenueGptSession): Partial<DeclarationDraft> {
+  return { revenueGptSession: session };
 }

@@ -68,11 +68,11 @@ propertyType :
 - type du bien (ex. appartement, maison, studio, immeuble)
 - reprends le libellé le plus proche tel qu'écrit, en minuscules si possible
 
-acquisitionPrice :
-- montant d'acquisition du bien immobilier uniquement
-- PAS le coût total du financement
-- PAS les totaux fiscaux ou de droits
+propertyPurchasePrice :
+- valeur d'acquisition du BIEN IMMOBILIER uniquement (prix de vente / prix du bien)
+- EXCLURE strictement : mobilier, travaux, frais de notaire, frais bancaires, garantie, coût global de l'opération
 - PAS le montant global de l'opération si celui-ci agrège d'autres postes
+- PAS les totaux fiscaux ou de droits
 - nombre sans symbole €
 
 notaryFees :
@@ -159,9 +159,10 @@ export const LOGEMENT_ACTE_JSON_SCHEMA = {
         type: ["string", "null"],
         description: "Date d'acquisition ou signature de l'acte — ISO YYYY-MM-DD si possible",
       },
-      acquisitionPrice: {
+      propertyPurchasePrice: {
         type: ["number", "null"],
-        description: "Prix d'acquisition du bien uniquement — nombre sans €",
+        description:
+          "Prix du bien immobilier seul (hors frais de notaire, travaux, mobilier, financement) — nombre sans €",
       },
       notaryFees: {
         type: ["number", "null"],

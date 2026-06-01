@@ -1,6 +1,7 @@
 import type {
   RevenueEvent,
   RevenueEventCategory,
+  RevenueTransaction,
   RevenusExtractionData,
   RevenusMonthlyEntry,
   RevenusPropertyData,
@@ -63,6 +64,48 @@ export function monthLabelFromKey(key: string): string {
   const [, monthPart] = key.split("-");
   const monthIndex = Number(monthPart) - 1;
   return FRENCH_MONTHS[monthIndex] ?? key;
+}
+
+const FRENCH_MONTH_NAME_PATTERNS: Array<{ pattern: RegExp; index: number }> = [
+  { pattern: /^janvier\b/i, index: 1 },
+  { pattern: /^f[eé]vrier\b/i, index: 2 },
+  { pattern: /^mars\b/i, index: 3 },
+  { pattern: /^avril\b/i, index: 4 },
+  { pattern: /^mai\b/i, index: 5 },
+  { pattern: /^juin\b/i, index: 6 },
+  { pattern: /^juillet\b/i, index: 7 },
+  { pattern: /^ao[uû]t\b/i, index: 8 },
+  { pattern: /^septembre\b/i, index: 9 },
+  { pattern: /^octobre\b/i, index: 10 },
+  { pattern: /^novembre\b/i, index: 11 },
+  { pattern: /^d[eé]cembre\b/i, index: 12 },
+];
+
+export function monthNumberFromLabel(monthLabel: string): number | null {
+  const trimmed = monthLabel.trim();
+  if (!trimmed) return null;
+  for (const { pattern, index } of FRENCH_MONTH_NAME_PATTERNS) {
+    if (pattern.test(trimmed)) return index;
+  }
+  return null;
+}
+
+export function monthKeyFromMonthLabel(monthLabel: string, fiscalYear: number): string | null {
+  const monthNumber = monthNumberFromLabel(monthLabel);
+  if (!monthNumber) return null;
+  return `${fiscalYear}-${String(monthNumber).padStart(2, "0")}`;
+}
+
+export function monthKeyForTransaction(
+  transaction: Pick<RevenueTransaction, "date" | "monthLabel" | "structuredMapping">,
+  fiscalYear: number,
+): string | null {
+  const fromDate = monthKeyFromDate(transaction.date, fiscalYear);
+  if (fromDate) return fromDate;
+  if (transaction.monthLabel) {
+    return monthKeyFromMonthLabel(transaction.monthLabel, fiscalYear);
+  }
+  return null;
 }
 
 function daysApart(a: string | null, b: string | null): number | null {

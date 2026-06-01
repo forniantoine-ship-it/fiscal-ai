@@ -2,27 +2,30 @@ import type {
   DeclarationDraft,
   LmnpDocument,
   Property,
+  RevenueEvent,
   RevenusExtractionData,
-  RevenusMonthlyEntry,
   RevenusPropertyData,
 } from "../types";
+import {
+  createEmptyRevenueEvent,
+  deduplicateRevenueEvents,
+  monthKeyFromDate,
+  monthLabelFromKey,
+  recalculateRevenusExtraction,
+  revenueCategoryLabel,
+  rebuildPropertyAggregation,
+} from "./revenue-aggregation";
 
-export type { RevenusExtractionData, RevenusMonthlyEntry, RevenusPropertyData };
-
-const MOCK_MONTHS: RevenusMonthlyEntry[] = [
-  { month: "Janvier", collectedAmount: 1540, detectedFees: 40 },
-  { month: "Février", collectedAmount: 1540 },
-  { month: "Mars", collectedAmount: 1540, detectedFees: 20 },
-  { month: "Avril", collectedAmount: 1540 },
-  { month: "Mai", collectedAmount: 1540, detectedFees: 40 },
-  { month: "Juin", collectedAmount: 1540 },
-  { month: "Juillet", collectedAmount: 1540 },
-  { month: "Août", collectedAmount: 1540, detectedFees: 40 },
-  { month: "Septembre", collectedAmount: 1540 },
-  { month: "Octobre", collectedAmount: 1540, detectedFees: 40 },
-  { month: "Novembre", collectedAmount: 1540 },
-  { month: "Décembre", collectedAmount: 1540, detectedFees: 40 },
-];
+export type { RevenusExtractionData, RevenusMonthlyEntry, RevenusPropertyData, RevenueEvent } from "../types";
+export {
+  createEmptyRevenueEvent,
+  patchPropertyEvent,
+  addPropertyEvent,
+  removePropertyEvent,
+  recalculateRevenusExtraction,
+  rebuildPropertyAggregation,
+  revenueCategoryLabel,
+} from "./revenue-aggregation";
 
 export function formatCurrency(value: number): string {
   return new Intl.NumberFormat("fr-FR", {
@@ -32,17 +35,10 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
+/** Any file uploaded in the revenus tunnel is a revenue support — no rigid document typing. */
 export function isRevenusDocument(doc: LmnpDocument, linkedDocumentIds?: string[]): boolean {
   if (linkedDocumentIds?.includes(doc.id)) return true;
-  return (
-    doc.category === "revenus" ||
-    doc.category === "bail" ||
-    doc.documentType === "rent_receipt" ||
-    doc.documentType === "rent_bank_statement" ||
-    doc.documentType === "bank_statement" ||
-    doc.documentType === "lease_contract" ||
-    /loyer|quittance|relev|encaissement|location|airbnb|booking|csv/i.test(doc.fileName)
-  );
+  return doc.category === "revenus";
 }
 
 export function countRevenusDocuments(
@@ -69,64 +65,230 @@ function propertyLabel(property: Property | undefined, fallback: string): string
   return fallback;
 }
 
-export function buildRevenusExtraction(properties: Property[]): RevenusExtractionData {
-  const primary = properties[0];
-  const primaryProperty: RevenusPropertyData = {
-    id: primary?.id ?? "property-1",
-    propertyId: primary?.id,
-    label: propertyLabel(primary, "Appartement Bordeaux Gambetta"),
-    annualRevenue: 18_420,
-    rentCount: 12,
-    detectedFees: 340,
-    months: MOCK_MONTHS,
-    hasSecurityDeposit: true,
-    incomplete: false,
+function event(partial: Omit<RevenueEvent, "id"> & { id?: string }): RevenueEvent {
+  return {
+    id: partial.id ?? crypto.randomUUID(),
+    ...partial,
   };
+}
+
+function buildMonthlyRentEvents(fiscalYear: number, rentAmount = 1500, feeMonths: number[] = []): RevenueEvent[] {
+  const events: RevenueEvent[] = [];
+
+  for (let month = 1; month <= 12; month += 1) {
+    const date = `${String(month).padStart(2, "0")}/05/${fiscalYear}`;
+    events.push(
+      event({
+        date,
+        amount: rentAmount,
+        category: "rent",
+        sourceType: "Relevé bancaire",
+        label: "Virement loyer",
+        confidence: 92,
+        recurrence: "monthly",
+      }),
+    );
+
+    if (month === 1) {
+      events.push(
+        event({
+          date,
+          amount: rentAmount,
+          category: "rent",
+          sourceType: "Quittance",
+          label: "Loyer janvier",
+          confidence: 84,
+          recurrence: "monthly",
+        }),
+      );
+    }
+
+    if (feeMonths.includes(month)) {
+      events.push(
+        event({
+          date,
+          amount: 40,
+          category: "charges",
+          sourceType: "Quittance",
+          label: "Charges locatives",
+          confidence: 88,
+        }),
+      );
+    }
+  }
+
+  return events;
+}
+
+function buildPrimaryPropertyEvents(fiscalYear: number, property?: Property): RevenueEvent[] {
+  const events = buildMonthlyRentEvents(fiscalYear, 1500, [1, 3, 5, 8, 10, 12]);
+  events.push(
+    event({
+      date: `15/07/${fiscalYear}`,
+      amount: 980,
+      category: "platform_payout",
+      sourceType: "Export Airbnb",
+      label: "Versement juillet",
+      confidence: 79,
+      recurrence: "one_shot",
+    }),
+    event({
+      date: `15/07/${fiscalYear}`,
+      amount: 120,
+      category: "fee",
+      sourceType: "Export Airbnb",
+      label: "Commission plateforme",
+      confidence: 81,
+    }),
+    event({
+      date: `01/06/${fiscalYear}`,
+      amount: 1500,
+      category: "refund",
+      sourceType: "Attestation",
+      label: "Dépôt de garantie encaissé",
+      confidence: 70,
+      recurrence: "one_shot",
+    }),
+  );
+
+  if (property?.label?.toLowerCase().includes("airbnb")) {
+    return events.filter((item) => item.category !== "rent" || item.sourceType !== "Quittance");
+  }
+
+  return events;
+}
+
+function buildSecondaryPropertyEvents(fiscalYear: number): RevenueEvent[] {
+  return buildMonthlyRentEvents(fiscalYear, 800, [2, 6, 10]).slice(0, 20);
+}
+
+export function buildRevenusExtraction(
+  properties: Property[],
+  fiscalYear = new Date().getFullYear() - 1,
+): RevenusExtractionData {
+  const primary = properties[0];
+  const primaryProperty: RevenusPropertyData = rebuildPropertyAggregation(
+    {
+      id: primary?.id ?? "property-1",
+      propertyId: primary?.id,
+      label: propertyLabel(primary, "Appartement Bordeaux Gambetta"),
+      events: buildPrimaryPropertyEvents(fiscalYear, primary),
+      annualRevenue: 0,
+      rentCount: 0,
+      detectedFees: 0,
+      months: [],
+      annualTotalHint: 18_420,
+    },
+    fiscalYear,
+  );
 
   const allProperties =
     properties.length > 1
       ? [
           primaryProperty,
-          {
-            id: properties[1].id,
-            propertyId: properties[1].id,
-            label: propertyLabel(properties[1], "Studio Lyon Part-Dieu"),
-            annualRevenue: 9_600,
-            rentCount: 12,
-            detectedFees: 120,
-            months: MOCK_MONTHS.map((entry) => ({
-              ...entry,
-              collectedAmount: 800,
-              detectedFees: entry.detectedFees ? 10 : undefined,
-            })),
-            incomplete: true,
-          },
+          rebuildPropertyAggregation(
+            {
+              id: properties[1].id,
+              propertyId: properties[1].id,
+              label: propertyLabel(properties[1], "Studio Lyon Part-Dieu"),
+              events: buildSecondaryPropertyEvents(fiscalYear),
+              annualRevenue: 0,
+              rentCount: 0,
+              detectedFees: 0,
+              months: [],
+            },
+            fiscalYear,
+          ),
         ]
       : [primaryProperty];
 
-  const summary = {
-    totalRevenue: allProperties.reduce((sum, item) => sum + item.annualRevenue, 0),
-    rentCount: allProperties.reduce((sum, item) => sum + item.rentCount, 0),
-    totalFees: allProperties.reduce((sum, item) => sum + item.detectedFees, 0),
-    hasSecurityDeposit: allProperties.some((item) => item.hasSecurityDeposit),
-  };
+  return recalculateRevenusExtraction(
+    {
+      properties: allProperties,
+      summary: {
+        totalRevenue: 0,
+        rentCount: 0,
+        totalFees: 0,
+        hasSecurityDeposit: false,
+      },
+    },
+    fiscalYear,
+  );
+}
 
-  return { properties: allProperties, summary };
+export function hydrateRevenusExtraction(
+  draft: DeclarationDraft | undefined,
+  fiscalYear: number,
+): RevenusExtractionData | undefined {
+  const data = revenusFromDraft(draft);
+  if (!data) return undefined;
+  return recalculateRevenusExtraction(data, fiscalYear);
 }
 
 export function revenusFromDraft(draft?: DeclarationDraft): RevenusExtractionData | undefined {
-  return draft?.revenusExtraction;
+  const data = draft?.revenusExtraction;
+  if (!data) return undefined;
+
+  return {
+    ...data,
+    properties: data.properties.map((property) => ({
+      ...property,
+      events: property.events ?? legacyEventsFromMonths(property),
+    })),
+  };
+}
+
+function legacyEventsFromMonths(property: RevenusPropertyData): RevenueEvent[] {
+  return property.months.flatMap((month) =>
+    month.events?.length
+      ? month.events
+      : [
+          createEmptyRevenueEvent({
+            date: month.monthKey ? `${month.monthKey}-05` : null,
+            amount: month.collectedAmount,
+            category: "rent",
+            label: month.month,
+            sourceType: "Import",
+          }),
+        ],
+  );
 }
 
 export function isRevenusExtractionIncomplete(data: RevenusExtractionData): boolean {
   return data.properties.some((property) => property.incomplete);
 }
 
-export function recalculateRevenusSummary(data: RevenusExtractionData): RevenusExtractionData["summary"] {
-  return {
-    totalRevenue: data.properties.reduce((sum, item) => sum + item.annualRevenue, 0),
-    rentCount: data.properties.reduce((sum, item) => sum + item.rentCount, 0),
-    totalFees: data.properties.reduce((sum, item) => sum + item.detectedFees, 0),
-    hasSecurityDeposit: data.properties.some((item) => item.hasSecurityDeposit),
-  };
+export function recalculateRevenusSummary(
+  data: RevenusExtractionData,
+  fiscalYear: number,
+): RevenusExtractionData["summary"] {
+  return recalculateRevenusExtraction(data, fiscalYear).summary;
+}
+
+export function describeSourceTypes(documents: LmnpDocument[]): string[] {
+  const labels = new Set<string>();
+  for (const doc of documents) {
+    const ext = doc.fileName.split(".").pop()?.toLowerCase();
+    if (ext === "csv" || ext === "xlsx" || ext === "xls") labels.add("Tableur");
+    else if (ext === "pdf") labels.add("PDF");
+    else if (/png|jpe?g|webp|gif/.test(ext ?? "")) labels.add("Capture");
+    else labels.add("Document");
+  }
+  return [...labels];
+}
+
+export function monthKeysForProperty(property: RevenusPropertyData, fiscalYear: number): string[] {
+  return property.events
+    .map((item) => monthKeyFromDate(item.date, fiscalYear))
+    .filter((value): value is string => Boolean(value));
+}
+
+export function monthLabelFromPropertyMonth(entry: { month: string; monthKey?: string }): string {
+  if (entry.monthKey) return monthLabelFromKey(entry.monthKey);
+  return entry.month;
+}
+
+/** Expose dedup preview for tests and future GPT merge step. */
+export function previewDeduplicatedEvents(events: RevenueEvent[]) {
+  return deduplicateRevenueEvents(events);
 }

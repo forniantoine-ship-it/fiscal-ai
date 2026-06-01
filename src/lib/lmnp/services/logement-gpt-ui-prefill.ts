@@ -6,7 +6,7 @@ import type {
 } from "@/lib/lmnp/services/logement-profile";
 import type { PropertyBackgroundExtraction, PropertyType } from "@/lib/lmnp/types";
 
-export type LogementPrefillFieldKey = LogementFieldKey | "purchasePrice" | "notaryFees";
+export type LogementPrefillFieldKey = LogementFieldKey;
 
 export type LogementUserValidatedFields = Partial<Record<LogementPrefillFieldKey, boolean>>;
 
@@ -55,6 +55,18 @@ const LOGEMENT_SCALAR_MAPPINGS: LogementScalarMapping[] = [
     fieldKey: "surface",
     transform: (value) => String(value),
   },
+  {
+    source: "propertyPurchasePrice",
+    target: "propertyPurchasePrice",
+    fieldKey: "propertyPurchasePrice",
+    transform: (value) => String(value),
+  },
+  {
+    source: "notaryFees",
+    target: "notaryFees",
+    fieldKey: "notaryFees",
+    transform: (value) => String(value),
+  },
 ];
 
 const CREDIT_FIELD_SOURCES: Array<{
@@ -85,7 +97,14 @@ function isFormValueEmpty(values: LogementFormValues, key: keyof LogementFormVal
 
 function assignStringField(
   values: LogementFormValues,
-  target: "address" | "postalCode" | "city" | "acquisitionDate" | "surface",
+  target:
+    | "address"
+    | "postalCode"
+    | "city"
+    | "acquisitionDate"
+    | "surface"
+    | "propertyPurchasePrice"
+    | "notaryFees",
   value: string,
 ): void {
   values[target] = value;
@@ -154,12 +173,12 @@ function buildBackgroundExtraction(
   const changedFields: LogementPrefillFieldKey[] = [];
   const skippedFields: LogementPrefillFieldKey[] = [];
 
-  if (extraction.acquisitionPrice !== undefined) {
-    const fieldKey: LogementPrefillFieldKey = "purchasePrice";
+  if (extraction.propertyPurchasePrice !== undefined) {
+    const fieldKey: LogementPrefillFieldKey = "propertyPurchasePrice";
     if (isFieldLocked(fieldKey, userValidatedFields) || currentBackground?.acquisitionPrice != null) {
       skippedFields.push(fieldKey);
     } else {
-      patch.acquisitionPrice = extraction.acquisitionPrice;
+      patch.acquisitionPrice = extraction.propertyPurchasePrice;
       changedFields.push(fieldKey);
     }
   }
@@ -204,7 +223,14 @@ export function prefillLogementFormFromGpt(
 
     assignStringField(
       nextValues,
-      mapping.target as "address" | "postalCode" | "city" | "acquisitionDate" | "surface",
+      mapping.target as
+        | "address"
+        | "postalCode"
+        | "city"
+        | "acquisitionDate"
+        | "surface"
+        | "propertyPurchasePrice"
+        | "notaryFees",
       nextValue,
     );
     changedFields.push(mapping.fieldKey);
@@ -258,10 +284,7 @@ export function prefillLogementFormFromGpt(
 export function logementPrefillUncertainFields(
   changedFields: LogementPrefillFieldKey[],
 ): LogementFieldKey[] {
-  return changedFields.filter(
-    (field): field is LogementFieldKey =>
-      field !== "purchasePrice" && field !== "notaryFees",
-  );
+  return changedFields;
 }
 
 export function toLogementUserValidatedSet(

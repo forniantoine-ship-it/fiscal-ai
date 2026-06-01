@@ -1,4 +1,8 @@
 import type { RasterPageImage } from "@/lib/documents/ocr/pdf-to-images";
+import {
+  getCreditPipelineTraceId,
+  measureCreditPipelineAwait,
+} from "@/lib/lmnp/services/credit-pipeline-timing";
 
 export const VISION_OCR_SYSTEM_PROMPT = `Extract ALL visible text from this administrative document.
 Preserve line breaks.
@@ -28,6 +32,11 @@ export async function requestVisionOcrText(
     formData.append("fileName", options.fileName);
   }
 
+  const traceId = getCreditPipelineTraceId();
+  if (traceId) {
+    formData.append("pipelineTraceId", traceId);
+  }
+
   images.forEach((img, index) => {
     const bytes = Uint8Array.from(atob(img.base64), (c) => c.charCodeAt(0));
     const blob = new Blob([bytes], { type: img.mimeType });
@@ -35,15 +44,23 @@ export async function requestVisionOcrText(
   });
   formData.append("pageCount", String(images.length));
 
-  const response = await fetch("/api/lmnp/ocr/vision-text", {
-    method: "POST",
-    body: formData,
-  });
+  const response = await measureCreditPipelineAwait(
+    "ocr_vision_http_fetch",
+    fetch("/api/lmnp/ocr/vision-text", {
+      method: "POST",
+      body: formData,
+    }),
+    { pageCount: images.length, fileName: options?.fileName },
+  );
 
-  const body = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    rawText?: string;
-  };
+  const body = await measureCreditPipelineAwait(
+    "ocr_vision_response_json_parse",
+    response.json().catch(() => ({})) as Promise<{
+      error?: string;
+      rawText?: string;
+    }>,
+    { ok: response.ok, status: response.status },
+  );
 
   if (!response.ok) {
     throw new VisionOcrError(

@@ -1,9 +1,9 @@
 import type { CreditFormValues, CreditLoanFormValues } from "@/lib/lmnp/services/credit-profile";
 import {
-  creditFromDraft,
   emptyLoanFormValues,
   financingToFormValues,
 } from "@/lib/lmnp/services/credit-profile";
+import { creditFromDraft } from "@/lib/lmnp/services/credit-gpt-ui-prefill";
 import type { LogementFormValues } from "@/lib/lmnp/services/logement-profile";
 import { propertyToFormValues } from "@/lib/lmnp/services/logement-profile";
 import type { DeclarationDraft } from "@/lib/lmnp/types";
@@ -34,6 +34,7 @@ export type ProcessGovernedExtractionParams = {
   sourceDocument: string;
   extractedBy: GovernedFieldExtractedBy;
   payload: Record<string, unknown>;
+  revenueYear?: number;
 };
 
 export type ProcessGovernedExtractionResult = {
@@ -52,6 +53,7 @@ const CREDIT_CANONICAL_TO_FORM: Partial<
   loanTermMonths: "durationMonths",
   monthlyPayment: "monthlyPayment",
   annualInterest: "annualInterest",
+  annualInsurance: "annualInsurance",
 };
 
 const LOGEMENT_CANONICAL_TO_FORM: Partial<Record<CanonicalFieldKey, keyof LogementFormValues>> = {
@@ -59,6 +61,7 @@ const LOGEMENT_CANONICAL_TO_FORM: Partial<Record<CanonicalFieldKey, keyof Logeme
   propertyCity: "city",
   propertyPostalCode: "postalCode",
   acquisitionDate: "acquisitionDate",
+  acquisitionPrice: "propertyPurchasePrice",
   surfaceArea: "surface",
 };
 
@@ -100,7 +103,7 @@ function applyCreditGovernedValues(
   }
 
   loans[0] = primaryLoan;
-  return { values: { loans, summary }, patched };
+  return { values: { loans, summary, installments: base.installments }, patched };
 }
 
 function applyLogementGovernedValues(
@@ -139,7 +142,6 @@ export function readGovernedFieldStore(draft?: DeclarationDraft): GovernedFieldS
 const CREDIT_SUMMARY_FORM_KEYS = new Set<keyof CreditFormValues["summary"]>([
   "annualInterest",
   "annualInsurance",
-  "annualFinancingCharges",
   "remainingCapital",
 ]);
 
@@ -163,9 +165,10 @@ function filterCrossTunnelPayloadForOccupiedForms(
   payload: Record<string, unknown>,
   sourceTunnel: FiscalTunnel,
   draft?: DeclarationDraft,
+  revenueYear?: number,
 ): Record<string, unknown> {
   const filtered: Record<string, unknown> = {};
-  const creditForm = creditFromDraft(draft);
+  const creditForm = creditFromDraft(draft, revenueYear);
   const logementForm = propertyToFormValues();
 
   for (const [rawKey, value] of Object.entries(payload)) {
@@ -201,6 +204,7 @@ export function processGovernedExtraction(
     params.payload,
     params.sourceTunnel,
     params.draft,
+    params.revenueYear,
   );
 
   const { store, applied } = ingestExtractionIntoStore({
@@ -214,7 +218,7 @@ export function processGovernedExtraction(
   const creditGoverned = readGovernedValuesForTunnel(store, "credit");
   const logementGoverned = readGovernedValuesForTunnel(store, "logement");
 
-  const creditBase = creditFromDraft(params.draft);
+  const creditBase = creditFromDraft(params.draft, params.revenueYear);
   const creditResult = applyCreditGovernedValues(creditBase, creditGoverned, store);
 
   const logementBase = propertyToFormValues();
@@ -230,15 +234,15 @@ export function processGovernedExtraction(
 
 export function hydrateCreditFormFromGovernedFields(
   draft: DeclarationDraft | undefined,
-  options?: { passiveHydration?: boolean },
+  options?: { passiveHydration?: boolean; revenueYear?: number },
 ): CreditFormValues {
   if (options?.passiveHydration) {
     console.log("[prefill-skipped-hydration]", { tunnel: "credit", action: "governed_prefill" });
-    return restoreCreditFormPassive(draft);
+    return restoreCreditFormPassive(draft, options.revenueYear);
   }
 
   const store = readGovernedFieldStore(draft);
-  const base = creditFromDraft(draft);
+  const base = creditFromDraft(draft, options?.revenueYear);
   const governed = readGovernedValuesForTunnel(store, "credit");
   return applyCreditGovernedValues(base, governed, store).values;
 }

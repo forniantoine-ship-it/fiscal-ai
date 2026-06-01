@@ -2,6 +2,11 @@
  * Client-side PDF → PNG rasterization for vision OCR (browser only).
  */
 
+import {
+  incrementCreditPipelineCounter,
+  measureCreditPipelineAwait,
+} from "@/lib/lmnp/services/credit-pipeline-timing";
+
 const MIN_RENDER_SCALE = 2;
 const MAX_PDF_PAGES = 12;
 
@@ -49,9 +54,19 @@ async function configurePdfWorker(): Promise<typeof import("pdfjs-dist")> {
 }
 
 async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
-  const pdfjs = await configurePdfWorker();
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const pdfjs = await measureCreditPipelineAwait("pdf_worker_configure", configurePdfWorker());
+  const buffer = await measureCreditPipelineAwait("pdf_array_buffer_read", file.arrayBuffer(), {
+    fileName: file.name,
+    sizeBytes: file.size,
+  });
+
+  incrementCreditPipelineCounter("pdf_get_document");
+  const pdf = await measureCreditPipelineAwait(
+    "pdf_get_document",
+    pdfjs.getDocument({ data: buffer }).promise,
+    { fileName: file.name },
+  );
+
   const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
   const images: RasterPageImage[] = [];
 
@@ -62,22 +77,28 @@ async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
   });
 
   for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const viewport = page.getViewport({ scale: MIN_RENDER_SCALE });
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas non disponible pour la conversion PDF.");
+    await measureCreditPipelineAwait(
+      `pdf_page_rasterize`,
+      (async () => {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: MIN_RENDER_SCALE });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas non disponible pour la conversion PDF.");
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
 
-    await page.render({ canvasContext: context, viewport, canvas }).promise;
+        await page.render({ canvasContext: context, viewport, canvas }).promise;
 
-    const dataUrl = canvas.toDataURL("image/png");
-    const base64 = dataUrl.split(",")[1];
-    if (base64) {
-      images.push({ mimeType: "image/png", base64, pageNumber: pageNum });
-    }
+        const dataUrl = canvas.toDataURL("image/png");
+        const base64 = dataUrl.split(",")[1];
+        if (base64) {
+          images.push({ mimeType: "image/png", base64, pageNumber: pageNum });
+        }
+      })(),
+      { pageNum, totalPages: pdf.numPages, scale: MIN_RENDER_SCALE },
+    );
   }
 
   if (images.length === 0) {

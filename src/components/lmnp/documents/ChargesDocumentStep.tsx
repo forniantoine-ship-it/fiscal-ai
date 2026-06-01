@@ -26,18 +26,35 @@ import { pendingAmortizationSuggestions } from "@/lib/lmnp/services/charges-amor
 import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import {
+  areChargesExtractionsEqual,
   buildChargesDraftPatch,
   buildChargesExtraction,
+  chargesExtractionFingerprint,
   chargesFromDraft,
   countChargesDocuments,
   isChargesExtractionIncomplete,
+  logChargesAuthority,
+  logChargesLoopGuard,
   resolveChargesAmortizationDecisions,
   resolveChargesDocuments,
+  hasCrossStepRecoveryAvailable,
+  type ChargesExtractionBuildContext,
   type ChargesExtractionData,
+  type ChargesExtractionSource,
 } from "@/lib/lmnp/services/charges-profile";
 import { buildChargesConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
+import {
+  makeDocumentEnrichedEvent,
+  makeAnalysisFailedEvent,
+  makeValidationEvent,
+} from "@/lib/lmnp/services/ai-activity-events";
+import { AiActivityFeed } from "@/components/lmnp/ai-activity";
+import { useTunnelHydration } from "@/lib/lmnp/hydration";
 import { useLmnp } from "@/lib/lmnp/store";
+import type { DeclarationDraft } from "@/lib/lmnp/types";
+import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
+import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 
 const CHARGES_UPLOAD_CATEGORY = "charges" as const;
 
@@ -48,15 +65,106 @@ const CHARGES_AI_STEPS = [
   "Vérification cohérence",
 ] as const;
 
-export function ChargesDocumentStep() {
+function chargesBuildContext(
+  workspace: PersistedWorkspace,
+  draft?: DeclarationDraft,
+  options?: Pick<ChargesExtractionBuildContext, "includeCrossStepRecovery" | "requireAnalyzedDocuments">,
+): ChargesExtractionBuildContext {
+  return {
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    chargeDocumentIds: draft?.chargesDocumentIds,
+    includeCrossStepRecovery: options?.includeCrossStepRecovery,
+    requireAnalyzedDocuments: options?.requireAnalyzedDocuments,
+  };
+}
+
+function chargesRestoreDebugPayload(
+  trigger: string,
+  ws: PersistedWorkspace,
+  currentDraft: DeclarationDraft | undefined,
+  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
+  pendingDocIds: string[],
+): {
+  trigger: string;
+  restoredDocumentIds: string[];
+  currentUploadDocumentIds: string[];
+  staleDocumentIds: string[];
+  pendingDocumentIds: string[];
+  analyzedDocumentIds: string[];
+} {
+  const restoredDocumentIds = currentDraft?.chargesDocumentIds ?? [];
+  const currentUploadDocumentIds = chargesDocs.map((doc) => doc.id);
+  const analyzedDocumentIds = chargesDocs
+    .filter((doc) => doc.status === "analyzed")
+    .map((doc) => doc.id);
+  const staleDocumentIds = analyzedDocumentIds.filter(
+    (id) => pendingDocIds.length > 0 && !pendingDocIds.includes(id),
+  );
+
+  return {
+    trigger,
+    restoredDocumentIds,
+    currentUploadDocumentIds,
+    staleDocumentIds,
+    pendingDocumentIds: pendingDocIds,
+    analyzedDocumentIds,
+  };
+}
+
+function logChargesRestoreDebug(
+  trigger: string,
+  ws: PersistedWorkspace,
+  currentDraft: DeclarationDraft | undefined,
+  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
+  pendingDocIds: string[],
+): void {
+  console.log(
+    "[charges-debug-restore]",
+    chargesRestoreDebugPayload(trigger, ws, currentDraft, chargesDocs, pendingDocIds),
+  );
+}
+
+function logChargesAnalyzedDocumentsSelector(
+  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
+): void {
+  const analyzedDocuments = chargesDocs.filter((doc) => doc.status === "analyzed");
+  console.log("[charges-analyzed-selector]", {
+    analyzedDocuments: analyzedDocuments.map((doc) => ({
+      id: doc.id,
+      fileName: doc.fileName,
+      status: doc.status,
+      documentType: doc.documentType,
+      category: doc.category,
+    })),
+    allChargesDocs: chargesDocs.map((doc) => ({
+      id: doc.id,
+      fileName: doc.fileName,
+      status: doc.status,
+      documentType: doc.documentType,
+    })),
+  });
+}
+
+export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showInfo } = useFeedback();
+  const { markExecution, shouldRunExtraction } = useTunnelHydration("charges");
   const analyzingRef = useRef(false);
   const pendingUploadRef = useRef(false);
+  const executionPendingRef = useRef(false);
   const syncedConfirmedAtRef = useRef<string | undefined>(undefined);
   const lastAmortizationRefreshKeyRef = useRef<string>("");
+  const lastAmortizationAppliedFingerprintRef = useRef<string>("");
+  const lastPersistedExtractionFingerprintRef = useRef<string>("");
+  const lastRestoreRebuildKeyRef = useRef<string>("");
+  const lastAnimationRebuildKeyRef = useRef<string>("");
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
 
   const draft = workspace.declarationDraft;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const chargesConfirmedAt = draft?.chargesConfirmedAt;
   const confirmed = Boolean(chargesConfirmedAt);
 
@@ -69,6 +177,19 @@ export function ChargesDocumentStep() {
     [workspace.documents, draft?.chargesDocumentIds],
   );
   const latestDoc = chargesDocs[0];
+  const hasAnalyzedChargeDocs = useMemo(
+    () => chargesDocs.some((doc) => doc.status === "analyzed"),
+    [chargesDocs],
+  );
+  const crossStepRecoveryEnabled = Boolean(draft?.chargesCrossStepRecoveryEnabled);
+  const primaryPropertyLabel = workspace.properties[0]?.label?.trim() || "Bien locatif";
+  const canOfferCrossStepRecovery = useMemo(
+    () =>
+      uploadedCount > 0 &&
+      !crossStepRecoveryEnabled &&
+      hasCrossStepRecoveryAvailable(draft, primaryPropertyLabel),
+    [uploadedCount, crossStepRecoveryEnabled, draft, primaryPropertyLabel],
+  );
 
   const [hasUploaded, setHasUploaded] = useState(
     () => Boolean(draft?.chargesDocumentIds?.length || draft?.chargesConfirmedAt),
@@ -77,24 +198,132 @@ export function ChargesDocumentStep() {
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
   const [isEditing, setIsEditing] = useState(false);
   const [manualMode, setManualMode] = useState(false);
-  const [extraction, setExtraction] = useState<ChargesExtractionData | undefined>(() =>
-    chargesFromDraft(draft),
-  );
+  const [extraction, setExtraction] = useState<ChargesExtractionData | undefined>(() => {
+    if (draft?.chargesDocumentIds?.length && !confirmed) return undefined;
+    return chargesFromDraft(draft, { documents: workspace.documents });
+  });
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [transferConfirmedId, setTransferConfirmedId] = useState<string | null>(null);
+
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  useEffect(() => {
+    const analyzedCount = chargesDocs.filter((d) => d.status === "analyzed").length;
+    const pendingCount = chargesDocs.filter((d) => d.status === "uploaded").length;
+    console.log("[charges-remount]", {
+      chargesDocsCount: chargesDocs.length,
+      analyzedCount,
+      pendingCount,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  useEffect(() => {
+    const pendingDocs = chargesDocs.filter((d) => d.status === "uploaded");
+    console.log("[charges-pending-derivation]", {
+      pendingDocs: pendingDocs.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        status: doc.status,
+        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
+      })),
+    });
+  }, [chargesDocs]);
 
   const pendingDocIds = useMemo(
     () => chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
     [chargesDocs],
   );
+  const analyzedDocuments = useMemo(
+    () => chargesDocs.filter((doc) => doc.status === "analyzed"),
+    [chargesDocs],
+  );
   const hasProcessing = chargesDocs.some((doc) => doc.status === "processing");
   const hasFailed = chargesDocs.some((doc) => doc.status === "failed");
 
-  const isProcessing = hasUploaded && !confirmed && !aiAnimationDone && !manualMode && uploadedCount > 0;
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  useEffect(() => {
+    const ws = workspaceRef.current;
+    console.log("[charges-analyzed-debug]", {
+      allChargesDocs: chargesDocs.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        status: doc.status,
+        category: doc.category,
+        documentType: doc.documentType,
+        hasExtractions: ws.extractions.some((e) => e.documentId === doc.id),
+      })),
+      analyzedDocs: analyzedDocuments.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+      })),
+    });
+  }, [chargesDocs, analyzedDocuments]);
+
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  useEffect(() => {
+    const ws = workspaceRef.current;
+    console.log("[charges-pending-debug]", {
+      pendingDocs: pendingDocIds.map((id) => {
+        const doc = chargesDocs.find((d) => d.id === id);
+        return {
+          id,
+          fileName: doc?.fileName,
+          status: doc?.status,
+          category: doc?.category,
+          documentType: doc?.documentType,
+          hasExtractions: ws.extractions.some((e) => e.documentId === id),
+        };
+      }),
+    });
+  }, [pendingDocIds, chargesDocs]);
+
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  useEffect(() => {
+    const ws = workspaceRef.current;
+    console.log("[charges-final-selector-state]", {
+      allChargesDocs: chargesDocs.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        status: doc.status,
+        category: doc.category,
+        documentType: doc.documentType,
+        hasExtractions: ws.extractions.some((e) => e.documentId === doc.id),
+      })),
+      analyzedDocs: analyzedDocuments.map((doc) => ({
+        id: doc.id,
+        status: doc.status,
+      })),
+      pendingDocs: pendingDocIds.map((id) => {
+        const doc = chargesDocs.find((d) => d.id === id);
+        return { id, status: doc?.status };
+      }),
+      totalExtractions: ws.extractions.length,
+      chargesExtractionDocIds: ws.extractions
+        .filter((e) =>
+          chargesDocs.some((d) => d.id === e.documentId),
+        )
+        .map((e) => e.documentId)
+        .filter((v, i, a) => a.indexOf(v) === i),
+    });
+  }, [chargesDocs, analyzedDocuments, pendingDocIds]);
+
+  const isProcessing =
+    hasUploaded &&
+    !confirmed &&
+    !aiAnimationDone &&
+    !manualMode &&
+    uploadedCount > 0 &&
+    !hasAnalyzedChargeDocs;
   const isFailed = hasFailed && !aiAnimationDone && !manualMode && hasUploaded;
   const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
+  const hasChargeRows =
+    Boolean(extraction) &&
+    (extraction!.categories.length > 0 || extraction!.recoveredFromOtherSteps > 0);
   const showChargesContent =
-    aiAnimationDone && !showConfiguredCard && Boolean(extraction);
+    aiAnimationDone && !showConfiguredCard && Boolean(extraction) && hasChargeRows;
+  const showEmptyExtraction =
+    aiAnimationDone && !showConfiguredCard && Boolean(extraction) && !hasChargeRows && hasUploaded;
   const incomplete = extraction ? isChargesExtractionIncomplete(extraction) : false;
 
   const amortizationDecisionsKey = useMemo(
@@ -104,6 +333,77 @@ export function ChargesDocumentStep() {
         .join("|"),
     [draft?.chargesAmortizationDecisions],
   );
+
+  const chargesBuildKey = useMemo(() => {
+    const docSig = chargesDocs.map((doc) => `${doc.id}:${doc.status}`).join("|");
+    const propertySig = workspace.properties
+      .map((property) => `${property.id ?? ""}:${property.label ?? ""}`)
+      .join("|");
+    const linkedIds = new Set([
+      ...chargesDocs.map((doc) => doc.id),
+      ...(draft?.chargesDocumentIds ?? []),
+    ]);
+    const extractionSig = workspace.extractions
+      .filter((entry) => linkedIds.has(entry.documentId))
+      .map(
+        (entry) =>
+          `${entry.documentId}:${entry.fieldKey}:${entry.status}:${JSON.stringify(entry.normalizedValue)}`,
+      )
+      .sort()
+      .join("|");
+    return [
+      docSig,
+      propertySig,
+      extractionSig,
+      draft?.chargesDocumentIds?.join(",") ?? "",
+      crossStepRecoveryEnabled ? "1" : "0",
+    ].join("::");
+  }, [
+    chargesDocs,
+    workspace.properties,
+    workspace.extractions,
+    draft?.chargesDocumentIds,
+    crossStepRecoveryEnabled,
+  ]);
+
+  const restoreRebuildKey = useMemo(() => {
+    if (chargesConfirmedAt) return "confirmed";
+    return [
+      draft?.chargesDocumentIds?.join(",") ?? "",
+      hasAnalyzedChargeDocs ? "1" : "0",
+      crossStepRecoveryEnabled ? "1" : "0",
+      chargesBuildKey,
+    ].join("|");
+  }, [
+    chargesConfirmedAt,
+    draft?.chargesDocumentIds,
+    hasAnalyzedChargeDocs,
+    crossStepRecoveryEnabled,
+    chargesBuildKey,
+  ]);
+
+  const animationRebuildKey = useMemo(() => {
+    if (
+      !draft?.chargesDocumentIds?.length ||
+      !hasAnalyzedChargeDocs ||
+      aiAnimationDone ||
+      confirmed
+    ) {
+      return "";
+    }
+    return [
+      draft.chargesDocumentIds.join(","),
+      crossStepRecoveryEnabled ? "1" : "0",
+      chargesBuildKey,
+    ].join("|");
+  }, [
+    draft?.chargesDocumentIds,
+    hasAnalyzedChargeDocs,
+    aiAnimationDone,
+    confirmed,
+    crossStepRecoveryEnabled,
+    chargesBuildKey,
+  ]);
 
   const amortizationDecisions = useMemo(() => {
     if (!extraction) return [];
@@ -115,22 +415,86 @@ export function ChargesDocumentStep() {
     [amortizationDecisions],
   );
 
+  const extractionRef = useRef(extraction);
+  extractionRef.current = extraction;
+
   const persistChargesExtraction = useCallback(
-    (nextExtraction: ChargesExtractionData) => {
+    (nextExtraction: ChargesExtractionData, triggeredBy: string) => {
+      if (areChargesExtractionsEqual(extractionRef.current, nextExtraction)) {
+        logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        return;
+      }
+
+      const fingerprint = chargesExtractionFingerprint(nextExtraction);
+      if (fingerprint === lastPersistedExtractionFingerprintRef.current) {
+        logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        return;
+      }
+      lastPersistedExtractionFingerprintRef.current = fingerprint;
+
       setExtraction(nextExtraction);
       dispatch({
         type: "DECLARATION_PATCH_DRAFT",
-        patch: buildChargesDraftPatch(nextExtraction, workspace.declarationDraft),
+        patch: buildChargesDraftPatch(nextExtraction, draftRef.current),
       });
     },
-    [dispatch, workspace.declarationDraft],
+    [dispatch],
+  );
+
+  const applyAuthoritativeExtraction = useCallback(
+    (
+      rebuilt: ChargesExtractionData,
+      authority: {
+        source: ChargesExtractionSource;
+        authoritative: boolean;
+      },
+      triggeredBy: string,
+    ) => {
+      if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
+        logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        return;
+      }
+
+      logChargesAuthority({
+        source: authority.source,
+        authoritative: authority.authoritative,
+        replacedPreviousExtraction: extractionRef.current !== undefined,
+        categoryCount: rebuilt.categories.length,
+      });
+      persistChargesExtraction(rebuilt, triggeredBy);
+    },
+    [persistChargesExtraction],
   );
 
   const handleAiAnimationComplete = useCallback(() => {
-    const nextExtraction = buildChargesExtraction(workspace.properties, draft);
-    persistChargesExtraction(nextExtraction);
+    if (!hasAnalyzedChargeDocs) return;
+    const ws = workspaceRef.current;
+    const currentDraft = draftRef.current;
+    const pendingIds = ws.documents
+      .filter((doc) => doc.status === "uploaded")
+      .map((doc) => doc.id);
+    logChargesRestoreDebug(
+      "ai-animation-complete",
+      ws,
+      currentDraft,
+      resolveChargesDocuments(ws.documents, currentDraft?.chargesDocumentIds),
+      pendingIds.filter((id) =>
+        resolveChargesDocuments(ws.documents, currentDraft?.chargesDocumentIds).some(
+          (doc) => doc.id === id,
+        ),
+      ),
+    );
+    const rebuilt = buildChargesExtraction(
+      ws.properties,
+      currentDraft,
+      chargesBuildContext(ws, currentDraft, {
+        requireAnalyzedDocuments: true,
+        includeCrossStepRecovery: crossStepRecoveryEnabled,
+      }),
+    );
+    applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "ai-animation");
     setAiAnimationDone(true);
-  }, [workspace.properties, draft, persistChargesExtraction]);
+  }, [hasAnalyzedChargeDocs, crossStepRecoveryEnabled, applyAuthoritativeExtraction]);
 
   useEffect(() => {
     if (!chargesConfirmedAt) {
@@ -146,28 +510,144 @@ export function ChargesDocumentStep() {
     setIsEditing(false);
     setAiAnimationDone(true);
 
-    const fromDraft = chargesFromDraft(draft);
+    const fromDraft = chargesFromDraft(draft, { documents: workspace.documents });
     if (fromDraft) {
-      setExtraction((current) => current ?? fromDraft);
+      applyAuthoritativeExtraction(fromDraft, {
+        source: "draft_restore",
+        authoritative: true,
+      }, "confirmed-restore");
     }
-  }, [chargesConfirmedAt, draft]);
+  }, [chargesConfirmedAt, draft, workspace.documents, applyAuthoritativeExtraction]);
+
+  useEffect(() => {
+    logChargesAnalyzedDocumentsSelector(chargesDocs);
+  }, [chargesDocs]);
 
   useEffect(() => {
     if (chargesConfirmedAt) return;
-    const saved = draft?.chargesExtraction;
-    if (!saved) return;
+    if (lastRestoreRebuildKeyRef.current === restoreRebuildKey) {
+      console.log("[charges-effect-skip]", { effect: "restore-rebuild", key: restoreRebuildKey });
+      return;
+    }
 
-    setExtraction((current) => current ?? saved);
-    setAiAnimationDone((prev) => prev || true);
-    setHasUploaded((prev) => prev || true);
-  }, [chargesConfirmedAt, draft?.chargesExtraction]);
+    const ws = workspaceRef.current;
+    const currentDraft = draftRef.current;
+    const pendingIds = chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id);
+
+    if (currentDraft?.chargesDocumentIds?.length) {
+      logChargesRestoreDebug("restore-rebuild:pre-check", ws, currentDraft, chargesDocs, pendingIds);
+
+      if (!hasAnalyzedChargeDocs) return;
+
+      if (pendingDocIds.length > 0) {
+        console.log("[charges-rebuild-guard]", {
+          reason: "pending-documents",
+          pendingDocIds,
+        });
+        return;
+      }
+
+      console.log("[charges-rebuild-snapshot]", {
+        trigger: "restore-rebuild",
+        workspaceDocuments: ws.documents.map((d) => ({
+          id: d.id,
+          fileName: d.fileName,
+          status: d.status,
+          documentType: d.documentType,
+          category: d.category,
+        })),
+        chargesDocumentIds: currentDraft?.chargesDocumentIds ?? [],
+        pendingDocIds,
+      });
+
+      const rebuilt = buildChargesExtraction(
+        ws.properties,
+        currentDraft,
+        chargesBuildContext(ws, currentDraft, {
+          requireAnalyzedDocuments: true,
+          includeCrossStepRecovery: crossStepRecoveryEnabled,
+        }),
+      );
+      if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
+        lastRestoreRebuildKeyRef.current = restoreRebuildKey;
+        logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "restore-rebuild" });
+        console.log("[charges-effect-skip]", {
+          effect: "restore-rebuild",
+          reason: "equalExtraction",
+          key: restoreRebuildKey,
+        });
+        setAiAnimationDone(true);
+        setHasUploaded(true);
+        return;
+      }
+
+      console.log("[charges-effect-run]", { effect: "restore-rebuild", key: restoreRebuildKey });
+      logChargesRestoreDebug("restore-rebuild:document-rebuild", ws, currentDraft, chargesDocs, pendingIds);
+      lastRestoreRebuildKeyRef.current = restoreRebuildKey;
+      applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "restore-rebuild");
+      setAiAnimationDone(true);
+      setHasUploaded(true);
+      return;
+    }
+
+    const restored = chargesFromDraft(currentDraft, { documents: ws.documents });
+    if (!restored) return;
+    logChargesRestoreDebug("restore-rebuild:draft-fallback", ws, currentDraft, chargesDocs, pendingIds);
+    if (areChargesExtractionsEqual(extractionRef.current, restored)) {
+      lastRestoreRebuildKeyRef.current = restoreRebuildKey;
+      logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "restore-rebuild" });
+      console.log("[charges-effect-skip]", {
+        effect: "restore-rebuild",
+        reason: "equalExtraction",
+        key: restoreRebuildKey,
+      });
+      setAiAnimationDone(true);
+      setHasUploaded(true);
+      return;
+    }
+
+    console.log("[charges-effect-run]", { effect: "restore-rebuild", key: restoreRebuildKey });
+    lastRestoreRebuildKeyRef.current = restoreRebuildKey;
+    applyAuthoritativeExtraction(restored, { source: "draft_restore", authoritative: false }, "restore-rebuild");
+    setAiAnimationDone(true);
+    setHasUploaded(true);
+  }, [
+    chargesConfirmedAt,
+    restoreRebuildKey,
+    hasAnalyzedChargeDocs,
+    crossStepRecoveryEnabled,
+    applyAuthoritativeExtraction,
+  ]);
 
   useEffect(() => {
-    if (!pendingUploadRef.current || chargesDocs.length === 0) return;
-    pendingUploadRef.current = false;
+    if (chargesDocs.length === 0) return;
+
     const ids = chargesDocs.map((doc) => doc.id);
     const existing = new Set(draft?.chargesDocumentIds ?? []);
+    const missing = ids.filter((id) => !existing.has(id));
+    if (missing.length === 0) {
+      pendingUploadRef.current = false;
+      return;
+    }
+
+    pendingUploadRef.current = false;
     ids.forEach((id) => existing.add(id));
+    console.log("[charges-pno-debug] chargesDocumentIds sync", {
+      added: missing,
+      merged: [...existing],
+      uploadedDocumentIds: chargesDocs
+        .filter((doc) => doc.status === "uploaded")
+        .map((doc) => doc.id),
+      analyzedDocumentIds: chargesDocs
+        .filter((doc) => doc.status === "analyzed")
+        .map((doc) => doc.id),
+      chargesDocStatuses: chargesDocs.map((doc) => ({
+        id: doc.id,
+        status: doc.status,
+        documentType: doc.documentType,
+        fileName: doc.fileName,
+      })),
+    });
     dispatch({
       type: "DECLARATION_PATCH_DRAFT",
       patch: { chargesDocumentIds: [...existing] },
@@ -176,6 +656,20 @@ export function ChargesDocumentStep() {
 
   const runAnalysis = useCallback(
     async (documentIds: string[]) => {
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      const uploadedCount = workspaceRef.current.documents.filter(
+        (d) => d.status === "uploaded",
+      ).length;
+      const analyzedCount = workspaceRef.current.documents.filter(
+        (d) => d.status === "analyzed",
+      ).length;
+      console.log("[charges-runAnalysis-entry]", {
+        pendingDocIds: documentIds,
+        uploadedCount,
+        analyzedCount,
+        analyzingRefAlreadySet: analyzingRef.current,
+      });
+
       if (!documentIds.length) {
         console.log("[analysis] extraction skipped", {
           source: "ChargesDocumentStep.runAnalysis",
@@ -199,15 +693,56 @@ export function ChargesDocumentStep() {
         pipeline: "runBulkDocumentAnalysis",
         note: "Charges does NOT call runBulkDocumentExtraction",
       });
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      console.log("[charges-runBulk-callsite]", {
+        source: "ChargesDocumentStep.runAnalysis",
+        documentIds,
+        stack: new Error().stack,
+      });
 
       try {
-        await runBulkDocumentAnalysis({
+        const result = await runBulkDocumentAnalysis({
           documents: workspace.documents,
           documentIds,
           getFile,
           dispatch,
           fiscalYear: workspace.fiscalYear.year,
         });
+
+        const propertyLabel =
+          workspaceRef.current.properties[0]?.label?.trim() || "Charges déductibles";
+
+        if (result.succeeded > 0) {
+          dispatch({
+            type: "ADD_AI_ACTIVITY_EVENT",
+            event: makeDocumentEnrichedEvent(
+              "charges",
+              "charges-main",
+              propertyLabel,
+              documentIds[0] ?? "batch",
+              `${result.succeeded} document${result.succeeded > 1 ? "s" : ""} analysé${result.succeeded > 1 ? "s" : ""}`,
+              `L'IA a extrait les charges déductibles depuis vos documents.`,
+              { nextValues: { documentsAnalysed: result.succeeded } },
+            ),
+          });
+        }
+
+        if (result.failed > 0) {
+          const failedId = documentIds.find((id) => {
+            const doc = workspaceRef.current.documents.find((d) => d.id === id);
+            return doc?.status === "failed";
+          }) ?? documentIds[0] ?? "batch";
+          dispatch({
+            type: "ADD_AI_ACTIVITY_EVENT",
+            event: makeAnalysisFailedEvent(
+              "charges",
+              "charges-main",
+              propertyLabel,
+              failedId,
+              `${result.failed} document${result.failed > 1 ? "s" : ""} n'a pas pu être analysé. Essayez de réimporter avec un autre format.`,
+            ),
+          });
+        }
       } finally {
         analyzingRef.current = false;
       }
@@ -216,8 +751,46 @@ export function ChargesDocumentStep() {
   );
 
   useEffect(() => {
+    const uploadedDocumentIds = chargesDocs
+      .filter((doc) => doc.status === "uploaded")
+      .map((doc) => doc.id);
+    const analyzedDocumentIds = chargesDocs
+      .filter((doc) => doc.status === "analyzed")
+      .map((doc) => doc.id);
+
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    const shouldTriggerAnalysis =
+      pendingDocIds.length > 0 && !hasProcessing && !analyzingRef.current;
+    console.log("[charges-analysis-trigger]", {
+      uploadedDocs: chargesDocs.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        status: doc.status,
+        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
+        detectedDocumentType: doc.documentType,
+      })),
+      pendingDocIds,
+      analyzedDocumentIds,
+      shouldTriggerAnalysis,
+    });
+
     if (!pendingDocIds.length) {
       if (hasUploaded || chargesDocs.length > 0) {
+        console.log("[charges-pno-debug] analysis gate", {
+          reason: "no pending uploaded docs",
+          chargeDocumentIds: draft?.chargesDocumentIds ?? [],
+          uploadedDocumentIds,
+          analyzedDocumentIds,
+          pendingDocIds,
+          hasProcessing,
+          analyzing: analyzingRef.current,
+          chargesDocStatuses: chargesDocs.map((doc) => ({
+            id: doc.id,
+            status: doc.status,
+            documentType: doc.documentType,
+            fileName: doc.fileName,
+          })),
+        });
         console.log("[analysis] no analyzable documents", {
           source: "ChargesDocumentStep.useEffect",
           reason: "no pending uploaded docs",
@@ -229,6 +802,13 @@ export function ChargesDocumentStep() {
       return;
     }
     if (hasProcessing) {
+      console.log("[charges-pno-debug] analysis gate", {
+        reason: "hasProcessing",
+        chargeDocumentIds: draft?.chargesDocumentIds ?? [],
+        uploadedDocumentIds,
+        analyzedDocumentIds,
+        pendingDocIds,
+      });
       console.log("[analysis] extraction skipped", {
         source: "ChargesDocumentStep.useEffect",
         reason: "hasProcessing",
@@ -237,6 +817,13 @@ export function ChargesDocumentStep() {
       return;
     }
     if (analyzingRef.current) {
+      console.log("[charges-pno-debug] analysis gate", {
+        reason: "analyzingRef already set",
+        chargeDocumentIds: draft?.chargesDocumentIds ?? [],
+        uploadedDocumentIds,
+        analyzedDocumentIds,
+        pendingDocIds,
+      });
       console.log("[analysis] extraction skipped", {
         source: "ChargesDocumentStep.useEffect",
         reason: "analyzingRef already set",
@@ -245,34 +832,122 @@ export function ChargesDocumentStep() {
       return;
     }
 
+    // LIFECYCLE FIREWALL — mirrors the pattern used in CreditDocumentStep / RevenusDocumentStep
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-lifecycle-firewall]", {
+      executionPending: executionPendingRef.current,
+      shouldRun: shouldRunExtraction(),
+      pendingDocIds,
+    });
+    if (!executionPendingRef.current || !shouldRunExtraction()) {
+      console.log("[analysis] extraction skipped", {
+        source: "ChargesDocumentStep.useEffect",
+        reason: !executionPendingRef.current ? "no_execution_pending" : "passive_hydration",
+        pendingDocIds,
+      });
+      return;
+    }
+    executionPendingRef.current = false;
+
+    console.log("[charges-pno-debug] analysis gate", {
+      reason: "triggering runAnalysis",
+      chargeDocumentIds: draft?.chargesDocumentIds ?? [],
+      uploadedDocumentIds,
+      analyzedDocumentIds,
+      pendingDocIds,
+    });
     console.log("[analysis] trigger requested", {
       source: "ChargesDocumentStep.useEffect",
       pendingDocIds,
       pipeline: "runBulkDocumentAnalysis",
     });
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-ocr-trigger]", {
+      reason: "pendingDocIds non-empty",
+      pendingDocIds,
+      documentsSnapshot: chargesDocs.map((doc) => ({
+        id: doc.id,
+        fileName: doc.fileName,
+        status: doc.status,
+        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
+      })),
+    });
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-runAnalysis-callsite]", {
+      source: "ChargesDocumentStep.useEffect[pendingDocIds]",
+      pendingDocIds,
+      shouldTriggerAnalysis: pendingDocIds.length > 0 && !hasProcessing && !analyzingRef.current,
+      stack: new Error().stack,
+    });
+    console.log("[ocr-trigger-owner]", {
+      system: "T1-charges-auto",
+      component: "ChargesDocumentStep",
+      reason: "pendingDocIds non-empty after upload/hydration",
+      docs: pendingDocIds,
+      step: "charges",
+      category: "charges",
+      guard: "pendingDocIds + hasProcessing + analyzingRef — NO executionPendingRef",
+    });
     void runAnalysis(pendingDocIds);
-  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, chargesDocs, hasUploaded]);
+  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, shouldRunExtraction, chargesDocs, hasUploaded, draft?.chargesDocumentIds]);
 
   useEffect(() => {
-    if (
-      draft?.chargesDocumentIds?.length &&
-      chargesDocs.some((doc) => doc.status === "analyzed") &&
-      !aiAnimationDone &&
-      !confirmed
-    ) {
+    if (!animationRebuildKey) return;
+    if (lastAnimationRebuildKeyRef.current === animationRebuildKey) {
+      console.log("[charges-effect-skip]", { effect: "animation-rebuild", key: animationRebuildKey });
+      return;
+    }
+
+    const ws = workspaceRef.current;
+    const currentDraft = draftRef.current;
+    const pendingIds = chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id);
+    if (pendingDocIds.length > 0) {
+      console.log("[charges-rebuild-guard]", {
+        reason: "pending-documents",
+        pendingDocIds,
+      });
+      return;
+    }
+    logChargesRestoreDebug("animation-rebuild", ws, currentDraft, chargesDocs, pendingIds);
+    console.log("[charges-rebuild-snapshot]", {
+      trigger: "animation-rebuild",
+      workspaceDocuments: ws.documents.map((d) => ({
+        id: d.id,
+        fileName: d.fileName,
+        status: d.status,
+        documentType: d.documentType,
+        category: d.category,
+      })),
+      chargesDocumentIds: currentDraft?.chargesDocumentIds ?? [],
+      pendingDocIds,
+    });
+    const rebuilt = buildChargesExtraction(
+      ws.properties,
+      currentDraft,
+      chargesBuildContext(ws, currentDraft, {
+        requireAnalyzedDocuments: true,
+        includeCrossStepRecovery: crossStepRecoveryEnabled,
+      }),
+    );
+    if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
+      lastAnimationRebuildKeyRef.current = animationRebuildKey;
+      logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "animation-rebuild" });
+      console.log("[charges-effect-skip]", {
+        effect: "animation-rebuild",
+        reason: "equalExtraction",
+        key: animationRebuildKey,
+      });
       setHasUploaded(true);
       setAiAnimationDone(true);
-      persistChargesExtraction(buildChargesExtraction(workspace.properties, draft));
+      return;
     }
-  }, [
-    draft?.chargesDocumentIds?.length,
-    chargesDocs,
-    aiAnimationDone,
-    confirmed,
-    workspace.properties,
-    draft,
-    persistChargesExtraction,
-  ]);
+
+    console.log("[charges-effect-run]", { effect: "animation-rebuild", key: animationRebuildKey });
+    lastAnimationRebuildKeyRef.current = animationRebuildKey;
+    setHasUploaded(true);
+    applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "animation-rebuild");
+    setAiAnimationDone(true);
+  }, [animationRebuildKey, crossStepRecoveryEnabled, applyAuthoritativeExtraction]);
 
   async function handleUpload(files: File[]) {
     if (!files.length) return;
@@ -287,7 +962,7 @@ export function ChargesDocumentStep() {
       return;
     }
 
-    const { files: uploadedFiles } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
 
     if (uploadedFiles.length === 0) {
       console.error("[ChargesDocumentStep] upload failed: no files stored in Supabase");
@@ -299,11 +974,26 @@ export function ChargesDocumentStep() {
     setManualMode(false);
     setHasUploaded(true);
     pendingUploadRef.current = true;
+    executionPendingRef.current = true;
+    markExecution("document_upload");
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-execution-intent]", {
+      source: "handleUpload",
+      pendingDocIds: uploadedFiles.map((_, i) => documentIds[i]),
+    });
     lastAmortizationRefreshKeyRef.current = "";
+    lastAmortizationAppliedFingerprintRef.current = "";
+    lastPersistedExtractionFingerprintRef.current = "";
+    lastRestoreRebuildKeyRef.current = "";
+    lastAnimationRebuildKeyRef.current = "";
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: uploadedFiles.map((file) => ({ file, category: CHARGES_UPLOAD_CATEGORY })),
+      files: uploadedFiles.map((file, index) => ({
+        file,
+        documentId: documentIds[index],
+        category: CHARGES_UPLOAD_CATEGORY,
+      })),
     });
 
     console.log("[analysis] trigger requested", {
@@ -325,39 +1015,115 @@ export function ChargesDocumentStep() {
     failedIds.forEach((documentId) => {
       dispatch({ type: "DOCUMENT_SET_STATUS", documentId, status: "uploaded" });
     });
+    executionPendingRef.current = true;
+    markExecution("reanalyze");
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[charges-execution-intent]", {
+      source: "handleRetry",
+      pendingDocIds: failedIds,
+    });
     setAiAnimationDone(false);
   }
 
   function handleManualContinue() {
     setManualMode(true);
     setAiAnimationDone(true);
-    persistChargesExtraction(buildChargesExtraction(workspace.properties, draft));
+    const rebuilt = buildChargesExtraction(
+      workspace.properties,
+      draft,
+      chargesBuildContext(workspace, draft, {
+        requireAnalyzedDocuments: hasAnalyzedChargeDocs,
+        includeCrossStepRecovery: crossStepRecoveryEnabled,
+      }),
+    );
+    applyAuthoritativeExtraction(rebuilt, {
+      source: hasAnalyzedChargeDocs ? "documents" : "recovered",
+      authoritative: hasAnalyzedChargeDocs,
+    }, "manual-continue");
+  }
+
+  function handleEnableCrossStepRecovery() {
+    dispatch({
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { chargesCrossStepRecoveryEnabled: true },
+    });
+    const ws = workspaceRef.current;
+    const currentDraft = draftRef.current;
+    const rebuilt = buildChargesExtraction(
+      ws.properties,
+      { ...currentDraft, chargesCrossStepRecoveryEnabled: true },
+      chargesBuildContext(ws, currentDraft, {
+        requireAnalyzedDocuments: true,
+        includeCrossStepRecovery: true,
+      }),
+    );
+    applyAuthoritativeExtraction(rebuilt, { source: "recovered", authoritative: true }, "cross-step-recovery");
+    setAiAnimationDone(true);
   }
 
   useEffect(() => {
     if (!aiAnimationDone || confirmed) return;
-    if (lastAmortizationRefreshKeyRef.current === amortizationDecisionsKey) return;
+    if (lastAmortizationRefreshKeyRef.current === amortizationDecisionsKey) {
+      console.log("[charges-effect-skip]", {
+        effect: "amortization-refresh",
+        reason: "decisionsKey",
+        key: amortizationDecisionsKey,
+      });
+      return;
+    }
 
-    lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
-
-    const draftState = workspace.declarationDraft;
+    const ws = workspaceRef.current;
+    const draftState = draftRef.current;
     const decisions = draftState?.chargesAmortizationDecisions;
-    setExtraction((prev) => {
-      const base =
-        prev ??
-        (draftState?.chargesExtraction
-          ? chargesFromDraft(draftState)
-          : buildChargesExtraction(workspace.properties, draftState));
-      if (!base) return prev;
-      return {
-        ...base,
-        amortizationSuggestions:
-          decisions && decisions.length > 0
-            ? decisions
-            : resolveChargesAmortizationDecisions(base, draftState),
-      };
+    const rebuilt = buildChargesExtraction(
+      ws.properties,
+      draftState,
+      chargesBuildContext(ws, draftState, {
+        requireAnalyzedDocuments: true,
+        includeCrossStepRecovery: draftState?.chargesCrossStepRecoveryEnabled,
+      }),
+    );
+    const withSuggestions: ChargesExtractionData = {
+      ...rebuilt,
+      amortizationSuggestions:
+        decisions && decisions.length > 0
+          ? decisions
+          : resolveChargesAmortizationDecisions(rebuilt, draftState),
+    };
+
+    const fingerprint = chargesExtractionFingerprint(withSuggestions);
+    if (
+      areChargesExtractionsEqual(extractionRef.current, withSuggestions) ||
+      fingerprint === lastAmortizationAppliedFingerprintRef.current
+    ) {
+      lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
+      logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "amortization-refresh" });
+      console.log("[charges-effect-skip]", {
+        effect: "amortization-refresh",
+        reason: "equalExtraction",
+        key: amortizationDecisionsKey,
+      });
+      return;
+    }
+
+    console.log("[charges-effect-run]", {
+      effect: "amortization-refresh",
+      key: amortizationDecisionsKey,
     });
-  }, [amortizationDecisionsKey, aiAnimationDone, confirmed, workspace.properties, workspace.declarationDraft]);
+    lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
+    lastAmortizationAppliedFingerprintRef.current = fingerprint;
+    applyAuthoritativeExtraction(
+      withSuggestions,
+      { source: "documents", authoritative: true },
+      "amortization-refresh",
+    );
+  }, [
+    amortizationDecisionsKey,
+    aiAnimationDone,
+    confirmed,
+    chargesBuildKey,
+    applyAuthoritativeExtraction,
+  ]);
 
   function handleTransferSuggestion(suggestionId: string) {
     const suggestion = amortizationDecisions.find((item) => item.id === suggestionId);
@@ -399,6 +1165,18 @@ export function ChargesDocumentStep() {
       extraction: extractionWithDecisions,
       documentIds,
     });
+
+    const propertyLabel = workspace.properties[0]?.label?.trim() || "Charges déductibles";
+    dispatch({
+      type: "ADD_AI_ACTIVITY_EVENT",
+      event: makeValidationEvent(
+        "charges",
+        "charges-main",
+        propertyLabel,
+        `${extraction.summary.categoryCount} catégorie${extraction.summary.categoryCount > 1 ? "s" : ""} de charges vérifiées et enregistrées.`,
+      ),
+    });
+
     setValidatedSuccess(true);
     setIsEditing(false);
     showSuccess(
@@ -423,6 +1201,39 @@ export function ChargesDocumentStep() {
 
       {isProcessing ? (
         <ActiviteAiProcessing onComplete={handleAiAnimationComplete} steps={CHARGES_AI_STEPS} />
+      ) : null}
+
+      {showEmptyExtraction ? (
+        <section
+          className="w-full text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+          style={{
+            ...DOCUMENT_WORKFLOW_CARD_STYLE,
+            padding: spacing.card.md,
+          }}
+        >
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            Aucune charge n&apos;a pu être extraite de vos documents pour le moment.
+            Vérifiez que l&apos;analyse est terminée ou complétez les informations manuellement.
+          </p>
+          <div className="mt-6 flex flex-col items-center gap-3">
+            {canOfferCrossStepRecovery ? (
+              <Button variant="secondary" onClick={handleEnableCrossStepRecovery}>
+                Importer les charges des autres étapes
+              </Button>
+            ) : null}
+            <Button variant="secondary" onClick={handleManualContinue}>
+              Continuer sans charge détectée
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {showChargesContent && canOfferCrossStepRecovery ? (
+        <div className="flex justify-center">
+          <Button variant="secondary" onClick={handleEnableCrossStepRecovery}>
+            Importer aussi les charges des autres étapes (Crédit, Revenus, Amortissements)
+          </Button>
+        </div>
       ) : null}
 
       {showChargesContent && extraction ? (
@@ -502,6 +1313,12 @@ export function ChargesDocumentStep() {
           </div>
         </div>
       ) : null}
+
+      <AiActivityFeed
+        events={workspace.aiActivityFeed}
+        step="charges"
+        onReimport={() => handleRetry()}
+      />
     </div>
   );
 }

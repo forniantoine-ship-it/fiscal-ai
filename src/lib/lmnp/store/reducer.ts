@@ -20,6 +20,7 @@ import type {
   CreditFinancingData,
   AmortissementVentilationData,
   RevenusExtractionData,
+  RevenueGptSession,
   ChargesExtractionData,
   ChargesAmortizationSuggestion,
 } from "../types";
@@ -40,6 +41,7 @@ import { valuesEqual } from "../types/values";
 import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/field-keys";
 import { HIGH_CONFIDENCE_THRESHOLD } from "../validation/display";
 import { createDefaultWorkspace, type PersistedWorkspace } from "./persistence";
+import type { AiActivityEvent, AiActivityResolutionState } from "../types/ai-activity";
 
 export type FileRegistry = Map<string, File>;
 
@@ -53,7 +55,7 @@ export type LmnpAction =
   | { type: "REGISTER_FILE"; documentId: string; file: File }
   | {
       type: "UPLOAD_DOCUMENTS";
-      files: { file: File; category: DocumentCategory }[];
+      files: { file: File; category: DocumentCategory; documentId?: string }[];
     }
   | { type: "REMOVE_DOCUMENT"; documentId: string }
   | { type: "DOCUMENT_SET_STATUS"; documentId: string; status: LmnpDocument["status"] }
@@ -151,6 +153,7 @@ export type LmnpAction =
   | {
       type: "CONFIRM_REVENUS";
       extraction: RevenusExtractionData;
+      session?: RevenueGptSession;
       documentIds?: string[];
     }
   | {
@@ -170,7 +173,14 @@ export type LmnpAction =
     }
   | { type: "DECLARE_NO_CREDIT" }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
-  | { type: "START_DOCUMENT_JOURNEY" };
+  | { type: "START_DOCUMENT_JOURNEY" }
+  | { type: "ADD_AI_ACTIVITY_EVENT"; event: AiActivityEvent }
+  | {
+      type: "RESOLVE_AI_ACTIVITY_EVENT";
+      eventId: string;
+      resolutionState: AiActivityResolutionState;
+    }
+  | { type: "DISMISS_AI_ACTIVITY_EVENT"; eventId: string };
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -421,13 +431,58 @@ function finalizeState(state: LmnpState): LmnpState {
 
 export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
   switch (action.type) {
-    case "HYDRATE":
+    case "HYDRATE": {
       console.log("[hydration-restore-only]", { scope: "workspace", action: "HYDRATE" });
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      console.log("[documents-hydrate-stage]", {
+        reducer: "lmnpReducer",
+        action: "HYDRATE",
+        incomingDocCount: action.payload.documents.length,
+        incomingDocs: action.payload.documents.map((doc) => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          status: doc.status,
+          category: doc.category,
+          documentType: doc.documentType,
+        })),
+        currentStoreDocs: state.documents.map((doc) => ({
+          id: doc.id,
+          fileName: doc.fileName,
+          status: doc.status,
+        })),
+        incomingExtractionCount: action.payload.extractions.length,
+        extractedDocIds: [...new Set(action.payload.extractions.map((e) => e.documentId))],
+      });
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      const chargesDocsInHydrate = action.payload.documents.filter(
+        (d) => d.category === "charges",
+      );
+      chargesDocsInHydrate.forEach((d) => {
+        const prev = state.documents.find((s) => s.id === d.id);
+        console.log("[charges-status-transition]", {
+          action: "HYDRATE",
+          id: d.id,
+          fileName: d.fileName,
+          previousStatus: prev?.status ?? "not-in-store",
+          nextStatus: d.status,
+        });
+      });
+      if (chargesDocsInHydrate.length === 0) {
+        const prevChargesDocs = state.documents.filter((d) => d.category === "charges");
+        if (prevChargesDocs.length > 0) {
+          console.log("[charges-status-transition] HYDRATE replaced all charges docs", {
+            action: "HYDRATE",
+            removedDocs: prevChargesDocs.map((d) => ({ id: d.id, fileName: d.fileName, status: d.status })),
+            incomingChargesCount: 0,
+          });
+        }
+      }
       return finalizeState({
         ...state,
         ...action.payload,
         fileRegistry: action.files ?? state.fileRegistry,
       });
+    }
 
     case "AUTH_SESSION_RESET":
       return finalizeState({
@@ -442,8 +497,9 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     }
 
     case "UPLOAD_DOCUMENTS": {
-      const newDocs: LmnpDocument[] = action.files.map(({ file, category }) => ({
-        id: crypto.randomUUID(),
+      const now = nowIso();
+      const newDocs: LmnpDocument[] = action.files.map(({ file, category, documentId }) => ({
+        id: documentId ?? crypto.randomUUID(),
         fiscalYearId: state.fiscalYear.id,
         propertyId: state.fiscalYear.propertyIds[0],
         fileName: file.name,
@@ -452,8 +508,25 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         category,
         documentType: "unknown",
         status: "uploaded",
-        uploadedAt: nowIso(),
+        uploadedAt: now,
       }));
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      newDocs.filter((d) => d.category === "charges").forEach((d, i) => {
+        const supabaseDocumentId = action.files[i].documentId;
+        const localDocumentId = d.id;
+        console.log("[charges-document-id]", {
+          localDocumentId,
+          supabaseDocumentId: supabaseDocumentId ?? "(not provided)",
+          matched: localDocumentId === supabaseDocumentId,
+        });
+        console.log("[charges-status-transition]", {
+          action: "UPLOAD_DOCUMENTS",
+          id: d.id,
+          fileName: d.fileName,
+          previousStatus: "none",
+          nextStatus: "uploaded",
+        });
+      });
 
       const fileRegistry = new Map(state.fileRegistry);
       action.files.forEach(({ file }, i) => {
@@ -481,6 +554,17 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     }
 
     case "DOCUMENT_SET_STATUS": {
+      const _docForLifecycle = state.documents.find((d) => d.id === action.documentId);
+      if (_docForLifecycle) {
+        console.log("[charges-doc-lifecycle]", {
+          id: _docForLifecycle.id,
+          fileName: _docForLifecycle.fileName,
+          previousStatus: _docForLifecycle.status,
+          nextStatus: action.status,
+          documentType: _docForLifecycle.documentType,
+          category: _docForLifecycle.category,
+        });
+      }
       return finalizeState({
         ...state,
         documents: state.documents.map((d) =>
@@ -494,6 +578,34 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     }
 
     case "APPLY_DOCUMENT_ANALYSIS": {
+      const _docForOcr = state.documents.find((d) => d.id === action.documentId);
+      console.log("[charges-ocr-complete]", {
+        id: action.documentId,
+        fileName: _docForOcr?.fileName ?? "unknown",
+        previousStatus: _docForOcr?.status ?? "unknown",
+        resolvedDocumentType: action.result.documentType,
+        resolvedCategory: action.result.category,
+        extractionCount: action.result.extractions.length,
+        extractionFieldKeys: action.result.extractions.map((e) => e.fieldKey),
+        hasMoneyExtraction: action.result.extractions.some((e) => e.normalizedValue.type === "money"),
+        moneyExtractions: action.result.extractions
+          .filter((e) => e.normalizedValue.type === "money")
+          .map((e) => ({ fieldKey: e.fieldKey, rawValue: e.rawValue })),
+      });
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      console.log("[charges-analysis-applied]", {
+        id: action.documentId,
+        previousStatus: _docForOcr?.status ?? "unknown",
+        nextStatus: "analyzed",
+        hasAnalysis: true,
+      });
+      console.log("[charges-status-transition]", {
+        action: "APPLY_DOCUMENT_ANALYSIS",
+        id: action.documentId,
+        fileName: _docForOcr?.fileName ?? "unknown",
+        previousStatus: _docForOcr?.status ?? "unknown",
+        nextStatus: "analyzed",
+      });
       const analyzed = applyDocumentAnalysisToState(state, action.documentId, action.result);
       return finalizeState({
         ...state,
@@ -700,6 +812,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         sourceDocument: action.sourceDocument,
         extractedBy: action.extractedBy,
         payload: action.payload,
+        revenueYear: state.fiscalYear.year - 1,
       });
 
       console.log("[execution-event]", {
@@ -879,6 +992,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           revenusDocumentIds: action.documentIds ?? draft.revenusDocumentIds,
           revenusConfirmedAt: nowIso(),
           revenusExtraction: action.extraction,
+          revenueGptSession: action.session ?? draft.revenueGptSession,
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "revenus"])],
         },
@@ -1033,6 +1147,45 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       });
     }
 
+    case "ADD_AI_ACTIVITY_EVENT": {
+      const feed = state.aiActivityFeed ?? [];
+      console.log("[ai-event-dispatched]", {
+        id: action.event.id,
+        type: action.event.type,
+        step: action.event.step,
+        entityId: action.event.entityId,
+        feedSizeBefore: feed.length,
+      });
+      return finalizeState({
+        ...state,
+        aiActivityFeed: [...feed, action.event],
+      });
+    }
+
+    case "RESOLVE_AI_ACTIVITY_EVENT": {
+      const feed = state.aiActivityFeed ?? [];
+      return finalizeState({
+        ...state,
+        aiActivityFeed: feed.map((ev) =>
+          ev.id === action.eventId
+            ? { ...ev, resolutionState: action.resolutionState, resolvedAt: new Date().toISOString() }
+            : ev,
+        ),
+      });
+    }
+
+    case "DISMISS_AI_ACTIVITY_EVENT": {
+      const feed = state.aiActivityFeed ?? [];
+      return finalizeState({
+        ...state,
+        aiActivityFeed: feed.map((ev) =>
+          ev.id === action.eventId
+            ? { ...ev, resolutionState: "dismissed" as const, resolvedAt: new Date().toISOString() }
+            : ev,
+        ),
+      });
+    }
+
     default:
       return state;
   }
@@ -1057,6 +1210,7 @@ export function selectWorkspace(state: LmnpState) {
     validationItems: state.validationItems,
     ledgerEntries: state.ledgerEntries.filter((e) => e.status === "active"),
     declarationDraft: state.declarationDraft ?? { completedSteps: [] },
+    aiActivityFeed: state.aiActivityFeed ?? [],
     ...derived,
   };
 }

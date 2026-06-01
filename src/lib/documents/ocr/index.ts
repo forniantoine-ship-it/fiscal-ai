@@ -1,3 +1,18 @@
+export { preprocessRasterImagesForOcr } from "./preprocess-raster-images";
+export {
+  logTextQualityScore,
+  scoreRevenueOcrText,
+  type RevenueOcrQualityScore,
+} from "./revenus-ocr-quality";
+export {
+  resolveRevenueDocumentText,
+  resolveRevenueDocumentTextOrThrow,
+  REVENUE_OCR_READ_FAILURE_MESSAGE,
+  RevenueDocumentOcrFailedError,
+  type ResolveRevenueDocumentTextResult,
+  type RevenueDocumentTextProvider,
+  type RevenueOcrStrategy,
+} from "./resolve-revenue-document-text";
 export {
   computeOcrQualityMetrics,
   isOcrQualityAcceptable,

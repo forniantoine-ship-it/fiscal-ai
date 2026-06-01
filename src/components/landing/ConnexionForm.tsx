@@ -12,16 +12,37 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import {
+  logAuthRedirectDashboard,
+  signInWithSession,
+} from "@/lib/lmnp/auth/auth-session";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 
 export function ConnexionForm() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    router.push(LMNP_ROUTES.dashboard);
+    if (submitting) return;
+
+    setSubmitting(true);
+
+    try {
+      const result = await signInWithSession(email, password);
+
+      if (!result.ok) {
+        alert(result.error);
+        return;
+      }
+
+      logAuthRedirectDashboard();
+      router.push(LMNP_ROUTES.dashboard);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -119,8 +140,8 @@ export function ConnexionForm() {
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              Se connecter
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Connexion…" : "Se connecter"}
             </Button>
           </form>
 

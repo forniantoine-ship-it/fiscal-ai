@@ -1,4 +1,4 @@
-import { monthKeyFromDate } from "./revenue-aggregation";
+import { monthKeyForTransaction } from "./revenue-aggregation";
 import { logRevenueRuntimeStage } from "./revenus-runtime-trace";
 import {
   categoryForStructuredLine,
@@ -343,14 +343,31 @@ export function structuredLinesToTransactions(
       sourceType: line.sourceType,
       confidence: line.confidence ?? 98,
       structuredMapping: true,
+      monthLabel: line.monthLabel,
     };
+
+    const monthKey = monthKeyForTransaction(transaction, fiscalYear);
+
+    if (category === "additional_income") {
+      console.log("[revenue-grid-mapping]", {
+        stage: "structured_transaction",
+        transactionId: transaction.id,
+        category,
+        confidence: transaction.confidence ?? null,
+        amount: transaction.amount,
+        date: transaction.date,
+        monthLabel: transaction.monthLabel ?? null,
+        monthKey,
+        entersGridPipeline: true,
+      });
+    }
 
     logRevenueRowMapping({
       sourceHeader,
       parsedAmount: transaction.amount,
       category,
       targetGridColumn: gridColumnForCategory(category),
-      monthKey: monthKeyForStructuredLine(line, fiscalYear),
+      monthKey,
       structured: true,
     });
 

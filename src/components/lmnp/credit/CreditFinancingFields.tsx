@@ -153,6 +153,16 @@ function SectionTitle({ children }: { children: string }) {
   );
 }
 
+function formatRemainingCapitalLabel(asOf: string | undefined, revenueYear: number): string {
+  if (asOf) {
+    const parsed = Date.parse(asOf);
+    if (!Number.isNaN(parsed)) {
+      return `Capital restant dû au ${new Date(parsed).toLocaleDateString("fr-FR")}`;
+    }
+  }
+  return `Capital restant dû au 31/12/${revenueYear}`;
+}
+
 function SummaryMetric({
   label,
   value,
@@ -296,9 +306,10 @@ export function CreditFinancingFields({
     onChange({ ...values, loans });
   };
 
-  const updateSummary = (patch: Partial<CreditFormValues["summary"]>) => {
-    onChange({ ...values, summary: { ...values.summary, ...patch } });
-  };
+  const remainingCapitalLabel = formatRemainingCapitalLabel(
+    values.summary.remainingCapitalAsOf,
+    revenueYear,
+  );
 
   const summaryDisplay = {
     annualInterest: values.summary.annualInterest
@@ -306,9 +317,6 @@ export function CreditFinancingFields({
       : "—",
     annualInsurance: values.summary.annualInsurance
       ? formatCurrency(Number(values.summary.annualInsurance.replace(/\s/g, "").replace(",", ".")))
-      : "—",
-    annualFinancingCharges: values.summary.annualFinancingCharges
-      ? formatCurrency(Number(values.summary.annualFinancingCharges.replace(/\s/g, "").replace(",", ".")))
       : "—",
     remainingCapital: values.summary.remainingCapital
       ? formatCurrency(Number(values.summary.remainingCapital.replace(/\s/g, "").replace(",", ".")))
@@ -337,9 +345,8 @@ export function CreditFinancingFields({
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2">
             <SummaryMetric label={`Intérêts ${revenueYear}`} value={summaryDisplay.annualInterest} delayMs={60} />
-            <SummaryMetric label="Assurance" value={summaryDisplay.annualInsurance} delayMs={120} />
-            <SummaryMetric label="Charges financières" value={summaryDisplay.annualFinancingCharges} delayMs={180} />
-            <SummaryMetric label="Capital restant dû" value={summaryDisplay.remainingCapital} delayMs={240} />
+            <SummaryMetric label={`Assurance ${revenueYear}`} value={summaryDisplay.annualInsurance} delayMs={120} />
+            <SummaryMetric label={remainingCapitalLabel} value={summaryDisplay.remainingCapital} delayMs={180} />
           </div>
           <div className="mt-8 flex justify-center">
             <button
@@ -387,7 +394,7 @@ export function CreditFinancingFields({
                   label="Montant emprunté"
                   value={loan.borrowedAmount}
                   onChange={(borrowedAmount) => updateLoan(index, { borrowedAmount })}
-                  placeholder="180 000"
+                  placeholder="Montant emprunté"
                   uncertain={uncertain.has("borrowedAmount")}
                   delayMs={180}
                 />
@@ -395,7 +402,7 @@ export function CreditFinancingFields({
                   label="Taux"
                   value={loan.rate}
                   onChange={(rate) => updateLoan(index, { rate })}
-                  placeholder="3,15"
+                  placeholder="Taux"
                   uncertain={uncertain.has("rate")}
                   delayMs={240}
                 />
@@ -405,7 +412,7 @@ export function CreditFinancingFields({
                   label="Durée (mois)"
                   value={loan.durationMonths}
                   onChange={(durationMonths) => updateLoan(index, { durationMonths })}
-                  placeholder="240"
+                  placeholder="Durée en mois"
                   uncertain={uncertain.has("durationMonths")}
                   delayMs={300}
                 />
@@ -413,7 +420,7 @@ export function CreditFinancingFields({
                   label="Mensualité"
                   value={loan.monthlyPayment}
                   onChange={(monthlyPayment) => updateLoan(index, { monthlyPayment })}
-                  placeholder="1 012"
+                  placeholder="Mensualité"
                   uncertain={uncertain.has("monthlyPayment")}
                   delayMs={360}
                 />
@@ -423,7 +430,7 @@ export function CreditFinancingFields({
                   label="Assurance"
                   value={loan.insurance}
                   onChange={(insurance) => updateLoan(index, { insurance })}
-                  placeholder="42"
+                  placeholder="Assurance mensuelle"
                   uncertain={uncertain.has("insurance")}
                   delayMs={420}
                 />
@@ -438,29 +445,29 @@ export function CreditFinancingFields({
               </div>
               <div className="grid gap-0 sm:grid-cols-2 sm:gap-x-4">
                 <LightField
-                  label="Frais dossier"
-                  value={loan.fees}
-                  onChange={(fees) => updateLoan(index, { fees })}
-                  placeholder="850"
-                  uncertain={uncertain.has("fees")}
+                  label="Frais de garantie"
+                  value={loan.loanGuaranteeFees}
+                  onChange={(loanGuaranteeFees) => updateLoan(index, { loanGuaranteeFees })}
+                  placeholder="Frais de garantie"
+                  uncertain={uncertain.has("loanGuaranteeFees")}
                   delayMs={540}
                 />
                 <LightField
-                  label="Capital restant dû"
-                  value={loan.remainingCapital}
-                  onChange={(remainingCapital) => updateLoan(index, { remainingCapital })}
-                  placeholder="168 420"
-                  uncertain={uncertain.has("remainingCapital")}
+                  label="Frais de dossier bancaire"
+                  value={loan.loanApplicationFees}
+                  onChange={(loanApplicationFees) => updateLoan(index, { loanApplicationFees })}
+                  placeholder="Frais de dossier"
+                  uncertain={uncertain.has("loanApplicationFees")}
                   delayMs={600}
                 />
               </div>
               <div className="grid gap-0 sm:grid-cols-2 sm:gap-x-4">
                 <LightField
-                  label="Date début prêt"
-                  type="date"
-                  value={loan.startDate}
-                  onChange={(startDate) => updateLoan(index, { startDate })}
-                  uncertain={uncertain.has("startDate")}
+                  label={remainingCapitalLabel}
+                  value={loan.remainingCapital}
+                  onChange={(remainingCapital) => updateLoan(index, { remainingCapital })}
+                  placeholder="Capital restant dû"
+                  uncertain={uncertain.has("remainingCapital")}
                   delayMs={660}
                 />
                 <LightField
@@ -505,37 +512,6 @@ export function CreditFinancingFields({
             </div>
           ))}
 
-          <SectionTitle>Totaux annuels</SectionTitle>
-          <div className="grid gap-0 sm:grid-cols-2 sm:gap-x-4">
-            <LightField
-              label={`Intérêts ${revenueYear}`}
-              value={values.summary.annualInterest}
-              onChange={(annualInterest) => updateSummary({ annualInterest })}
-              placeholder="4 820"
-              delayMs={60}
-            />
-            <LightField
-              label="Assurance annuelle"
-              value={values.summary.annualInsurance}
-              onChange={(annualInsurance) => updateSummary({ annualInsurance })}
-              placeholder="600"
-              delayMs={120}
-            />
-            <LightField
-              label="Charges financières"
-              value={values.summary.annualFinancingCharges}
-              onChange={(annualFinancingCharges) => updateSummary({ annualFinancingCharges })}
-              placeholder="5 420"
-              delayMs={180}
-            />
-            <LightField
-              label="Capital restant dû"
-              value={values.summary.remainingCapital}
-              onChange={(remainingCapital) => updateSummary({ remainingCapital })}
-              placeholder="189 600"
-              delayMs={240}
-            />
-          </div>
         </>
       ) : null}
 

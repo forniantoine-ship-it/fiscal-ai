@@ -1,3 +1,9 @@
+import {
+  incrementCreditPipelineCounter,
+  measureCreditPipelineAwait,
+  measureCreditPipelineSync,
+} from "@/lib/lmnp/services/credit-pipeline-timing";
+
 const MAX_NATIVE_PDF_PAGES = 24;
 
 function isPdfFile(file: File): boolean {
@@ -14,7 +20,7 @@ export async function extractNativePdfText(
     return { text: "", pageCount: 0 };
   }
 
-  const pdfjs = await import("pdfjs-dist");
+  const pdfjs = await measureCreditPipelineAwait("pdf_worker_import", import("pdfjs-dist"));
 
   if (typeof window !== "undefined") {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -23,21 +29,39 @@ export async function extractNativePdfText(
     ).toString();
   }
 
-  const buffer = await file.arrayBuffer();
-  const pdf = await pdfjs.getDocument({ data: buffer }).promise;
+  const buffer = await measureCreditPipelineAwait("pdf_array_buffer_read", file.arrayBuffer(), {
+    fileName: file.name,
+    sizeBytes: file.size,
+  });
+
+  incrementCreditPipelineCounter("pdf_get_document");
+  const pdf = await measureCreditPipelineAwait(
+    "pdf_get_document",
+    pdfjs.getDocument({ data: buffer }).promise,
+    { fileName: file.name, totalPages: "pending" },
+  );
+
   const pageCount = Math.min(pdf.numPages, MAX_NATIVE_PDF_PAGES);
   const parts: string[] = [];
 
   for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
-    const page = await pdf.getPage(pageNum);
-    const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
-      .join(" ");
+    const pageText = await measureCreditPipelineAwait(
+      `pdf_native_page_extract`,
+      (async () => {
+        const page = await pdf.getPage(pageNum);
+        const content = await page.getTextContent();
+        return content.items
+          .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
+          .join(" ");
+      })(),
+      { pageNum, totalPages: pdf.numPages },
+    );
     if (pageText.trim()) parts.push(pageText);
   }
 
-  const text = parts.join("\n").trim();
+  const text = measureCreditPipelineSync("pdf_native_text_join", () => parts.join("\n").trim(), {
+    pageCount,
+  });
 
   console.log("[ocr-pdf-text]", {
     pageCount,

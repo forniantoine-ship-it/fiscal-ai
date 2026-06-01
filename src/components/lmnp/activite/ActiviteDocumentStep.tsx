@@ -364,6 +364,16 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[ocr-trigger-owner]", {
+      system: "T7-activite-gated",
+      component: "ActiviteDocumentStep",
+      reason: "inpiDoc uploaded + (executionPendingRef OR pendingUploadRef) + shouldRunExtraction + shouldAutoRunGptPipeline",
+      docs: [inpiDoc.id],
+      step: "activite",
+      category: "inpi",
+      guard: "status=uploaded + analyzingRef + executionPendingRef/pendingUploadRef + shouldRunExtraction(hydration-aware) + shouldAutoRunGptPipeline",
+    });
     executionPendingRef.current = false;
     pendingUploadRef.current = false;
     void runPipeline(inpiDoc);

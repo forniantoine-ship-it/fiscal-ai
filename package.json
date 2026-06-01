@@ -7,12 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:revenus-parser": "npx tsx src/lib/lmnp/services/revenus-structured-table-parser.test.ts"
+    "test:revenus-parser": "npx tsx src/lib/lmnp/services/revenus-structured-table-parser.test.ts",
+    "test:charge-classifier": "npx tsx src/lib/lmnp/services/classify-charge-document.test.ts",
+    "test:insurance-parser": "npx tsx src/lib/lmnp/services/charges/parse-insurance-document.test.ts",
+    "test:copro-parser": "npx tsx src/lib/lmnp/services/charges/parse-copropriete-document.test.ts",
+    "test:charge-normalizer": "npx tsx src/lib/lmnp/services/charges/normalize-charge-transactions.test.ts",
+    "test:charges-profile": "npx tsx src/lib/lmnp/services/charges-profile.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
     "next": "16.2.6",
-    "openai": "^6.38.0",
+    "openai": "^6.39.1",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.7.284",
     "react": "19.2.4",
@@ -20,7 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.3.0",
+    "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^20",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",

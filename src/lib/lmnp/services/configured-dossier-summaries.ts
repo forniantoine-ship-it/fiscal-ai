@@ -3,7 +3,7 @@ import type { ConfiguredSummaryRow } from "@/components/lmnp/shared/ConfiguredDo
 import type { LogementFormValues } from "@/lib/lmnp/services/logement-profile";
 import type { CreditFormValues } from "@/lib/lmnp/services/credit-profile";
 import { formatCurrency as formatCreditCurrency } from "@/lib/lmnp/services/credit-profile";
-import { formatCurrency as formatRevenusCurrency } from "@/lib/lmnp/services/revenus-profile";
+import { formatCurrency as formatRevenusCurrency, describeSourceTypes } from "@/lib/lmnp/services/revenus-profile";
 import { formatCurrency as formatChargesCurrency, categoryLabel } from "@/lib/lmnp/services/charges-profile";
 import { formatCurrency as formatAmortCurrency } from "@/lib/lmnp/services/amortissement-profile";
 import type {
@@ -129,10 +129,12 @@ export function buildLogementConfiguredSummary(
   if (addressParts.length) {
     rows.push({ label: "Adresse", value: addressParts.join(", ") });
   }
-  if (background?.acquisitionPrice) {
+  const purchasePrice =
+    parseAmount(values.propertyPurchasePrice) || background?.acquisitionPrice || 0;
+  if (purchasePrice > 0) {
     rows.push({
-      label: "Prix d'acquisition",
-      value: formatAmortCurrency(background.acquisitionPrice),
+      label: "Prix du bien (hors frais)",
+      value: formatAmortCurrency(purchasePrice),
     });
   }
   if (values.acquisitionDate?.trim()) {
@@ -187,12 +189,16 @@ export function buildRevenusConfiguredSummary(
 ): ConfiguredSummaryRow[] {
   return [
     {
-      label: "Plateformes détectées",
-      value: detectPlatforms(documents).join(" · "),
+      label: "Sources analysées",
+      value: describeSourceTypes(documents).join(" · ") || "Mixte",
     },
     {
-      label: "Revenus détectés",
+      label: "Revenus reconstitués",
       value: formatRevenusCurrency(extraction.summary.totalRevenue),
+    },
+    {
+      label: "Événements détectés",
+      value: String(extraction.summary.eventCount ?? extraction.summary.rentCount),
     },
     {
       label: "Période analysée",

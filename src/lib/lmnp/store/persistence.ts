@@ -7,8 +7,13 @@ import type {
   Property,
   ValidationItem,
 } from "../types";
+import type { AiActivityEvent } from "../types/ai-activity";
 import type { FileRegistry } from "./reducer";
 import { getBoundAuthUserId } from "@/lib/lmnp/auth/auth-boundary";
+import {
+  msSinceCreditRenderUnblockAnchor,
+  traceCreditRenderUnblock,
+} from "@/lib/lmnp/services/credit-render-unblock-trace";
 import {
   deleteDocumentBlob,
   deleteWorkspaceRecord,
@@ -32,6 +37,8 @@ export interface PersistedWorkspace {
   validationItems: ValidationItem[];
   ledgerEntries: LedgerEntry[];
   declarationDraft?: DeclarationDraft;
+  /** Persistent AI Activity Feed — business narrative layer for the dossier. */
+  aiActivityFeed?: AiActivityEvent[];
 }
 
 export interface HydratedLmnpStore {
@@ -233,6 +240,10 @@ export async function saveWorkspace(userId: string, data: PersistedWorkspace): P
   if (typeof window === "undefined") return;
   try {
     await putWorkspaceRecord(userId, data);
+    console.log("[ai-event-persisted]", {
+      feedSize: data.aiActivityFeed?.length ?? 0,
+      eventIds: data.aiActivityFeed?.map((e) => e.id) ?? [],
+    });
     notifyAutosaveStatus("saved");
   } catch (error) {
     console.error("[lmnp] Failed to persist workspace", { userId, error });
@@ -244,6 +255,14 @@ export async function saveWorkspace(userId: string, data: PersistedWorkspace): P
 export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string | null): void {
   if (!userId) return;
 
+  const msSinceAnchor = msSinceCreditRenderUnblockAnchor();
+  if (msSinceAnchor != null) {
+    traceCreditRenderUnblock("scheduleSaveWorkspace_called", {
+      debounceMs: 350,
+      feedSize: data.aiActivityFeed?.length ?? 0,
+    });
+  }
+
   pendingWorkspace = { userId, data };
   notifyAutosaveStatus("saving");
   if (saveWorkspaceTimer) clearTimeout(saveWorkspaceTimer);
@@ -251,7 +270,21 @@ export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string |
     saveWorkspaceTimer = null;
     const snapshot = pendingWorkspace;
     pendingWorkspace = null;
-    if (snapshot) void saveWorkspace(snapshot.userId, snapshot.data);
+    if (snapshot) {
+      const saveStartedAt = performance.now();
+      if (msSinceCreditRenderUnblockAnchor() != null) {
+        traceCreditRenderUnblock("saveWorkspace_started", {
+          msSinceDebounceScheduled: msSinceAnchor,
+        });
+      }
+      void saveWorkspace(snapshot.userId, snapshot.data).then(() => {
+        if (msSinceCreditRenderUnblockAnchor() != null) {
+          traceCreditRenderUnblock("saveWorkspace_finished", {
+            saveDurationMs: Math.round((performance.now() - saveStartedAt) * 100) / 100,
+          });
+        }
+      });
+    }
   }, 350);
 }
 

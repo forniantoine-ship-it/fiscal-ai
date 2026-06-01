@@ -2,7 +2,8 @@ import { documentJourneyRoute } from "../routes";
 import type { DeclarationDraft, Property } from "../types";
 import { buildChargesExtraction, chargesFromDraft } from "./charges-profile";
 import { ventilationFromDraft } from "./amortissement-profile";
-import { buildRevenusExtraction, revenusFromDraft } from "./revenus-profile";
+import { revenusFromDraft } from "./revenus-profile";
+import { sessionToExtractionData } from "./revenue-gpt-ui-prefill";
 
 export const GENERATION_PRICE_TTC = 149;
 
@@ -126,8 +127,16 @@ function totalAnnualAmortization(draft?: DeclarationDraft): number {
 export function buildFiscalSummary(
   draft: DeclarationDraft | undefined,
   properties: Property[],
+  fiscalYear = new Date().getFullYear() - 1,
 ): FiscalSummary {
-  const revenus = revenusFromDraft(draft) ?? buildRevenusExtraction(properties);
+  const revenus =
+    (draft?.revenueGptSession
+      ? sessionToExtractionData(draft.revenueGptSession, fiscalYear)
+      : undefined) ??
+    revenusFromDraft(draft) ?? {
+      properties: [],
+      summary: { totalRevenue: 0, rentCount: 0, totalFees: 0, hasSecurityDeposit: false },
+    };
   const charges = chargesFromDraft(draft) ?? buildChargesExtraction(properties, draft);
   const rentalIncome = revenus.summary.totalRevenue;
   const detectedCharges = charges.summary.totalCharges;
@@ -159,7 +168,7 @@ export function buildValidationDossierSnapshot(
     missing,
     isComplete: missing.length === 0,
     isMultiProperty: properties.length > 1,
-    fiscalSummary: buildFiscalSummary(draft, properties),
+    fiscalSummary: buildFiscalSummary(draft, properties, fiscalYear),
     deadlineLabel: buildFiscalDeadlineLabel(fiscalYear),
   };
 }

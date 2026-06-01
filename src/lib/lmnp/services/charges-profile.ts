@@ -4,6 +4,7 @@ import type {
   ChargesExtractionData,
   ChargesExpenseLine,
   DeclarationDraft,
+  Extraction,
   ExpenseCategory,
   LmnpDocument,
   Property,
@@ -12,6 +13,7 @@ import {
   buildAmortizationSuggestionsFromCategories,
   mergeSuggestionsIntoDecisions,
 } from "./charges-amortization-intelligence";
+import { buildDocumentDerivedChargeCategories } from "./charges/charges-document-extraction";
 
 export type { ChargesCategoryData, ChargesExtractionData, ChargesExpenseLine };
 
@@ -25,10 +27,21 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 };
 
 export function formatCurrency(value: number): string {
+  console.log("[charges-amount-debug]", {
+    rawAmount: value,
+    normalizedAmount: Math.round(value * 100) / 100,
+    displayedAmount: new Intl.NumberFormat("fr-FR", {
+      style: "currency",
+      currency: "EUR",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(value),
+  });
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -61,9 +74,34 @@ export function resolveChargesDocuments(
   documents: LmnpDocument[],
   linkedDocumentIds?: string[],
 ): LmnpDocument[] {
-  return [...documents]
+  const resolved = [...documents]
     .filter((doc) => isChargesDocument(doc, linkedDocumentIds))
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  console.log("[charges-resolve-docs]", {
+    totalDocuments: documents.length,
+    chargeDocumentIds: linkedDocumentIds ?? [],
+    resolvedDocs: resolved.map((doc) => ({
+      id: doc.id,
+      fileName: doc.fileName,
+      status: doc.status,
+      category: doc.category,
+      documentType: doc.documentType,
+      inLinkedIds: linkedDocumentIds?.includes(doc.id) ?? false,
+      matchedBy:
+        linkedDocumentIds?.includes(doc.id)
+          ? "linkedId"
+          : doc.category === "charges"
+            ? "category"
+            : doc.documentType === "property_tax" ||
+                doc.documentType === "insurance_invoice" ||
+                doc.documentType === "condo_charges" ||
+                doc.documentType === "works_invoice"
+              ? "documentType"
+              : "fileNameRegex",
+    })),
+  });
+  return resolved;
 }
 
 function propertyLabel(property: Property | undefined, fallback: string): string {
@@ -118,7 +156,9 @@ function recoveredFromCredit(draft?: DeclarationDraft, primaryLabel?: string): C
   if (financing.summary.annualInsurance > 0) {
     items.push(
       category({
+        id: "cat-recovered-credit-insurance",
         category: "insurance",
+        label: "Assurance emprunt (étape Crédit)",
         propertyLabel: primaryLabel,
         lines: [
           line({
@@ -166,6 +206,18 @@ function recoveredFromRevenus(draft?: DeclarationDraft): ChargesCategoryData[] {
   ];
 }
 
+/** Whether Crédit / Revenus / Amortissement steps would contribute recovery rows. */
+export function hasCrossStepRecoveryAvailable(
+  draft?: DeclarationDraft,
+  primaryLabel = "Bien locatif",
+): boolean {
+  return (
+    recoveredFromCredit(draft, primaryLabel).length > 0 ||
+    recoveredFromRevenus(draft).length > 0 ||
+    recoveredFromAmortissement(draft, primaryLabel).length > 0
+  );
+}
+
 function recoveredFromAmortissement(draft?: DeclarationDraft, primaryLabel?: string): ChargesCategoryData[] {
   const ventilation = draft?.amortissementVentilation;
   if (!draft?.amortissementConfirmedAt || !ventilation) return [];
@@ -195,137 +247,178 @@ function recoveredFromAmortissement(draft?: DeclarationDraft, primaryLabel?: str
   ];
 }
 
-function mockUploadedCategories(primary?: Property): ChargesCategoryData[] {
-  const label = propertyLabel(primary, "Appartement Bordeaux Gambetta");
+export type ChargesExtractionSource = "documents" | "recovered" | "draft_restore";
 
-  return [
-    category({
-      category: "insurance",
-      propertyLabel: label,
-      lines: [
-        line({
-          label: "AXA Habitation",
-          amount: 420,
-          vatAmount: 70,
-          date: "2025-01-15",
-          propertyLabel: label,
-          recoverable: true,
-          recurring: true,
-          source: "upload",
-        }),
-      ],
-    }),
-    category({
-      category: "property_tax",
-      propertyLabel: label,
-      lines: [
-        line({
-          label: "Avis taxe foncière 2025",
-          amount: 1280,
-          date: "2025-09-01",
-          propertyLabel: label,
-          recoverable: true,
-          recurring: true,
-          source: "upload",
-        }),
-      ],
-    }),
-    category({
-      category: "management_fees",
-      propertyLabel: label,
-      lines: [
-        line({
-          label: "Agence de gestion",
-          amount: 690,
-          vatAmount: 115,
-          date: "2025-03-10",
-          propertyLabel: label,
-          recoverable: true,
-          recurring: true,
-          source: "upload",
-        }),
-      ],
-    }),
-    category({
-      category: "condo",
-      propertyLabel: label,
-      lines: [
-        line({
-          label: "Appel charges T1 2025",
-          amount: 340,
-          date: "2025-04-01",
-          propertyLabel: label,
-          recoverable: true,
-          source: "upload",
-        }),
-      ],
-    }),
-    category({
-      category: "other",
-      propertyLabel: label,
-      lines: [
-        line({
-          id: "line-internet",
-          label: "Abonnement internet",
-          amount: 480,
-          date: "2025-12-01",
-          propertyLabel: label,
-          recoverable: true,
-          recurring: true,
-          source: "upload",
-        }),
-        line({
-          id: "line-cuisine-equipee",
-          label: "Cuisine équipée",
-          amount: 4200,
-          date: "2025-04-12",
-          propertyLabel: label,
-          recoverable: true,
-          source: "upload",
-        }),
-        line({
-          id: "line-sdb",
-          label: "Réfection salle de bain",
-          amount: 1850,
-          date: "2025-06-18",
-          propertyLabel: label,
-          recoverable: true,
-          source: "upload",
-        }),
-        line({
-          id: "line-peinture",
-          label: "Retouche peinture salon",
-          amount: 450,
-          date: "2025-08-03",
-          propertyLabel: label,
-          recoverable: true,
-          source: "upload",
-        }),
-      ],
-    }),
-  ];
+export type ChargesExtractionBuildContext = {
+  documents?: LmnpDocument[];
+  extractions?: Extraction[];
+  chargeDocumentIds?: string[];
+  /** When true, include recoveredFromCredit / Revenus / Amortissement. */
+  includeCrossStepRecovery?: boolean;
+  /** Skip build (empty result) while uploaded charge docs exist but none are analyzed yet. */
+  requireAnalyzedDocuments?: boolean;
+};
+
+/** Known demo labels from legacy mockUploadedCategories — never restore from draft. */
+const LEGACY_MOCK_LINE_PATTERNS: RegExp[] = [
+  /^axa habitation$/i,
+  /^avis taxe fonci[eè]re 2025$/i,
+  /^agence de gestion$/i,
+  /^appel charges t1 2025$/i,
+  /^abonnement internet$/i,
+  /^cuisine [eé]quip[eé]e$/i,
+  /^r[eé]fection salle de bain$/i,
+  /^retouche peinture salon$/i,
+];
+
+export function isLegacyMockChargeLine(line: ChargesExpenseLine): boolean {
+  if (line.source !== "upload") return false;
+  return LEGACY_MOCK_LINE_PATTERNS.some((pattern) => pattern.test(line.label.trim()));
 }
 
-function mergeCategories(groups: ChargesCategoryData[]): ChargesCategoryData[] {
-  const map = new Map<string, ChargesCategoryData>();
+export function isRecoveredChargeCategory(cat: ChargesCategoryData): boolean {
+  return cat.lines.every((entry) => entry.source && entry.source !== "upload");
+}
 
-  for (const item of groups) {
-    const key = `${item.category}-${item.propertyLabel ?? "default"}`;
-    const existing = map.get(key);
-    if (!existing) {
-      map.set(key, { ...item, lines: [...item.lines] });
-      continue;
-    }
-    const lines = [...existing.lines, ...item.lines];
-    map.set(key, {
-      ...existing,
-      lines,
-      annualTotal: lines.reduce((sum, entry) => sum + entry.amount, 0),
-      recurring: existing.recurring || item.recurring,
-    });
-  }
+export function purgeLegacyMockCategories(
+  categories: ChargesCategoryData[],
+): ChargesCategoryData[] {
+  return categories
+    .map((cat) => {
+      const lines = cat.lines.filter((entry) => !isLegacyMockChargeLine(entry));
+      if (lines.length === 0) return null;
+      const annualTotal = lines.reduce((sum, entry) => sum + entry.amount, 0);
+      return { ...cat, lines, annualTotal };
+    })
+    .filter((cat): cat is ChargesCategoryData => cat !== null);
+}
 
-  return [...map.values()];
+export function purgeRecoveredCategories(
+  categories: ChargesCategoryData[],
+): ChargesCategoryData[] {
+  return categories.filter((cat) => !isRecoveredChargeCategory(cat));
+}
+
+export function shouldIncludeCrossStepRecovery(
+  draft: DeclarationDraft | undefined,
+  documents: LmnpDocument[],
+  chargeDocumentIds?: string[],
+  explicitInclude?: boolean,
+): boolean {
+  const uploadedCount = countChargesDocuments(documents, chargeDocumentIds);
+  if (uploadedCount === 0) return true;
+  return Boolean(explicitInclude ?? draft?.chargesCrossStepRecoveryEnabled);
+}
+
+export function createEmptyChargesExtraction(): ChargesExtractionData {
+  return {
+    categories: [],
+    recoveredFromOtherSteps: 0,
+    amortizationSuggestions: [],
+    summary: {
+      totalCharges: 0,
+      categoryCount: 0,
+      recoverableTotal: 0,
+      nonRecoverableTotal: 0,
+    },
+  };
+}
+
+export function logChargesAuthority(payload: {
+  source: ChargesExtractionSource;
+  authoritative: boolean;
+  replacedPreviousExtraction: boolean;
+  categoryCount?: number;
+  uploadedDocumentCount?: number;
+  analyzedDocumentCount?: number;
+  includeCrossStepRecovery?: boolean;
+}): void {
+  console.log("[charges-authority]", payload);
+}
+
+export function logChargesExtractionTrace(payload: {
+  source: ChargesExtractionSource;
+  categoryCount: number;
+  uploadedDocumentCount: number;
+  documentCategoryCount?: number;
+  recoveredCategoryCount?: number;
+}): void {
+  console.log("[charges-extraction]", payload);
+}
+
+export function logChargesLoopGuard(payload: {
+  skippedBecauseEqual: boolean;
+  triggeredBy: string;
+}): void {
+  console.log("[charges-loop-guard]", payload);
+}
+
+/** Stable semantic fingerprint — ignores volatile line/suggestion ids. */
+export function chargesExtractionFingerprint(data: ChargesExtractionData): string {
+  const normalized = normalizeChargesExtraction(data);
+
+  const categories = [...normalized.categories]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((cat) => ({
+      id: cat.id,
+      category: cat.category,
+      label: cat.label,
+      annualTotal: cat.annualTotal,
+      propertyLabel: cat.propertyLabel ?? "",
+      lines: [...cat.lines]
+        .sort((a, b) =>
+          `${a.label}|${a.amount}|${a.source ?? ""}`.localeCompare(
+            `${b.label}|${b.amount}|${b.source ?? ""}`,
+          ),
+        )
+        .map((line) => ({
+          label: line.label,
+          amount: line.amount,
+          source: line.source ?? "",
+          date: line.date ?? "",
+          recoverable: line.recoverable,
+          recurring: line.recurring ?? false,
+          vatAmount: line.vatAmount ?? null,
+        })),
+    }));
+
+  const suggestions = [...normalized.amortizationSuggestions]
+    .sort((a, b) => a.expenseLineId.localeCompare(b.expenseLineId))
+    .map((item) => ({
+      expenseLineId: item.expenseLineId,
+      label: item.label,
+      amount: item.amount,
+      status: item.status,
+      workType: item.workType,
+      amortCategory: item.amortCategory,
+      durationYears: item.durationYears,
+      propertyLabel: item.propertyLabel ?? "",
+    }));
+
+  return JSON.stringify({
+    summary: normalized.summary,
+    recoveredFromOtherSteps: normalized.recoveredFromOtherSteps,
+    categories,
+    suggestions,
+  });
+}
+
+export function areChargesExtractionsEqual(
+  a: ChargesExtractionData | undefined,
+  b: ChargesExtractionData | undefined,
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return chargesExtractionFingerprint(a) === chargesExtractionFingerprint(b);
+}
+
+function countAnalyzedChargeDocuments(
+  documents: LmnpDocument[],
+  chargeDocumentIds?: string[],
+): number {
+  return documents.filter(
+    (doc) => doc.status === "analyzed" && isChargesDocument(doc, chargeDocumentIds),
+  ).length;
 }
 
 export function recalculateChargesSummary(
@@ -348,20 +441,83 @@ export function recalculateChargesSummary(
 export function buildChargesExtraction(
   properties: Property[],
   draft?: DeclarationDraft,
+  context?: ChargesExtractionBuildContext,
 ): ChargesExtractionData {
   const primary = properties[0];
-  const primaryLabel = propertyLabel(primary, "Appartement Bordeaux Gambetta");
+  const primaryLabel = propertyLabel(primary, "Bien locatif");
+  const documents = context?.documents ?? [];
+  const extractions = context?.extractions ?? [];
+  const chargeDocumentIds = context?.chargeDocumentIds ?? draft?.chargesDocumentIds;
+  const linkedUploadedCount = countChargesDocuments(documents, chargeDocumentIds);
+  const analyzedDocumentCount = countAnalyzedChargeDocuments(documents, chargeDocumentIds);
 
-  const recovered = [
-    ...recoveredFromCredit(draft, primaryLabel),
-    ...recoveredFromRevenus(draft),
-    ...recoveredFromAmortissement(draft, primaryLabel),
-  ];
+  if (
+    context?.requireAnalyzedDocuments &&
+    linkedUploadedCount > 0 &&
+    analyzedDocumentCount === 0
+  ) {
+    return createEmptyChargesExtraction();
+  }
+
+  const analyzedDocuments = documents.filter(
+    (doc) => doc.status === "analyzed" && isChargesDocument(doc, chargeDocumentIds),
+  );
+
+  console.log("[charges-debug-extraction-input]", {
+    extractionDocs: analyzedDocuments.map((doc) => ({
+      id: doc.id,
+      fileName: doc.fileName,
+      documentType: doc.documentType,
+    })),
+    chargeDocumentIds: chargeDocumentIds ?? [],
+    requireAnalyzedDocuments: context?.requireAnalyzedDocuments ?? false,
+    linkedUploadedCount,
+    analyzedDocumentCount,
+  });
+
+  const documentCategories = buildDocumentDerivedChargeCategories({
+    documents,
+    extractions,
+    chargeDocumentIds,
+    properties,
+  });
+
+  const includeRecovery = shouldIncludeCrossStepRecovery(
+    draft,
+    documents,
+    chargeDocumentIds,
+    context?.includeCrossStepRecovery,
+  );
+
+  const recovered = includeRecovery
+    ? [
+        ...recoveredFromCredit(draft, primaryLabel),
+        ...recoveredFromRevenus(draft),
+        ...recoveredFromAmortissement(draft, primaryLabel),
+      ]
+    : [];
   const recoveredCount = recovered.reduce((sum, cat) => sum + cat.lines.length, 0);
 
-  const categories = mergeCategories([...recovered, ...mockUploadedCategories(primary)]);
+  const categories = [...documentCategories, ...recovered];
+
+  const source: ChargesExtractionSource =
+    documentCategories.length > 0
+      ? "documents"
+      : recovered.length > 0
+        ? "recovered"
+        : "documents";
+
+  logChargesExtractionTrace({
+    source,
+    categoryCount: categories.length,
+    uploadedDocumentCount: analyzedDocumentCount,
+    documentCategoryCount: documentCategories.length,
+    recoveredCategoryCount: recovered.length,
+  });
+
+  const uploadOnlyCategories = purgeRecoveredCategories(categories);
   const amortizationSuggestions = buildAmortizationSuggestionsFromCategories(
-    categories,
+    linkedUploadedCount > 0 && !includeRecovery ? uploadOnlyCategories : categories,
     draft?.chargesAmortizationDecisions,
   );
 
@@ -423,20 +579,47 @@ export function resolveChargesAmortizationDecisions(
   );
 }
 
-export function chargesFromDraft(draft?: DeclarationDraft): ChargesExtractionData | undefined {
+export function chargesFromDraft(
+  draft?: DeclarationDraft,
+  options?: { documents?: LmnpDocument[] },
+): ChargesExtractionData | undefined {
   const raw = draft?.chargesExtraction;
   if (!raw) return undefined;
 
   const normalized = normalizeChargesExtraction(raw);
-  const categories = normalized.categories ?? [];
+  let categories = purgeLegacyMockCategories(normalized.categories ?? []);
 
-  return {
+  const documents = options?.documents ?? [];
+  if (
+    documents.length > 0 &&
+    countChargesDocuments(documents, draft?.chargesDocumentIds) > 0 &&
+    !shouldIncludeCrossStepRecovery(draft, documents, draft?.chargesDocumentIds)
+  ) {
+    categories = purgeRecoveredCategories(categories);
+  }
+
+  const purged: ChargesExtractionData = {
     ...normalized,
     categories,
+    recoveredFromOtherSteps: categories
+      .flatMap((cat) => cat.lines)
+      .filter((line) => line.source && line.source !== "upload").length,
+    summary: recalculateChargesSummary(
+      categories,
+      categories.flatMap((cat) => cat.lines).filter((line) => line.source && line.source !== "upload")
+        .length,
+    ),
+  };
+
+  return {
+    ...purged,
     amortizationSuggestions:
-      normalized.amortizationSuggestions.length > 0
-        ? resolveChargesAmortizationDecisions(normalized, draft)
-        : buildAmortizationSuggestionsFromCategories(categories, draft?.chargesAmortizationDecisions),
+      purged.amortizationSuggestions.length > 0
+        ? resolveChargesAmortizationDecisions(purged, draft)
+        : buildAmortizationSuggestionsFromCategories(
+            categories,
+            draft?.chargesAmortizationDecisions,
+          ),
   };
 }
 

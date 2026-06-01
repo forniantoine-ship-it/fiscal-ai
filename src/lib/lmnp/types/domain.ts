@@ -302,6 +302,8 @@ export interface RevenueTransaction {
   mergedFromIds?: string[];
   /** Mapped deterministically from a structured table column header. */
   structuredMapping?: boolean;
+  /** Month row label from structured tables (e.g. "Avril") when date is missing. */
+  monthLabel?: string;
 }
 
 export type RevenuePropertySession = {
@@ -542,12 +544,16 @@ export interface DeclarationDraft {
   amortissementMobilierDocumentIds?: string[];
   amortissementConfirmedAt?: string;
   amortissementVentilation?: AmortissementVentilationData;
+  /** Real extraction results persisted after runBulkDocumentExtraction — replaces mock invoices on remount. */
+  amortissementExtractedInvoices?: import("@/lib/lmnp/services/amortissement-profile").ExtractedInvoice[];
   revenusDocumentIds?: string[];
   revenusConfirmedAt?: string;
   revenusExtraction?: RevenusExtractionData;
   revenueGptSession?: RevenueGptSession;
   chargesDocumentIds?: string[];
   chargesConfirmedAt?: string;
+  /** User opted in to import charges from Crédit / Revenus / Amortissements. */
+  chargesCrossStepRecoveryEnabled?: boolean;
   chargesExtraction?: ChargesExtractionData;
   chargesAmortizationDecisions?: ChargesAmortizationSuggestion[];
   amortissementFromCharges?: AmortissementFromChargesItem[];

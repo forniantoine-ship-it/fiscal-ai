@@ -28,6 +28,7 @@ import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { buildValidationDossierSnapshot } from "@/lib/lmnp/services/validation-profile";
 import { useLmnp } from "@/lib/lmnp/store";
+import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 
 const GENERATION_AI_STEPS = [
   "Validation",
@@ -38,7 +39,7 @@ const GENERATION_AI_STEPS = [
 
 type FlowPhase = "idle" | "checkout" | "generating";
 
-export function ValidationDocumentStep() {
+export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const router = useRouter();
   const { workspace, dispatch } = useLmnp();
   const { showSuccess } = useFeedback();

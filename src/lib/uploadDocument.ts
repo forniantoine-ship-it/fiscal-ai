@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
+import { buildStorageObjectPath } from "@/lib/storage/sanitize-storage-filename";
 
 /** Must match the bucket id in Supabase Dashboard (case-sensitive). */
 const STORAGE_BUCKET = "lmnp-documents";
@@ -44,23 +45,28 @@ export async function uploadDocument(
     return null;
   }
 
-  const filePath = `${userId}/${Date.now()}-${file.name}`;
+  const { storagePath, sanitizedFilename, displayFilename } = buildStorageObjectPath(
+    userId,
+    file.name,
+  );
 
   console.log("[uploadDocument] start", {
     bucket: STORAGE_BUCKET,
-    filePath,
-    fileName: file.name,
+    filePath: storagePath,
+    fileName: displayFilename,
+    sanitizedFilename,
     dossierId,
   });
 
   const { data: storageData, error: storageError } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .upload(filePath, file);
+    .upload(storagePath, file);
 
   if (storageError) {
     console.error("[uploadDocument] storage failed", {
       bucket: STORAGE_BUCKET,
-      filePath,
+      filePath: storagePath,
+      sanitizedFilename,
       message: storageError.message,
       error: storageError,
     });
@@ -74,7 +80,7 @@ export async function uploadDocument(
     .insert({
       user_id: userId,
       dossier_id: dossierId,
-      file_name: file.name,
+      file_name: displayFilename,
       file_path: storageData.path,
       extraction_status: "pending",
     })

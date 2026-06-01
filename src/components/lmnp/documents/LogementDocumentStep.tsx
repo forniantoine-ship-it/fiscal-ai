@@ -31,6 +31,7 @@ import {
   formValuesToProperty,
   isLogementDocument,
   isLogementProfileIncomplete,
+  logementBackgroundFromFormValues,
   MOCK_LOGEMENT_BACKGROUND,
   suggestsMultipleProperties,
 } from "@/lib/lmnp/services/logement-profile";
@@ -116,6 +117,7 @@ function isLogementFormEmpty(values: LogementFormValues): boolean {
     !values.address?.trim() &&
     !values.city?.trim() &&
     !values.postalCode?.trim() &&
+    !values.propertyPurchasePrice?.trim() &&
     !values.acquisitionDate?.trim() &&
     !values.surface?.trim()
   );
@@ -174,6 +176,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   const pendingUploadRef = useRef(false);
   const executionPendingRef = useRef(false);
   const passiveSyncedRef = useRef(false);
+  const confirmedUiAppliedRef = useRef(false);
   const initialStateRef = useRef<InitialLogementState | null>(null);
   const [isExecutionRunning, setIsExecutionRunning] = useState(false);
 
@@ -418,19 +421,17 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           payload: prefill.governedExtractions.creditPayload,
         });
 
-        const backgroundExtraction = {
+        const backgroundExtraction = logementBackgroundFromFormValues(prefill.nextValues, {
           ...(workspace.declarationDraft?.propertyBackgroundExtraction ?? {}),
           ...prefill.governedExtractions.backgroundExtraction,
-        };
+        });
 
         dispatch({
           type: "DECLARATION_PATCH_DRAFT",
           patch: {
-            ...logementWorkspaceFormPatch(prefill.nextValues),
+            logementWorkspaceForm: prefill.nextValues,
             governedFields: nextStore,
-            ...(Object.keys(prefill.governedExtractions.backgroundExtraction).length > 0
-              ? { propertyBackgroundExtraction: backgroundExtraction }
-              : {}),
+            propertyBackgroundExtraction: backgroundExtraction,
           },
         });
 
@@ -438,9 +439,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           ...workspace.declarationDraft,
           logementWorkspaceForm: prefill.nextValues,
           governedFields: nextStore,
-          ...(Object.keys(prefill.governedExtractions.backgroundExtraction).length > 0
-            ? { propertyBackgroundExtraction: backgroundExtraction }
-            : {}),
+          propertyBackgroundExtraction: backgroundExtraction,
         });
 
         logLogementWorkspaceSnapshot({
@@ -654,7 +653,13 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   }, [showExtractionForm]);
 
   useEffect(() => {
-    if (!confirmed) return;
+    if (!confirmed) {
+      confirmedUiAppliedRef.current = false;
+      return;
+    }
+    if (confirmedUiAppliedRef.current) return;
+    confirmedUiAppliedRef.current = true;
+
     logVisualMutation("visual-reset", "confirmedEffect", { validatedSuccess, isEditing }, "confirmed");
     setHasUploaded(true);
     setValidatedSuccess(true);
@@ -709,6 +714,16 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[ocr-trigger-owner]", {
+      system: "T4-logement-gated",
+      component: "LogementDocumentStep",
+      reason: "logementDoc uploaded + executionPendingRef + shouldRunExtraction",
+      docs: [logementDoc.id],
+      step: "logement",
+      category: "acte-notarie",
+      guard: "status=uploaded + analyzingRef + multiPropertyDetected + executionPendingRef + shouldRunExtraction(hydration-aware)",
+    });
     executionPendingRef.current = false;
     void runAnalysis(logementDoc.id);
   }, [logementDoc?.id, logementDoc?.status, runAnalysis, multiPropertyDetected, shouldRunExtraction]);
@@ -803,6 +818,8 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       "postalCode",
       "propertyType",
       "surface",
+      "propertyPurchasePrice",
+      "notaryFees",
       "acquisitionDate",
       "status",
     ] as LogementFieldKey[]) {
@@ -822,7 +839,9 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
 
     const store = readGovernedFieldStore(draft);
     const lockedStore = lockLogementFormFieldEdits(store, formValues, next);
-    const patch: Record<string, unknown> = { ...logementWorkspaceFormPatch(next) };
+    const patch: Record<string, unknown> = {
+      ...logementWorkspaceFormPatch(next, draft?.propertyBackgroundExtraction),
+    };
     if (JSON.stringify(lockedStore) !== JSON.stringify(store)) {
       patch.governedFields = lockedStore;
     }
@@ -878,11 +897,14 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   }
 
   function handleConfirm() {
+    const backgroundExtraction = logementBackgroundFromFormValues(
+      formValues,
+      workspace.declarationDraft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+    );
     dispatch({
       type: "CONFIRM_LOGEMENT_PROFILE",
       profile: formValuesToProperty(formValues),
-      backgroundExtraction:
-        workspace.declarationDraft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+      backgroundExtraction,
       documentId: logementDoc?.id,
     });
     setValidatedSuccess(true);
@@ -967,6 +989,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
             )}
             onEdit={() => {
               setIsEditing(true);
+              setAiAnimationDone(true);
               logVisualMutation(
                 "visible-sections-change",
                 "configuredCard.onEdit",

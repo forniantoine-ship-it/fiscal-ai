@@ -158,6 +158,21 @@ function runTests(): { passed: number; total: number } {
     assertEqual(octobre?.autresRevenus, 100, "Octobre autres revenus grid");
   });
 
+  test("maps complément via monthLabel when transaction date is missing", () => {
+    const lines = parseStructuredRevenueTable(
+      "Mois Loyer Date Complement Date\nAvril 420,00 € 08/04/2025 100,00 € 14/04/2025",
+      2025,
+      "loyers-pdf",
+      "excel",
+    ).lines.map((line) =>
+      line.sourceColumnHeader === "Complément" ? { ...line, date: null } : line,
+    );
+    const grid = aggregateTransactionsToGrid(structuredLinesToTransactions(lines, 2025), 2025);
+    const avril = grid.find((row) => row.monthKey === "2025-04");
+    assertEqual(avril?.loyers, 420, "Avril loyers grid without complement date");
+    assertEqual(avril?.autresRevenus, 100, "Avril autres revenus via monthLabel fallback");
+  });
+
   test("never injects OCR dates into monetary line amounts", () => {
     const parsed = parseStructuredRevenueTable(LOYERS_PDF_OCR_TEXT, 2025, "loyers-pdf", "excel");
     for (const line of parsed.lines) {

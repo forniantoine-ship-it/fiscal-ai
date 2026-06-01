@@ -11,10 +11,15 @@ import {
 
 type RevenusSummaryCardProps = {
   summary: RevenusExtractionData["summary"];
+  deduplicationNotes?: string[];
   cardStyle: React.CSSProperties;
 };
 
-export function RevenusSummaryCard({ summary, cardStyle }: RevenusSummaryCardProps) {
+export function RevenusSummaryCard({
+  summary,
+  deduplicationNotes = [],
+  cardStyle,
+}: RevenusSummaryCardProps) {
   return (
     <section
       className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
@@ -37,7 +42,7 @@ export function RevenusSummaryCard({ summary, cardStyle }: RevenusSummaryCardPro
           color: colors.text.primary,
         }}
       >
-        Revenus détectés :
+        Revenus reconstitués :
       </p>
       <p
         className="mt-2"
@@ -49,14 +54,38 @@ export function RevenusSummaryCard({ summary, cardStyle }: RevenusSummaryCardPro
       >
         {formatCurrency(summary.totalRevenue)}
       </p>
+      <p
+        className="mx-auto mt-3 max-w-md"
+        style={{ ...typography.caption.desktop, color: colors.text.muted, lineHeight: typography.lineHeight.ui }}
+      >
+        Suggestions issues des documents — la grille reste entièrement modifiable.
+      </p>
       <ul className="mx-auto mt-5 max-w-md space-y-2">
         <li style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          {summary.rentCount} loyer{summary.rentCount > 1 ? "s" : ""} identifié
+          {summary.rentCount} encaissement{summary.rentCount > 1 ? "s" : ""} identifié
           {summary.rentCount > 1 ? "s" : ""}
         </li>
+        {summary.eventCount ? (
+          <li style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            {summary.eventCount} flux financier{summary.eventCount > 1 ? "s" : ""} extrait
+            {summary.eventCount > 1 ? "s" : ""}
+          </li>
+        ) : null}
+        {summary.lowConfidenceCount ? (
+          <li style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            {summary.lowConfidenceCount} événement{summary.lowConfidenceCount > 1 ? "s" : ""} à faible
+            confiance (hors grille)
+          </li>
+        ) : null}
         {summary.totalFees > 0 ? (
           <li style={{ ...typography.body.desktop, color: colors.text.secondary }}>
             {formatCurrency(summary.totalFees)} de frais détectés
+          </li>
+        ) : null}
+        {summary.deduplicatedCount ? (
+          <li style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            {summary.deduplicatedCount} doublon{summary.deduplicatedCount > 1 ? "s" : ""} fusionné
+            {summary.deduplicatedCount > 1 ? "s" : ""}
           </li>
         ) : null}
       </ul>
@@ -66,6 +95,14 @@ export function RevenusSummaryCard({ summary, cardStyle }: RevenusSummaryCardPro
           style={{ ...typography.caption.desktop, color: colors.text.muted, lineHeight: typography.lineHeight.ui }}
         >
           Les frais détectés seront automatiquement ajoutés à l&apos;étape Charges.
+        </p>
+      ) : null}
+      {deduplicationNotes.length > 0 ? (
+        <p
+          className="mx-auto mt-4 max-w-md"
+          style={{ ...typography.caption.desktop, color: colors.text.muted, lineHeight: typography.lineHeight.ui }}
+        >
+          {deduplicationNotes[0]}
         </p>
       ) : null}
       {summary.hasSecurityDeposit ? (

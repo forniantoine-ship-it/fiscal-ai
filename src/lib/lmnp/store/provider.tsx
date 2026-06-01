@@ -56,6 +56,8 @@ function toPersisted(state: LmnpState) {
     validationItems: state.validationItems,
     ledgerEntries: state.ledgerEntries,
     declarationDraft: state.declarationDraft ?? { completedSteps: [] },
+    // AI Activity Feed is the persistent business narrative — must survive refresh/remount.
+    aiActivityFeed: state.aiActivityFeed,
   };
 }
 
@@ -105,6 +107,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           fiscalYearId: baseWorkspace.fiscalYear.id,
           propertyId: baseWorkspace.fiscalYear.propertyIds[0],
           localBlobDocumentIds: new Set(fileRegistry.keys()),
+          localExtractedDocumentIds: new Set(baseWorkspace.extractions.map((e) => e.documentId)),
         });
 
         console.log("[workspace] reconciliation completed", {
@@ -112,6 +115,61 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           localCount: baseWorkspace.documents.length,
           supabaseCount: supabaseDocuments.length,
           mergedCount: reconciliation.documents.length,
+        });
+
+        // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+        const restoredDocs = reconciliation.documents.filter((d) => d.category === "charges");
+        console.log("[charges-hydration]", {
+          restoredDocs: restoredDocs.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            status: doc.status,
+            hasAnalysis: baseWorkspace.extractions.some((e) => e.documentId === doc.id),
+          })),
+        });
+        // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+        console.log("[charges-hydration-debug]", {
+          indexedDbDocCount: baseWorkspace.documents.length,
+          fileRegistryKeys: [...fileRegistry.keys()],
+          workspaceDocuments: baseWorkspace.documents.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            category: doc.category,
+            status: doc.status,
+            hasLocalBlob: fileRegistry.has(doc.id),
+            hasExtractions: baseWorkspace.extractions.some((e) => e.documentId === doc.id),
+          })),
+          reconciledDocuments: reconciliation.documents.map((doc) => ({
+            id: doc.id,
+            fileName: doc.fileName,
+            category: doc.category,
+            status: doc.status,
+            hasLocalBlob: fileRegistry.has(doc.id),
+            hasExtractions: baseWorkspace.extractions.some((e) => e.documentId === doc.id),
+          })),
+        });
+
+        // GLOBAL HYDRATION ANALYZED PROMOTION
+        // Runs after reconciliation, before HYDRATE dispatch, for ALL document categories.
+        // Invariant: if a doc has persisted extractions, its analysis already completed in a
+        // prior session. The stored status may be stale ("uploaded") due to the 350ms debounce
+        // save racing an auth event, or Supabase rows being absent. Promote unconditionally.
+        const extractedDocIds = new Set(baseWorkspace.extractions.map((e) => e.documentId));
+        const promotedDocuments = reconciliation.documents.map((doc) => {
+          const previousStatus = doc.status;
+          const hasPersistedExtractions = extractedDocIds.has(doc.id);
+          const finalStatus =
+            doc.status === "uploaded" && hasPersistedExtractions ? "analyzed" as const : doc.status;
+          // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+          console.log("[global-hydration-promotion]", {
+            id: doc.id,
+            fileName: doc.fileName,
+            category: doc.category,
+            previousStatus,
+            hasPersistedExtractions,
+            finalStatus,
+          });
+          return finalStatus !== previousStatus ? { ...doc, status: finalStatus } : doc;
         });
 
         if (workspace) {
@@ -124,7 +182,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           type: "HYDRATE",
           payload: {
             ...baseWorkspace,
-            documents: reconciliation.documents,
+            documents: promotedDocuments,
           },
           files: fileRegistry,
         });
@@ -152,6 +210,10 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     state.extractions,
     state.validationItems,
     state.ledgerEntries,
+    // declarationDraft and aiActivityFeed must be in deps so changes to
+    // confirmed financing, event cards, and resolutions are saved immediately.
+    state.declarationDraft,
+    state.aiActivityFeed,
   ]);
 
   useLayoutEffect(() => {

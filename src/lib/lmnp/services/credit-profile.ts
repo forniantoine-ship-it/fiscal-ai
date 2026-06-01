@@ -9,8 +9,8 @@ export type CreditFieldKey =
   | "monthlyPayment"
   | "insurance"
   | "deferralType"
-  | "fees"
-  | "startDate"
+  | "loanGuaranteeFees"
+  | "loanApplicationFees"
   | "firstPaymentDate"
   | "remainingCapital"
   | "isWorksLoan";
@@ -24,7 +24,8 @@ export type CreditLoanFormValues = {
   monthlyPayment: string;
   insurance: string;
   deferralType: string;
-  fees: string;
+  loanGuaranteeFees: string;
+  loanApplicationFees: string;
   startDate: string;
   firstPaymentDate: string;
   remainingCapital: string;
@@ -36,10 +37,40 @@ export type CreditFormValues = {
   summary: {
     annualInterest: string;
     annualInsurance: string;
-    annualFinancingCharges: string;
     remainingCapital: string;
+    /** Reference date for remainingCapital label, e.g. 2025-12-31 */
+    remainingCapitalAsOf?: string;
   };
+  installments?: import("../types").LoanInstallment[];
 };
+
+export type CreditDocumentKind = "amortization" | "loan_offer";
+
+export function classifyCreditFileName(fileName: string): CreditDocumentKind {
+  if (/amort|echeancier|[ée]ch[eé]ancier|tableau/i.test(fileName)) {
+    return "amortization";
+  }
+  if (/offre|attestation|proposition|simulation/i.test(fileName)) {
+    return "loan_offer";
+  }
+  return "amortization";
+}
+
+export function classifyCreditDocument(doc: LmnpDocument): CreditDocumentKind {
+  if (
+    doc.documentType === "loan_schedule" ||
+    /amort|echeancier|tableau/i.test(doc.fileName)
+  ) {
+    return "amortization";
+  }
+  if (
+    doc.documentType === "loan_interest_certificate" ||
+    /offre|attestation|proposition|simulation/i.test(doc.fileName)
+  ) {
+    return "loan_offer";
+  }
+  return "amortization";
+}
 
 export function isCreditDocument(doc: LmnpDocument, linkedDocumentId?: string): boolean {
   if (linkedDocumentId && doc.id === linkedDocumentId) return true;
@@ -77,7 +108,8 @@ function loanToFormValues(loan: CreditFinancingData["loans"][0]): CreditLoanForm
     monthlyPayment: String(loan.monthlyPayment),
     insurance: String(loan.insurance),
     deferralType: loan.deferralType ?? "none",
-    fees: String(loan.fees),
+    loanGuaranteeFees: String(loan.loanGuaranteeFees ?? 0),
+    loanApplicationFees: String(loan.loanApplicationFees ?? loan.fees ?? 0),
     startDate: loan.startDate,
     firstPaymentDate: loan.firstPaymentDate,
     remainingCapital: String(loan.remainingCapital),
@@ -92,7 +124,6 @@ export function financingToFormValues(data?: CreditFinancingData): CreditFormVal
       summary: {
         annualInterest: "",
         annualInsurance: "",
-        annualFinancingCharges: "",
         remainingCapital: "",
       },
     };
@@ -103,9 +134,21 @@ export function financingToFormValues(data?: CreditFinancingData): CreditFormVal
     summary: {
       annualInterest: String(data.summary.annualInterest),
       annualInsurance: String(data.summary.annualInsurance),
-      annualFinancingCharges: String(data.summary.annualFinancingCharges),
       remainingCapital: String(data.summary.remainingCapital),
     },
+    installments: data.installments,
+  };
+}
+
+export function emptyCreditFormValues(): CreditFormValues {
+  return {
+    loans: [emptyLoanFormValues()],
+    summary: {
+      annualInterest: "",
+      annualInsurance: "",
+      remainingCapital: "",
+    },
+    installments: [],
   };
 }
 
@@ -119,7 +162,8 @@ export function emptyLoanFormValues(): CreditLoanFormValues {
     monthlyPayment: "",
     insurance: "",
     deferralType: "none",
-    fees: "",
+    loanGuaranteeFees: "",
+    loanApplicationFees: "",
     startDate: "",
     firstPaymentDate: "",
     remainingCapital: "",
@@ -144,7 +188,9 @@ export function formValuesToFinancing(values: CreditFormValues, revenueYear: num
     monthlyPayment: parseNumber(loan.monthlyPayment),
     insurance: parseNumber(loan.insurance),
     deferralType: (loan.deferralType || "none") as CreditFinancingData["loans"][0]["deferralType"],
-    fees: parseNumber(loan.fees),
+    fees: parseNumber(loan.loanApplicationFees),
+    loanGuaranteeFees: parseNumber(loan.loanGuaranteeFees),
+    loanApplicationFees: parseNumber(loan.loanApplicationFees),
     startDate: loan.startDate.trim(),
     firstPaymentDate: loan.firstPaymentDate.trim(),
     remainingCapital: parseNumber(loan.remainingCapital),
@@ -157,15 +203,39 @@ export function formValuesToFinancing(values: CreditFormValues, revenueYear: num
       fiscalYearLabel: String(revenueYear),
       annualInterest: parseNumber(values.summary.annualInterest),
       annualInsurance: parseNumber(values.summary.annualInsurance),
-      annualFinancingCharges: parseNumber(values.summary.annualFinancingCharges),
       remainingCapital: parseNumber(values.summary.remainingCapital),
     },
-    installments: MOCK_CREDIT_FINANCING.installments,
+    installments: values.installments?.length ? values.installments : [],
   };
 }
 
-export function creditFromDraft(draft?: DeclarationDraft): CreditFormValues {
-  return financingToFormValues(draft?.creditFinancing);
+/** Maps legacy persisted form shapes (fees, annualFinancingCharges) to current fields. */
+export function normalizeCreditFormValues(values: CreditFormValues): CreditFormValues {
+  const legacySummary = values.summary as CreditFormValues["summary"] & {
+    annualFinancingCharges?: string;
+  };
+
+  const summary = {
+    annualInterest: values.summary.annualInterest ?? "",
+    annualInsurance: values.summary.annualInsurance ?? "",
+    remainingCapital: values.summary.remainingCapital ?? "",
+    remainingCapitalAsOf: values.summary.remainingCapitalAsOf,
+  };
+
+  const loans = values.loans.map((loan) => {
+    const legacyLoan = loan as CreditLoanFormValues & { fees?: string };
+    return {
+      ...emptyLoanFormValues(),
+      ...loan,
+      loanGuaranteeFees: loan.loanGuaranteeFees ?? "",
+      loanApplicationFees:
+        loan.loanApplicationFees?.trim() || legacyLoan.fees?.trim() || "",
+    };
+  });
+
+  void legacySummary.annualFinancingCharges;
+
+  return { loans: loans.length ? loans : [emptyLoanFormValues()], summary, installments: values.installments ?? [] };
 }
 
 export function isCreditProfileIncomplete(values: CreditFormValues): boolean {
@@ -178,102 +248,3 @@ export function isCreditProfileIncomplete(values: CreditFormValues): boolean {
 export function suggestsMultipleLoans(fileName: string): boolean {
   return /2\s*pr[eê]ts|deux\s*pr[eê]ts|multi|travaux.*principal|principal.*travaux/i.test(fileName);
 }
-
-export const MOCK_CREDIT_FINANCING: CreditFinancingData = {
-  loans: [
-    {
-      id: "loan-1",
-      bank: "Crédit Agricole",
-      loanType: "Prêt immobilier amortissable",
-      borrowedAmount: 180_000,
-      rate: 3.15,
-      durationMonths: 240,
-      monthlyPayment: 1_012,
-      insurance: 42,
-      deferralType: "none",
-      fees: 850,
-      startDate: "2022-10-01",
-      firstPaymentDate: "2022-11-05",
-      remainingCapital: 168_420,
-      isWorksLoan: false,
-    },
-    {
-      id: "loan-2",
-      bank: "Crédit Agricole",
-      loanType: "Prêt travaux",
-      borrowedAmount: 25_000,
-      rate: 2.9,
-      durationMonths: 120,
-      monthlyPayment: 238,
-      insurance: 8,
-      deferralType: "partial",
-      deferralMonths: 6,
-      fees: 0,
-      startDate: "2023-03-01",
-      firstPaymentDate: "2023-09-05",
-      remainingCapital: 21_180,
-      isWorksLoan: true,
-    },
-  ],
-  summary: {
-    fiscalYearLabel: "2025",
-    annualInterest: 4_820,
-    annualInsurance: 600,
-    annualFinancingCharges: 5_420,
-    remainingCapital: 189_600,
-  },
-  installments: [
-    {
-      date: "2025-01-05",
-      totalPayment: 1_054,
-      principal: 412,
-      interest: 580,
-      insurance: 50,
-      fees: 12,
-    },
-    {
-      date: "2025-02-05",
-      totalPayment: 1_054,
-      principal: 418,
-      interest: 574,
-      insurance: 50,
-      fees: 12,
-    },
-    {
-      date: "2025-03-05",
-      totalPayment: 1_054,
-      principal: 424,
-      interest: 568,
-      insurance: 50,
-      fees: 12,
-    },
-    {
-      date: "2025-04-05",
-      totalPayment: 1_054,
-      principal: 430,
-      interest: 562,
-      insurance: 50,
-      fees: 12,
-    },
-    {
-      date: "2025-05-05",
-      totalPayment: 1_054,
-      principal: 436,
-      interest: 556,
-      insurance: 50,
-      fees: 12,
-    },
-    {
-      date: "2025-06-05",
-      totalPayment: 1_054,
-      principal: 442,
-      interest: 550,
-      insurance: 50,
-      fees: 12,
-    },
-  ],
-};
-
-export const MOCK_CREDIT_FORM: CreditFormValues = financingToFormValues(MOCK_CREDIT_FINANCING);
-
-export const MOCK_CREDIT_UNCERTAIN_FIELDS: CreditFieldKey[] = ["deferralType", "fees"];

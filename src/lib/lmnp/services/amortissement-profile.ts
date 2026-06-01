@@ -3,9 +3,13 @@ import type {
   AmortissementComponent,
   AmortissementVentilationData,
   DeclarationDraft,
+  DocumentType,
   LmnpDocument,
 } from "../types";
 import type { PersistedWorkspace } from "../store/persistence";
+import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
+import { moneyFromEuros } from "../types/values";
+import type { ExtractDocumentResult } from "@/lib/ai/document-types";
 import {
   assessExpenseAmortizationCandidate,
   suggestionToAmortissementComponent,
@@ -144,6 +148,105 @@ export const MOCK_EXTRACTED_INVOICES: ExtractedInvoice[] = [
     purchaseDate: "2024-02-15",
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Extraction mappers — convert server ExtractDocumentResult to the types
+// needed by APPLY_DOCUMENT_ANALYSIS and the ventilation workflow.
+// ---------------------------------------------------------------------------
+
+/** Map the server-side document family string to the local DocumentType enum. */
+function mapDocumentFamilyToType(rawType: string): DocumentType {
+  switch (rawType) {
+    case "furniture_invoice":
+      return "furniture_invoice";
+    case "travaux_invoice":
+    case "works_invoice":
+      return "works_invoice";
+    case "notary_act":
+      return "notary_deed";
+    case "loan_offer":
+      return "loan_schedule";
+    case "property_tax":
+      return "property_tax";
+    case "insurance_document":
+      return "insurance_invoice";
+    default:
+      return "unknown";
+  }
+}
+
+/** Choose the amortissement-domain field key for a given document type. */
+function amortissementFieldKey(
+  type: DocumentType,
+): "amort.furnitureAnnual" | "amort.buildingAnnual" {
+  return type === "furniture_invoice" ? "amort.furnitureAnnual" : "amort.buildingAnnual";
+}
+
+/**
+ * Map a single `runBulkDocumentExtraction` result to the `DocumentAnalysisResult`
+ * shape expected by `APPLY_DOCUMENT_ANALYSIS`.
+ *
+ * The doc's original category is preserved so that amortissement documents
+ * are never accidentally re-categorised as "charges" by the generic
+ * DOCUMENT_TYPE_TO_CATEGORY table (which maps works_invoice → "charges").
+ */
+export function mapExtractionResultToAnalysisResult(
+  doc: LmnpDocument,
+  result: ExtractDocumentResult,
+): DocumentAnalysisResult {
+  const documentType = mapDocumentFamilyToType(result.documentType);
+  const fieldKey = amortissementFieldKey(documentType);
+  const amount = result.structuredData.amount_ttc ?? result.structuredData.amount_ht ?? 0;
+  const confidence = Math.min(99, Math.max(0, Math.round(result.confidenceScore)));
+
+  return {
+    documentType,
+    // Preserve the original category — critical for works_invoice docs that live
+    // in the amortissement step, not the charges step.
+    category: doc.category,
+    extractions: [
+      {
+        id: crypto.randomUUID(),
+        documentId: doc.id,
+        fiscalYearId: doc.fiscalYearId,
+        fieldKey,
+        rawValue: String(amount),
+        normalizedValue: moneyFromEuros(amount),
+        confidence,
+        status: "pending_validation",
+      },
+    ],
+  };
+}
+
+/**
+ * Map a single `runBulkDocumentExtraction` result to an `ExtractedInvoice`
+ * so the ventilation workflow can use real data instead of mock fixtures.
+ *
+ * Only call this for non-continuity documents (travaux / mobilier invoices).
+ */
+export function mapExtractionResultToInvoice(
+  doc: LmnpDocument,
+  result: ExtractDocumentResult,
+): ExtractedInvoice {
+  const invoiceType = isMobilierDocument(doc) ? "mobilier" : "travaux";
+  const amount = result.structuredData.amount_ttc ?? result.structuredData.amount_ht ?? 0;
+  const allocation = suggestAllocation(amount, doc.fileName);
+  const durationYears = invoiceType === "mobilier" ? 10 : 15;
+
+  return {
+    id: doc.id,
+    label: doc.fileName,
+    supplier:
+      result.structuredData.supplier ?? result.structuredData.organization ?? undefined,
+    amount,
+    category: invoiceType === "mobilier" ? "Mobilier" : "Travaux",
+    allocation,
+    durationYears,
+    type: invoiceType,
+    purchaseDate: result.structuredData.invoice_date ?? undefined,
+  };
+}
 
 function baseDossierComponents(acquisitionPrice = 185000): AmortissementComponent[] {
   const terrain = Math.round(acquisitionPrice * 0.15);

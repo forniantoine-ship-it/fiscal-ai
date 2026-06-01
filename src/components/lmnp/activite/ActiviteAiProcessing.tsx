@@ -9,6 +9,10 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import {
+  msSinceCreditRenderUnblockAnchor,
+  traceCreditRenderUnblock,
+} from "@/lib/lmnp/services/credit-render-unblock-trace";
 
 type ActiviteAiProcessingProps = {
   onComplete?: () => void;
@@ -40,13 +44,44 @@ export function ActiviteAiProcessing({
   onCompleteRef.current = onComplete;
 
   useEffect(() => {
+    const mountedAt = performance.now();
     const stepDuration = Math.floor(minDurationMs / steps.length);
+    if (msSinceCreditRenderUnblockAnchor() != null) {
+      traceCreditRenderUnblock("ActiviteAiProcessing_mounted", {
+        minDurationMs,
+        stepCount: steps.length,
+        stepDurationMs: stepDuration,
+        lastStepAtMs: stepDuration * (steps.length - 1),
+        expectedCompleteAtMs: minDurationMs,
+      });
+    }
+
     const timers = steps.map((_, index) =>
-      window.setTimeout(() => setActiveIndex(index), stepDuration * index),
+      window.setTimeout(() => {
+        setActiveIndex(index);
+        if (msSinceCreditRenderUnblockAnchor() != null) {
+          traceCreditRenderUnblock("ActiviteAiProcessing_step_active", {
+            stepIndex: index,
+            stepLabel: steps[index],
+          });
+        }
+      }, stepDuration * index),
     );
-    const completeTimer = window.setTimeout(() => onCompleteRef.current?.(), minDurationMs);
+    const completeTimer = window.setTimeout(() => {
+      if (msSinceCreditRenderUnblockAnchor() != null) {
+        traceCreditRenderUnblock("ActiviteAiProcessing_minDuration_complete", {
+          visibleMs: Math.round((performance.now() - mountedAt) * 100) / 100,
+        });
+      }
+      onCompleteRef.current?.();
+    }, minDurationMs);
 
     return () => {
+      if (msSinceCreditRenderUnblockAnchor() != null) {
+        traceCreditRenderUnblock("ActiviteAiProcessing_unmounted", {
+          visibleMs: Math.round((performance.now() - mountedAt) * 100) / 100,
+        });
+      }
       timers.forEach(clearTimeout);
       clearTimeout(completeTimer);
     };

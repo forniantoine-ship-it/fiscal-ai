@@ -28,6 +28,8 @@ import {
   isContinuityDocument,
   isMobilierDocument,
   isTravauxDocument,
+  mapExtractionResultToAnalysisResult,
+  mapExtractionResultToInvoice,
   MOCK_EXTRACTED_INVOICES,
   recalculateVentilationSummary,
   ventilationFromDraft,
@@ -44,7 +46,15 @@ import type { ExtractDocumentResult } from "@/lib/ai/document-types";
 import type { ResolvedDocumentClassification } from "@/lib/ai/document-classification-types";
 import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
 import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
+import {
+  makeDocumentEnrichedEvent,
+  makeAnalysisFailedEvent,
+  makeValidationEvent,
+  makeRecommendationEvent,
+} from "@/lib/lmnp/services/ai-activity-events";
+import { AiActivityFeed } from "@/components/lmnp/ai-activity";
 import { useLmnp } from "@/lib/lmnp/store";
+import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
 
 type ExistingActivityAnswer = "yes" | "no" | null;
@@ -71,10 +81,147 @@ function allDocumentsAnalyzed(documents: LmnpDocument[]): boolean {
   return documents.length > 0 && documents.every((doc) => doc.status === "analyzed" || doc.status === "failed");
 }
 
-export function AmortissementDocumentStep() {
+type LaunchAnalysisEligibilityInput = {
+  allSectionsReady: boolean;
+  aiAnimationDone: boolean;
+  confirmed: boolean;
+  manualMode: boolean;
+  isProcessing: boolean;
+};
+
+/** Shared gate for launching analysis and all upload-section primary CTAs. */
+function canLaunchAnalysis(input: LaunchAnalysisEligibilityInput): boolean {
+  return (
+    input.allSectionsReady &&
+    !input.aiAnimationDone &&
+    !input.confirmed &&
+    !input.manualMode &&
+    !input.isProcessing
+  );
+}
+
+function launchEligibilityReasons(input: LaunchAnalysisEligibilityInput): string[] {
+  const reasons: string[] = [];
+  if (!input.allSectionsReady) reasons.push("notAllSectionsReady");
+  if (input.aiAnimationDone) reasons.push("aiAnimationDone");
+  if (input.confirmed) reasons.push("confirmed");
+  if (input.manualMode) reasons.push("manualMode");
+  if (input.isProcessing) reasons.push("isProcessing");
+  return reasons;
+}
+
+function unmetRequirements(requirements: Record<string, boolean>): string[] {
+  return Object.entries(requirements)
+    .filter(([, met]) => !met)
+    .map(([key]) => key);
+}
+
+type AllSectionsReadyDiagnosticsInput = {
+  needsContinuity: boolean;
+  continuitySkipped: boolean;
+  travauxSkipped: boolean;
+  mobilierSkipped: boolean;
+  hasDetectedMobilier: boolean;
+  sectionUploadCounts: { continuity: number; travaux: number; mobilier: number };
+};
+
+function allSectionsReadyDiagnostics(input: AllSectionsReadyDiagnosticsInput) {
+  const continuityReady =
+    !input.needsContinuity || input.continuitySkipped || input.sectionUploadCounts.continuity > 0;
+  const travauxReady = input.travauxSkipped || input.sectionUploadCounts.travaux > 0;
+  const mobilierReady =
+    input.mobilierSkipped ||
+    input.sectionUploadCounts.mobilier > 0 ||
+    !input.hasDetectedMobilier;
+  const allSectionsReady = continuityReady && travauxReady && mobilierReady;
+
+  const blockingConditions: string[] = [];
+  const readyConditions: string[] = [];
+
+  if (!continuityReady) {
+    blockingConditions.push("continuity:needsUploadOrSkip");
+  } else {
+    if (!input.needsContinuity) readyConditions.push("continuity:notRequired");
+    if (input.continuitySkipped) readyConditions.push("continuity:skipped");
+    if (input.sectionUploadCounts.continuity > 0) readyConditions.push("continuity:hasUploads");
+  }
+
+  if (!travauxReady) {
+    blockingConditions.push("travaux:needsUploadOrSkip");
+  } else {
+    if (input.travauxSkipped) readyConditions.push("travaux:skipped");
+    if (input.sectionUploadCounts.travaux > 0) readyConditions.push("travaux:hasUploads");
+  }
+
+  if (!mobilierReady) {
+    blockingConditions.push("mobilier:needsUploadOrSkip");
+  } else {
+    if (!input.hasDetectedMobilier) readyConditions.push("mobilier:notDetectedOptional");
+    if (input.mobilierSkipped) readyConditions.push("mobilier:skipped");
+    if (input.sectionUploadCounts.mobilier > 0) readyConditions.push("mobilier:hasUploads");
+  }
+
+  return {
+    continuityReady,
+    travauxReady,
+    mobilierReady,
+    allSectionsReady,
+    blockingConditions,
+    readyConditions,
+    breakdown: {
+      continuity: {
+        ready: continuityReady,
+        needsContinuity: input.needsContinuity,
+        skipped: input.continuitySkipped,
+        uploadCount: input.sectionUploadCounts.continuity,
+      },
+      travaux: {
+        ready: travauxReady,
+        skipped: input.travauxSkipped,
+        uploadCount: input.sectionUploadCounts.travaux,
+      },
+      mobilier: {
+        ready: mobilierReady,
+        detected: input.hasDetectedMobilier,
+        skipped: input.mobilierSkipped,
+        uploadCount: input.sectionUploadCounts.mobilier,
+      },
+    },
+  };
+}
+
+function launchEligibleDiagnostics(
+  launchInput: LaunchAnalysisEligibilityInput,
+  sectionsBlocking: string[],
+) {
+  const launchBlockingConditions = launchEligibilityReasons(launchInput);
+  const launchReadyConditions: string[] = [];
+
+  if (launchInput.allSectionsReady) launchReadyConditions.push("allSectionsReady");
+  if (!launchInput.aiAnimationDone) launchReadyConditions.push("aiAnimationPending");
+  if (!launchInput.confirmed) launchReadyConditions.push("notConfirmed");
+  if (!launchInput.manualMode) launchReadyConditions.push("notManualMode");
+  if (!launchInput.isProcessing) launchReadyConditions.push("notProcessing");
+
+  const launchEligible = canLaunchAnalysis(launchInput);
+  const blockingConditions = [
+    ...sectionsBlocking,
+    ...launchBlockingConditions.filter((reason) => reason !== "notAllSectionsReady"),
+  ];
+
+  return {
+    launchEligible,
+    blockingConditions,
+    launchBlockingConditions,
+    launchReadyConditions,
+  };
+}
+
+export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) {
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showInfo } = useFeedback();
   const analyzingRef = useRef(false);
+  const aiAnimationDoneSourceRef = useRef<string>("initial");
 
   const draft = workspace.declarationDraft;
   const confirmed = Boolean(draft?.amortissementConfirmedAt);
@@ -104,7 +251,9 @@ export function AmortissementDocumentStep() {
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
   const [isEditing, setIsEditing] = useState(false);
   const [manualMode, setManualMode] = useState(false);
-  const [extractedInvoices, setExtractedInvoices] = useState<ExtractedInvoice[]>(MOCK_EXTRACTED_INVOICES);
+  const [extractedInvoices, setExtractedInvoices] = useState<ExtractedInvoice[]>(
+    () => draft?.amortissementExtractedInvoices ?? [],
+  );
   const [extractionResults, setExtractionResults] = useState<ExtractDocumentResult[]>([]);
   const [extractionFileNames, setExtractionFileNames] = useState<string[]>([]);
   const [extractionProcessing, setExtractionProcessing] = useState(false);
@@ -144,7 +293,9 @@ export function AmortissementDocumentStep() {
   const continuityReady =
     !needsContinuity || continuitySkipped || sectionUploadCounts.continuity > 0;
   const travauxReady = travauxSkipped || sectionUploadCounts.travaux > 0;
-  const mobilierReady = mobilierSkipped || sectionUploadCounts.mobilier > 0;
+  const hasDetectedMobilier = mobilierDocs.length > 0;
+  const mobilierReady =
+    mobilierSkipped || sectionUploadCounts.mobilier > 0 || !hasDetectedMobilier;
   const allSectionsReady = continuityReady && travauxReady && mobilierReady;
   const uploadsComplete = allSectionsReady;
 
@@ -199,28 +350,183 @@ export function AmortissementDocumentStep() {
   const travauxStepDone = travauxSkipped || sectionContinued.travaux;
   const mobilierStepDone = mobilierSkipped || sectionContinued.mobilier;
 
-  const continuityCanContinue =
+  const launchEligibilityInput: LaunchAnalysisEligibilityInput = {
+    allSectionsReady,
+    aiAnimationDone,
+    confirmed,
+    manualMode,
+    isProcessing,
+  };
+  const launchEligible = canLaunchAnalysis(launchEligibilityInput);
+  const launchIneligibleReasons = launchEligibilityReasons(launchEligibilityInput);
+
+  const continuitySectionReady =
     sectionUploadCounts.continuity > 0 && !sectionContinued.continuity;
-  const travauxCanContinue = sectionUploadCounts.travaux > 0 && !sectionContinued.travaux;
-  const mobilierCanContinue =
-    allSectionsReady &&
-    !sectionContinued.mobilier &&
-    (sectionUploadCounts.mobilier > 0 || mobilierDisplayCount > 0);
+  const travauxSectionReady = sectionUploadCounts.travaux > 0 && !sectionContinued.travaux;
+  const mobilierSectionReady =
+    !sectionContinued.mobilier && sectionUploadCounts.mobilier > 0;
+
+  const continuityCanContinue = continuitySectionReady && launchEligible;
+  const travauxCanContinue = travauxSectionReady && launchEligible;
+  const mobilierCanContinue = mobilierSectionReady && launchEligible;
   const showMobilierLaunchAnalysis = mobilierCanContinue;
 
   const showContinuitySection = activityAnswered && needsContinuity && !continuitySkipped;
   const showTravauxSection =
     activityAnswered && !travauxSkipped && (continuityStepDone || allSectionsReady);
   const showMobilierSection =
-    activityAnswered && !mobilierSkipped && (travauxStepDone || allSectionsReady);
+    activityAnswered &&
+    !mobilierSkipped &&
+    hasDetectedMobilier &&
+    (travauxStepDone || allSectionsReady);
+  const showMobilierDetectedNotice = showMobilierSection && hasDetectedMobilier;
 
-  const showAnalysisCTA =
-    allSectionsReady && !aiAnimationDone && !confirmed && !manualMode && !isProcessing;
+  const showAnalysisCTA = launchEligible;
   const showFooterAnalysisCTA =
-    showAnalysisCTA && !(showMobilierSection && showMobilierLaunchAnalysis);
+    launchEligible && !(showMobilierSection && showMobilierLaunchAnalysis);
   const showResultsPanel = showSummary && Boolean(ventilation);
   const showNextStepCTA = showConfiguredCard && Boolean(ventilation);
   const showFooterActions = showFooterAnalysisCTA || showNextStepCTA;
+
+  const workflowRecomputeLog = useMemo(() => {
+    const sectionsDiag = allSectionsReadyDiagnostics({
+      needsContinuity,
+      continuitySkipped,
+      travauxSkipped,
+      mobilierSkipped,
+      hasDetectedMobilier,
+      sectionUploadCounts,
+    });
+    const launchDiag = launchEligibleDiagnostics(
+      launchEligibilityInput,
+      sectionsDiag.blockingConditions,
+    );
+
+    const mobilierSectionHiddenBecause = unmetRequirements({
+      activityAnswered,
+      mobilierNotSkipped: !mobilierSkipped,
+      mobilierDetected: hasDetectedMobilier,
+      travauxStepDoneOrAllSectionsReady: travauxStepDone || allSectionsReady,
+    });
+
+    const launchAnalysisCtaHiddenBecause: string[] = [];
+    if (!launchEligible) {
+      launchAnalysisCtaHiddenBecause.push(...launchDiag.launchBlockingConditions);
+    }
+    if (!showMobilierLaunchAnalysis) {
+      if (!mobilierSectionReady) {
+        if (sectionContinued.mobilier) {
+          launchAnalysisCtaHiddenBecause.push("mobilierInline:sectionAlreadyContinued");
+        }
+        if (sectionUploadCounts.mobilier === 0) {
+          launchAnalysisCtaHiddenBecause.push("mobilierInline:noMobilierUploads");
+        }
+      }
+      if (!launchEligible && mobilierSectionReady) {
+        launchAnalysisCtaHiddenBecause.push("mobilierInline:launchNotEligible");
+      }
+    }
+    if (!showFooterAnalysisCTA) {
+      if (!launchEligible) {
+        launchAnalysisCtaHiddenBecause.push("footer:launchNotEligible");
+      } else if (showMobilierSection && showMobilierLaunchAnalysis) {
+        launchAnalysisCtaHiddenBecause.push("footer:suppressedByMobilierInlineCta");
+      }
+    }
+
+    const nextStepCtaHiddenBecause = unmetRequirements({
+      configuredOrValidatedCard: showConfiguredCard,
+      hasVentilation: Boolean(ventilation),
+    });
+
+    const blockingConditions = launchDiag.blockingConditions;
+    const readyConditions = launchDiag.launchEligible
+      ? [...sectionsDiag.readyConditions, ...launchDiag.launchReadyConditions]
+      : sectionsDiag.readyConditions;
+
+    return {
+      continuityReady: sectionsDiag.continuityReady,
+      travauxReady: sectionsDiag.travauxReady,
+      mobilierReady: sectionsDiag.mobilierReady,
+      uploadsComplete: sectionsDiag.allSectionsReady,
+      confirmed,
+      manualMode,
+      aiAnimationDone,
+      aiAnimationDoneSource: aiAnimationDoneSourceRef.current,
+      analysisTriggered,
+      isProcessing,
+      allSectionsReady: sectionsDiag.allSectionsReady,
+      launchEligible: launchDiag.launchEligible,
+      blockingConditions,
+      readyConditions,
+      allSectionsReadyBreakdown: {
+        blockingConditions: sectionsDiag.blockingConditions,
+        readyConditions: sectionsDiag.readyConditions,
+        breakdown: sectionsDiag.breakdown,
+      },
+      launchEligibleBreakdown: {
+        blockingConditions: launchDiag.launchBlockingConditions,
+        readyConditions: launchDiag.launchReadyConditions,
+      },
+      visibilityExplanations: {
+        amortissementsMobilierSection: {
+          visible: showMobilierSection,
+          hiddenBecause: mobilierSectionHiddenBecause,
+          requirements: {
+            activityAnswered,
+            mobilierNotSkipped: !mobilierSkipped,
+            mobilierDetected: hasDetectedMobilier,
+            travauxStepDoneOrAllSectionsReady: travauxStepDone || allSectionsReady,
+          },
+        },
+        launchAnalysisCta: {
+          footerVisible: showFooterAnalysisCTA,
+          mobilierInlineVisible: showMobilierLaunchAnalysis,
+          anyVisible: showFooterAnalysisCTA || showMobilierLaunchAnalysis,
+          hiddenBecause: [...new Set(launchAnalysisCtaHiddenBecause)],
+        },
+        nextStepCta: {
+          visible: showNextStepCTA,
+          hiddenBecause: nextStepCtaHiddenBecause,
+          requirements: {
+            configuredOrValidatedCard: showConfiguredCard,
+            hasVentilation: Boolean(ventilation),
+            validatedSuccess,
+            isEditing,
+            amortissementConfirmedAt: confirmed,
+          },
+        },
+      },
+    };
+  }, [
+    needsContinuity,
+    continuitySkipped,
+    travauxSkipped,
+    mobilierSkipped,
+    hasDetectedMobilier,
+    sectionUploadCounts,
+    launchEligibilityInput,
+    activityAnswered,
+    mobilierSkipped,
+    travauxStepDone,
+    allSectionsReady,
+    launchEligible,
+    showMobilierSection,
+    showMobilierLaunchAnalysis,
+    showFooterAnalysisCTA,
+    mobilierSectionReady,
+    sectionContinued.mobilier,
+    showConfiguredCard,
+    ventilation,
+    validatedSuccess,
+    isEditing,
+    confirmed,
+    manualMode,
+    aiAnimationDone,
+    analysisTriggered,
+    isProcessing,
+    showNextStepCTA,
+  ]);
 
   const persistActivity = useCallback(
     (value: "yes" | "no") => {
@@ -240,6 +546,7 @@ export function AmortissementDocumentStep() {
     setSectionContinued({ continuity: false, travaux: false, mobilier: false });
     setReadyForAnalysis(false);
     setAnalysisTriggered(false);
+    aiAnimationDoneSourceRef.current = "activity-change-reset";
     setAiAnimationDone(false);
     setShowVentilationTable(false);
     setValidatedSuccess(false);
@@ -358,14 +665,45 @@ export function AmortissementDocumentStep() {
 
         setExtractionResults(results);
 
+        const persistedInvoices: ExtractedInvoice[] = [];
+
         processedDocIds.forEach((docId, index) => {
           const result = results[index];
-          dispatch({
-            type: "DOCUMENT_SET_STATUS",
-            documentId: docId,
-            status: result?.extractionStatus === "completed" ? "analyzed" : "failed",
-          });
+          const doc = relevantDocs.find((d) => d.id === docId);
+          if (!doc) return;
+
+          if (result?.extractionStatus === "completed") {
+            // APPLY_DOCUMENT_ANALYSIS: writes extraction entry to workspace.extractions,
+            // sets doc.status = "analyzed", and makes hydration promotion visible on reload.
+            const analysisResult = mapExtractionResultToAnalysisResult(doc, result);
+            dispatch({ type: "APPLY_DOCUMENT_ANALYSIS", documentId: docId, result: analysisResult });
+
+            // Collect invoice for ventilation (skip continuity docs — no invoice data there).
+            if (!isContinuityDocument(doc)) {
+              persistedInvoices.push(mapExtractionResultToInvoice(doc, result));
+            }
+
+            // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+            console.log("[amortissement-analysis-persist]", {
+              documentId: docId,
+              fileName: doc.fileName,
+              extractionKeys: Object.keys(analysisResult.extractions[0] ?? {}),
+              extractionType: "APPLY_DOCUMENT_ANALYSIS",
+              persisted: true,
+            });
+          } else {
+            dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "failed" });
+          }
         });
+
+        // Persist invoices to draft so they survive remounts and hydration.
+        if (persistedInvoices.length > 0) {
+          dispatch({
+            type: "DECLARATION_PATCH_DRAFT",
+            patch: { amortissementExtractedInvoices: persistedInvoices },
+          });
+          setExtractedInvoices(persistedInvoices);
+        }
 
         console.log("[analysis] extraction completed", {
           source: "AmortissementDocumentStep.runExtraction",
@@ -374,55 +712,104 @@ export function AmortissementDocumentStep() {
           failed,
         });
         console.log("[extract] batch complete", { succeeded, failed });
+
+        const propertyLabel = workspace.properties[0]?.label?.trim() || "Amortissements";
+
+        if (succeeded > 0) {
+          dispatch({
+            type: "ADD_AI_ACTIVITY_EVENT",
+            event: makeDocumentEnrichedEvent(
+              "amortissement",
+              "amortissement-main",
+              propertyLabel,
+              processedDocIds[0] ?? "batch",
+              `${succeeded} document${succeeded > 1 ? "s" : ""} analysé${succeeded > 1 ? "s" : ""}`,
+              "L'IA a extrait les informations de vos documents d'amortissement.",
+              { nextValues: { succeeded } },
+            ),
+          });
+        }
+
+        if (failed > 0) {
+          dispatch({
+            type: "ADD_AI_ACTIVITY_EVENT",
+            event: makeAnalysisFailedEvent(
+              "amortissement",
+              "amortissement-main",
+              propertyLabel,
+              processedDocIds[0] ?? "batch",
+              `${failed} document${failed > 1 ? "s" : ""} n'ont pas pu être analysés. Essayez de les réimporter.`,
+            ),
+          });
+        }
       } finally {
         setExtractionProcessing(false);
         setExtractionProgressLabel(undefined);
         analyzingRef.current = false;
       }
     },
-    [relevantDocs, getFile, dispatch, supabaseDocByFileKey],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [relevantDocs, getFile, dispatch, supabaseDocByFileKey, workspace.properties],
   );
 
   useEffect(() => {
-    if (!analysisTriggered) {
-      if (pendingDocIds.length > 0) {
-        console.log("[analysis] extraction skipped", {
-          source: "AmortissementDocumentStep.useEffect",
-          reason: "analysisTriggered is false — user has not launched analysis yet",
+    const extractionBlockers = {
+      analysisNotTriggered: !analysisTriggered,
+      noPendingDocs: pendingDocIds.length === 0,
+      hasProcessing,
+      analyzingRefBusy: analyzingRef.current,
+    };
+    const blockedReasons = (
+      Object.entries(extractionBlockers) as Array<[keyof typeof extractionBlockers, boolean]>
+    )
+      .filter(([, blocked]) => blocked)
+      .map(([key]) => key);
+
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[amortissement-analysis-execution]", {
+      analysisTriggered,
+      pendingDocIds,
+      blockedReasons,
+      shouldTriggerAnalysis: blockedReasons.length === 0,
+      uploadedDocs: relevantDocs
+        .filter((d) => d.status === "uploaded")
+        .map((d) => ({ id: d.id, fileName: d.fileName, status: d.status })),
+      workspaceExtractionCount: workspace.extractions.length,
+      extractionsForRelevantDocs: workspace.extractions.filter((e) =>
+        relevantDocs.some((d) => d.id === e.documentId),
+      ).length,
+    });
+
+    if (blockedReasons.length > 0) {
+      if (pendingDocIds.length > 0 || analysisTriggered) {
+        console.log("[analysis] extraction effect skipped", {
+          blockedReasons,
+          extractionBlockers,
           pendingDocIds,
+          relevantDocCount: relevantDocs.length,
+          relevantDocStatuses: relevantDocs.map((doc) => ({
+            id: doc.id,
+            status: doc.status,
+            fileName: doc.fileName,
+          })),
         });
       }
       return;
     }
-    if (!pendingDocIds.length) {
-      console.log("[analysis] no analyzable documents", {
-        source: "AmortissementDocumentStep.useEffect",
-        reason: "no pending uploaded docs",
-        relevantDocCount: relevantDocs.length,
-      });
-      return;
-    }
-    if (hasProcessing) {
-      console.log("[analysis] extraction skipped", {
-        source: "AmortissementDocumentStep.useEffect",
-        reason: "hasProcessing",
-        pendingDocIds,
-      });
-      return;
-    }
-    if (analyzingRef.current) {
-      console.log("[analysis] extraction skipped", {
-        source: "AmortissementDocumentStep.useEffect",
-        reason: "analyzingRef already set",
-        pendingDocIds,
-      });
-      return;
-    }
 
-    console.log("[analysis] trigger requested", {
-      source: "AmortissementDocumentStep.useEffect",
+    console.log("[analysis] extraction effect starting", {
       pendingDocIds,
       pipeline: "runBulkDocumentExtraction",
+    });
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[ocr-trigger-owner]", {
+      system: "T6-amortissement-manual",
+      component: "AmortissementDocumentStep",
+      reason: "analysisTriggered=true + pendingDocIds non-empty",
+      docs: pendingDocIds,
+      step: "amortissement",
+      category: "amortissement",
+      guard: "analysisTriggered(user-click) + pendingDocIds + hasProcessing + analyzingRef — NO executionPendingRef (manual gate instead)",
     });
     void runExtraction(pendingDocIds);
   }, [analysisTriggered, pendingDocIds.join(","), hasProcessing, runExtraction, relevantDocs.length, pendingDocIds]);
@@ -434,82 +821,14 @@ export function AmortissementDocumentStep() {
   }, [isProcessing]);
 
   useEffect(() => {
-    console.log("[AmortissementDocumentStep] workflow state", {
-      continuityReady,
-      travauxReady,
-      mobilierReady,
-      uploadsComplete,
-      allSectionsReady,
-      sectionContinued,
-      sectionUploadCounts,
-      continuityDisplayCount,
-      travauxDisplayCount,
-      mobilierDisplayCount,
-      continuityDocs: continuityDocs.length,
-      travauxDocs: travauxDocs.length,
-      mobilierDocs: mobilierDocs.length,
-      relevantDocs: relevantDocs.length,
-      continuityCanContinue,
-      travauxCanContinue,
-      mobilierCanContinue,
-      showMobilierLaunchAnalysis,
-      showAnalysisCTA,
-      showFooterAnalysisCTA,
-      showResultsPanel,
-      showNextStepCTA,
-      showFooterActions,
-      showSummary,
-      showConfiguredCard,
-      isProcessing,
-      aiAnimationDone,
-      showContinueButton: {
-        continuity: continuityCanContinue,
-        travaux: travauxCanContinue,
-        mobilier: showMobilierLaunchAnalysis,
-      },
-      readyForAnalysis,
-      analysisTriggered,
-      documentsReady,
-      canRunAi,
-    });
-  }, [
-    continuityReady,
-    travauxReady,
-    mobilierReady,
-    uploadsComplete,
-    allSectionsReady,
-    sectionContinued,
-    sectionUploadCounts,
-    continuityDisplayCount,
-    travauxDisplayCount,
-    mobilierDisplayCount,
-    continuityDocs.length,
-    travauxDocs.length,
-    mobilierDocs.length,
-    relevantDocs.length,
-    continuityCanContinue,
-    travauxCanContinue,
-    mobilierCanContinue,
-    showMobilierLaunchAnalysis,
-    showAnalysisCTA,
-    showFooterAnalysisCTA,
-    showResultsPanel,
-    showNextStepCTA,
-    showFooterActions,
-    showSummary,
-    showConfiguredCard,
-    isProcessing,
-    aiAnimationDone,
-    readyForAnalysis,
-    analysisTriggered,
-    documentsReady,
-    canRunAi,
-  ]);
+    console.log("[AmortissementDocumentStep] workflow recompute", workflowRecomputeLog);
+  }, [workflowRecomputeLog]);
 
   useEffect(() => {
     if (confirmed) {
       setValidatedSuccess(true);
       setIsEditing(false);
+      aiAnimationDoneSourceRef.current = "confirmed-hydration";
       setAiAnimationDone(true);
       setShowVentilationTable(true);
       setVentilation(ventilationFromDraft(draft));
@@ -519,38 +838,148 @@ export function AmortissementDocumentStep() {
     }
 
     if (draft?.amortissementVentilation && !ventilation) {
+      console.log("[analysis] draft ventilation restored without aiAnimationDone", {
+        source: "AmortissementDocumentStep.useEffect",
+        aiAnimationDoneSource: aiAnimationDoneSourceRef.current,
+        requiresConfirmedForAnimationDone: true,
+      });
       setVentilation(draft.amortissementVentilation);
-      setAiAnimationDone(true);
     }
   }, [confirmed, draft, ventilation]);
+
+  // Restore persisted extracted invoices from draft on remount / hydration.
+  // Skipped when an active analysis session is running to avoid clobbering in-flight results.
+  useEffect(() => {
+    const stored = draft?.amortissementExtractedInvoices;
+    if (!stored?.length || analysisTriggered) return;
+    setExtractedInvoices(stored);
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    stored.forEach((invoice) => {
+      const doc = relevantDocs.find((d) => d.id === invoice.id);
+      const extractionCountForDoc = workspace.extractions.filter(
+        (e) => e.documentId === invoice.id,
+      ).length;
+      console.log("[amortissement-restored-extractions]", {
+        documentId: invoice.id,
+        status: doc?.status,
+        extractionCountForDoc,
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.amortissementExtractedInvoices]);
+
+  // Restore post-analysis workflow stage from persisted analyzed documents.
+  // Fires when all relevant docs are "analyzed" with persisted extractions but the
+  // local UI hasn't advanced past the pre-analysis screen yet (aiAnimationDone = false).
+  // This effect is the ONLY place that sets aiAnimationDone outside of user-driven flows.
+  useEffect(() => {
+    if (confirmed) return; // already handled by the confirmed restore effect above
+    if (aiAnimationDone) return; // already in post-analysis state
+    if (analysisTriggered) return; // active extraction in progress
+    if (relevantDocs.length === 0) return;
+
+    if (!allDocumentsAnalyzed(relevantDocs)) return;
+
+    const hasPersistedExtractions = relevantDocs.some((doc) =>
+      workspace.extractions.some((e) => e.documentId === doc.id),
+    );
+    const hasDraftInvoices = Boolean(draft?.amortissementExtractedInvoices?.length);
+    if (!hasPersistedExtractions && !hasDraftInvoices) return;
+
+    // All docs analyzed + extractions confirmed — advance to post-analysis stage.
+    const storedInvoices = draft?.amortissementExtractedInvoices ?? [];
+
+    // Restore section counts from actual workspace docs so allSectionsReady is correct.
+    setSectionUploadCounts((current) => ({
+      continuity: Math.max(current.continuity, continuityDocs.length),
+      travaux: Math.max(current.travaux, travauxDocs.length),
+      mobilier: Math.max(current.mobilier, mobilierDocs.length),
+    }));
+    // Mark all sections as continued so the progression gates open.
+    setSectionContinued({ continuity: true, travaux: true, mobilier: true });
+
+    // Rebuild ventilation from persisted extractions and invoices.
+    const restoredVentilation = buildVentilationFromDossier(
+      {
+        fiscalYear: workspace.fiscalYear,
+        properties: workspace.properties,
+        documents: workspace.documents,
+        extractions: workspace.extractions,
+        validationItems: workspace.validationItems,
+        ledgerEntries: workspace.ledgerEntries,
+        declarationDraft: workspace.declarationDraft,
+      },
+      storedInvoices,
+    );
+    setVentilation(restoredVentilation);
+    aiAnimationDoneSourceRef.current = "hydration-restore";
+    setAiAnimationDone(true);
+
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    const analyzedDocs = relevantDocs.filter(
+      (doc) => doc.status === "analyzed" || doc.status === "failed",
+    );
+    const extractionCounts = Object.fromEntries(
+      relevantDocs.map((doc) => [
+        doc.id,
+        workspace.extractions.filter((e) => e.documentId === doc.id).length,
+      ]),
+    );
+    console.log("[amortissement-workflow-restore]", {
+      analyzedDocs: analyzedDocs.map((doc) => ({ id: doc.id, status: doc.status })),
+      extractionCounts,
+      continuityReady,
+      travauxReady,
+      mobilierReady,
+      uploadsComplete: allSectionsReady,
+      confirmed,
+      restoredWorkflowStage: "post-analysis",
+    });
+  // Intentional: we only re-evaluate when the extractions list or relevant-doc
+  // statuses change. Other deps (workspace shape, ventilation, counts) are
+  // stable once hydration has completed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relevantDocs, workspace.extractions, confirmed, aiAnimationDone, analysisTriggered]);
 
   const handleSectionContinue = (section: "continuity" | "travaux" | "mobilier") => {
     setSectionContinued((current) => ({ ...current, [section]: true }));
 
     if (section === "mobilier") {
-      handleLaunchAnalysis();
+      handleLaunchAnalysis("mobilier-section");
     }
   };
 
-  function handleLaunchAnalysis() {
-    console.log("[analysis] handleLaunchAnalysis start", {
-      allSectionsReady,
-      confirmed,
-      manualMode,
-      aiAnimationDone,
-      analysisTriggered,
+  function handleLaunchAnalysis(source: "footer" | "mobilier-section" = "footer") {
+    const blockedReasons = [
+      ...launchIneligibleReasons,
+      ...(analysisTriggered ? ["alreadyTriggered"] : []),
+    ];
+
+    console.log("[analysis] handleLaunchAnalysis", {
+      source,
+      blocked: blockedReasons.length > 0,
+      blockedReasons,
+      launchEligible,
+      launchIneligibleReasons,
+      aiAnimationDoneSource: aiAnimationDoneSourceRef.current,
+      ctaVisibility: {
+        continuity: continuityCanContinue,
+        travaux: travauxCanContinue,
+        mobilier: showMobilierLaunchAnalysis,
+        footer: showFooterAnalysisCTA,
+      },
+      pendingDocIds,
       documentsReady,
     });
 
-    if (!allSectionsReady || confirmed || manualMode || aiAnimationDone || analysisTriggered) {
-      console.log("[analysis] handleLaunchAnalysis blocked");
+    if (!launchEligible || analysisTriggered) {
+      console.log("[analysis] handleLaunchAnalysis blocked", { blockedReasons });
       return;
     }
 
     setReadyForAnalysis(true);
     setAnalysisTriggered(true);
-    console.log("[analysis] readyForAnalysis set");
-    console.log("[analysis] processing started");
+    console.log("[analysis] handleLaunchAnalysis accepted", { source });
   }
 
   const handleUpload = (
@@ -562,6 +991,7 @@ export function AmortissementDocumentStep() {
     if (!files.length) return;
 
     setValidatedSuccess(false);
+    aiAnimationDoneSourceRef.current = "upload-reset";
     setAiAnimationDone(false);
     setShowVentilationTable(false);
     setManualMode(false);
@@ -618,6 +1048,7 @@ export function AmortissementDocumentStep() {
       extractedInvoices,
     );
     setVentilation(nextVentilation);
+    aiAnimationDoneSourceRef.current = "ai-animation-complete";
     setAiAnimationDone(true);
   }, [workspace, extractedInvoices]);
 
@@ -628,6 +1059,7 @@ export function AmortissementDocumentStep() {
     failedIds.forEach((documentId) => {
       dispatch({ type: "DOCUMENT_SET_STATUS", documentId, status: "uploaded" });
     });
+    aiAnimationDoneSourceRef.current = "retry-reset";
     setAiAnimationDone(false);
     setShowVentilationTable(false);
     setReadyForAnalysis(true);
@@ -637,6 +1069,7 @@ export function AmortissementDocumentStep() {
 
   function handleManualContinue() {
     setManualMode(true);
+    aiAnimationDoneSourceRef.current = "manual-continue";
     setAiAnimationDone(true);
     setExtractedInvoices(MOCK_EXTRACTED_INVOICES);
     setVentilation(
@@ -696,6 +1129,36 @@ export function AmortissementDocumentStep() {
       type: "CONFIRM_AMORTISSEMENT",
       ventilation,
     });
+
+    const propertyLabel = workspace.properties[0]?.label?.trim() || "Amortissements";
+    const componentCount = ventilation.components.length;
+    dispatch({
+      type: "ADD_AI_ACTIVITY_EVENT",
+      event: makeValidationEvent(
+        "amortissement",
+        "amortissement-main",
+        propertyLabel,
+        `${componentCount} composant${componentCount > 1 ? "s" : ""} d'amortissement vérifiés et enregistrés.`,
+      ),
+    });
+
+    // Emit a recommendation if there are large work amounts that need attention
+    const travauxComponents = ventilation.components.filter(
+      (c) => c.source === "travaux" && c.amount > 10000,
+    );
+    if (travauxComponents.length > 0) {
+      dispatch({
+        type: "ADD_AI_ACTIVITY_EVENT",
+        event: makeRecommendationEvent(
+          "amortissement",
+          "amortissement-main",
+          propertyLabel,
+          "Durée d'amortissement à vérifier",
+          `${travauxComponents.length} composant${travauxComponents.length > 1 ? "s" : ""} de travaux ont été détectés. Vérifiez la durée d'amortissement recommandée avec votre comptable.`,
+        ),
+      });
+    }
+
     setValidatedSuccess(true);
     setIsEditing(false);
     showSuccess(
@@ -751,7 +1214,8 @@ export function AmortissementDocumentStep() {
       />
 
       <AmortissementUploadSection
-        title="Ajoutez vos factures de travaux"
+        title="Ajoutez vos factures de travaux (et mobilier si concerné)"
+        helper="Vous pouvez regrouper ici vos factures de travaux et, le cas échéant, vos factures de mobilier. Une section dédiée apparaîtra si du mobilier est détecté."
         uploadedCount={travauxDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
         onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
@@ -763,6 +1227,15 @@ export function AmortissementDocumentStep() {
         cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
         delayMs={200}
       />
+
+      {showMobilierDetectedNotice ? (
+        <p
+          className="mx-auto max-w-2xl text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+          style={{ ...typography.body.desktop, color: colors.text.secondary }}
+        >
+          Du mobilier a été détecté dans vos documents. Nous avons créé une section dédiée.
+        </p>
+      ) : null}
 
       <AmortissementUploadSection
         title="Ajoutez vos factures de mobilier"
@@ -891,6 +1364,12 @@ export function AmortissementDocumentStep() {
           </div>
         </div>
       ) : null}
+
+      <AiActivityFeed
+        events={workspace.aiActivityFeed}
+        step="amortissement"
+        onReimport={() => handleRetry()}
+      />
     </div>
   );
 }

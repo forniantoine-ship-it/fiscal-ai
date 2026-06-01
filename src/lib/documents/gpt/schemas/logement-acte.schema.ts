@@ -48,8 +48,8 @@ export const LogementActeExtractionSchema = z.object({
   propertyType: nullableString,
   /** Acquisition date — normalized to YYYY-MM-DD when possible. */
   acquisitionDate: nullableString,
-  /** Purchase price — numeric only, no currency symbol. */
-  acquisitionPrice: nullableNumber,
+  /** Purchase price of the property only — excludes notary fees, works, furniture, financing. */
+  propertyPurchasePrice: nullableNumber,
   /** Notary fees (frais de notaire) — numeric only. */
   notaryFees: nullableNumber,
   /** Living surface in m² — numeric only. */
@@ -74,7 +74,7 @@ export type LogementActeExtraction = {
   propertyCity?: string;
   propertyType?: string;
   acquisitionDate?: string;
-  acquisitionPrice?: number;
+  propertyPurchasePrice?: number;
   notaryFees?: number;
   surfaceM2?: number;
   loanAmount?: number;
@@ -90,7 +90,7 @@ const LOGEMENT_ACTE_FIELD_KEYS = [
   "propertyCity",
   "propertyType",
   "acquisitionDate",
-  "acquisitionPrice",
+  "propertyPurchasePrice",
   "notaryFees",
   "surfaceM2",
   "loanAmount",
@@ -237,7 +237,11 @@ export function normalizeLogementActeExtraction(raw: unknown): LogementActeExtra
   assignIfDefined(normalized, "propertyCity", normalizeString(source.propertyCity));
   assignIfDefined(normalized, "propertyType", normalizePropertyType(source.propertyType));
   assignIfDefined(normalized, "acquisitionDate", normalizeDate(source.acquisitionDate));
-  assignIfDefined(normalized, "acquisitionPrice", normalizeNumber(source.acquisitionPrice));
+  assignIfDefined(
+    normalized,
+    "propertyPurchasePrice",
+    normalizeNumber(source.propertyPurchasePrice ?? source.acquisitionPrice),
+  );
   assignIfDefined(normalized, "notaryFees", normalizeNumber(source.notaryFees));
   assignIfDefined(normalized, "surfaceM2", normalizeNumber(source.surfaceM2));
   assignIfDefined(normalized, "loanAmount", normalizeNumber(source.loanAmount));

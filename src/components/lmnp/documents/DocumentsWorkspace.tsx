@@ -156,8 +156,21 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
     [workspace.documents],
   );
 
-  const uploadedIds = workspace.documents.filter((d) => d.status === "uploaded").map((d) => d.id);
-  const hasProcessing = workspace.documents.some((d) => d.status === "processing");
+  const uploadedIds = workspace.documents
+    .filter((d) => d.status === "uploaded" && d.category === step.category)
+    .map((d) => d.id);
+  const hasProcessing = workspace.documents.some(
+    (d) => d.status === "processing" && d.category === step.category,
+  );
+  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+  console.log("[generic-step-analysis-scope]", {
+    currentStep: stepId,
+    stepCategory: step.category,
+    uploadedIds,
+    uploadedDocs: workspace.documents
+      .filter((d) => d.status === "uploaded")
+      .map((d) => ({ id: d.id, fileName: d.fileName, category: d.category })),
+  });
   const isBusy = isAnalyzing || hasProcessing;
 
   const runAnalysisForIds = useCallback(
@@ -185,6 +198,15 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
         source: "DocumentsWorkspace.runAnalysisForIds",
         documentIds,
         pipeline: "runBulkDocumentAnalysis",
+      });
+      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+      console.log("[charges-runBulk-callsite]", {
+        source: "DocumentsWorkspace.runAnalysisForIds",
+        documentIds,
+        allUploadedStatuses: workspace.documents
+          .filter((d) => documentIds.includes(d.id))
+          .map((d) => ({ id: d.id, fileName: d.fileName, status: d.status, category: d.category })),
+        stack: new Error().stack,
       });
 
       try {
@@ -243,6 +265,16 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
       source: "DocumentsWorkspace.useEffect",
       uploadedIds,
       pipeline: "runBulkDocumentAnalysis",
+    });
+    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
+    console.log("[ocr-trigger-owner]", {
+      system: "T2-generic-auto",
+      component: "GenericDocumentStep",
+      reason: "uploadedIds non-empty for current step category",
+      docs: uploadedIds,
+      step: stepId,
+      category: step.category,
+      guard: "uploadedIds + hasProcessing + isAnalyzing + 400ms debounce — NO executionPendingRef",
     });
 
     const timer = window.setTimeout(() => {

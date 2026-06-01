@@ -13,6 +13,9 @@ export type LogementFormValues = {
   propertyType: PropertyType;
   coproperty: boolean;
   surface: string;
+  /** Property value only — excludes notary fees, works, furniture, financing. */
+  propertyPurchasePrice: string;
+  notaryFees: string;
   acquisitionDate: string;
   status: string;
 };
@@ -26,6 +29,8 @@ export type LogementFieldKey =
   | "propertyType"
   | "coproperty"
   | "surface"
+  | "propertyPurchasePrice"
+  | "notaryFees"
   | "acquisitionDate"
   | "status";
 
@@ -56,6 +61,8 @@ export function propertyToFormValues(property?: Property): LogementFormValues {
     propertyType: property?.propertyType ?? "appartement",
     coproperty: property?.coproperty ?? false,
     surface: property?.surface ? String(property.surface) : "",
+    propertyPurchasePrice: "",
+    notaryFees: "",
     acquisitionDate: property?.acquisitionDate ?? "",
     status: property?.status ?? "",
   };
@@ -79,9 +86,52 @@ export function formValuesToProperty(values: LogementFormValues): Partial<Proper
 export function isLogementProfileIncomplete(values: LogementFormValues): boolean {
   if (!values.label.trim()) return true;
   if (!values.address.trim() || !values.city.trim() || !values.postalCode.trim()) return true;
-  if (!values.surface.trim() || !values.acquisitionDate.trim()) return true;
+  if (!values.propertyPurchasePrice.trim() || !values.surface.trim() || !values.acquisitionDate.trim()) {
+    return true;
+  }
   if (!values.status.trim()) return true;
   return false;
+}
+
+function parseLogementAmount(value: string): number | undefined {
+  const normalized = value.replace(/\s/g, "").replace(",", ".").trim();
+  if (!normalized) return undefined;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Sync acquisition amounts from the editable form into background extraction for downstream tunnels. */
+export function logementBackgroundFromFormValues(
+  values: LogementFormValues,
+  existing?: PropertyBackgroundExtraction,
+): PropertyBackgroundExtraction {
+  const purchasePrice = parseLogementAmount(values.propertyPurchasePrice);
+  const notaryFees = parseLogementAmount(values.notaryFees);
+
+  return {
+    ...existing,
+    ...(purchasePrice !== undefined ? { acquisitionPrice: purchasePrice } : {}),
+    ...(notaryFees !== undefined ? { notaryFees } : {}),
+  };
+}
+
+/** Maps legacy workspace snapshots (background-only acquisition) into the editable form. */
+export function normalizeLogementFormValues(
+  values: LogementFormValues,
+  background?: PropertyBackgroundExtraction,
+): LogementFormValues {
+  const legacy = values as LogementFormValues & { purchasePrice?: string };
+
+  return {
+    ...values,
+    propertyPurchasePrice:
+      values.propertyPurchasePrice?.trim() ||
+      legacy.purchasePrice?.trim() ||
+      (background?.acquisitionPrice != null ? String(background.acquisitionPrice) : ""),
+    notaryFees:
+      values.notaryFees?.trim() ||
+      (background?.notaryFees != null ? String(background.notaryFees) : ""),
+  };
 }
 
 export function logementFromWorkspace(ws: LogementWorkspace): LogementFormValues {
@@ -106,6 +156,8 @@ export const MOCK_LOGEMENT_FORM: LogementFormValues = {
   propertyType: "appartement",
   coproperty: true,
   surface: "62",
+  propertyPurchasePrice: "245000",
+  notaryFees: "18500",
   acquisitionDate: "2022-09-14",
   status: "Loué meublé",
 };
