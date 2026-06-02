@@ -29,6 +29,7 @@ import {
   type DocumentJourneyStepId,
 } from "@/lib/lmnp/constants/document-journey";
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
+import { logPipelineEntry, logPipelineEntryEarlyReturn } from "@/lib/lmnp/services/pipeline-entry-debug";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
@@ -175,7 +176,18 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
 
   const runAnalysisForIds = useCallback(
     async (documentIds: string[]) => {
+      logPipelineEntry({
+        functionName: "DocumentsWorkspace.runAnalysisForIds",
+        entered: true,
+        extra: {
+          documentIds,
+          pipeline: "runBulkDocumentAnalysis",
+          note: "NOT credit/amortization pipeline — vision OCR path only",
+        },
+      });
+
       if (documentIds.length === 0) {
+        logPipelineEntryEarlyReturn("DocumentsWorkspace.runAnalysisForIds", "empty_documentIds");
         console.log("[analysis] no analyzable documents", {
           source: "DocumentsWorkspace.runAnalysisForIds",
           reason: "empty documentIds",
@@ -226,6 +238,21 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
           );
         }
         if (failed > 0 && succeeded === 0) {
+          logPipelineEntry({
+            functionName: "DocumentsWorkspace.runAnalysisForIds",
+            returned: true,
+            success: false,
+            failureReason: "runBulkDocumentAnalysis_all_failed",
+            extra: { succeeded, failed, uiOutcome: "toast_analyse_impossible" },
+          });
+          console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+            source: "DocumentsWorkspace.runAnalysisForIds",
+            reason: "runBulkDocumentAnalysis_all_failed",
+            succeeded,
+            failed,
+            documentIds,
+            stack: new Error("DocumentsWorkspace:analyse_impossible_toast").stack,
+          });
           showError("Analyse impossible", "Essayez une version plus nette du PDF.");
         } else if (failed > 0) {
           showError("Analyse partielle", `${failed} document${failed > 1 ? "s" : ""} n'a pas pu être lu.`);

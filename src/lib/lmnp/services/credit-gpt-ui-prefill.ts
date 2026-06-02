@@ -26,6 +26,10 @@ import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { LoanDeferralType, LoanInstallment } from "@/lib/lmnp/types";
 
 import { logCreditExtractionMerge } from "./credit-extraction-payload";
+import {
+  classifyLoanInstallmentPhase,
+  logUiInstallmentVisibility,
+} from "./credit-installment-visibility";
 
 export type { CreditPrefillFieldKey } from "@/lib/lmnp/services/credit-field-ownership";
 
@@ -92,10 +96,29 @@ function hasStringValue(value: string | undefined): boolean {
 }
 
 function averageInsuranceFromAmortizingRows(installments: LoanInstallment[]): number | undefined {
-  const rows = installments.filter((row) => row.principal > 0 && row.insurance > 0);
+  const rows = installments.filter((row) => row.insurance > 0);
   if (!rows.length) return undefined;
   const total = rows.reduce((sum, row) => sum + row.insurance, 0);
   return Math.round(total / rows.length);
+}
+
+function inferAnnualInsuranceFromInstallments(
+  installments: LoanInstallment[],
+  revenueYear: number,
+  fiscalAnnualInsurance: number,
+  extractionAnnualInsurance?: number,
+): number | undefined {
+  if (fiscalAnnualInsurance > 0) return fiscalAnnualInsurance;
+  if (extractionAnnualInsurance !== undefined && extractionAnnualInsurance > 0) {
+    return extractionAnnualInsurance;
+  }
+
+  const yearPrefix = `${revenueYear}-`;
+  const fiscalRows = installments.filter((row) => row.date.startsWith(yearPrefix));
+  const insuranceSum = fiscalRows.reduce((sum, row) => sum + (row.insurance ?? 0), 0);
+  if (insuranceSum > 0) return Math.round(insuranceSum * 100) / 100;
+
+  return undefined;
 }
 
 type AmortDerived = {
@@ -145,15 +168,19 @@ function deriveFromAmortization(
     (fiscalMetrics ? averageMonthlyInsurance(installments, revenueYear) : undefined) ??
     averageInsuranceFromAmortizingRows(installments);
 
+  const resolvedAnnualInsurance = inferAnnualInsuranceFromInstallments(
+    installments,
+    revenueYear,
+    fiscalMetrics?.annualInsurance ?? 0,
+    amort?.yearlyInsuranceTotal,
+  );
+
   const summary = {
     annualInterest:
       fiscalMetrics && fiscalMetrics.annualInterest > 0
         ? fiscalMetrics.annualInterest
         : amort?.yearlyInterestTotal,
-    annualInsurance:
-      fiscalMetrics && fiscalMetrics.annualInsurance > 0
-        ? fiscalMetrics.annualInsurance
-        : amort?.yearlyInsuranceTotal,
+    annualInsurance: resolvedAnnualInsurance,
     remainingCapital:
       fiscalMetrics?.remainingCapitalAtYearEnd ??
       (amort?.remainingPrincipal !== undefined &&
@@ -506,6 +533,33 @@ export function hydrateCreditFormFromSession(input: CreditGptPrefillInput): Cred
   };
 
   const installments = amortDerived.installments;
+
+  const byPhase = {
+    deferred: installments.filter((row) => classifyLoanInstallmentPhase(row) === "deferred").length,
+    amortizing: installments.filter((row) => classifyLoanInstallmentPhase(row) === "amortizing")
+      .length,
+    interest_only: installments.filter((row) => classifyLoanInstallmentPhase(row) === "interest_only")
+      .length,
+    unknown: installments.filter((row) => classifyLoanInstallmentPhase(row) === "unknown").length,
+  };
+
+  logUiInstallmentVisibility({
+    sessionInstallmentCount: input.session.amortization?.installments?.length ?? 0,
+    formInstallmentCount: installments.length,
+    displayInstallmentCount: installments.length,
+    revenueYear: input.revenueYear,
+    extraction: input.session.amortization,
+  });
+
+  console.log("[installment-visibility-debug] hydrateCreditFormFromSession", {
+    revenueYear: input.revenueYear,
+    installmentCount: installments.length,
+    deferredRowCountAtUI: byPhase.deferred,
+    byPhase,
+    insuranceBearingCount: installments.filter((row) => row.insurance > 0).length,
+    annualInsurance: amortDerived.summary.annualInsurance,
+    annualInterest: amortDerived.summary.annualInterest,
+  });
 
   const nextValues: CreditFormValues = {
     loans: [loan],

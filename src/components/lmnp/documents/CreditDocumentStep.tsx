@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
 import { CreditFinancingFields } from "@/components/lmnp/credit/CreditFinancingFields";
+import { logInstallmentReactKeyAudit } from "@/components/lmnp/credit/installment-table-render-debug";
 import { CreditHero } from "@/components/lmnp/credit/CreditHero";
 import { DOCUMENT_WORKFLOW_CARD_STYLE } from "@/components/lmnp/documents/document-workflow-shared";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
@@ -68,6 +69,11 @@ import {
   type CreditAnalysisTimelineStage,
 } from "@/lib/lmnp/services/credit-analysis-timeline";
 import { logCreditExtractionPipelineResult } from "@/lib/lmnp/services/credit-extraction-payload";
+import {
+  logPipelineEntry,
+  logPipelineEntryCatch,
+  logPipelineEntryEarlyReturn,
+} from "@/lib/lmnp/services/pipeline-entry-debug";
 import {
   resetCreditConflictApplyTrace,
   snapshotExtractionPayload,
@@ -599,6 +605,25 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         hasAmortization: Boolean(result.amortization?.extraction),
       });
 
+      logPipelineEntry({
+        functionName: "CreditDocumentStep.applyPipelineResult",
+        entered: true,
+        returned: false,
+        success: result.success,
+        failureReason: result.error ?? null,
+        documentType: result.documentKind,
+        ocrProvider: result.ocrProvider,
+        documentId: result.documentId,
+        fileName: result.fileName,
+        installmentCount:
+          result.amortization?.extraction?.installments?.length ??
+          (result.loanOffer?.extraction ? null : null),
+        extra: {
+          willSetStatus: result.success ? "analyzed" : "failed",
+          hasAmortizationExtraction: Boolean(result.amortization?.extraction),
+        },
+      });
+
       dispatch({
         type: "DOCUMENT_SET_STATUS",
         documentId: result.documentId,
@@ -606,6 +631,32 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       });
 
       if (!result.success) {
+        logPipelineEntry({
+          functionName: "CreditDocumentStep.applyPipelineResult",
+          returned: true,
+          success: false,
+          failureReason: result.error ?? "credit_pipeline_result_success_false",
+          documentType: result.documentKind,
+          ocrProvider: result.ocrProvider,
+          documentId: result.documentId,
+          fileName: result.fileName,
+          installmentCount: result.amortization?.extraction?.installments?.length ?? null,
+          extra: { uiOutcome: "analysis_failed_analyse_impossible" },
+        });
+        console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+          source: "CreditDocumentStep.applyPipelineResult",
+          documentId: result.documentId,
+          fileName: result.fileName,
+          reason: "credit_pipeline_result_success_false",
+          creditResultSuccess: result.success,
+          creditResultError: result.error ?? null,
+          documentKind: result.documentKind,
+          ocrProvider: result.ocrProvider,
+          hasAmortizationExtraction: Boolean(result.amortization?.extraction),
+          amortizationInstallmentCount:
+            result.amortization?.extraction?.installments?.length ?? null,
+          stack: new Error("CreditDocumentStep.applyPipelineResult:not_success").stack,
+        });
         console.log("[ai-event-created] analysis_failed", { documentId: result.documentId });
         dispatch({
           type: "ADD_AI_ACTIVITY_EVENT",
@@ -1153,12 +1204,26 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const runAnalysis = useCallback(
     async (documentId: string) => {
+      logPipelineEntry({
+        functionName: "CreditDocumentStep.runAnalysis",
+        entered: true,
+        documentId,
+      });
+
       if (analyzingRef.current) {
+        logPipelineEntryEarlyReturn("CreditDocumentStep.runAnalysis", "already_analyzing", {
+          documentId,
+        });
         traceTimeline("analysis_started", documentId, { skipped: true, reason: "already_analyzing" });
         return;
       }
       const document = workspace.documents.find((doc) => doc.id === documentId);
-      if (!document) return;
+      if (!document) {
+        logPipelineEntryEarlyReturn("CreditDocumentStep.runAnalysis", "document_not_found", {
+          documentId,
+        });
+        return;
+      }
 
       analysisFailedRef.current = false;
       analyzingRef.current = true;
@@ -1196,8 +1261,31 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
           { documentId },
         );
         traceCreditRunAnalysisSegment("try_block_complete", { documentId });
+        logPipelineEntry({
+          functionName: "CreditDocumentStep.runAnalysis",
+          returned: true,
+          success: result.success,
+          failureReason: result.error ?? null,
+          documentType: result.documentKind,
+          ocrProvider: result.ocrProvider,
+          documentId,
+          fileName: document.fileName,
+        });
       } catch (err) {
+        logPipelineEntryCatch("CreditDocumentStep.runAnalysis", err, {
+          documentId,
+          fileName: document.fileName,
+          extra: { uiOutcome: "status_failed_no_applyPipelineResult" },
+        });
         analysisFailedRef.current = true;
+        console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+          source: "CreditDocumentStep.runAnalysis.catch",
+          documentId,
+          fileName: document.fileName,
+          reason: "credit_pipeline_threw",
+          errorMessage: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
         console.error("[CreditDocumentStep] GPT pipeline failed", err);
         traceTimeline("coherence_finished", documentId, {
           pipelineError: err instanceof Error ? err.message : String(err),
@@ -1676,6 +1764,21 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
     formValues.installments?.length
       ? formValues.installments
       : (draft?.creditGptSession?.amortization?.installments ?? []);
+
+  useEffect(() => {
+    if (!showExtractionForm || displayInstallments.length === 0) return;
+
+    const formCount = formValues.installments?.length ?? 0;
+    const sessionCount = draft?.creditGptSession?.amortization?.installments?.length ?? 0;
+
+    logInstallmentReactKeyAudit("CreditDocumentStep_displayInstallments", displayInstallments, {
+      revenueYear,
+      source: formCount > 0 ? "formValues.installments" : "draft.creditGptSession.amortization",
+      formInstallmentCount: formCount,
+      sessionInstallmentCount: sessionCount,
+      displayInstallmentCount: displayInstallments.length,
+    });
+  }, [displayInstallments, showExtractionForm, revenueYear, formValues.installments?.length, draft?.creditGptSession?.amortization?.installments?.length]);
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">

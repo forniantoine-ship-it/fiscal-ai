@@ -1,7 +1,11 @@
 "use client";
 
-import { useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState, useEffect, type CSSProperties } from "react";
 
+import {
+  installmentTableRowKey,
+  logInstallmentReactKeyAudit,
+} from "@/components/lmnp/credit/installment-table-render-debug";
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
 import { motions } from "@/design-system/theme/motions";
@@ -199,6 +203,22 @@ function SummaryMetric({
 }
 
 function InstallmentTable({ rows }: { rows: LoanInstallment[] }) {
+  useEffect(() => {
+    const audit = logInstallmentReactKeyAudit("InstallmentTable_render", rows, {
+      showSchedule: true,
+    });
+
+    if (audit.collapseDetected) {
+      console.warn("[installment-table-render-debug] key_collision_would_hide_rows", {
+        inputRowCount: audit.inputRowCount,
+        effectiveRenderedRowCount: audit.effectiveRenderedRowCount,
+        duplicateKeySlotCount: audit.duplicateKeySlotCount,
+        duplicateKeys: audit.duplicateKeys,
+        fix: "Using index+date keys instead of date-only",
+      });
+    }
+  }, [rows]);
+
   return (
     <div className="mt-6 overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse">
@@ -222,9 +242,12 @@ function InstallmentTable({ rows }: { rows: LoanInstallment[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <tr
-              key={row.date}
+              key={installmentTableRowKey(row, index)}
+              data-installment-index={index}
+              data-installment-date={row.date}
+              data-react-key-legacy={row.date}
               className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
               style={{
                 borderTop: `1px solid ${colors.border.subtle}`,
@@ -288,6 +311,15 @@ export function CreditFinancingFields({
 }: CreditFinancingFieldsProps) {
   const [showSchedule, setShowSchedule] = useState(false);
   const uncertain = new Set(uncertainFields);
+
+  useEffect(() => {
+    if (!showSchedule || installments.length === 0) return;
+    logInstallmentReactKeyAudit("CreditFinancingFields_schedule_open", installments, {
+      revenueYear,
+      legacyKeyWouldRender: new Set(installments.map((row) => row.date)).size,
+      actualRowsPassedToTable: installments.length,
+    });
+  }, [showSchedule, installments, revenueYear]);
 
   const deferralOptions = useMemo(
     () => [

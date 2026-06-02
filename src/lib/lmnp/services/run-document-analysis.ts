@@ -82,9 +82,17 @@ export async function runBulkDocumentAnalysis(params: {
       });
       dispatch({ type: "APPLY_DOCUMENT_ANALYSIS", documentId: docId, result });
       succeeded++;
-    } catch (err) {
-      console.error("[runBulkDocumentAnalysis]", doc.fileName, err);
-      dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "failed" });
+      } catch (err) {
+        console.error("[runBulkDocumentAnalysis]", doc.fileName, err);
+        console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+          source: "runBulkDocumentAnalysis.catch",
+          documentId: docId,
+          fileName: doc.fileName,
+          reason: "analyzeDocumentWithVision_threw",
+          errorMessage: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        dispatch({ type: "DOCUMENT_SET_STATUS", documentId: docId, status: "failed" });
       failed++;
     }
   }
