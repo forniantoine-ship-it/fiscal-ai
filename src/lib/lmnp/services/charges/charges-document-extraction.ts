@@ -26,6 +26,11 @@ import { parseCoproprieteDocument } from "./parse-copropriete-document";
 import { parseInsuranceDocument } from "./parse-insurance-document";
 import { parseTaxeFonciereDocument } from "./parse-taxe-fonciere-document";
 import { logTaxeFonciereRuntime } from "./taxe-fonciere-runtime-debug";
+import {
+  buildChargeReadingOrchestrationContext,
+  buildParserDispatchConfig,
+  logChargeReadingOrchestration,
+} from "./charge-reading-orchestrator";
 
 const CHARGE_CATEGORY_UI_LABELS: Record<string, string> = {
   assurance_habitation: "Assurance habitation",
@@ -205,8 +210,20 @@ function parseDocumentToRawTransactions(
   const chargeType = classifyDocument(doc, docExtractions);
   const corpus = buildClassifierCorpusFromExtractions(doc, docExtractions);
 
+  const readingCtx = buildChargeReadingOrchestrationContext({
+    document: doc,
+    corpus,
+    chargeDocumentType: chargeType,
+    extractions: docExtractions,
+  });
+  const dispatchConfig = buildParserDispatchConfig(readingCtx.readingMode);
+  logChargeReadingOrchestration(readingCtx, dispatchConfig, "before_parser_dispatch");
+
   if (chargeType === "insurance_habitation") {
-    const parsed = parseInsuranceDocument(corpus, { logTraces: false });
+    const parsed = parseInsuranceDocument(corpus, {
+      logTraces: false,
+      arbitrationMode: dispatchConfig.arbitrationMode,
+    });
     console.log("[charges-insurance-parse]", {
       documentId: doc.id,
       fileName: doc.fileName,
@@ -242,6 +259,7 @@ function parseDocumentToRawTransactions(
   }
 
   if (chargeType === "inconnu") {
+    if (!dispatchConfig.allowOcrFallback) return [];
     return fallbackRawTransactions(doc, docExtractions, "facture_energie");
   }
 
@@ -251,8 +269,13 @@ function parseDocumentToRawTransactions(
       fileName: doc.fileName,
       corpusLength: corpus.length,
       hasChargeParserCorpus: Boolean(doc.chargeParserCorpus?.trim()),
+      readingMode: dispatchConfig.readingMode,
+      tableContainsTargetData: readingCtx.readingMode.tableContainsTargetData,
     });
-    const parsed = parseTaxeFonciereDocument(corpus, { logTraces: false });
+    const parsed = parseTaxeFonciereDocument(corpus, {
+      logTraces: false,
+      arbitrationMode: dispatchConfig.arbitrationMode,
+    });
     console.log("[charges-taxe-fonciere-parse]", {
       documentId: doc.id,
       fileName: doc.fileName,
@@ -288,9 +311,11 @@ function parseDocumentToRawTransactions(
       fileName: doc.fileName,
       reason: "taxe_fonciere_parser_incomplete",
       parseErrors: parsed.errors,
+      allowOcrFallback: dispatchConfig.allowOcrFallback,
     });
   }
 
+  if (!dispatchConfig.allowOcrFallback) return [];
   return fallbackRawTransactions(doc, docExtractions, chargeType);
 }
 

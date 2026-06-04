@@ -190,6 +190,7 @@ function collectInsuranceAmountCandidates(text: string, traces: ChargeParseTrace
 function extractAmountTTC(
   text: string,
   traces: ChargeParseTrace[],
+  arbitrationMode?: "deterministic_only" | "pending_semantic",
 ): { amount: number | null; ranking: InsuranceAmountFieldRanking | null } {
   const candidates = collectInsuranceAmountCandidates(text, traces);
 
@@ -209,7 +210,7 @@ function extractAmountTTC(
     return { amount: null, ranking: null };
   }
 
-  const { amount, ranking } = getDeterministicInsuranceAmount(candidates);
+  const { amount, ranking } = getDeterministicInsuranceAmount(candidates, { arbitrationMode });
   logInsuranceRuntime("extractAmountTTC_result", {
     amount,
     normalizedAmount: amount !== null ? Math.round(amount * 100) / 100 : null,
@@ -357,6 +358,8 @@ function assessDeductible(text: string, traces: ChargeParseTrace[]): boolean {
 export type ParseInsuranceDocumentOptions = {
   /** Emit console traces (default true). */
   logTraces?: boolean;
+  /** Semantic arbitration mode — set by charge-reading-orchestrator. */
+  arbitrationMode?: "deterministic_only" | "pending_semantic";
 };
 
 /**
@@ -385,7 +388,11 @@ export function parseInsuranceDocument(
   }
 
   const fournisseur = extractInsurer(normalized, traces);
-  const { amount: montantTTC, ranking: amountFieldRanking } = extractAmountTTC(normalized, traces);
+  const { amount: montantTTC, ranking: amountFieldRanking } = extractAmountTTC(
+    normalized,
+    traces,
+    options?.arbitrationMode,
+  );
   const { debut: periodeDebut, fin: periodeFin } = extractPeriod(normalized, traces);
   const adresseBien = extractRiskAddress(rawOcrText, traces);
   const deductible = assessDeductible(normalized, traces);

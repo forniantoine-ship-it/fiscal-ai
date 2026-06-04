@@ -55,12 +55,18 @@ export async function runLogementGptPipeline(
   console.log("[logement-gpt] ocr resolved", {
     documentId: document.id,
     provider: ocrResult.provider,
+    strategy: ocrResult.strategy,
     pageCount: ocrResult.pageCount,
     textLength: rawText.length,
     newlineCount: ocrDebug.newlineCount,
+    charsPerPage: ocrResult.density.charsPerPage,
     alphaRatio: ocrResult.quality.alphaRatio,
     digitRatio: ocrResult.quality.digitRatio,
     fallbackReason: ocrResult.fallbackReason ?? null,
+    fallbackActivated: ocrResult.fallbackActivated,
+    partialTextRecovery: ocrResult.partialTextRecovery,
+    semanticRecoveryEligible: ocrResult.semanticRecoveryEligible,
+    strategiesAttempted: ocrResult.strategiesAttempted,
     ocrSource: ocrDebug.ocrSource,
   });
 

@@ -5,7 +5,13 @@ import type { PropertyBackgroundExtraction } from "@/lib/lmnp/types";
 
 const OCR_PREVIEW_LENGTH = 3_000;
 
-export type LogementOcrSource = "pdf_text" | "vision" | "hybrid" | "unknown";
+export type LogementOcrSource =
+  | "pdf_text"
+  | "vision"
+  | "vision_preprocessed"
+  | "hybrid"
+  | "partial_semantic"
+  | "unknown";
 
 export type LogementOcrDebugTrace = {
   documentId: string;
@@ -14,11 +20,17 @@ export type LogementOcrDebugTrace = {
   newlineCount: number;
   pageCount: number;
   provider: string;
+  strategy: string;
   ocrSource: LogementOcrSource;
   fallbackReason: string | null;
+  fallbackActivated: boolean;
+  partialTextRecovery: boolean;
+  semanticRecoveryEligible: boolean;
   textLength: number;
+  charsPerPage: number;
   alphaRatio: number;
   digitRatio: number;
+  strategiesAttempted: string[];
 };
 
 export type LogementDisplaySource =
@@ -28,10 +40,17 @@ export type LogementDisplaySource =
   | "empty";
 
 export function resolveLogementOcrSource(
-  ocrResult: Pick<ResolveDocumentTextResult, "provider" | "fallbackReason">,
+  ocrResult: Pick<
+    ResolveDocumentTextResult,
+    "provider" | "fallbackReason" | "strategy" | "partialTextRecovery"
+  >,
 ): LogementOcrSource {
+  if (ocrResult.strategy === "partial_semantic_recovery" || ocrResult.partialTextRecovery) {
+    return "partial_semantic";
+  }
   if (ocrResult.provider === "pdf_text") return "pdf_text";
-  if (ocrResult.fallbackReason?.startsWith("native_pdf_below")) return "hybrid";
+  if (ocrResult.provider === "vision_ocr_preprocessed") return "vision_preprocessed";
+  if (ocrResult.fallbackReason?.startsWith("native_pdf")) return "hybrid";
   if (ocrResult.provider === "vision_ocr") return "vision";
   return "unknown";
 }
@@ -50,11 +69,17 @@ export function buildLogementOcrDebugTrace(params: {
     newlineCount: (params.rawText.match(/\n/g) ?? []).length,
     pageCount: params.ocrResult.pageCount,
     provider: params.ocrResult.provider,
+    strategy: params.ocrResult.strategy,
     ocrSource: resolveLogementOcrSource(params.ocrResult),
     fallbackReason: params.ocrResult.fallbackReason ?? null,
+    fallbackActivated: params.ocrResult.fallbackActivated,
+    partialTextRecovery: params.ocrResult.partialTextRecovery,
+    semanticRecoveryEligible: params.ocrResult.semanticRecoveryEligible,
     textLength: params.rawText.length,
+    charsPerPage: params.ocrResult.density.charsPerPage,
     alphaRatio: params.ocrResult.quality.alphaRatio,
     digitRatio: params.ocrResult.quality.digitRatio,
+    strategiesAttempted: params.ocrResult.strategiesAttempted,
   };
 }
 

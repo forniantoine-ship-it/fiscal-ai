@@ -29,9 +29,24 @@ export {
   OCR_READ_FAILURE_MESSAGE,
   resolveDocumentText,
   resolveDocumentTextOrThrow,
+  type DocumentTextExtractionStrategy,
   type DocumentTextProvider,
   type ResolveDocumentTextResult,
+  type TextDensityMetrics,
 } from "./resolve-document-text";
+export {
+  DOCUMENT_TEXT_EXTRACTION_DEBUG_PREFIX,
+  logDocumentTextExtractionFallback,
+  logDocumentTextExtractionSelected,
+  logDocumentTextExtractionStage,
+} from "./document-text-extraction-debug";
+export {
+  EFFECTIVELY_EMPTY_MIN_LENGTH,
+  PARTIAL_TEXT_MIN_LENGTH,
+  isEffectivelyEmpty,
+  isNarrativeLegalDocumentHint,
+  isSemanticRecoveryEligible,
+} from "./semantic-text-recovery";
 export {
   requestVisionOcrText,
   VISION_OCR_SYSTEM_PROMPT,

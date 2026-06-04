@@ -217,6 +217,7 @@ function extractPayableAmount(
   normalized: string,
   rawText: string,
   traces: ChargeParseTrace[],
+  arbitrationMode?: "deterministic_only" | "pending_semantic",
 ): { amount: number | null; ranking: TaxeFonciereAmountFieldRanking | null } {
   const candidates = collectTaxeFonciereAmountCandidates(normalized, rawText, traces);
 
@@ -234,7 +235,7 @@ function extractPayableAmount(
     return { amount: null, ranking: null };
   }
 
-  const { amount, ranking } = getDeterministicTaxeFonciereAmount(candidates);
+  const { amount, ranking } = getDeterministicTaxeFonciereAmount(candidates, { arbitrationMode });
 
   logTaxeFonciereRuntime("extractPayableAmount_result", {
     amount,
@@ -292,6 +293,8 @@ function extractCommune(text: string, traces: ChargeParseTrace[]): string | unde
 
 export type ParseTaxeFonciereDocumentOptions = {
   logTraces?: boolean;
+  /** Semantic arbitration mode — set by charge-reading-orchestrator. */
+  arbitrationMode?: "deterministic_only" | "pending_semantic";
 };
 
 export function parseTaxeFonciereDocument(
@@ -320,6 +323,7 @@ export function parseTaxeFonciereDocument(
     normalized,
     rawOcrText,
     traces,
+    options?.arbitrationMode,
   );
   const anneeImposition = extractAnneeImposition(normalized, traces);
   const commune = extractCommune(rawOcrText, traces);

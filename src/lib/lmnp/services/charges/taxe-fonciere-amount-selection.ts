@@ -331,8 +331,9 @@ export function rankTaxeFonciereAmountCandidates(
 
 export function getDeterministicTaxeFonciereAmount(
   candidates: TaxeFonciereAmountCandidate[],
+  options?: { arbitrationMode?: "deterministic_only" | "pending_semantic" },
 ): { amount: number | null; ranking: TaxeFonciereAmountFieldRanking } {
-  const ranking = rankTaxeFonciereAmountCandidates(candidates);
+  const ranking = rankTaxeFonciereAmountCandidates(candidates, options);
   return {
     amount: ranking.deterministicDefault?.amount ?? null,
     ranking,

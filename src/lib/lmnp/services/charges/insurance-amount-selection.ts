@@ -398,8 +398,9 @@ export function selectBestInsuranceCandidate(
  */
 export function getDeterministicInsuranceAmount(
   candidates: InsuranceAmountCandidate[],
+  options?: { arbitrationMode?: "deterministic_only" | "pending_semantic" },
 ): { amount: number | null; ranking: InsuranceAmountFieldRanking } {
-  const ranking = rankInsuranceAmountCandidates(candidates);
+  const ranking = rankInsuranceAmountCandidates(candidates, options);
   return {
     amount: ranking.deterministicDefault?.amount ?? null,
     ranking,
