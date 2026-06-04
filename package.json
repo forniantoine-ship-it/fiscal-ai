@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "dev": "next dev",
     "lint": "eslint",
-    "test:revenus-parser": "npx tsx src/lib/lmnp/services/revenus-structured-table-parser.test.ts",
+    "start": "next start",
     "test:charge-classifier": "npx tsx src/lib/lmnp/services/classify-charge-document.test.ts",
-    "test:insurance-parser": "npx tsx src/lib/lmnp/services/charges/parse-insurance-document.test.ts",
-    "test:copro-parser": "npx tsx src/lib/lmnp/services/charges/parse-copropriete-document.test.ts",
     "test:charge-normalizer": "npx tsx src/lib/lmnp/services/charges/normalize-charge-transactions.test.ts",
-    "test:charges-profile": "npx tsx src/lib/lmnp/services/charges-profile.test.ts"
+    "test:charges-profile": "npx tsx src/lib/lmnp/services/charges-profile.test.ts",
+    "test:copro-parser": "npx tsx src/lib/lmnp/services/charges/parse-copropriete-document.test.ts",
+    "test:insurance-parser": "npx tsx src/lib/lmnp/services/charges/parse-insurance-document.test.ts",
+    "test:revenus-parser": "npx tsx src/lib/lmnp/services/revenus-structured-table-parser.test.ts",
+    "test:taxe-fonciere-orchestration": "npx tsx src/lib/lmnp/services/charges/taxe-fonciere-field-orchestration.test.ts",
+    "test:taxe-fonciere-parser": "npx tsx src/lib/lmnp/services/charges/parse-taxe-fonciere-document.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

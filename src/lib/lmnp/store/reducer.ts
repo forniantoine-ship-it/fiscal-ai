@@ -286,6 +286,8 @@ function applyDocumentAnalysisToState(
     status: "analyzed",
     documentType: result.documentType,
     category: result.category,
+    ocrMeta: result.ocrMeta,
+    chargeParserCorpus: result.chargeParserCorpus,
   };
 
   const documents = [...state.documents];
@@ -591,6 +593,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         moneyExtractions: action.result.extractions
           .filter((e) => e.normalizedValue.type === "money")
           .map((e) => ({ fieldKey: e.fieldKey, rawValue: e.rawValue })),
+        chargeParserCorpusLength: action.result.chargeParserCorpus?.length ?? 0,
       });
       // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
       console.log("[charges-analysis-applied]", {

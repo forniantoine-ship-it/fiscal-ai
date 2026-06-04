@@ -3,9 +3,11 @@ import { buildEmptyAnalysisResult } from "../ocr/map-to-extractions";
 import type { LmnpDocument } from "../types";
 import type { LmnpAction } from "../store/reducer";
 import { inferDocumentType } from "./document-classifier";
+import { extractPdfTextClient } from "./activite-ocr-text";
 import { OcrClientError, requestDocumentOcr } from "./ocr-client";
 import { fileToVisionImages } from "./pdf-to-images";
 import { resolveDocumentFile } from "./resolve-document-file";
+import type { OcrDocumentResult } from "../ocr/schema";
 
 export async function runBulkDocumentAnalysis(params: {
   documents: LmnpDocument[];
@@ -107,12 +109,46 @@ export async function runBulkDocumentAnalysis(params: {
   return { succeeded, failed };
 }
 
+function ocrFieldsToParserCorpus(ocr: OcrDocumentResult | undefined, fileName: string): string {
+  const parts = [fileName];
+  if (ocr?.supplierName?.text) parts.push(ocr.supplierName.text);
+  if (ocr?.address?.text) parts.push(ocr.address.text);
+  if (ocr?.invoiceDate?.value) parts.push(ocr.invoiceDate.value);
+  if (ocr?.totalAmount?.euros !== undefined) parts.push(String(ocr.totalAmount.euros));
+  return parts.filter(Boolean).join("\n");
+}
+
+function buildChargeParserCorpus(
+  doc: LmnpDocument,
+  file: File,
+  result: DocumentAnalysisResult,
+  embeddedPdfText: string,
+): string | undefined {
+  const isChargeDoc =
+    doc.category === "charges" ||
+    result.category === "charges" ||
+    result.documentType === "insurance_invoice" ||
+    result.documentType === "condo_charges" ||
+    result.documentType === "property_tax" ||
+    result.documentType === "works_invoice";
+  if (!isChargeDoc) return undefined;
+
+  const extractionText = result.extractions.map((entry) => entry.rawValue).filter(Boolean).join("\n");
+  const corpus = [embeddedPdfText, ocrFieldsToParserCorpus(result.ocr, doc.fileName), extractionText]
+    .filter((part) => part.trim().length > 0)
+    .join("\n")
+    .trim();
+
+  return corpus.length > 0 ? corpus : undefined;
+}
+
 async function analyzeDocumentWithVision(
   doc: LmnpDocument,
   file: File,
   fiscalYear?: number,
 ): Promise<DocumentAnalysisResult> {
   try {
+    const embeddedPdfText = await extractPdfTextClient(file);
     const images = await fileToVisionImages(file);
     const remote = await requestDocumentOcr(images, {
       fileName: doc.fileName,
@@ -121,7 +157,8 @@ async function analyzeDocumentWithVision(
       documentId: doc.id,
       fiscalYear,
     });
-    return remote;
+    const chargeParserCorpus = buildChargeParserCorpus(doc, file, remote, embeddedPdfText);
+    return { ...remote, chargeParserCorpus };
   } catch (err) {
     if (err instanceof OcrClientError && err.status === 503) {
       return buildHeuristicFallback(doc);

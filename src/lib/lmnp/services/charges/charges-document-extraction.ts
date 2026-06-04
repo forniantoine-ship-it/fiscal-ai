@@ -18,11 +18,14 @@ import {
   normalizeChargeTransactions,
   rawTransactionsFromCopro,
   rawTransactionsFromInsurance,
+  rawTransactionsFromTaxeFonciere,
   type NormalizedChargeTransaction,
   type RawChargeTransaction,
 } from "./normalize-charge-transactions";
 import { parseCoproprieteDocument } from "./parse-copropriete-document";
 import { parseInsuranceDocument } from "./parse-insurance-document";
+import { parseTaxeFonciereDocument } from "./parse-taxe-fonciere-document";
+import { logTaxeFonciereRuntime } from "./taxe-fonciere-runtime-debug";
 
 const CHARGE_CATEGORY_UI_LABELS: Record<string, string> = {
   assurance_habitation: "Assurance habitation",
@@ -81,6 +84,12 @@ export function buildClassifierCorpusFromExtractions(
   doc: LmnpDocument,
   docExtractions: Extraction[],
 ): string {
+  if (doc.chargeParserCorpus?.trim()) {
+    return [doc.fileName, DOCUMENT_TYPE_HINTS[doc.documentType] ?? "", doc.chargeParserCorpus]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   const parts = [doc.fileName, DOCUMENT_TYPE_HINTS[doc.documentType] ?? ""];
   for (const extraction of docExtractions) {
     if (extraction.displayLabel) parts.push(extraction.displayLabel);
@@ -96,6 +105,22 @@ function classifyDocument(doc: LmnpDocument, docExtractions: Extraction[]): Char
     fileName: doc.fileName,
     logTraces: false,
   });
+  if (
+    result.type === "taxe_fonciere" ||
+    doc.documentType === "property_tax" ||
+    /taxe|fonci[eè]re|avis.*imp[oô]t/i.test(doc.fileName)
+  ) {
+    logTaxeFonciereRuntime("taxe_fonciere_document_classification", {
+      documentId: doc.id,
+      fileName: doc.fileName,
+      workspaceDocumentType: doc.documentType,
+      detectedChargeType: result.type,
+      classifierConfidence: result.confidence,
+      corpusLength: corpus.length,
+      corpusPreview: corpus.slice(0, 280),
+      hasChargeParserCorpus: Boolean(doc.chargeParserCorpus?.trim()),
+    });
+  }
   console.log("[charges-pno-debug] classifyChargeDocument", {
     documentId: doc.id,
     fileName: doc.fileName,
@@ -218,6 +243,52 @@ function parseDocumentToRawTransactions(
 
   if (chargeType === "inconnu") {
     return fallbackRawTransactions(doc, docExtractions, "facture_energie");
+  }
+
+  if (chargeType === "taxe_fonciere") {
+    logTaxeFonciereRuntime("parseTaxeFonciereDocument_entry", {
+      documentId: doc.id,
+      fileName: doc.fileName,
+      corpusLength: corpus.length,
+      hasChargeParserCorpus: Boolean(doc.chargeParserCorpus?.trim()),
+    });
+    const parsed = parseTaxeFonciereDocument(corpus, { logTraces: false });
+    console.log("[charges-taxe-fonciere-parse]", {
+      documentId: doc.id,
+      fileName: doc.fileName,
+      parseSuccess: !!parsed.data,
+      montantPayable: parsed.data?.montantPayable ?? null,
+      errors: parsed.errors,
+      amountFieldRanking: parsed.amountFieldRanking
+        ? {
+            targetField: parsed.amountFieldRanking.targetField,
+            arbitrationMode: parsed.amountFieldRanking.arbitration.mode,
+            candidateCount: parsed.amountFieldRanking.candidates.length,
+            deterministicDefault: parsed.amountFieldRanking.deterministicDefault,
+          }
+        : null,
+    });
+    if (parsed.data) {
+      const raw = rawTransactionsFromTaxeFonciere(
+        parsed.data,
+        doc.fileName,
+        parsed.data.montantPayable,
+      );
+      logTaxeFonciereRuntime("parseDocumentToRawTransactions", {
+        documentId: doc.id,
+        fileName: doc.fileName,
+        path: "taxe_fonciere_parser",
+        montantPayable: parsed.data.montantPayable,
+        rawAmount: raw[0]?.amount ?? raw[0]?.montantTTC ?? null,
+      });
+      return raw;
+    }
+    logTaxeFonciereRuntime("fallback_ocr_amount", {
+      documentId: doc.id,
+      fileName: doc.fileName,
+      reason: "taxe_fonciere_parser_incomplete",
+      parseErrors: parsed.errors,
+    });
   }
 
   return fallbackRawTransactions(doc, docExtractions, chargeType);
@@ -430,7 +501,21 @@ export function buildDocumentDerivedChargeCategories(
       ocrCorpusLength: corpus.length,
     });
 
-    allGroups.push(...mapNormalizedToCategoryGroups(transactions, doc, propertyLabel));
+    const groups = mapNormalizedToCategoryGroups(transactions, doc, propertyLabel);
+    const taxeFonciereLine = groups
+      .flatMap((group) => group.lines)
+      .find((line) => line.source === "upload" && /taxe\s+fonci/i.test(line.label));
+    if (taxeFonciereLine || doc.documentType === "property_tax") {
+      logTaxeFonciereRuntime("buildChargesExtraction_taxe_fonciere_lines", {
+        documentId: doc.id,
+        fileName: doc.fileName,
+        hydratedAmount: taxeFonciereLine?.amount ?? groups[0]?.annualTotal ?? null,
+        lines: groups.flatMap((group) =>
+          group.lines.map((line) => ({ label: line.label, amount: line.amount, source: line.source })),
+        ),
+      });
+    }
+    allGroups.push(...groups);
   }
 
   return mergeUploadCategories(allGroups);

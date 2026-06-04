@@ -14,6 +14,7 @@ import {
 } from "./charge-parse-utils";
 import type { CoproParsedTransaction } from "./parse-copropriete-document";
 import type { InsuranceChargeDocument } from "./parse-insurance-document";
+import type { TaxeFonciereChargeDocument } from "./parse-taxe-fonciere-document";
 
 export const CHARGE_TRANSACTION_CATEGORIES = [
   "assurance_habitation",
@@ -420,6 +421,29 @@ export function rawTransactionsFromInsurance(
       periodeFin: doc.periodeFin,
       adresseBien: doc.adresseBien,
       deductible: doc.deductible,
+      amortizable: false,
+      sourceDocument,
+      extractionConfidence,
+    },
+  ];
+}
+
+/** Maps taxe foncière parser output to raw transactions (single payable line). */
+export function rawTransactionsFromTaxeFonciere(
+  doc: TaxeFonciereChargeDocument,
+  sourceDocument: string,
+  extractionConfidence?: number,
+): RawChargeTransaction[] {
+  const labelParts = ["Taxe foncière"];
+  if (doc.anneeImposition) labelParts.push(doc.anneeImposition);
+  if (doc.commune) labelParts.push(doc.commune);
+
+  return [
+    {
+      category: "taxe_fonciere",
+      label: labelParts.join(" — "),
+      montantTTC: doc.montantPayable,
+      deductible: true,
       amortizable: false,
       sourceDocument,
       extractionConfidence,

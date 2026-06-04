@@ -592,6 +592,11 @@ export interface LmnpDocument {
   /** True when restored from Supabase without a local IndexedDB blob. */
   remoteRestored?: boolean;
   ocrMeta?: DocumentOcrMeta;
+  /**
+   * Full text corpus captured at analysis time (embedded PDF + OCR fields).
+   * Used by deterministic charge parsers (insurance / copro) at extraction rebuild.
+   */
+  chargeParserCorpus?: string;
 }
 
 export type OcrFieldKey =

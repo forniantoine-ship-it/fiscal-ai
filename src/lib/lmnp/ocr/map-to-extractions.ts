@@ -16,7 +16,7 @@ const DOCUMENT_TYPE_TO_CATEGORY: Record<DocumentType, DocumentCategory> = {
   rent_receipt: "bail",
   rent_bank_statement: "revenus",
   bank_statement: "revenus",
-  property_tax: "autre",
+  property_tax: "charges",
   insurance_invoice: "charges",
   condo_charges: "charges",
   works_invoice: "charges",
@@ -60,6 +60,8 @@ export interface DocumentAnalysisResult {
   extractions: Omit<Extraction, "validationItemId">[];
   ocr?: OcrDocumentResult;
   ocrMeta?: DocumentOcrMeta;
+  /** Embedded PDF + OCR field text for deterministic charge parsers. */
+  chargeParserCorpus?: string;
 }
 
 function clampConfidence(n: number): number {

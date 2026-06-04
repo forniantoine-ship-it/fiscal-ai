@@ -3,7 +3,7 @@ import type { DocumentCategory, DocumentType } from "../types";
 const FILENAME_RULES: { pattern: RegExp; documentType: DocumentType; category: DocumentCategory }[] = [
   { pattern: /bail|loyer|quittance|location/i, documentType: "lease_contract", category: "bail" },
   { pattern: /relev|banque|virement|encaissement/i, documentType: "rent_bank_statement", category: "revenus" },
-  { pattern: /taxe[\s_-]?fonci/i, documentType: "property_tax", category: "autre" },
+  { pattern: /taxe[\s_-]?fonci/i, documentType: "property_tax", category: "charges" },
   { pattern: /assurance|pno|gli/i, documentType: "insurance_invoice", category: "charges" },
   { pattern: /syndic|copro|charges?\s*copro/i, documentType: "condo_charges", category: "charges" },
   { pattern: /travaux|entretien|facture[\s_-]?trav/i, documentType: "works_invoice", category: "charges" },
