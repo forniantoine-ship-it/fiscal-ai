@@ -11,6 +11,9 @@ import {
   parseFrenchCurrencyAmount,
   type ChargeParseTrace,
 } from "./charge-parse-utils";
+import { getDeterministicInsuranceAmount, type InsuranceAmountCandidate } from "./insurance-amount-selection";
+import type { InsuranceAmountFieldRanking } from "./insurance-field-orchestration";
+import { logInsuranceRuntime } from "./insurance-runtime-debug";
 
 export type InsuranceChargeDocument = {
   type: "assurance_habitation";
@@ -26,9 +29,22 @@ export type InsuranceParseResult = {
   data: InsuranceChargeDocument | null;
   traces: ChargeParseTrace[];
   errors: string[];
+  /**
+   * Ranked amount candidates for insuranceAnnualPremium (deterministic layer).
+   * Semantic arbitration may choose among candidates later; parser structure stays authoritative.
+   */
+  amountFieldRanking?: InsuranceAmountFieldRanking;
 };
 
 const PARSER_ID = "insurance-parser";
+
+const AMOUNT_LABEL_PATTERN =
+  /(?:prime|montant|total|net|payer|cotisation|contribution)[^.\n]{0,40}ttc[^.\n]{0,25}(\d[\d\s.,]*)\s*(?:€|eur)?/gi;
+
+const AMOUNT_TTC_FIRST_PATTERN =
+  /(?:montant\s+)?(?:total\s+)?ttc\s*[:\-]?\s*(\d[\d\s.,]*)\s*(?:€|eur)?/gi;
+
+const AMOUNT_CONTEXT_WINDOW = 110;
 
 const KNOWN_INSURERS: { pattern: RegExp; name: string }[] = [
   { pattern: /\bAXA(?:\s+ASSURANCE|\s+FRANCE|\s+IARD)?\b/i, name: "AXA" },
@@ -46,12 +62,6 @@ const KNOWN_INSURERS: { pattern: RegExp; name: string }[] = [
   { pattern: /\bCOVEA\b/i, name: "COVEA" },
   { pattern: /\bHABITASSUR\b/i, name: "HABITASSUR" },
 ];
-
-const AMOUNT_LABEL_PATTERN =
-  /(?:prime|montant|total|net|payer|cotisation|contribution)[^.\n]{0,40}ttc[^.\n]{0,25}(\d[\d\s.,]*)\s*(?:€|eur)?/gi;
-
-const AMOUNT_TTC_FIRST_PATTERN =
-  /(?:montant\s+)?(?:total\s+)?ttc\s*[:\-]?\s*(\d[\d\s.,]*)\s*(?:€|eur)?/gi;
 
 const PERIOD_RANGE_PATTERN =
   /(?:p[eé]riode|couverture|garantie)\s*(?:du|:)?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+[a-zéû]+?\s+\d{4})\s+au\s+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+[a-zéû]+?\s+\d{4})/i;
@@ -111,14 +121,28 @@ function extractInsurer(text: string, traces: ChargeParseTrace[]): string | null
   return null;
 }
 
-function extractAmountTTC(text: string, traces: ChargeParseTrace[]): number | null {
-  const candidates: { amount: number; label: string; priority: number }[] = [];
+function amountContextWindow(text: string, charIndex: number, matchLength: number): string {
+  const from = Math.max(0, charIndex - AMOUNT_CONTEXT_WINDOW);
+  const to = Math.min(text.length, charIndex + matchLength + AMOUNT_CONTEXT_WINDOW);
+  return text.slice(from, to).replace(/\s+/g, " ").trim();
+}
 
-  const scanPattern = (
-    pattern: RegExp,
-    label: string,
-    priority: number,
-  ): void => {
+function registerAmountCandidate(
+  map: Map<string, InsuranceAmountCandidate>,
+  params: { text: string; charIndex: number; matchLength: number; amount: number },
+): void {
+  const key = `${params.charIndex}:${params.amount}`;
+  if (map.has(key)) return;
+  map.set(key, {
+    amount: params.amount,
+    nearbyText: amountContextWindow(params.text, params.charIndex, params.matchLength),
+  });
+}
+
+function collectInsuranceAmountCandidates(text: string, traces: ChargeParseTrace[]): InsuranceAmountCandidate[] {
+  const map = new Map<string, InsuranceAmountCandidate>();
+
+  const scanPattern = (pattern: RegExp, label: string): void => {
     pattern.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
@@ -128,36 +152,109 @@ function extractAmountTTC(text: string, traces: ChargeParseTrace[]): number | nu
         pushTrace(traces, "amount-reject", `Malformed amount for ${label}`, raw);
         continue;
       }
-      candidates.push({ amount, label, priority });
+      registerAmountCandidate(map, {
+        text,
+        charIndex: match.index,
+        matchLength: match[0]!.length,
+        amount,
+      });
       pushTrace(traces, "amount-candidate", `${label} → ${amount}`, raw);
     }
   };
 
-  scanPattern(AMOUNT_LABEL_PATTERN, "label+ttc", 3);
-  scanPattern(AMOUNT_TTC_FIRST_PATTERN, "ttc-first", 2);
+  scanPattern(AMOUNT_LABEL_PATTERN, "label+ttc");
+  scanPattern(AMOUNT_TTC_FIRST_PATTERN, "ttc-first");
 
-  const fallbackEuro = text.match(
+  const fallbackEuro = text.matchAll(
     /(\d{1,3}(?:\s\d{3})*,\d{2}|\d+,\d{2})\s*(?:€|eur)\b/gi,
   );
-  if (fallbackEuro) {
-    for (const raw of fallbackEuro) {
-      const amount = parseFrenchCurrencyAmount(raw);
-      if (amount !== null) {
-        candidates.push({ amount, label: "euro-suffix", priority: 1 });
-        pushTrace(traces, "amount-candidate", `euro-suffix → ${amount}`, raw);
-      }
+  for (const match of fallbackEuro) {
+    const raw = match[0]!;
+    const amount = parseFrenchCurrencyAmount(raw);
+    if (amount === null) {
+      pushTrace(traces, "amount-reject", "Malformed euro-suffix amount", raw);
+      continue;
     }
+    registerAmountCandidate(map, {
+      text,
+      charIndex: match.index ?? 0,
+      matchLength: raw.length,
+      amount,
+    });
+    pushTrace(traces, "amount-candidate", `euro-suffix → ${amount}`, raw);
   }
+
+  return [...map.values()];
+}
+
+function extractAmountTTC(
+  text: string,
+  traces: ChargeParseTrace[],
+): { amount: number | null; ranking: InsuranceAmountFieldRanking | null } {
+  const candidates = collectInsuranceAmountCandidates(text, traces);
+
+  logInsuranceRuntime("extractAmountTTC_candidates", {
+    candidateCount: candidates.length,
+    candidates: candidates.map((candidate) => ({
+      amount: candidate.amount,
+      normalizedAmount: Math.round(candidate.amount * 100) / 100,
+      nearbyContext: candidate.nearbyText,
+      nearbyContextPreview: candidate.nearbyText.slice(0, 200),
+    })),
+  });
 
   if (candidates.length === 0) {
     pushTrace(traces, "amount", "No valid TTC amount", null);
-    return null;
+    logInsuranceRuntime("extractAmountTTC_result", { amount: null, reason: "no_candidates" });
+    return { amount: null, ranking: null };
   }
 
-  candidates.sort((a, b) => b.priority - a.priority || b.amount - a.amount);
-  const winner = candidates[0]!;
-  pushTrace(traces, "amount", `Selected ${winner.label}`, winner.amount);
-  return winner.amount;
+  const { amount, ranking } = getDeterministicInsuranceAmount(candidates);
+  logInsuranceRuntime("extractAmountTTC_result", {
+    amount,
+    normalizedAmount: amount !== null ? Math.round(amount * 100) / 100 : null,
+    targetField: ranking.targetField,
+    arbitrationMode: ranking.arbitration.mode,
+    deterministicDefault: ranking.deterministicDefault,
+    rankedCandidateCount: ranking.candidates.length,
+    fullRanking: ranking.candidates.map((candidate) => ({
+      amount: candidate.amount,
+      normalizedAmount: Math.round(candidate.amount * 100) / 100,
+      nearbyContext: candidate.context,
+      positiveSignals: candidate.positiveSignals,
+      negativeSignals: candidate.negativeSignals,
+      finalScore: candidate.score,
+      hardExcluded: candidate.hardExcluded,
+      rank: candidate.rank,
+      deterministicRankWinner: candidate.deterministicRankWinner,
+    })),
+  });
+
+  for (const candidate of ranking.candidates) {
+    pushTrace(
+      traces,
+      candidate.deterministicRankWinner
+        ? "amount"
+        : candidate.hardExcluded
+          ? "amount-reject"
+          : "amount-candidate",
+      candidate.deterministicRankWinner
+        ? `Deterministic rank #${candidate.rank} (score=${candidate.score}, +${candidate.positiveSignals.join(",") || "—"})`
+        : candidate.hardExcluded
+          ? `Hard-excluded (score=${candidate.score})`
+          : candidate.negativeSignals.length > 0
+            ? `Soft-penalized [${candidate.negativeSignals.join(", ")}] (score=${candidate.score})`
+            : `Rank #${candidate.rank} score=${candidate.score} (+${candidate.positiveSignals.join(",") || "—"})`,
+      candidate.amount,
+    );
+  }
+
+  if (amount === null) {
+    pushTrace(traces, "amount", "No eligible premium amount after deterministic ranking", null);
+    return { amount: null, ranking };
+  }
+
+  return { amount, ranking };
 }
 
 function extractPeriod(
@@ -269,6 +366,11 @@ export function parseInsuranceDocument(
   rawOcrText: string,
   options?: ParseInsuranceDocumentOptions,
 ): InsuranceParseResult {
+  logInsuranceRuntime("parseInsuranceDocument_entry", {
+    rawOcrTextLength: rawOcrText.length,
+    rawOcrPreview: rawOcrText.slice(0, 280),
+  });
+
   const traces: ChargeParseTrace[] = [];
   const errors: string[] = [];
   const logTraces = options?.logTraces !== false;
@@ -283,7 +385,7 @@ export function parseInsuranceDocument(
   }
 
   const fournisseur = extractInsurer(normalized, traces);
-  const montantTTC = extractAmountTTC(normalized, traces);
+  const { amount: montantTTC, ranking: amountFieldRanking } = extractAmountTTC(normalized, traces);
   const { debut: periodeDebut, fin: periodeFin } = extractPeriod(normalized, traces);
   const adresseBien = extractRiskAddress(rawOcrText, traces);
   const deductible = assessDeductible(normalized, traces);
@@ -326,5 +428,5 @@ export function parseInsuranceDocument(
     });
   }
 
-  return { data, traces, errors };
+  return { data, traces, errors, amountFieldRanking: amountFieldRanking ?? undefined };
 }

@@ -14,6 +14,7 @@ import {
   mergeSuggestionsIntoDecisions,
 } from "./charges-amortization-intelligence";
 import { buildDocumentDerivedChargeCategories } from "./charges/charges-document-extraction";
+import { logInsuranceRuntime } from "./charges/insurance-runtime-debug";
 
 export type { ChargesCategoryData, ChargesExtractionData, ChargesExpenseLine };
 
@@ -26,7 +27,13 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   other: "Autres charges",
 };
 
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number, options?: { insuranceTrace?: boolean }): string {
+  if (options?.insuranceTrace) {
+    logInsuranceRuntime("ui_formatCurrency_insurance", {
+      rawAmount: value,
+      note: "Displayed via formatCurrency — not the extraction source of truth",
+    });
+  }
   console.log("[charges-amount-debug]", {
     rawAmount: value,
     normalizedAmount: Math.round(value * 100) / 100,
@@ -482,6 +489,22 @@ export function buildChargesExtraction(
     properties,
   });
 
+  const insuranceCategories = documentCategories.filter((cat) => cat.category === "insurance");
+  if (insuranceCategories.length > 0) {
+    logInsuranceRuntime("buildChargesExtraction_insurance_lines", {
+      source: "charges-profile.buildChargesExtraction",
+      categories: insuranceCategories.map((cat) => ({
+        id: cat.id,
+        annualTotal: cat.annualTotal,
+        lines: cat.lines.map((line) => ({
+          label: line.label,
+          amount: line.amount,
+          source: line.source,
+        })),
+      })),
+    });
+  }
+
   const includeRecovery = shouldIncludeCrossStepRecovery(
     draft,
     documents,
@@ -610,6 +633,17 @@ export function chargesFromDraft(
         .length,
     ),
   };
+
+  const draftInsurance = purged.categories.filter((cat) => cat.category === "insurance");
+  if (draftInsurance.length > 0) {
+    logInsuranceRuntime("chargesFromDraft_insurance_lines", {
+      categories: draftInsurance.map((cat) => ({
+        id: cat.id,
+        annualTotal: cat.annualTotal,
+        lines: cat.lines.map((line) => ({ label: line.label, amount: line.amount, source: line.source })),
+      })),
+    });
+  }
 
   return {
     ...purged,

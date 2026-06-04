@@ -70,6 +70,34 @@ export const INSURANCE_OCR_FIXTURES: InsuranceOcrFixture[] = [
     },
   },
   {
+    id: "axa-capital-vs-cotisation",
+    description: "Rejects capital mobilier, selects cotisation annuelle TTC",
+    rawText: `
+      AXA ASSURANCE
+      Contrat Multirisque Habitation
+
+      Garanties :
+      Capital mobilier dans l'habitation : 6 000,00 EUR
+      Responsabilité civile locataire
+
+      Période du 01/01/2025 au 31/12/2025
+      Cotisation annuelle TTC : 428,50 EUR
+      Montant à payer TTC : 428,50 EUR
+
+      Risque situé :
+      12 rue de la Paix
+      75002 Paris
+    `,
+    expected: {
+      fournisseur: "AXA",
+      montantTTC: 428.5,
+      periodeDebut: "01/01/2025",
+      periodeFin: "31/12/2025",
+      adresseBien: "12 rue de la Paix 75002 Paris",
+      deductible: true,
+    },
+  },
+  {
     id: "maif-pno",
     description: "MAIF PNO habitation prime",
     rawText: `
