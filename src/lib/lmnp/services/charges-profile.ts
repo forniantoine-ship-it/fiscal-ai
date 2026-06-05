@@ -14,9 +14,15 @@ import {
   mergeSuggestionsIntoDecisions,
 } from "./charges-amortization-intelligence";
 import { buildDocumentDerivedChargeCategories } from "./charges/charges-document-extraction";
+import { hydrateChargesCategoriesForPresentation } from "./charges/charge-category-presentation";
 import { logInsuranceRuntime } from "./charges/insurance-runtime-debug";
 
-export type { ChargesCategoryData, ChargesExtractionData, ChargesExpenseLine };
+export type {
+  ChargesCategoryData,
+  ChargesExtractionData,
+  ChargesExpenseLine,
+  ExpenseCategory,
+};
 
 const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   property_tax: "Taxe foncière",
@@ -555,7 +561,7 @@ export function buildChargesExtraction(
 export function normalizeChargesExtraction(
   extraction: ChargesExtractionData,
 ): ChargesExtractionData {
-  const categories = extraction.categories ?? [];
+  const categories = hydrateChargesCategoriesForPresentation(extraction.categories ?? []);
   const suggestions = extraction.amortizationSuggestions ?? [];
   const summary = extraction.summary ?? recalculateChargesSummary(categories, 0);
 

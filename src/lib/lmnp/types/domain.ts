@@ -1,3 +1,4 @@
+import type { RevenueSupervisionStatus } from "./revenue-supervision";
 import type { FieldKey, LedgerDomain } from "./field-keys";
 import type { NormalizedValue } from "./values";
 
@@ -330,6 +331,8 @@ export type RevenueGptSession = {
     lowConfidenceCount?: number;
     transactionCount?: number;
     gridSource?: "ocr_lines" | "mock_lines" | "persisted_session" | "user_manual";
+    extractionSupervision?: RevenueSupervisionStatus;
+    extractionPipelineId?: string;
   };
   /** Legacy raw events — not used for grid rendering. */
   events?: RevenueEvent[];

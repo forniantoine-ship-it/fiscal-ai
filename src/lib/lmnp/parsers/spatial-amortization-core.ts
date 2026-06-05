@@ -1688,6 +1688,7 @@ function scoreColumnForRole(
   columnStats: ColumnNumericStats,
   role: ColumnRole,
   crdReferenceMean: number,
+  loanPhase: LoanPhase | "unknown" = "unknown",
 ): number {
   switch (role) {
     case "remainingCapital":
@@ -1712,21 +1713,28 @@ function scoreColumnForRole(
         columnStats.median > crdReferenceMean * PAYMENT_MAX_CRD_MEDIAN_RATIO;
       const tooLargeForPayment =
         crdReferenceMean > 0 && columnStats.median > crdReferenceMean * PAYMENT_MAX_CRD_MEDIAN_RATIO;
+      const amortizationPaymentBonus =
+        loanPhase === "amortization" && columnStats.median > 300 ? columnStats.median / 120 : 0;
       return (
         (1 - columnStats.monotonicDecreaseRatio) * 20 +
         columnStats.zeroRatio * 8 +
         (columnStats.mean > 0 && columnStats.mean < crdReferenceMean * 0.08 ? 12 : 18) +
+        amortizationPaymentBonus +
         (crdLikeMonotonic ? -80 : 0) +
         (tooLargeForPayment ? -60 : 0)
       );
     }
     case "principal":
-    case "interest":
+    case "interest": {
+      const interestPenalty =
+        role === "interest" && loanPhase === "amortization" && columnStats.median > 600 ? -25 : 0;
       return (
         columnStats.zeroRatio * 28 +
         (1 - columnStats.monotonicDecreaseRatio) * 12 +
-        (columnStats.mean < crdReferenceMean * 0.05 ? 12 : 0)
+        (columnStats.mean < crdReferenceMean * 0.05 ? 12 : 0) +
+        interestPenalty
       );
+    }
     default:
       return 0;
   }
@@ -1786,7 +1794,227 @@ function logColumnAggregateStats(
 
 type ColumnRoleRefinementOptions = {
   loanPhase?: LoanPhase | "unknown";
+  calibrationRows?: SpatialTableRow[];
+  headerColumnCount?: number;
 };
+
+function permuteArray<T>(items: T[]): T[][] {
+  if (items.length <= 1) return [items];
+  const results: T[][] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const current = items[index]!;
+    const rest = permuteArray(items.filter((_, itemIndex) => itemIndex !== index));
+    for (const tail of rest) {
+      results.push([current, ...tail]);
+    }
+  }
+  return results;
+}
+
+function scoreInstallmentBusinessCoherence(
+  installment: SpatialInstallment,
+  loanPhase: LoanPhase | "unknown",
+): number {
+  const payment = installment.payment ?? 0;
+  const principal = installment.principal ?? 0;
+  const interest = installment.interest ?? 0;
+  const insurance = installment.insurance ?? 0;
+  let score = 0;
+
+  const isAmortizing = principal > DEFERRED_ZERO_EPSILON;
+
+  if (isAmortizing) {
+    const components = principal + interest + insurance;
+    if (payment > DEFERRED_ZERO_EPSILON) {
+      const delta = Math.abs(payment - components);
+      if (delta <= ROW_BALANCE_TOLERANCE_EUR) score += 30;
+      else score -= Math.min(delta, 120);
+    } else {
+      score -= 20;
+    }
+
+    if (interest > payment + ROW_BALANCE_TOLERANCE_EUR && payment > DEFERRED_ZERO_EPSILON) {
+      score -= 50;
+    }
+    if (payment >= interest && payment >= principal) score += 8;
+    return score;
+  }
+
+  if (loanPhase === "deferred" || payment > 0 || insurance > 0 || interest > 0) {
+    if (payment <= DEFERRED_ZERO_EPSILON && (insurance > 0 || interest > 0)) {
+      score -= 25;
+    }
+    if (payment > DEFERRED_ZERO_EPSILON && principal <= DEFERRED_ZERO_EPSILON) {
+      score += 8;
+    }
+    if (interest > DEFERRED_ZERO_EPSILON && principal <= DEFERRED_ZERO_EPSILON && payment <= 0) {
+      score -= 15;
+    }
+    if (
+      payment > DEFERRED_ZERO_EPSILON &&
+      insurance > DEFERRED_ZERO_EPSILON &&
+      Math.abs(payment - insurance) <= Math.max(insurance * 0.2, 5)
+    ) {
+      score += 12;
+    }
+  }
+
+  return score;
+}
+
+function scoreMappingAgainstCalibrationRows(
+  mapping: ColumnRoleMapping,
+  rows: SpatialTableRow[],
+  headerColumnCount: number,
+  loanPhase: LoanPhase | "unknown",
+): number {
+  if (rows.length === 0) return 0;
+
+  let score = 0;
+  for (const row of rows) {
+    const { installment } = rowToInstallment(row, mapping, headerColumnCount, {
+      loanPhase: loanPhase === "unknown" ? "amortization" : loanPhase,
+      enableDeferredHeuristics: loanPhase === "deferred",
+      enableDeferredDuplicatePreservation: loanPhase === "deferred",
+      preserveOrderedAmountRepeats: loanPhase === "deferred",
+    });
+    score += scoreInstallmentBusinessCoherence(installment, loanPhase);
+  }
+
+  return score;
+}
+
+function scoreMedianRoleAssignment(
+  mapping: ColumnRoleMapping,
+  statsByColumn: Map<number, ColumnNumericStats>,
+  loanPhase: LoanPhase | "unknown",
+): number {
+  const paymentIndex = findColumnIndexForRole(mapping, "payment");
+  const principalIndex = findColumnIndexForRole(mapping, "principal");
+  const interestIndex = findColumnIndexForRole(mapping, "interest");
+  if (
+    paymentIndex === undefined ||
+    principalIndex === undefined ||
+    interestIndex === undefined
+  ) {
+    return 0;
+  }
+
+  const paymentMedian = statsByColumn.get(paymentIndex)?.median ?? 0;
+  const principalMedian = statsByColumn.get(principalIndex)?.median ?? 0;
+  const interestMedian = statsByColumn.get(interestIndex)?.median ?? 0;
+  let score = 0;
+
+  if (loanPhase === "amortization") {
+    if (paymentMedian >= principalMedian && paymentMedian >= interestMedian) score += 20;
+    if (interestMedian > paymentMedian + ROW_BALANCE_TOLERANCE_EUR) score -= 40;
+    if (
+      paymentMedian > 0 &&
+      Math.abs(paymentMedian - (principalMedian + interestMedian)) <=
+        Math.max(paymentMedian * 0.08, ROW_BALANCE_TOLERANCE_EUR * 3)
+    ) {
+      score += 15;
+    }
+  } else if (loanPhase === "deferred") {
+    const paymentStats = statsByColumn.get(paymentIndex);
+    if (paymentStats && paymentStats.zeroRatio > 0.85 && interestMedian > 0) score -= 25;
+    if (paymentMedian > 0 && paymentMedian <= DEFERRED_PAYMENT_MAX_ABSOLUTE) score += 10;
+  }
+
+  return score;
+}
+
+function applyRolePermutationOnColumns(
+  mapping: ColumnRoleMapping,
+  columnIndexes: number[],
+  roles: Array<"payment" | "principal" | "interest">,
+): ColumnRoleMapping {
+  const next = new Map(mapping);
+  for (const [columnIndex, role] of [...next]) {
+    if (role === "payment" || role === "principal" || role === "interest") {
+      next.delete(columnIndex);
+    }
+  }
+  for (let index = 0; index < columnIndexes.length; index += 1) {
+    next.set(columnIndexes[index]!, roles[index]!);
+  }
+  return next;
+}
+
+function optimizePaymentPrincipalInterestMapping(
+  mapping: ColumnRoleMapping,
+  statsByColumn: Map<number, ColumnNumericStats>,
+  options: ColumnRoleRefinementOptions,
+): ColumnRoleMapping {
+  const loanPhase = options.loanPhase ?? "unknown";
+  const paymentIndex = findColumnIndexForRole(mapping, "payment");
+  const principalIndex = findColumnIndexForRole(mapping, "principal");
+  const interestIndex = findColumnIndexForRole(mapping, "interest");
+
+  const calibrationRows = options.calibrationRows ?? [];
+  const headerColumnCount =
+    options.headerColumnCount ??
+    (mappingColumnSpan(mapping) || calibrationRows[0]?.columns.length || 0);
+
+  const scoreCandidate = (candidate: ColumnRoleMapping): number => {
+    const rowScore =
+      calibrationRows.length > 0
+        ? scoreMappingAgainstCalibrationRows(
+            candidate,
+            calibrationRows,
+            headerColumnCount,
+            loanPhase,
+          )
+        : 0;
+    const medianScore = scoreMedianRoleAssignment(candidate, statsByColumn, loanPhase);
+    return rowScore + medianScore;
+  };
+
+  let bestMapping = mapping;
+  let bestScore = scoreCandidate(mapping);
+
+  if (
+    paymentIndex !== undefined &&
+    principalIndex !== undefined &&
+    interestIndex !== undefined
+  ) {
+    const columns = [paymentIndex, principalIndex, interestIndex];
+    const roles = ["payment", "principal", "interest"] as const;
+    for (const permutation of permuteArray([...roles])) {
+      const candidate = applyRolePermutationOnColumns(mapping, columns, permutation);
+      const score = scoreCandidate(candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        bestMapping = candidate;
+      }
+    }
+  } else if (paymentIndex !== undefined && interestIndex !== undefined && paymentIndex !== interestIndex) {
+    const swapped = applyRolePermutationOnColumns(mapping, [paymentIndex, interestIndex], [
+      "interest",
+      "payment",
+    ]);
+    const swapScore = scoreCandidate(swapped);
+    if (swapScore > bestScore) {
+      bestMapping = swapped;
+      bestScore = swapScore;
+    }
+  }
+
+  if (bestMapping !== mapping) {
+    logSpatialParserAnomaly({
+      reason: "payment_principal_interest_mapping_optimized",
+      extra: {
+        loanPhase,
+        scoreDelta: roundStat(bestScore - scoreCandidate(mapping)),
+        before: columnRoleMappingToObject(mapping),
+        after: columnRoleMappingToObject(bestMapping),
+        calibrationRowCount: calibrationRows.length,
+      },
+    });
+  }
+
+  return bestMapping;
+}
 
 function medianOfOtherMonetaryColumns(
   statsByColumn: Map<number, ColumnNumericStats>,
@@ -2011,7 +2239,12 @@ function fillMissingAmountRolesAfterValidation(
       pairScores.push({
         columnIndex,
         role,
-        score: scoreColumnForRole(columnStats, role, crdReferenceMean),
+        score: scoreColumnForRole(
+          columnStats,
+          role,
+          crdReferenceMean,
+          options.loanPhase ?? "unknown",
+        ),
       });
     }
   }
@@ -2208,6 +2441,8 @@ function applyBusinessColumnRoleValidation(
     rolesAfterValidation: columnRoleMappingToObject(validated),
   });
 
+  validated = optimizePaymentPrincipalInterestMapping(validated, statsByColumn, options);
+
   return validated;
 }
 
@@ -2224,14 +2459,24 @@ function refineColumnRoleMapping(
     rolesBeforeValidation: columnRoleMappingToObject(headerMapping),
   });
 
-  const refined: ColumnRoleMapping = new Map(headerMapping);
+  const statsColumnSet = new Set(statsByColumn.keys());
+  const loanPhase = options.loanPhase ?? "unknown";
+
+  const refined: ColumnRoleMapping = new Map();
   const lockedColumns = new Set<number>();
   const lockedRoles = new Set<ColumnRole>();
 
   for (const [index, role] of headerMapping) {
-    if (!isAmountRole(role)) continue;
-    lockedColumns.add(index);
-    lockedRoles.add(role);
+    if (role === "rank" || role === "date") {
+      refined.set(index, role);
+      lockedColumns.add(index);
+      continue;
+    }
+    if (isAmountRole(role) && statsColumnSet.has(index)) {
+      refined.set(index, role);
+      lockedColumns.add(index);
+      lockedRoles.add(role);
+    }
   }
 
   const crdCandidates = [...statsByColumn.values()].sort(
@@ -2286,7 +2531,12 @@ function refineColumnRoleMapping(
       pairScores.push({
         columnIndex,
         role,
-        score: scoreColumnForRole(columnStats, role, crdReferenceMean),
+        score: scoreColumnForRole(
+          columnStats,
+          role,
+          crdReferenceMean,
+          options.loanPhase ?? "unknown",
+        ),
       });
     }
   }
@@ -3161,6 +3411,9 @@ function reparseDeferredSegment(
   const deferredStats = computeColumnNumericStats(calibrationRows);
   const deferredMapping = refineColumnRoleMapping(headerMapping, deferredStats, {
     loanPhase: "deferred",
+    calibrationRows,
+    headerColumnCount:
+      mappingColumnSpan(headerMapping) || records[segment.start]?.headerColumnCount || 0,
   });
   const deferredMedians = buildColumnMedianContext(deferredMapping, deferredStats);
 
@@ -3265,6 +3518,9 @@ function reparseAmortizationSegment(
   const amortizationStats = computeColumnNumericStats(calibrationRows);
   const amortizationMapping = refineColumnRoleMapping(headerMapping, amortizationStats, {
     loanPhase: "amortization",
+    calibrationRows,
+    headerColumnCount:
+      mappingColumnSpan(headerMapping) || records[segment.start]?.headerColumnCount || 0,
   });
   const amortizationMedians = buildColumnMedianContext(amortizationMapping, amortizationStats);
 

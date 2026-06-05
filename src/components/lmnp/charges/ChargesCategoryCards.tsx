@@ -9,9 +9,14 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import {
+  resolveChargeCategoryCardVisual,
+  type ChargeCategoryVisualKind,
+} from "@/lib/lmnp/services/charges/charge-category-presentation";
+import {
   formatCurrency,
   type ChargesCategoryData,
   type ChargesExpenseLine,
+  type ExpenseCategory,
 } from "@/lib/lmnp/services/charges-profile";
 
 type ChargesCategoryCardsProps = {
@@ -53,6 +58,7 @@ export function ChargesCategoryCards({
 
       {categories.map((cat, index) => {
         const expanded = expandedIds.has(cat.id);
+        const visual = resolveChargeCategoryCardVisual(cat);
 
         return (
           <section
@@ -62,6 +68,9 @@ export function ChargesCategoryCards({
               ...cardStyle,
               textAlign: "left",
               animationDelay: `${index * 120}ms`,
+              backgroundColor: visual.surfaceTint,
+              borderLeft: `3px solid ${visual.accentColor}`,
+              borderColor: visual.accentBorderColor,
             }}
           >
             <button
@@ -78,7 +87,7 @@ export function ChargesCategoryCards({
                     color: colors.text.primary,
                   }}
                 >
-                  {cat.label}
+                  {visual.title}
                 </p>
                 <p className="mt-2" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
                   {formatCurrency(cat.annualTotal)}
@@ -93,7 +102,7 @@ export function ChargesCategoryCards({
                 aria-hidden
                 style={{
                   ...typography.caption.desktop,
-                  color: colors.text.accent,
+                  color: visual.accentColor,
                   transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
                   transition: motions.hover.card,
                 }}
@@ -103,9 +112,14 @@ export function ChargesCategoryCards({
             </button>
 
             <div className="mt-3 flex flex-wrap gap-2">
-              {cat.recurring ? <IntelligentBadge label="Charge récurrente détectée" /> : null}
+              {visual.kindBadge ? (
+                <CategoryKindBadge label={visual.kindBadge} kind={visual.kind} />
+              ) : null}
+              {visual.showRecurringBadge ? (
+                <IntelligentBadge label="Charge récurrente détectée" kind={visual.kind} />
+              ) : null}
               {cat.lines.some((line) => line.source && line.source !== "upload") ? (
-                <IntelligentBadge label="Récupéré automatiquement" />
+                <IntelligentBadge label="Récupéré automatiquement" kind={visual.kind} />
               ) : null}
             </div>
 
@@ -116,7 +130,7 @@ export function ChargesCategoryCards({
                 </Button>
               </div>
             ) : (
-              <ExpenseDetailList lines={cat.lines} />
+              <ExpenseDetailList lines={cat.lines} expenseCategory={cat.category} visualKind={visual.kind} />
             )}
           </section>
         );
@@ -131,16 +145,23 @@ export function ChargesCategoryCards({
   );
 }
 
-function IntelligentBadge({ label }: { label: string }) {
+function CategoryKindBadge({
+  label,
+  kind,
+}: {
+  label: string;
+  kind: ChargeCategoryVisualKind;
+}) {
+  const isPropertyTax = kind === "property_tax";
   return (
     <span
       style={{
         ...typography.caption.desktop,
-        color: colors.text.muted,
+        color: isPropertyTax ? "#4A5568" : colors.text.accent,
         padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
         borderRadius: radius.full,
-        border: `1px solid ${colors.border.subtle}`,
-        backgroundColor: colors.surface.primary,
+        border: `1px solid ${isPropertyTax ? "#C5D0DB" : colors.border.subtle}`,
+        backgroundColor: isPropertyTax ? "#EEF1F4" : colors.surface.primary,
       }}
     >
       {label}
@@ -148,7 +169,39 @@ function IntelligentBadge({ label }: { label: string }) {
   );
 }
 
-function ExpenseDetailList({ lines }: { lines: ChargesExpenseLine[] }) {
+function IntelligentBadge({
+  label,
+  kind,
+}: {
+  label: string;
+  kind: ChargeCategoryVisualKind;
+}) {
+  const isInsurance = kind === "insurance";
+  return (
+    <span
+      style={{
+        ...typography.caption.desktop,
+        color: isInsurance ? colors.text.accent : colors.text.muted,
+        padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
+        borderRadius: radius.full,
+        border: `1px solid ${isInsurance ? "#F0C4A0" : colors.border.subtle}`,
+        backgroundColor: isInsurance ? "#FFF8F3" : colors.surface.primary,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ExpenseDetailList({
+  lines,
+  expenseCategory,
+  visualKind,
+}: {
+  lines: ChargesExpenseLine[];
+  expenseCategory: ExpenseCategory;
+  visualKind: ChargeCategoryVisualKind;
+}) {
   return (
     <div className="mt-6 space-y-3">
       {lines.map((entry, index) => (
@@ -189,7 +242,7 @@ function ExpenseDetailList({ lines }: { lines: ChargesExpenseLine[] }) {
           <p className="mt-1" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             {entry.recoverable ? "Charge déductible" : "Non récupérable"}
           </p>
-          {entry.recurring ? (
+          {expenseCategory === "insurance" && entry.recurring ? (
             <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.accent }}>
               Charge récurrente détectée
             </p>

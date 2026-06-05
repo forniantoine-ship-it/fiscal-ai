@@ -1,0 +1,6251 @@
+npm warn exec The following package was not found and will be installed: tsx@4.22.4
+[pipeline-entry-debug] {
+  functionName: 'parseSpatialAmortizationFromRows',
+  entered: true,
+  extra: {
+    source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+    totalPages: 7,
+    rowCount: 463
+  }
+}
+[spatial-parser-trace] {
+  functionName: 'parseSpatialAmortizationFromRows',
+  entered: true,
+  rowCount: 463,
+  extra: {
+    source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+    totalPages: 7
+  }
+}
+[pipeline-entry-debug] {
+  functionName: 'runAmortizationPipeline',
+  entered: true,
+  extra: {
+    source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+    totalPages: 7,
+    inputRowCount: 463,
+    fiscalYear: null
+  }
+}
+[amortization-pipeline-debug] orchestrator_enter {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  totalPages: 7,
+  inputRowCount: 463,
+  fiscalYear: null
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'A',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'rawPdfCells'
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'A',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'rawPdfCells',
+  artifact: { kind: 'array', length: 4096, sample: [ [Object], [Object] ] }
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'B_bootstrap',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'headerMappingBootstrap'
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: true,
+  rowCount: 7,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: { '0': 'rank', '1': 'date', '6': 'insurance', '7': 'interest' },
+  rolesAfterValidation: null
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: true,
+  rowCount: 7,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: {
+    '0': 'rank',
+    '1': 'date',
+    '3': 'payment',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest',
+    '8': 'principal'
+  },
+  rolesAfterValidation: null
+}
+[spatial-parser-business-validation] {
+  rejectedPaymentColumn: null,
+  reassignedRemainingCapitalColumn: 5,
+  reassignedPaymentColumn: null,
+  paymentMedian: 405.43,
+  remainingCapitalMedian: 86287.16,
+  insuranceMedian: 37.64,
+  reason: 'business_validation_pass_completed',
+  loanPhase: 'unknown'
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: false,
+  rowCount: 7,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: {
+    '0': 'rank',
+    '1': 'date',
+    '3': 'payment',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest',
+    '8': 'principal'
+  },
+  rolesAfterValidation: {
+    '0': 'rank',
+    '1': 'date',
+    '3': 'payment',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest',
+    '8': 'principal'
+  }
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: false,
+  rowCount: 7,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: null,
+  rolesAfterValidation: {
+    '0': 'rank',
+    '1': 'date',
+    '3': 'payment',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest',
+    '8': 'principal'
+  }
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'B_bootstrap',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'headerMappingBootstrap',
+  artifact: {
+    keys: [ 'globalHeader', 'refinedGlobalMapping' ],
+    preview: { globalHeader: [Object], refinedGlobalMapping: [Map] }
+  }
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'B',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'reconstructedRows'
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'B',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'reconstructedRows',
+  artifact: {
+    reconstructedRowCount: 463,
+    columnSlotCount: 9,
+    bucketAlignedCount: 463
+  }
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'C',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'columnCandidates'
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: true,
+  rowCount: 5,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: { '1': 'rank', '6': 'insurance', '7': 'interest' },
+  rolesAfterValidation: null
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: true,
+  rowCount: 5,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: {
+    '1': 'rank',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  },
+  rolesAfterValidation: null
+}
+[spatial-parser-business-validation] {
+  rejectedPaymentColumn: null,
+  reassignedRemainingCapitalColumn: 5,
+  reassignedPaymentColumn: null,
+  paymentMedian: 405.43,
+  remainingCapitalMedian: 86287.16,
+  insuranceMedian: 37.64,
+  reason: 'business_validation_pass_completed',
+  loanPhase: 'unknown'
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: false,
+  rowCount: 5,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: {
+    '1': 'rank',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  },
+  rolesAfterValidation: {
+    '1': 'rank',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  }
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: false,
+  rowCount: 5,
+  loanPhase: 'unknown',
+  rolesBeforeValidation: null,
+  rolesAfterValidation: {
+    '1': 'rank',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  }
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'C',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'columnCandidates',
+  artifact: { candidateCount: 23, headerLabelCount: 5, preferredMappingSize: 6 }
+}
+[amortization-pipeline-debug] preliminary_records {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  preliminaryRecordCount: 316
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'D',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'bootstrapInstallments'
+}
+[date-normalization-debug] {
+  rawCell: '0001 24/06/2024',
+  extractedDate: '24/06/2024',
+  isoDate: '2024-06-24',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0002 05/08/2024',
+  extractedDate: '05/08/2024',
+  isoDate: '2024-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0003 05/09/2024',
+  extractedDate: '05/09/2024',
+  isoDate: '2024-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0004 05/10/2024',
+  extractedDate: '05/10/2024',
+  isoDate: '2024-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0005 05/11/2024',
+  extractedDate: '05/11/2024',
+  isoDate: '2024-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0006 05/12/2024',
+  extractedDate: '05/12/2024',
+  isoDate: '2024-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0007 05/01/2025',
+  extractedDate: '05/01/2025',
+  isoDate: '2025-01-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0008 05/02/2025',
+  extractedDate: '05/02/2025',
+  isoDate: '2025-02-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0009 05/03/2025',
+  extractedDate: '05/03/2025',
+  isoDate: '2025-03-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0010 05/04/2025',
+  extractedDate: '05/04/2025',
+  isoDate: '2025-04-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0011 05/05/2025',
+  extractedDate: '05/05/2025',
+  isoDate: '2025-05-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0012 05/06/2025',
+  extractedDate: '05/06/2025',
+  isoDate: '2025-06-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0013 05/07/2025',
+  extractedDate: '05/07/2025',
+  isoDate: '2025-07-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0014 05/08/2025',
+  extractedDate: '05/08/2025',
+  isoDate: '2025-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0015 05/09/2025',
+  extractedDate: '05/09/2025',
+  isoDate: '2025-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0016 05/10/2025',
+  extractedDate: '05/10/2025',
+  isoDate: '2025-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0017 05/11/2025',
+  extractedDate: '05/11/2025',
+  isoDate: '2025-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0018 05/12/2025',
+  extractedDate: '05/12/2025',
+  isoDate: '2025-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0019 05/01/2026',
+  extractedDate: '05/01/2026',
+  isoDate: '2026-01-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0020 05/02/2026',
+  extractedDate: '05/02/2026',
+  isoDate: '2026-02-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0021 05/03/2026',
+  extractedDate: '05/03/2026',
+  isoDate: '2026-03-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0022 05/04/2026',
+  extractedDate: '05/04/2026',
+  isoDate: '2026-04-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0023 05/05/2026',
+  extractedDate: '05/05/2026',
+  isoDate: '2026-05-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0024 05/06/2026',
+  extractedDate: '05/06/2026',
+  isoDate: '2026-06-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0025 05/07/2026',
+  extractedDate: '05/07/2026',
+  isoDate: '2026-07-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0026 05/08/2026',
+  extractedDate: '05/08/2026',
+  isoDate: '2026-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0027 05/09/2026',
+  extractedDate: '05/09/2026',
+  isoDate: '2026-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0028 05/10/2026',
+  extractedDate: '05/10/2026',
+  isoDate: '2026-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0029 05/11/2026',
+  extractedDate: '05/11/2026',
+  isoDate: '2026-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0030 05/12/2026',
+  extractedDate: '05/12/2026',
+  isoDate: '2026-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0031 05/01/2027',
+  extractedDate: '05/01/2027',
+  isoDate: '2027-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0032 05/02/2027',
+  extractedDate: '05/02/2027',
+  isoDate: '2027-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0033 05/03/2027',
+  extractedDate: '05/03/2027',
+  isoDate: '2027-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0034 05/04/2027',
+  extractedDate: '05/04/2027',
+  isoDate: '2027-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0035 05/05/2027',
+  extractedDate: '05/05/2027',
+  isoDate: '2027-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0036 05/06/2027',
+  extractedDate: '05/06/2027',
+  isoDate: '2027-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0037 05/07/2027',
+  extractedDate: '05/07/2027',
+  isoDate: '2027-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0038 05/08/2027',
+  extractedDate: '05/08/2027',
+  isoDate: '2027-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0039 05/09/2027',
+  extractedDate: '05/09/2027',
+  isoDate: '2027-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0040 05/10/2027',
+  extractedDate: '05/10/2027',
+  isoDate: '2027-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0041 05/11/2027',
+  extractedDate: '05/11/2027',
+  isoDate: '2027-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0042 05/12/2027',
+  extractedDate: '05/12/2027',
+  isoDate: '2027-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0043 05/01/2028',
+  extractedDate: '05/01/2028',
+  isoDate: '2028-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0044 05/02/2028',
+  extractedDate: '05/02/2028',
+  isoDate: '2028-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0045 05/03/2028',
+  extractedDate: '05/03/2028',
+  isoDate: '2028-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0046 05/04/2028',
+  extractedDate: '05/04/2028',
+  isoDate: '2028-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0047 05/05/2028',
+  extractedDate: '05/05/2028',
+  isoDate: '2028-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0048 05/06/2028',
+  extractedDate: '05/06/2028',
+  isoDate: '2028-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0049 05/07/2028',
+  extractedDate: '05/07/2028',
+  isoDate: '2028-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0050 05/08/2028',
+  extractedDate: '05/08/2028',
+  isoDate: '2028-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0051 05/09/2028',
+  extractedDate: '05/09/2028',
+  isoDate: '2028-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0052 05/10/2028',
+  extractedDate: '05/10/2028',
+  isoDate: '2028-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0053 05/11/2028',
+  extractedDate: '05/11/2028',
+  isoDate: '2028-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0054 05/12/2028',
+  extractedDate: '05/12/2028',
+  isoDate: '2028-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0055 05/01/2029',
+  extractedDate: '05/01/2029',
+  isoDate: '2029-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0056 05/02/2029',
+  extractedDate: '05/02/2029',
+  isoDate: '2029-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0057 05/03/2029',
+  extractedDate: '05/03/2029',
+  isoDate: '2029-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0058 05/04/2029',
+  extractedDate: '05/04/2029',
+  isoDate: '2029-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0059 05/05/2029',
+  extractedDate: '05/05/2029',
+  isoDate: '2029-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0060 05/06/2029',
+  extractedDate: '05/06/2029',
+  isoDate: '2029-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0061 05/07/2029',
+  extractedDate: '05/07/2029',
+  isoDate: '2029-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0062 05/08/2029',
+  extractedDate: '05/08/2029',
+  isoDate: '2029-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0063 05/09/2029',
+  extractedDate: '05/09/2029',
+  isoDate: '2029-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0064 05/10/2029',
+  extractedDate: '05/10/2029',
+  isoDate: '2029-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0065 05/11/2029',
+  extractedDate: '05/11/2029',
+  isoDate: '2029-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0066 05/12/2029',
+  extractedDate: '05/12/2029',
+  isoDate: '2029-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0067 05/01/2030',
+  extractedDate: '05/01/2030',
+  isoDate: '2030-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0068 05/02/2030',
+  extractedDate: '05/02/2030',
+  isoDate: '2030-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0069 05/03/2030',
+  extractedDate: '05/03/2030',
+  isoDate: '2030-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0070 05/04/2030',
+  extractedDate: '05/04/2030',
+  isoDate: '2030-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0071 05/05/2030',
+  extractedDate: '05/05/2030',
+  isoDate: '2030-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0072 05/06/2030',
+  extractedDate: '05/06/2030',
+  isoDate: '2030-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0073 05/07/2030',
+  extractedDate: '05/07/2030',
+  isoDate: '2030-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0074 05/08/2030',
+  extractedDate: '05/08/2030',
+  isoDate: '2030-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0075 05/09/2030',
+  extractedDate: '05/09/2030',
+  isoDate: '2030-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0076 05/10/2030',
+  extractedDate: '05/10/2030',
+  isoDate: '2030-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0077 05/11/2030',
+  extractedDate: '05/11/2030',
+  isoDate: '2030-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0078 05/12/2030',
+  extractedDate: '05/12/2030',
+  isoDate: '2030-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0079 05/01/2031',
+  extractedDate: '05/01/2031',
+  isoDate: '2031-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0080 05/02/2031',
+  extractedDate: '05/02/2031',
+  isoDate: '2031-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0081 05/03/2031',
+  extractedDate: '05/03/2031',
+  isoDate: '2031-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0082 05/04/2031',
+  extractedDate: '05/04/2031',
+  isoDate: '2031-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0083 05/05/2031',
+  extractedDate: '05/05/2031',
+  isoDate: '2031-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0084 05/06/2031',
+  extractedDate: '05/06/2031',
+  isoDate: '2031-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0085 05/07/2031',
+  extractedDate: '05/07/2031',
+  isoDate: '2031-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0086 05/08/2031',
+  extractedDate: '05/08/2031',
+  isoDate: '2031-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0087 05/09/2031',
+  extractedDate: '05/09/2031',
+  isoDate: '2031-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0088 05/10/2031',
+  extractedDate: '05/10/2031',
+  isoDate: '2031-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0089 05/11/2031',
+  extractedDate: '05/11/2031',
+  isoDate: '2031-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0090 05/12/2031',
+  extractedDate: '05/12/2031',
+  isoDate: '2031-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0091 05/01/2032',
+  extractedDate: '05/01/2032',
+  isoDate: '2032-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0092 05/02/2032',
+  extractedDate: '05/02/2032',
+  isoDate: '2032-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0093 05/03/2032',
+  extractedDate: '05/03/2032',
+  isoDate: '2032-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0094 05/04/2032',
+  extractedDate: '05/04/2032',
+  isoDate: '2032-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0095 05/05/2032',
+  extractedDate: '05/05/2032',
+  isoDate: '2032-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0096 05/06/2032',
+  extractedDate: '05/06/2032',
+  isoDate: '2032-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0097 05/07/2032',
+  extractedDate: '05/07/2032',
+  isoDate: '2032-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0098 05/08/2032',
+  extractedDate: '05/08/2032',
+  isoDate: '2032-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0099 05/09/2032',
+  extractedDate: '05/09/2032',
+  isoDate: '2032-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0100 05/10/2032',
+  extractedDate: '05/10/2032',
+  isoDate: '2032-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0101 05/11/2032',
+  extractedDate: '05/11/2032',
+  isoDate: '2032-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0102 05/12/2032',
+  extractedDate: '05/12/2032',
+  isoDate: '2032-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0103 05/01/2033',
+  extractedDate: '05/01/2033',
+  isoDate: '2033-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0104 05/02/2033',
+  extractedDate: '05/02/2033',
+  isoDate: '2033-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0105 05/03/2033',
+  extractedDate: '05/03/2033',
+  isoDate: '2033-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0106 05/04/2033',
+  extractedDate: '05/04/2033',
+  isoDate: '2033-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0107 05/05/2033',
+  extractedDate: '05/05/2033',
+  isoDate: '2033-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0108 05/06/2033',
+  extractedDate: '05/06/2033',
+  isoDate: '2033-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0109 05/07/2033',
+  extractedDate: '05/07/2033',
+  isoDate: '2033-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0110 05/08/2033',
+  extractedDate: '05/08/2033',
+  isoDate: '2033-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0111 05/09/2033',
+  extractedDate: '05/09/2033',
+  isoDate: '2033-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0112 05/10/2033',
+  extractedDate: '05/10/2033',
+  isoDate: '2033-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0113 05/11/2033',
+  extractedDate: '05/11/2033',
+  isoDate: '2033-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0114 05/12/2033',
+  extractedDate: '05/12/2033',
+  isoDate: '2033-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0115 05/01/2034',
+  extractedDate: '05/01/2034',
+  isoDate: '2034-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0116 05/02/2034',
+  extractedDate: '05/02/2034',
+  isoDate: '2034-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0117 05/03/2034',
+  extractedDate: '05/03/2034',
+  isoDate: '2034-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0118 05/04/2034',
+  extractedDate: '05/04/2034',
+  isoDate: '2034-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0119 05/05/2034',
+  extractedDate: '05/05/2034',
+  isoDate: '2034-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0120 05/06/2034',
+  extractedDate: '05/06/2034',
+  isoDate: '2034-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0121 05/07/2034',
+  extractedDate: '05/07/2034',
+  isoDate: '2034-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0122 05/08/2034',
+  extractedDate: '05/08/2034',
+  isoDate: '2034-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0123 05/09/2034',
+  extractedDate: '05/09/2034',
+  isoDate: '2034-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0124 05/10/2034',
+  extractedDate: '05/10/2034',
+  isoDate: '2034-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0125 05/11/2034',
+  extractedDate: '05/11/2034',
+  isoDate: '2034-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0126 05/12/2034',
+  extractedDate: '05/12/2034',
+  isoDate: '2034-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0127 05/01/2035',
+  extractedDate: '05/01/2035',
+  isoDate: '2035-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0128 05/02/2035',
+  extractedDate: '05/02/2035',
+  isoDate: '2035-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0129 05/03/2035',
+  extractedDate: '05/03/2035',
+  isoDate: '2035-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0130 05/04/2035',
+  extractedDate: '05/04/2035',
+  isoDate: '2035-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0131 05/05/2035',
+  extractedDate: '05/05/2035',
+  isoDate: '2035-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0132 05/06/2035',
+  extractedDate: '05/06/2035',
+  isoDate: '2035-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0133 05/07/2035',
+  extractedDate: '05/07/2035',
+  isoDate: '2035-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0134 05/08/2035',
+  extractedDate: '05/08/2035',
+  isoDate: '2035-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0135 05/09/2035',
+  extractedDate: '05/09/2035',
+  isoDate: '2035-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0136 05/10/2035',
+  extractedDate: '05/10/2035',
+  isoDate: '2035-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0137 05/11/2035',
+  extractedDate: '05/11/2035',
+  isoDate: '2035-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0138 05/12/2035',
+  extractedDate: '05/12/2035',
+  isoDate: '2035-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0139 05/01/2036',
+  extractedDate: '05/01/2036',
+  isoDate: '2036-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0140 05/02/2036',
+  extractedDate: '05/02/2036',
+  isoDate: '2036-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0141 05/03/2036',
+  extractedDate: '05/03/2036',
+  isoDate: '2036-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0142 05/04/2036',
+  extractedDate: '05/04/2036',
+  isoDate: '2036-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0143 05/05/2036',
+  extractedDate: '05/05/2036',
+  isoDate: '2036-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0144 05/06/2036',
+  extractedDate: '05/06/2036',
+  isoDate: '2036-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0145 05/07/2036',
+  extractedDate: '05/07/2036',
+  isoDate: '2036-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0146 05/08/2036',
+  extractedDate: '05/08/2036',
+  isoDate: '2036-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0147 05/09/2036',
+  extractedDate: '05/09/2036',
+  isoDate: '2036-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0148 05/10/2036',
+  extractedDate: '05/10/2036',
+  isoDate: '2036-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0149 05/11/2036',
+  extractedDate: '05/11/2036',
+  isoDate: '2036-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0150 05/12/2036',
+  extractedDate: '05/12/2036',
+  isoDate: '2036-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0151 05/01/2037',
+  extractedDate: '05/01/2037',
+  isoDate: '2037-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0152 05/02/2037',
+  extractedDate: '05/02/2037',
+  isoDate: '2037-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0153 05/03/2037',
+  extractedDate: '05/03/2037',
+  isoDate: '2037-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0154 05/04/2037',
+  extractedDate: '05/04/2037',
+  isoDate: '2037-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0155 05/05/2037',
+  extractedDate: '05/05/2037',
+  isoDate: '2037-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0156 05/06/2037',
+  extractedDate: '05/06/2037',
+  isoDate: '2037-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0157 05/07/2037',
+  extractedDate: '05/07/2037',
+  isoDate: '2037-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0158 05/08/2037',
+  extractedDate: '05/08/2037',
+  isoDate: '2037-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0159 05/09/2037',
+  extractedDate: '05/09/2037',
+  isoDate: '2037-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0160 05/10/2037',
+  extractedDate: '05/10/2037',
+  isoDate: '2037-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0161 05/11/2037',
+  extractedDate: '05/11/2037',
+  isoDate: '2037-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0162 05/12/2037',
+  extractedDate: '05/12/2037',
+  isoDate: '2037-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0163 05/01/2038',
+  extractedDate: '05/01/2038',
+  isoDate: '2038-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0164 05/02/2038',
+  extractedDate: '05/02/2038',
+  isoDate: '2038-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0165 05/03/2038',
+  extractedDate: '05/03/2038',
+  isoDate: '2038-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0166 05/04/2038',
+  extractedDate: '05/04/2038',
+  isoDate: '2038-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0167 05/05/2038',
+  extractedDate: '05/05/2038',
+  isoDate: '2038-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0168 05/06/2038',
+  extractedDate: '05/06/2038',
+  isoDate: '2038-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0169 05/07/2038',
+  extractedDate: '05/07/2038',
+  isoDate: '2038-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0170 05/08/2038',
+  extractedDate: '05/08/2038',
+  isoDate: '2038-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0171 05/09/2038',
+  extractedDate: '05/09/2038',
+  isoDate: '2038-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0172 05/10/2038',
+  extractedDate: '05/10/2038',
+  isoDate: '2038-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0173 05/11/2038',
+  extractedDate: '05/11/2038',
+  isoDate: '2038-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0174 05/12/2038',
+  extractedDate: '05/12/2038',
+  isoDate: '2038-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0175 05/01/2039',
+  extractedDate: '05/01/2039',
+  isoDate: '2039-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0176 05/02/2039',
+  extractedDate: '05/02/2039',
+  isoDate: '2039-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0177 05/03/2039',
+  extractedDate: '05/03/2039',
+  isoDate: '2039-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0178 05/04/2039',
+  extractedDate: '05/04/2039',
+  isoDate: '2039-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0179 05/05/2039',
+  extractedDate: '05/05/2039',
+  isoDate: '2039-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0180 05/06/2039',
+  extractedDate: '05/06/2039',
+  isoDate: '2039-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0181 05/07/2039',
+  extractedDate: '05/07/2039',
+  isoDate: '2039-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0182 05/08/2039',
+  extractedDate: '05/08/2039',
+  isoDate: '2039-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0183 05/09/2039',
+  extractedDate: '05/09/2039',
+  isoDate: '2039-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0184 05/10/2039',
+  extractedDate: '05/10/2039',
+  isoDate: '2039-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0185 05/11/2039',
+  extractedDate: '05/11/2039',
+  isoDate: '2039-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0186 05/12/2039',
+  extractedDate: '05/12/2039',
+  isoDate: '2039-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0187 05/01/2040',
+  extractedDate: '05/01/2040',
+  isoDate: '2040-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0188 05/02/2040',
+  extractedDate: '05/02/2040',
+  isoDate: '2040-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0189 05/03/2040',
+  extractedDate: '05/03/2040',
+  isoDate: '2040-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0190 05/04/2040',
+  extractedDate: '05/04/2040',
+  isoDate: '2040-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0191 05/05/2040',
+  extractedDate: '05/05/2040',
+  isoDate: '2040-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0192 05/06/2040',
+  extractedDate: '05/06/2040',
+  isoDate: '2040-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0193 05/07/2040',
+  extractedDate: '05/07/2040',
+  isoDate: '2040-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0194 05/08/2040',
+  extractedDate: '05/08/2040',
+  isoDate: '2040-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0195 05/09/2040',
+  extractedDate: '05/09/2040',
+  isoDate: '2040-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0196 05/10/2040',
+  extractedDate: '05/10/2040',
+  isoDate: '2040-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0197 05/11/2040',
+  extractedDate: '05/11/2040',
+  isoDate: '2040-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0198 05/12/2040',
+  extractedDate: '05/12/2040',
+  isoDate: '2040-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0199 05/01/2041',
+  extractedDate: '05/01/2041',
+  isoDate: '2041-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0200 05/02/2041',
+  extractedDate: '05/02/2041',
+  isoDate: '2041-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0201 05/03/2041',
+  extractedDate: '05/03/2041',
+  isoDate: '2041-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0202 05/04/2041',
+  extractedDate: '05/04/2041',
+  isoDate: '2041-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0203 05/05/2041',
+  extractedDate: '05/05/2041',
+  isoDate: '2041-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0204 05/06/2041',
+  extractedDate: '05/06/2041',
+  isoDate: '2041-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0205 05/07/2041',
+  extractedDate: '05/07/2041',
+  isoDate: '2041-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0206 05/08/2041',
+  extractedDate: '05/08/2041',
+  isoDate: '2041-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0207 05/09/2041',
+  extractedDate: '05/09/2041',
+  isoDate: '2041-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0208 05/10/2041',
+  extractedDate: '05/10/2041',
+  isoDate: '2041-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0209 05/11/2041',
+  extractedDate: '05/11/2041',
+  isoDate: '2041-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0210 05/12/2041',
+  extractedDate: '05/12/2041',
+  isoDate: '2041-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0211 05/01/2042',
+  extractedDate: '05/01/2042',
+  isoDate: '2042-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0212 05/02/2042',
+  extractedDate: '05/02/2042',
+  isoDate: '2042-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0213 05/03/2042',
+  extractedDate: '05/03/2042',
+  isoDate: '2042-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0214 05/04/2042',
+  extractedDate: '05/04/2042',
+  isoDate: '2042-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0215 05/05/2042',
+  extractedDate: '05/05/2042',
+  isoDate: '2042-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0216 05/06/2042',
+  extractedDate: '05/06/2042',
+  isoDate: '2042-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0217 05/07/2042',
+  extractedDate: '05/07/2042',
+  isoDate: '2042-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0218 05/08/2042',
+  extractedDate: '05/08/2042',
+  isoDate: '2042-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0219 05/09/2042',
+  extractedDate: '05/09/2042',
+  isoDate: '2042-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0220 05/10/2042',
+  extractedDate: '05/10/2042',
+  isoDate: '2042-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0221 05/11/2042',
+  extractedDate: '05/11/2042',
+  isoDate: '2042-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0222 05/12/2042',
+  extractedDate: '05/12/2042',
+  isoDate: '2042-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0223 05/01/2043',
+  extractedDate: '05/01/2043',
+  isoDate: '2043-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0224 05/02/2043',
+  extractedDate: '05/02/2043',
+  isoDate: '2043-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0225 05/03/2043',
+  extractedDate: '05/03/2043',
+  isoDate: '2043-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0226 05/04/2043',
+  extractedDate: '05/04/2043',
+  isoDate: '2043-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0227 05/05/2043',
+  extractedDate: '05/05/2043',
+  isoDate: '2043-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0228 05/06/2043',
+  extractedDate: '05/06/2043',
+  isoDate: '2043-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0229 05/07/2043',
+  extractedDate: '05/07/2043',
+  isoDate: '2043-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0230 05/08/2043',
+  extractedDate: '05/08/2043',
+  isoDate: '2043-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0231 05/09/2043',
+  extractedDate: '05/09/2043',
+  isoDate: '2043-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0232 05/10/2043',
+  extractedDate: '05/10/2043',
+  isoDate: '2043-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0233 05/11/2043',
+  extractedDate: '05/11/2043',
+  isoDate: '2043-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0234 05/12/2043',
+  extractedDate: '05/12/2043',
+  isoDate: '2043-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0235 05/01/2044',
+  extractedDate: '05/01/2044',
+  isoDate: '2044-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0236 05/02/2044',
+  extractedDate: '05/02/2044',
+  isoDate: '2044-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0237 05/03/2044',
+  extractedDate: '05/03/2044',
+  isoDate: '2044-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0238 05/04/2044',
+  extractedDate: '05/04/2044',
+  isoDate: '2044-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0239 05/05/2044',
+  extractedDate: '05/05/2044',
+  isoDate: '2044-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0240 05/06/2044',
+  extractedDate: '05/06/2044',
+  isoDate: '2044-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0241 05/07/2044',
+  extractedDate: '05/07/2044',
+  isoDate: '2044-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0242 05/08/2044',
+  extractedDate: '05/08/2044',
+  isoDate: '2044-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0243 05/09/2044',
+  extractedDate: '05/09/2044',
+  isoDate: '2044-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0244 05/10/2044',
+  extractedDate: '05/10/2044',
+  isoDate: '2044-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0245 05/11/2044',
+  extractedDate: '05/11/2044',
+  isoDate: '2044-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0246 05/12/2044',
+  extractedDate: '05/12/2044',
+  isoDate: '2044-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0247 05/01/2045',
+  extractedDate: '05/01/2045',
+  isoDate: '2045-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0248 05/02/2045',
+  extractedDate: '05/02/2045',
+  isoDate: '2045-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0249 05/03/2045',
+  extractedDate: '05/03/2045',
+  isoDate: '2045-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0250 05/04/2045',
+  extractedDate: '05/04/2045',
+  isoDate: '2045-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0251 05/05/2045',
+  extractedDate: '05/05/2045',
+  isoDate: '2045-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0252 05/06/2045',
+  extractedDate: '05/06/2045',
+  isoDate: '2045-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0253 05/07/2045',
+  extractedDate: '05/07/2045',
+  isoDate: '2045-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0254 05/08/2045',
+  extractedDate: '05/08/2045',
+  isoDate: '2045-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0255 05/09/2045',
+  extractedDate: '05/09/2045',
+  isoDate: '2045-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0256 05/10/2045',
+  extractedDate: '05/10/2045',
+  isoDate: '2045-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0257 05/11/2045',
+  extractedDate: '05/11/2045',
+  isoDate: '2045-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0258 05/12/2045',
+  extractedDate: '05/12/2045',
+  isoDate: '2045-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0259 05/01/2046',
+  extractedDate: '05/01/2046',
+  isoDate: '2046-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0260 05/02/2046',
+  extractedDate: '05/02/2046',
+  isoDate: '2046-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0261 05/03/2046',
+  extractedDate: '05/03/2046',
+  isoDate: '2046-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0262 05/04/2046',
+  extractedDate: '05/04/2046',
+  isoDate: '2046-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0263 05/05/2046',
+  extractedDate: '05/05/2046',
+  isoDate: '2046-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0264 05/06/2046',
+  extractedDate: '05/06/2046',
+  isoDate: '2046-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0265 05/07/2046',
+  extractedDate: '05/07/2046',
+  isoDate: '2046-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0266 05/08/2046',
+  extractedDate: '05/08/2046',
+  isoDate: '2046-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0267 05/09/2046',
+  extractedDate: '05/09/2046',
+  isoDate: '2046-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0268 05/10/2046',
+  extractedDate: '05/10/2046',
+  isoDate: '2046-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0269 05/11/2046',
+  extractedDate: '05/11/2046',
+  isoDate: '2046-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0270 05/12/2046',
+  extractedDate: '05/12/2046',
+  isoDate: '2046-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0271 05/01/2047',
+  extractedDate: '05/01/2047',
+  isoDate: '2047-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0272 05/02/2047',
+  extractedDate: '05/02/2047',
+  isoDate: '2047-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0273 05/03/2047',
+  extractedDate: '05/03/2047',
+  isoDate: '2047-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0274 05/04/2047',
+  extractedDate: '05/04/2047',
+  isoDate: '2047-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0275 05/05/2047',
+  extractedDate: '05/05/2047',
+  isoDate: '2047-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0276 05/06/2047',
+  extractedDate: '05/06/2047',
+  isoDate: '2047-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0277 05/07/2047',
+  extractedDate: '05/07/2047',
+  isoDate: '2047-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0278 05/08/2047',
+  extractedDate: '05/08/2047',
+  isoDate: '2047-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0279 05/09/2047',
+  extractedDate: '05/09/2047',
+  isoDate: '2047-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0280 05/10/2047',
+  extractedDate: '05/10/2047',
+  isoDate: '2047-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0281 05/11/2047',
+  extractedDate: '05/11/2047',
+  isoDate: '2047-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0282 05/12/2047',
+  extractedDate: '05/12/2047',
+  isoDate: '2047-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0283 05/01/2048',
+  extractedDate: '05/01/2048',
+  isoDate: '2048-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0284 05/02/2048',
+  extractedDate: '05/02/2048',
+  isoDate: '2048-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0285 05/03/2048',
+  extractedDate: '05/03/2048',
+  isoDate: '2048-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0286 05/04/2048',
+  extractedDate: '05/04/2048',
+  isoDate: '2048-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0287 05/05/2048',
+  extractedDate: '05/05/2048',
+  isoDate: '2048-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0288 05/06/2048',
+  extractedDate: '05/06/2048',
+  isoDate: '2048-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0289 05/07/2048',
+  extractedDate: '05/07/2048',
+  isoDate: '2048-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0290 05/08/2048',
+  extractedDate: '05/08/2048',
+  isoDate: '2048-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0291 05/09/2048',
+  extractedDate: '05/09/2048',
+  isoDate: '2048-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0292 05/10/2048',
+  extractedDate: '05/10/2048',
+  isoDate: '2048-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0293 05/11/2048',
+  extractedDate: '05/11/2048',
+  isoDate: '2048-11-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0294 05/12/2048',
+  extractedDate: '05/12/2048',
+  isoDate: '2048-12-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0295 05/01/2049',
+  extractedDate: '05/01/2049',
+  isoDate: '2049-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0296 05/02/2049',
+  extractedDate: '05/02/2049',
+  isoDate: '2049-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0297 05/03/2049',
+  extractedDate: '05/03/2049',
+  isoDate: '2049-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0298 05/04/2049',
+  extractedDate: '05/04/2049',
+  isoDate: '2049-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0299 05/05/2049',
+  extractedDate: '05/05/2049',
+  isoDate: '2049-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0300 05/06/2049',
+  extractedDate: '05/06/2049',
+  isoDate: '2049-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0301 05/07/2049',
+  extractedDate: '05/07/2049',
+  isoDate: '2049-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0302 05/08/2049',
+  extractedDate: '05/08/2049',
+  isoDate: '2049-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0303 05/09/2049',
+  extractedDate: '05/09/2049',
+  isoDate: '2049-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0304 05/10/2049',
+  extractedDate: '05/10/2049',
+  isoDate: '2049-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0305 05/11/2049',
+  extractedDate: '05/11/2049',
+  isoDate: '2049-11-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0306 05/12/2049',
+  extractedDate: '05/12/2049',
+  isoDate: '2049-12-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0307 05/01/2050',
+  extractedDate: '05/01/2050',
+  isoDate: '2050-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0308 05/02/2050',
+  extractedDate: '05/02/2050',
+  isoDate: '2050-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0309 05/03/2050',
+  extractedDate: '05/03/2050',
+  isoDate: '2050-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0310 05/04/2050',
+  extractedDate: '05/04/2050',
+  isoDate: '2050-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0311 05/05/2050',
+  extractedDate: '05/05/2050',
+  isoDate: '2050-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0312 05/06/2050',
+  extractedDate: '05/06/2050',
+  isoDate: '2050-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0313 05/07/2050',
+  extractedDate: '05/07/2050',
+  isoDate: '2050-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0314 05/08/2050',
+  extractedDate: '05/08/2050',
+  isoDate: '2050-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0315 05/09/2050',
+  extractedDate: '05/09/2050',
+  isoDate: '2050-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0316 05/10/2050',
+  extractedDate: '05/10/2050',
+  isoDate: '2050-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'D',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'bootstrapInstallments',
+  artifact: { kind: 'array', length: 316, sample: [ [Object], [Object] ] }
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'D',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'phaseDetection'
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'D',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'phaseDetection',
+  artifact: {
+    segmentCount: null,
+    transitionCount: null,
+    rowRecordCount: undefined
+  }
+}
+[installment-survival-debug] deferred_survival_timeline {
+  checkpoint: 'stage_d_bootstrap_before_merge',
+  deferredRowCount: 0,
+  datedRowCount: 316,
+  undatedRowCount: 0,
+  totalRowCount: 316,
+  amortizingRowCount: 299,
+  insuranceBearingRowCount: 316,
+  segmentDeferredRowCount: 0,
+  segmentAmortizationRowCount: 316,
+  segmentBreakdown: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      rowCount: 316,
+      datedInSegment: 316,
+      deferredInSegment: 0,
+      amortizingInSegment: 299
+    }
+  ],
+  reconstructedRowCount: 463,
+  rowRecordCount: 316,
+  segmentCount: 1,
+  segments: [ { phase: 'amortization', start: 0, end: 315 } ]
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'E',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'mappingHypotheses'
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: true,
+  rowCount: 5,
+  loanPhase: 'amortization',
+  rolesBeforeValidation: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  },
+  rolesAfterValidation: null
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: true,
+  rowCount: 5,
+  loanPhase: 'amortization',
+  rolesBeforeValidation: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  },
+  rolesAfterValidation: null
+}
+[spatial-parser-business-validation] {
+  rejectedPaymentColumn: null,
+  reassignedRemainingCapitalColumn: 5,
+  reassignedPaymentColumn: null,
+  paymentMedian: 405.43,
+  remainingCapitalMedian: 86287.16,
+  insuranceMedian: 37.64,
+  reason: 'business_validation_pass_completed',
+  loanPhase: 'amortization'
+}
+[spatial-parser-trace] {
+  functionName: 'applyBusinessColumnRoleValidation',
+  entered: false,
+  rowCount: 5,
+  loanPhase: 'amortization',
+  rolesBeforeValidation: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  },
+  rolesAfterValidation: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  }
+}
+[spatial-parser-trace] {
+  functionName: 'refineColumnRoleMapping',
+  entered: false,
+  rowCount: 5,
+  loanPhase: 'amortization',
+  rolesBeforeValidation: null,
+  rolesAfterValidation: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  }
+}
+[date-normalization-debug] {
+  rawCell: '0001 24/06/2024',
+  extractedDate: '24/06/2024',
+  isoDate: '2024-06-24',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0002 05/08/2024',
+  extractedDate: '05/08/2024',
+  isoDate: '2024-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0003 05/09/2024',
+  extractedDate: '05/09/2024',
+  isoDate: '2024-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0004 05/10/2024',
+  extractedDate: '05/10/2024',
+  isoDate: '2024-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0005 05/11/2024',
+  extractedDate: '05/11/2024',
+  isoDate: '2024-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0006 05/12/2024',
+  extractedDate: '05/12/2024',
+  isoDate: '2024-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0007 05/01/2025',
+  extractedDate: '05/01/2025',
+  isoDate: '2025-01-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0008 05/02/2025',
+  extractedDate: '05/02/2025',
+  isoDate: '2025-02-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0009 05/03/2025',
+  extractedDate: '05/03/2025',
+  isoDate: '2025-03-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0010 05/04/2025',
+  extractedDate: '05/04/2025',
+  isoDate: '2025-04-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0011 05/05/2025',
+  extractedDate: '05/05/2025',
+  isoDate: '2025-05-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0012 05/06/2025',
+  extractedDate: '05/06/2025',
+  isoDate: '2025-06-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0013 05/07/2025',
+  extractedDate: '05/07/2025',
+  isoDate: '2025-07-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0014 05/08/2025',
+  extractedDate: '05/08/2025',
+  isoDate: '2025-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0015 05/09/2025',
+  extractedDate: '05/09/2025',
+  isoDate: '2025-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0016 05/10/2025',
+  extractedDate: '05/10/2025',
+  isoDate: '2025-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0017 05/11/2025',
+  extractedDate: '05/11/2025',
+  isoDate: '2025-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0018 05/12/2025',
+  extractedDate: '05/12/2025',
+  isoDate: '2025-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0019 05/01/2026',
+  extractedDate: '05/01/2026',
+  isoDate: '2026-01-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0020 05/02/2026',
+  extractedDate: '05/02/2026',
+  isoDate: '2026-02-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0021 05/03/2026',
+  extractedDate: '05/03/2026',
+  isoDate: '2026-03-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0022 05/04/2026',
+  extractedDate: '05/04/2026',
+  isoDate: '2026-04-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0023 05/05/2026',
+  extractedDate: '05/05/2026',
+  isoDate: '2026-05-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0024 05/06/2026',
+  extractedDate: '05/06/2026',
+  isoDate: '2026-06-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0025 05/07/2026',
+  extractedDate: '05/07/2026',
+  isoDate: '2026-07-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0026 05/08/2026',
+  extractedDate: '05/08/2026',
+  isoDate: '2026-08-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0027 05/09/2026',
+  extractedDate: '05/09/2026',
+  isoDate: '2026-09-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0028 05/10/2026',
+  extractedDate: '05/10/2026',
+  isoDate: '2026-10-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0029 05/11/2026',
+  extractedDate: '05/11/2026',
+  isoDate: '2026-11-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0030 05/12/2026',
+  extractedDate: '05/12/2026',
+  isoDate: '2026-12-05',
+  rowIndex: 1,
+  columnIndex: 1,
+  pdfPage: 1
+}
+[date-normalization-debug] {
+  rawCell: '0031 05/01/2027',
+  extractedDate: '05/01/2027',
+  isoDate: '2027-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0032 05/02/2027',
+  extractedDate: '05/02/2027',
+  isoDate: '2027-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0033 05/03/2027',
+  extractedDate: '05/03/2027',
+  isoDate: '2027-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0034 05/04/2027',
+  extractedDate: '05/04/2027',
+  isoDate: '2027-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0035 05/05/2027',
+  extractedDate: '05/05/2027',
+  isoDate: '2027-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0036 05/06/2027',
+  extractedDate: '05/06/2027',
+  isoDate: '2027-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0037 05/07/2027',
+  extractedDate: '05/07/2027',
+  isoDate: '2027-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0038 05/08/2027',
+  extractedDate: '05/08/2027',
+  isoDate: '2027-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0039 05/09/2027',
+  extractedDate: '05/09/2027',
+  isoDate: '2027-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0040 05/10/2027',
+  extractedDate: '05/10/2027',
+  isoDate: '2027-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0041 05/11/2027',
+  extractedDate: '05/11/2027',
+  isoDate: '2027-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0042 05/12/2027',
+  extractedDate: '05/12/2027',
+  isoDate: '2027-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0043 05/01/2028',
+  extractedDate: '05/01/2028',
+  isoDate: '2028-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0044 05/02/2028',
+  extractedDate: '05/02/2028',
+  isoDate: '2028-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0045 05/03/2028',
+  extractedDate: '05/03/2028',
+  isoDate: '2028-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0046 05/04/2028',
+  extractedDate: '05/04/2028',
+  isoDate: '2028-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0047 05/05/2028',
+  extractedDate: '05/05/2028',
+  isoDate: '2028-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0048 05/06/2028',
+  extractedDate: '05/06/2028',
+  isoDate: '2028-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0049 05/07/2028',
+  extractedDate: '05/07/2028',
+  isoDate: '2028-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0050 05/08/2028',
+  extractedDate: '05/08/2028',
+  isoDate: '2028-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0051 05/09/2028',
+  extractedDate: '05/09/2028',
+  isoDate: '2028-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0052 05/10/2028',
+  extractedDate: '05/10/2028',
+  isoDate: '2028-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0053 05/11/2028',
+  extractedDate: '05/11/2028',
+  isoDate: '2028-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0054 05/12/2028',
+  extractedDate: '05/12/2028',
+  isoDate: '2028-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0055 05/01/2029',
+  extractedDate: '05/01/2029',
+  isoDate: '2029-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0056 05/02/2029',
+  extractedDate: '05/02/2029',
+  isoDate: '2029-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0057 05/03/2029',
+  extractedDate: '05/03/2029',
+  isoDate: '2029-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0058 05/04/2029',
+  extractedDate: '05/04/2029',
+  isoDate: '2029-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0059 05/05/2029',
+  extractedDate: '05/05/2029',
+  isoDate: '2029-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0060 05/06/2029',
+  extractedDate: '05/06/2029',
+  isoDate: '2029-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0061 05/07/2029',
+  extractedDate: '05/07/2029',
+  isoDate: '2029-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0062 05/08/2029',
+  extractedDate: '05/08/2029',
+  isoDate: '2029-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0063 05/09/2029',
+  extractedDate: '05/09/2029',
+  isoDate: '2029-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0064 05/10/2029',
+  extractedDate: '05/10/2029',
+  isoDate: '2029-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0065 05/11/2029',
+  extractedDate: '05/11/2029',
+  isoDate: '2029-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0066 05/12/2029',
+  extractedDate: '05/12/2029',
+  isoDate: '2029-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0067 05/01/2030',
+  extractedDate: '05/01/2030',
+  isoDate: '2030-01-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0068 05/02/2030',
+  extractedDate: '05/02/2030',
+  isoDate: '2030-02-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0069 05/03/2030',
+  extractedDate: '05/03/2030',
+  isoDate: '2030-03-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0070 05/04/2030',
+  extractedDate: '05/04/2030',
+  isoDate: '2030-04-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0071 05/05/2030',
+  extractedDate: '05/05/2030',
+  isoDate: '2030-05-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0072 05/06/2030',
+  extractedDate: '05/06/2030',
+  isoDate: '2030-06-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0073 05/07/2030',
+  extractedDate: '05/07/2030',
+  isoDate: '2030-07-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0074 05/08/2030',
+  extractedDate: '05/08/2030',
+  isoDate: '2030-08-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0075 05/09/2030',
+  extractedDate: '05/09/2030',
+  isoDate: '2030-09-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0076 05/10/2030',
+  extractedDate: '05/10/2030',
+  isoDate: '2030-10-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0077 05/11/2030',
+  extractedDate: '05/11/2030',
+  isoDate: '2030-11-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0078 05/12/2030',
+  extractedDate: '05/12/2030',
+  isoDate: '2030-12-05',
+  rowIndex: 2,
+  columnIndex: 1,
+  pdfPage: 2
+}
+[date-normalization-debug] {
+  rawCell: '0079 05/01/2031',
+  extractedDate: '05/01/2031',
+  isoDate: '2031-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0080 05/02/2031',
+  extractedDate: '05/02/2031',
+  isoDate: '2031-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0081 05/03/2031',
+  extractedDate: '05/03/2031',
+  isoDate: '2031-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0082 05/04/2031',
+  extractedDate: '05/04/2031',
+  isoDate: '2031-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0083 05/05/2031',
+  extractedDate: '05/05/2031',
+  isoDate: '2031-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0084 05/06/2031',
+  extractedDate: '05/06/2031',
+  isoDate: '2031-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0085 05/07/2031',
+  extractedDate: '05/07/2031',
+  isoDate: '2031-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0086 05/08/2031',
+  extractedDate: '05/08/2031',
+  isoDate: '2031-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0087 05/09/2031',
+  extractedDate: '05/09/2031',
+  isoDate: '2031-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0088 05/10/2031',
+  extractedDate: '05/10/2031',
+  isoDate: '2031-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0089 05/11/2031',
+  extractedDate: '05/11/2031',
+  isoDate: '2031-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0090 05/12/2031',
+  extractedDate: '05/12/2031',
+  isoDate: '2031-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0091 05/01/2032',
+  extractedDate: '05/01/2032',
+  isoDate: '2032-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0092 05/02/2032',
+  extractedDate: '05/02/2032',
+  isoDate: '2032-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0093 05/03/2032',
+  extractedDate: '05/03/2032',
+  isoDate: '2032-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0094 05/04/2032',
+  extractedDate: '05/04/2032',
+  isoDate: '2032-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0095 05/05/2032',
+  extractedDate: '05/05/2032',
+  isoDate: '2032-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0096 05/06/2032',
+  extractedDate: '05/06/2032',
+  isoDate: '2032-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0097 05/07/2032',
+  extractedDate: '05/07/2032',
+  isoDate: '2032-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0098 05/08/2032',
+  extractedDate: '05/08/2032',
+  isoDate: '2032-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0099 05/09/2032',
+  extractedDate: '05/09/2032',
+  isoDate: '2032-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0100 05/10/2032',
+  extractedDate: '05/10/2032',
+  isoDate: '2032-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0101 05/11/2032',
+  extractedDate: '05/11/2032',
+  isoDate: '2032-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0102 05/12/2032',
+  extractedDate: '05/12/2032',
+  isoDate: '2032-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0103 05/01/2033',
+  extractedDate: '05/01/2033',
+  isoDate: '2033-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0104 05/02/2033',
+  extractedDate: '05/02/2033',
+  isoDate: '2033-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0105 05/03/2033',
+  extractedDate: '05/03/2033',
+  isoDate: '2033-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0106 05/04/2033',
+  extractedDate: '05/04/2033',
+  isoDate: '2033-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0107 05/05/2033',
+  extractedDate: '05/05/2033',
+  isoDate: '2033-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0108 05/06/2033',
+  extractedDate: '05/06/2033',
+  isoDate: '2033-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0109 05/07/2033',
+  extractedDate: '05/07/2033',
+  isoDate: '2033-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0110 05/08/2033',
+  extractedDate: '05/08/2033',
+  isoDate: '2033-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0111 05/09/2033',
+  extractedDate: '05/09/2033',
+  isoDate: '2033-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0112 05/10/2033',
+  extractedDate: '05/10/2033',
+  isoDate: '2033-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0113 05/11/2033',
+  extractedDate: '05/11/2033',
+  isoDate: '2033-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0114 05/12/2033',
+  extractedDate: '05/12/2033',
+  isoDate: '2033-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0115 05/01/2034',
+  extractedDate: '05/01/2034',
+  isoDate: '2034-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0116 05/02/2034',
+  extractedDate: '05/02/2034',
+  isoDate: '2034-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0117 05/03/2034',
+  extractedDate: '05/03/2034',
+  isoDate: '2034-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0118 05/04/2034',
+  extractedDate: '05/04/2034',
+  isoDate: '2034-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0119 05/05/2034',
+  extractedDate: '05/05/2034',
+  isoDate: '2034-05-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0120 05/06/2034',
+  extractedDate: '05/06/2034',
+  isoDate: '2034-06-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0121 05/07/2034',
+  extractedDate: '05/07/2034',
+  isoDate: '2034-07-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0122 05/08/2034',
+  extractedDate: '05/08/2034',
+  isoDate: '2034-08-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0123 05/09/2034',
+  extractedDate: '05/09/2034',
+  isoDate: '2034-09-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0124 05/10/2034',
+  extractedDate: '05/10/2034',
+  isoDate: '2034-10-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0125 05/11/2034',
+  extractedDate: '05/11/2034',
+  isoDate: '2034-11-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0126 05/12/2034',
+  extractedDate: '05/12/2034',
+  isoDate: '2034-12-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0127 05/01/2035',
+  extractedDate: '05/01/2035',
+  isoDate: '2035-01-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0128 05/02/2035',
+  extractedDate: '05/02/2035',
+  isoDate: '2035-02-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0129 05/03/2035',
+  extractedDate: '05/03/2035',
+  isoDate: '2035-03-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0130 05/04/2035',
+  extractedDate: '05/04/2035',
+  isoDate: '2035-04-05',
+  rowIndex: 3,
+  columnIndex: 1,
+  pdfPage: 3
+}
+[date-normalization-debug] {
+  rawCell: '0131 05/05/2035',
+  extractedDate: '05/05/2035',
+  isoDate: '2035-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0132 05/06/2035',
+  extractedDate: '05/06/2035',
+  isoDate: '2035-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0133 05/07/2035',
+  extractedDate: '05/07/2035',
+  isoDate: '2035-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0134 05/08/2035',
+  extractedDate: '05/08/2035',
+  isoDate: '2035-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0135 05/09/2035',
+  extractedDate: '05/09/2035',
+  isoDate: '2035-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0136 05/10/2035',
+  extractedDate: '05/10/2035',
+  isoDate: '2035-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0137 05/11/2035',
+  extractedDate: '05/11/2035',
+  isoDate: '2035-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0138 05/12/2035',
+  extractedDate: '05/12/2035',
+  isoDate: '2035-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0139 05/01/2036',
+  extractedDate: '05/01/2036',
+  isoDate: '2036-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0140 05/02/2036',
+  extractedDate: '05/02/2036',
+  isoDate: '2036-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0141 05/03/2036',
+  extractedDate: '05/03/2036',
+  isoDate: '2036-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0142 05/04/2036',
+  extractedDate: '05/04/2036',
+  isoDate: '2036-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0143 05/05/2036',
+  extractedDate: '05/05/2036',
+  isoDate: '2036-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0144 05/06/2036',
+  extractedDate: '05/06/2036',
+  isoDate: '2036-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0145 05/07/2036',
+  extractedDate: '05/07/2036',
+  isoDate: '2036-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0146 05/08/2036',
+  extractedDate: '05/08/2036',
+  isoDate: '2036-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0147 05/09/2036',
+  extractedDate: '05/09/2036',
+  isoDate: '2036-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0148 05/10/2036',
+  extractedDate: '05/10/2036',
+  isoDate: '2036-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0149 05/11/2036',
+  extractedDate: '05/11/2036',
+  isoDate: '2036-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0150 05/12/2036',
+  extractedDate: '05/12/2036',
+  isoDate: '2036-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0151 05/01/2037',
+  extractedDate: '05/01/2037',
+  isoDate: '2037-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0152 05/02/2037',
+  extractedDate: '05/02/2037',
+  isoDate: '2037-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0153 05/03/2037',
+  extractedDate: '05/03/2037',
+  isoDate: '2037-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0154 05/04/2037',
+  extractedDate: '05/04/2037',
+  isoDate: '2037-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0155 05/05/2037',
+  extractedDate: '05/05/2037',
+  isoDate: '2037-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0156 05/06/2037',
+  extractedDate: '05/06/2037',
+  isoDate: '2037-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0157 05/07/2037',
+  extractedDate: '05/07/2037',
+  isoDate: '2037-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0158 05/08/2037',
+  extractedDate: '05/08/2037',
+  isoDate: '2037-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0159 05/09/2037',
+  extractedDate: '05/09/2037',
+  isoDate: '2037-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0160 05/10/2037',
+  extractedDate: '05/10/2037',
+  isoDate: '2037-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0161 05/11/2037',
+  extractedDate: '05/11/2037',
+  isoDate: '2037-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0162 05/12/2037',
+  extractedDate: '05/12/2037',
+  isoDate: '2037-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0163 05/01/2038',
+  extractedDate: '05/01/2038',
+  isoDate: '2038-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0164 05/02/2038',
+  extractedDate: '05/02/2038',
+  isoDate: '2038-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0165 05/03/2038',
+  extractedDate: '05/03/2038',
+  isoDate: '2038-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0166 05/04/2038',
+  extractedDate: '05/04/2038',
+  isoDate: '2038-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0167 05/05/2038',
+  extractedDate: '05/05/2038',
+  isoDate: '2038-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0168 05/06/2038',
+  extractedDate: '05/06/2038',
+  isoDate: '2038-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0169 05/07/2038',
+  extractedDate: '05/07/2038',
+  isoDate: '2038-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0170 05/08/2038',
+  extractedDate: '05/08/2038',
+  isoDate: '2038-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0171 05/09/2038',
+  extractedDate: '05/09/2038',
+  isoDate: '2038-09-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0172 05/10/2038',
+  extractedDate: '05/10/2038',
+  isoDate: '2038-10-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0173 05/11/2038',
+  extractedDate: '05/11/2038',
+  isoDate: '2038-11-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0174 05/12/2038',
+  extractedDate: '05/12/2038',
+  isoDate: '2038-12-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0175 05/01/2039',
+  extractedDate: '05/01/2039',
+  isoDate: '2039-01-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0176 05/02/2039',
+  extractedDate: '05/02/2039',
+  isoDate: '2039-02-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0177 05/03/2039',
+  extractedDate: '05/03/2039',
+  isoDate: '2039-03-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0178 05/04/2039',
+  extractedDate: '05/04/2039',
+  isoDate: '2039-04-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0179 05/05/2039',
+  extractedDate: '05/05/2039',
+  isoDate: '2039-05-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0180 05/06/2039',
+  extractedDate: '05/06/2039',
+  isoDate: '2039-06-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0181 05/07/2039',
+  extractedDate: '05/07/2039',
+  isoDate: '2039-07-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0182 05/08/2039',
+  extractedDate: '05/08/2039',
+  isoDate: '2039-08-05',
+  rowIndex: 4,
+  columnIndex: 1,
+  pdfPage: 4
+}
+[date-normalization-debug] {
+  rawCell: '0183 05/09/2039',
+  extractedDate: '05/09/2039',
+  isoDate: '2039-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0184 05/10/2039',
+  extractedDate: '05/10/2039',
+  isoDate: '2039-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0185 05/11/2039',
+  extractedDate: '05/11/2039',
+  isoDate: '2039-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0186 05/12/2039',
+  extractedDate: '05/12/2039',
+  isoDate: '2039-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0187 05/01/2040',
+  extractedDate: '05/01/2040',
+  isoDate: '2040-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0188 05/02/2040',
+  extractedDate: '05/02/2040',
+  isoDate: '2040-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0189 05/03/2040',
+  extractedDate: '05/03/2040',
+  isoDate: '2040-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0190 05/04/2040',
+  extractedDate: '05/04/2040',
+  isoDate: '2040-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0191 05/05/2040',
+  extractedDate: '05/05/2040',
+  isoDate: '2040-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0192 05/06/2040',
+  extractedDate: '05/06/2040',
+  isoDate: '2040-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0193 05/07/2040',
+  extractedDate: '05/07/2040',
+  isoDate: '2040-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0194 05/08/2040',
+  extractedDate: '05/08/2040',
+  isoDate: '2040-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0195 05/09/2040',
+  extractedDate: '05/09/2040',
+  isoDate: '2040-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0196 05/10/2040',
+  extractedDate: '05/10/2040',
+  isoDate: '2040-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0197 05/11/2040',
+  extractedDate: '05/11/2040',
+  isoDate: '2040-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0198 05/12/2040',
+  extractedDate: '05/12/2040',
+  isoDate: '2040-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0199 05/01/2041',
+  extractedDate: '05/01/2041',
+  isoDate: '2041-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0200 05/02/2041',
+  extractedDate: '05/02/2041',
+  isoDate: '2041-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0201 05/03/2041',
+  extractedDate: '05/03/2041',
+  isoDate: '2041-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0202 05/04/2041',
+  extractedDate: '05/04/2041',
+  isoDate: '2041-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0203 05/05/2041',
+  extractedDate: '05/05/2041',
+  isoDate: '2041-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0204 05/06/2041',
+  extractedDate: '05/06/2041',
+  isoDate: '2041-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0205 05/07/2041',
+  extractedDate: '05/07/2041',
+  isoDate: '2041-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0206 05/08/2041',
+  extractedDate: '05/08/2041',
+  isoDate: '2041-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0207 05/09/2041',
+  extractedDate: '05/09/2041',
+  isoDate: '2041-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0208 05/10/2041',
+  extractedDate: '05/10/2041',
+  isoDate: '2041-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0209 05/11/2041',
+  extractedDate: '05/11/2041',
+  isoDate: '2041-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0210 05/12/2041',
+  extractedDate: '05/12/2041',
+  isoDate: '2041-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0211 05/01/2042',
+  extractedDate: '05/01/2042',
+  isoDate: '2042-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0212 05/02/2042',
+  extractedDate: '05/02/2042',
+  isoDate: '2042-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0213 05/03/2042',
+  extractedDate: '05/03/2042',
+  isoDate: '2042-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0214 05/04/2042',
+  extractedDate: '05/04/2042',
+  isoDate: '2042-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0215 05/05/2042',
+  extractedDate: '05/05/2042',
+  isoDate: '2042-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0216 05/06/2042',
+  extractedDate: '05/06/2042',
+  isoDate: '2042-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0217 05/07/2042',
+  extractedDate: '05/07/2042',
+  isoDate: '2042-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0218 05/08/2042',
+  extractedDate: '05/08/2042',
+  isoDate: '2042-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0219 05/09/2042',
+  extractedDate: '05/09/2042',
+  isoDate: '2042-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0220 05/10/2042',
+  extractedDate: '05/10/2042',
+  isoDate: '2042-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0221 05/11/2042',
+  extractedDate: '05/11/2042',
+  isoDate: '2042-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0222 05/12/2042',
+  extractedDate: '05/12/2042',
+  isoDate: '2042-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0223 05/01/2043',
+  extractedDate: '05/01/2043',
+  isoDate: '2043-01-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0224 05/02/2043',
+  extractedDate: '05/02/2043',
+  isoDate: '2043-02-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0225 05/03/2043',
+  extractedDate: '05/03/2043',
+  isoDate: '2043-03-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0226 05/04/2043',
+  extractedDate: '05/04/2043',
+  isoDate: '2043-04-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0227 05/05/2043',
+  extractedDate: '05/05/2043',
+  isoDate: '2043-05-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0228 05/06/2043',
+  extractedDate: '05/06/2043',
+  isoDate: '2043-06-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0229 05/07/2043',
+  extractedDate: '05/07/2043',
+  isoDate: '2043-07-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0230 05/08/2043',
+  extractedDate: '05/08/2043',
+  isoDate: '2043-08-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0231 05/09/2043',
+  extractedDate: '05/09/2043',
+  isoDate: '2043-09-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0232 05/10/2043',
+  extractedDate: '05/10/2043',
+  isoDate: '2043-10-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0233 05/11/2043',
+  extractedDate: '05/11/2043',
+  isoDate: '2043-11-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0234 05/12/2043',
+  extractedDate: '05/12/2043',
+  isoDate: '2043-12-05',
+  rowIndex: 5,
+  columnIndex: 1,
+  pdfPage: 5
+}
+[date-normalization-debug] {
+  rawCell: '0235 05/01/2044',
+  extractedDate: '05/01/2044',
+  isoDate: '2044-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0236 05/02/2044',
+  extractedDate: '05/02/2044',
+  isoDate: '2044-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0237 05/03/2044',
+  extractedDate: '05/03/2044',
+  isoDate: '2044-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0238 05/04/2044',
+  extractedDate: '05/04/2044',
+  isoDate: '2044-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0239 05/05/2044',
+  extractedDate: '05/05/2044',
+  isoDate: '2044-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0240 05/06/2044',
+  extractedDate: '05/06/2044',
+  isoDate: '2044-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0241 05/07/2044',
+  extractedDate: '05/07/2044',
+  isoDate: '2044-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0242 05/08/2044',
+  extractedDate: '05/08/2044',
+  isoDate: '2044-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0243 05/09/2044',
+  extractedDate: '05/09/2044',
+  isoDate: '2044-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0244 05/10/2044',
+  extractedDate: '05/10/2044',
+  isoDate: '2044-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0245 05/11/2044',
+  extractedDate: '05/11/2044',
+  isoDate: '2044-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0246 05/12/2044',
+  extractedDate: '05/12/2044',
+  isoDate: '2044-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0247 05/01/2045',
+  extractedDate: '05/01/2045',
+  isoDate: '2045-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0248 05/02/2045',
+  extractedDate: '05/02/2045',
+  isoDate: '2045-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0249 05/03/2045',
+  extractedDate: '05/03/2045',
+  isoDate: '2045-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0250 05/04/2045',
+  extractedDate: '05/04/2045',
+  isoDate: '2045-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0251 05/05/2045',
+  extractedDate: '05/05/2045',
+  isoDate: '2045-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0252 05/06/2045',
+  extractedDate: '05/06/2045',
+  isoDate: '2045-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0253 05/07/2045',
+  extractedDate: '05/07/2045',
+  isoDate: '2045-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0254 05/08/2045',
+  extractedDate: '05/08/2045',
+  isoDate: '2045-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0255 05/09/2045',
+  extractedDate: '05/09/2045',
+  isoDate: '2045-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0256 05/10/2045',
+  extractedDate: '05/10/2045',
+  isoDate: '2045-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0257 05/11/2045',
+  extractedDate: '05/11/2045',
+  isoDate: '2045-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0258 05/12/2045',
+  extractedDate: '05/12/2045',
+  isoDate: '2045-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0259 05/01/2046',
+  extractedDate: '05/01/2046',
+  isoDate: '2046-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0260 05/02/2046',
+  extractedDate: '05/02/2046',
+  isoDate: '2046-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0261 05/03/2046',
+  extractedDate: '05/03/2046',
+  isoDate: '2046-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0262 05/04/2046',
+  extractedDate: '05/04/2046',
+  isoDate: '2046-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0263 05/05/2046',
+  extractedDate: '05/05/2046',
+  isoDate: '2046-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0264 05/06/2046',
+  extractedDate: '05/06/2046',
+  isoDate: '2046-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0265 05/07/2046',
+  extractedDate: '05/07/2046',
+  isoDate: '2046-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0266 05/08/2046',
+  extractedDate: '05/08/2046',
+  isoDate: '2046-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0267 05/09/2046',
+  extractedDate: '05/09/2046',
+  isoDate: '2046-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0268 05/10/2046',
+  extractedDate: '05/10/2046',
+  isoDate: '2046-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0269 05/11/2046',
+  extractedDate: '05/11/2046',
+  isoDate: '2046-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0270 05/12/2046',
+  extractedDate: '05/12/2046',
+  isoDate: '2046-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0271 05/01/2047',
+  extractedDate: '05/01/2047',
+  isoDate: '2047-01-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0272 05/02/2047',
+  extractedDate: '05/02/2047',
+  isoDate: '2047-02-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0273 05/03/2047',
+  extractedDate: '05/03/2047',
+  isoDate: '2047-03-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0274 05/04/2047',
+  extractedDate: '05/04/2047',
+  isoDate: '2047-04-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0275 05/05/2047',
+  extractedDate: '05/05/2047',
+  isoDate: '2047-05-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0276 05/06/2047',
+  extractedDate: '05/06/2047',
+  isoDate: '2047-06-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0277 05/07/2047',
+  extractedDate: '05/07/2047',
+  isoDate: '2047-07-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0278 05/08/2047',
+  extractedDate: '05/08/2047',
+  isoDate: '2047-08-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0279 05/09/2047',
+  extractedDate: '05/09/2047',
+  isoDate: '2047-09-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0280 05/10/2047',
+  extractedDate: '05/10/2047',
+  isoDate: '2047-10-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0281 05/11/2047',
+  extractedDate: '05/11/2047',
+  isoDate: '2047-11-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0282 05/12/2047',
+  extractedDate: '05/12/2047',
+  isoDate: '2047-12-05',
+  rowIndex: 6,
+  columnIndex: 1,
+  pdfPage: 6
+}
+[date-normalization-debug] {
+  rawCell: '0283 05/01/2048',
+  extractedDate: '05/01/2048',
+  isoDate: '2048-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0284 05/02/2048',
+  extractedDate: '05/02/2048',
+  isoDate: '2048-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0285 05/03/2048',
+  extractedDate: '05/03/2048',
+  isoDate: '2048-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0286 05/04/2048',
+  extractedDate: '05/04/2048',
+  isoDate: '2048-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0287 05/05/2048',
+  extractedDate: '05/05/2048',
+  isoDate: '2048-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0288 05/06/2048',
+  extractedDate: '05/06/2048',
+  isoDate: '2048-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0289 05/07/2048',
+  extractedDate: '05/07/2048',
+  isoDate: '2048-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0290 05/08/2048',
+  extractedDate: '05/08/2048',
+  isoDate: '2048-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0291 05/09/2048',
+  extractedDate: '05/09/2048',
+  isoDate: '2048-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0292 05/10/2048',
+  extractedDate: '05/10/2048',
+  isoDate: '2048-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0293 05/11/2048',
+  extractedDate: '05/11/2048',
+  isoDate: '2048-11-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0294 05/12/2048',
+  extractedDate: '05/12/2048',
+  isoDate: '2048-12-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0295 05/01/2049',
+  extractedDate: '05/01/2049',
+  isoDate: '2049-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0296 05/02/2049',
+  extractedDate: '05/02/2049',
+  isoDate: '2049-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0297 05/03/2049',
+  extractedDate: '05/03/2049',
+  isoDate: '2049-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0298 05/04/2049',
+  extractedDate: '05/04/2049',
+  isoDate: '2049-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0299 05/05/2049',
+  extractedDate: '05/05/2049',
+  isoDate: '2049-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0300 05/06/2049',
+  extractedDate: '05/06/2049',
+  isoDate: '2049-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0301 05/07/2049',
+  extractedDate: '05/07/2049',
+  isoDate: '2049-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0302 05/08/2049',
+  extractedDate: '05/08/2049',
+  isoDate: '2049-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0303 05/09/2049',
+  extractedDate: '05/09/2049',
+  isoDate: '2049-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0304 05/10/2049',
+  extractedDate: '05/10/2049',
+  isoDate: '2049-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0305 05/11/2049',
+  extractedDate: '05/11/2049',
+  isoDate: '2049-11-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0306 05/12/2049',
+  extractedDate: '05/12/2049',
+  isoDate: '2049-12-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0307 05/01/2050',
+  extractedDate: '05/01/2050',
+  isoDate: '2050-01-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0308 05/02/2050',
+  extractedDate: '05/02/2050',
+  isoDate: '2050-02-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0309 05/03/2050',
+  extractedDate: '05/03/2050',
+  isoDate: '2050-03-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0310 05/04/2050',
+  extractedDate: '05/04/2050',
+  isoDate: '2050-04-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0311 05/05/2050',
+  extractedDate: '05/05/2050',
+  isoDate: '2050-05-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0312 05/06/2050',
+  extractedDate: '05/06/2050',
+  isoDate: '2050-06-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0313 05/07/2050',
+  extractedDate: '05/07/2050',
+  isoDate: '2050-07-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0314 05/08/2050',
+  extractedDate: '05/08/2050',
+  isoDate: '2050-08-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0315 05/09/2050',
+  extractedDate: '05/09/2050',
+  isoDate: '2050-09-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[date-normalization-debug] {
+  rawCell: '0316 05/10/2050',
+  extractedDate: '05/10/2050',
+  isoDate: '2050-10-05',
+  rowIndex: 7,
+  columnIndex: 1,
+  pdfPage: 7
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'E',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'mappingHypotheses',
+  artifact: {
+    hypothesisCount: 1,
+    chosenHypothesisId: 'h0_amortization_baseline',
+    rejectedHypothesisIds: [],
+    hypotheses: [ [Object] ]
+  }
+}
+[installment-survival-debug] stage_e_pre_merge_bootstrap {
+  total: 316,
+  dated: 316,
+  undated: 0,
+  deferred: 0,
+  amortizing: 299,
+  insuranceBearing: 316,
+  withPayment: 300,
+  segmentCount: 1,
+  rowRecordCount: 316
+}
+[installment-survival-debug] deferred_survival_timeline {
+  checkpoint: 'stage_e_pre_merge_bootstrap',
+  deferredRowCount: 0,
+  datedRowCount: 316,
+  undatedRowCount: 0,
+  totalRowCount: 316,
+  amortizingRowCount: 299,
+  insuranceBearingRowCount: 316,
+  segmentDeferredRowCount: 0,
+  segmentAmortizationRowCount: 316,
+  segmentBreakdown: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      rowCount: 316,
+      datedInSegment: 316,
+      deferredInSegment: 0,
+      amortizingInSegment: 299
+    }
+  ],
+  deferredRowCountBeforeMerge: 0
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'E',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'mergedInstallments'
+}
+[installment-survival-debug] stage_e_merge {
+  rowRecordCount: 316,
+  deferredRowCountBeforeMerge: 0,
+  deferredRowCountAfterMerge: 0,
+  datedRowCountBeforeMerge: 316,
+  datedRowCountAfterMerge: 316,
+  before: {
+    total: 316,
+    dated: 316,
+    undated: 0,
+    deferred: 0,
+    amortizing: 299,
+    insuranceBearing: 316,
+    withPayment: 300
+  },
+  after: {
+    total: 316,
+    dated: 316,
+    undated: 0,
+    deferred: 0,
+    amortizing: 299,
+    insuranceBearing: 316,
+    withPayment: 300
+  },
+  rowCountDelta: 0,
+  datedRowCountDelta: 0,
+  deferredRowCountDelta: 0,
+  unfilledSlotCount: 0,
+  bootstrapFallbackCount: 0,
+  segmentGapCount: 0,
+  segmentDeferredBeforeMerge: 0,
+  segmentDeferredAfterMerge: 0,
+  segmentBreakdownAfterMerge: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      rowCount: 316,
+      datedInSegment: 316,
+      deferredInSegment: 0,
+      amortizingInSegment: 299
+    }
+  ],
+  segmentOverlayLog: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      hypothesisId: 'h0_amortization_baseline',
+      hypothesisInstallmentCount: 316,
+      segmentLength: 316,
+      datedBeforeOverlay: 316,
+      datedAfterOverlay: 316,
+      deferredBeforeOverlay: 0,
+      deferredAfterOverlay: 0
+    }
+  ],
+  unfilledSample: [],
+  bootstrapFallbackSample: [],
+  segmentGapSample: []
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'E',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'mergedInstallments',
+  artifact: { kind: 'array', length: 316, sample: [ [Object], [Object] ] }
+}
+[installment-survival-debug] stage_e_post_merge {
+  total: 316,
+  dated: 316,
+  undated: 0,
+  deferred: 0,
+  amortizing: 299,
+  insuranceBearing: 316,
+  withPayment: 300,
+  rowRecordCount: 316
+}
+[installment-survival-debug] deferred_survival_timeline {
+  checkpoint: 'stage_e_post_merge',
+  deferredRowCount: 0,
+  datedRowCount: 316,
+  undatedRowCount: 0,
+  totalRowCount: 316,
+  amortizingRowCount: 299,
+  insuranceBearingRowCount: 316,
+  segmentDeferredRowCount: 0,
+  segmentAmortizationRowCount: 316,
+  segmentBreakdown: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      rowCount: 316,
+      datedInSegment: 316,
+      deferredInSegment: 0,
+      amortizingInSegment: 299
+    }
+  ],
+  deferredRowCountAfterMerge: 0
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'F',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'financialValidation'
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'F',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'financialValidation',
+  artifact: {
+    validatedRowCount: 316,
+    invalidRowCount: 296,
+    ambiguousRowCount: 4,
+    statusBreakdown: { valid: 16, invalid: 296, ambiguous: 4 }
+  }
+}
+[installment-survival-debug] stage_f_validation {
+  total: 316,
+  deferredRowCountAfterValidation: 0,
+  datedRowCountAfterValidation: 316,
+  byStatus: { valid: 16, invalid: 296, ambiguous: 4 },
+  deferredByStatus: {},
+  errorReasonCounts: {
+    payment_balance_mismatch: 299,
+    crd_continuity_mismatch: 296,
+    payment_resembles_crd_scale: 2
+  },
+  survival: {
+    total: 316,
+    dated: 316,
+    undated: 0,
+    deferred: 0,
+    amortizing: 299,
+    insuranceBearing: 316,
+    withPayment: 300
+  },
+  rejectionSamples: [
+    {
+      index: 16,
+      status: 'invalid',
+      errors: [Array],
+      date: '2025-11-05'
+    },
+    {
+      index: 17,
+      status: 'invalid',
+      errors: [Array],
+      date: '2025-12-05'
+    },
+    {
+      index: 18,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-01-05'
+    },
+    {
+      index: 19,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-02-05'
+    },
+    {
+      index: 20,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-03-05'
+    },
+    {
+      index: 21,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-04-05'
+    },
+    {
+      index: 22,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-05-05'
+    },
+    {
+      index: 23,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-06-05'
+    },
+    {
+      index: 24,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-07-05'
+    },
+    {
+      index: 25,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-08-05'
+    },
+    {
+      index: 26,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-09-05'
+    },
+    {
+      index: 27,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-10-05'
+    },
+    {
+      index: 28,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-11-05'
+    },
+    {
+      index: 29,
+      status: 'invalid',
+      errors: [Array],
+      date: '2026-12-05'
+    },
+    {
+      index: 30,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-01-05'
+    },
+    {
+      index: 31,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-02-05'
+    },
+    {
+      index: 32,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-03-05'
+    },
+    {
+      index: 33,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-04-05'
+    },
+    {
+      index: 34,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-05-05'
+    },
+    {
+      index: 35,
+      status: 'invalid',
+      errors: [Array],
+      date: '2027-06-05'
+    }
+  ],
+  note: 'invalid_and_ambiguous_rows_are_not_removed_from_merged_output'
+}
+[installment-survival-debug] deferred_survival_timeline {
+  checkpoint: 'stage_f_post_validation',
+  deferredRowCount: 0,
+  datedRowCount: 316,
+  undatedRowCount: 0,
+  totalRowCount: 316,
+  amortizingRowCount: 299,
+  insuranceBearingRowCount: 316,
+  segmentDeferredRowCount: 0,
+  segmentAmortizationRowCount: 316,
+  segmentBreakdown: [
+    {
+      phase: 'amortization',
+      start: 0,
+      end: 315,
+      rowCount: 316,
+      datedInSegment: 316,
+      deferredInSegment: 0,
+      amortizingInSegment: 299
+    }
+  ],
+  deferredRowCountAfterValidation: 0,
+  invalidRowCount: 296,
+  ambiguousRowCount: 4
+}
+[installment-survival-debug] stage_f_post_validation {
+  total: 316,
+  dated: 316,
+  undated: 0,
+  deferred: 0,
+  amortizing: 299,
+  insuranceBearing: 316,
+  withPayment: 300,
+  validatedRowCount: 316,
+  invalidRowCount: 296,
+  ambiguousRowCount: 4
+}
+[amortization-pipeline-debug] stage_enter {
+  stage: 'H',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'confidence'
+}
+[amortization-pipeline-debug] stage_exit {
+  stage: 'H',
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  artifactLabel: 'confidence',
+  artifact: {
+    overallConfidence: 0,
+    success: false,
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    }
+  }
+}
+[amortization-pipeline-debug] pipeline_result_validity {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  success: false,
+  confidenceScore: 0,
+  installmentCount: 316,
+  datedInstallmentCount: 316,
+  undatedInstallmentCount: 0,
+  detectedInstallmentRows: 316,
+  stageErrors: [],
+  traceShape: {
+    stageA_cells: 4096,
+    stageB_rows: 463,
+    stageC_candidates: 23,
+    stageD_segments: 1,
+    stageE_hypotheses: 1,
+    stageF_validated: 316,
+    stageG_present: false,
+    stageH_success: false
+  },
+  stageH: {
+    overallConfidence: 0,
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    },
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    success: false
+  },
+  rejectedHypotheses: [],
+  chosenHypothesisId: 'h0_amortization_baseline',
+  mergedInstallmentSample: [
+    {
+      date: '2024-06-24',
+      interest: 2362.92,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 2362.92
+    },
+    {
+      date: '2024-08-05',
+      interest: 75.49,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 75.49
+    },
+    {
+      date: '2024-09-05',
+      interest: 54.67,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 54.67
+    }
+  ]
+}
+[amortization-pipeline-debug] pipeline_result_not_success {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  reason: 'confidence_0_below_min_35',
+  stageH: {
+    overallConfidence: 0,
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    },
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    success: false
+  }
+}
+[amortization-pipeline] stage_a_raw_cells {
+  cellCount: 4096,
+  sample: [
+    {
+      text: 'PLAN DE REMBOURSEMENT',
+      x: 185.64609,
+      y: 752.63613,
+      width: 223.82399999999996,
+      height: 4,
+      pageNumber: 1
+    },
+    {
+      text: "TABLEAU D'AMORTISSEMENT AU 18/05/2026. Les montants et la durée du prêt mentionnés dans ce tableau ne tiennent pas compte des futures",
+      x: 19.6,
+      y: 729.78857,
+      width: 548.1679999999997,
+      height: 4,
+      pageNumber: 1
+    },
+    {
+      text: "variations du/des indices retenus pour l'application de la révision du taux et/ou du montant de l'échéance. A compter de la date de la prochaine",
+      x: 19.6,
+      y: 720.58936,
+      width: 544.1919999999997,
+      height: 4,
+      pageNumber: 1
+    },
+    {
+      text: 'révision, ils sont communiqués à titre indicatif.',
+      x: 19.6,
+      y: 711.39014,
+      width: 178.49599999999998,
+      height: 4,
+      pageNumber: 1
+    },
+    {
+      text: 'CAISSE EPARGNE',
+      x: 19.6,
+      y: 702.20215,
+      width: 75.60000000000001,
+      height: 4,
+      pageNumber: 1
+    }
+  ]
+}
+[amortization-pipeline] stage_b_reconstructed_rows {
+  rowCount: 463,
+  columnSlots: [
+    { columnIndex: 0, role: 'rank', minX: -Infinity, maxX: -Infinity },
+    {
+      columnIndex: 1,
+      role: 'date',
+      minX: -Infinity,
+      maxX: 121.79599375000001
+    },
+    {
+      columnIndex: 2,
+      role: null,
+      minX: 121.79599375000001,
+      maxX: 192.8704075
+    },
+    {
+      columnIndex: 3,
+      role: 'payment',
+      minX: 192.8704075,
+      maxX: 263.4012675
+    },
+    {
+      columnIndex: 4,
+      role: null,
+      minX: 263.4012675,
+      maxX: 335.50077999999996
+    },
+    {
+      columnIndex: 5,
+      role: 'remainingCapital',
+      minX: 335.50077999999996,
+      maxX: 410.29492125
+    },
+    {
+      columnIndex: 6,
+      role: 'insurance',
+      minX: 410.29492125,
+      maxX: 479.496095
+    },
+    {
+      columnIndex: 7,
+      role: 'interest',
+      minX: 479.496095,
+      maxX: Infinity
+    },
+    {
+      columnIndex: 8,
+      role: 'principal',
+      minX: Infinity,
+      maxX: Infinity
+    }
+  ],
+  sample: [
+    { page: 1, gapBased: [Array], bucket: [Array], aligned: true },
+    { page: 1, gapBased: [Array], bucket: [Array], aligned: true },
+    { page: 1, gapBased: [Array], bucket: [Array], aligned: true }
+  ]
+}
+[amortization-pipeline] stage_c_column_candidates {
+  headerLabels: [
+    'Date',
+    'Échéance / Montant à recouvrer',
+    'Rang / N°',
+    'Intérêts',
+    'Assurances'
+  ],
+  topCandidates: [
+    {
+      role: 'remainingCapital',
+      columnIndex: 5,
+      confidence: 0.85,
+      reason: 'statistical_refinement'
+    },
+    {
+      role: 'remainingCapital',
+      columnIndex: 2,
+      confidence: 0.61,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'remainingCapital',
+      columnIndex: 4,
+      confidence: 0.6,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'remainingCapital',
+      columnIndex: 6,
+      confidence: 0.6,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'insurance',
+      columnIndex: 3,
+      confidence: 0.51,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'payment',
+      columnIndex: 3,
+      confidence: 0.32,
+      reason: 'statistical_refinement'
+    },
+    {
+      role: 'principal',
+      columnIndex: 3,
+      confidence: 0.25,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'interest',
+      columnIndex: 3,
+      confidence: 0.25,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'insurance',
+      columnIndex: 4,
+      confidence: 0.16,
+      reason: 'statistical_pattern'
+    },
+    {
+      role: 'insurance',
+      columnIndex: 2,
+      confidence: 0.15,
+      reason: 'statistical_pattern'
+    }
+  ],
+  preferredMapping: {
+    '2': 'interest',
+    '3': 'payment',
+    '4': 'principal',
+    '5': 'remainingCapital',
+    '6': 'insurance',
+    '7': 'interest'
+  }
+}
+[amortization-pipeline] stage_d_phase_detection {
+  segments: [
+    {
+      phase: 'amortization',
+      startRowIndex: 14,
+      endRowIndex: 457,
+      startInstallmentIndex: 0,
+      endInstallmentIndex: 315
+    }
+  ],
+  transitions: []
+}
+[amortization-pipeline] stage_e_mapping_hypotheses {
+  chosen: 'h0_amortization_baseline',
+  rejected: [],
+  hypotheses: [
+    {
+      id: 'h0_amortization_baseline',
+      phase: 'amortization',
+      confidence: 0.27,
+      balanceScore: 0.0033333333333333335,
+      crdScore: 0.05714285714285714,
+      temporalScore: 1,
+      heuristics: [Array],
+      rejected: false,
+      rejectionReasons: [],
+      installmentCount: 316
+    }
+  ]
+}
+[amortization-pipeline] stage_f_validation {
+  totalRows: 316,
+  invalid: 296,
+  ambiguous: 4,
+  aggregateBalanceScore: 0.0033333333333333335,
+  aggregateCrdScore: 0.05714285714285714,
+  invalidSample: [
+    { date: '2025-11-05', status: 'invalid', errors: [Array] },
+    { date: '2025-12-05', status: 'invalid', errors: [Array] },
+    { date: '2026-01-05', status: 'invalid', errors: [Array] },
+    { date: '2026-02-05', status: 'invalid', errors: [Array] },
+    { date: '2026-03-05', status: 'invalid', errors: [Array] }
+  ]
+}
+[amortization-pipeline] stage_h_confidence {
+  overallConfidence: 0,
+  fieldConfidences: {
+    installments: 0,
+    balance: 0.0033333333333333335,
+    crd: 0.05714285714285714,
+    temporal: 1
+  },
+  recommendGptFallback: true,
+  fallbackReason: 'low_confidence_0',
+  success: false
+}
+[amortization-pipeline] summary {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  success: false,
+  confidenceScore: 0,
+  installmentCount: 316,
+  recommendGptFallback: true
+}
+[amortization-pipeline-debug] orchestrator_exit {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  success: false,
+  installmentCount: 316,
+  confidenceScore: 0
+}
+[pipeline-entry-debug] {
+  functionName: 'runAmortizationPipeline',
+  returned: true,
+  success: false,
+  failureReason: 'confidence_0',
+  installmentCount: 316,
+  datedInstallmentCount: 316,
+  extra: {
+    source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+    ctxErrorCount: 0
+  }
+}
+[amortization-pipeline-debug] pipeline_result_validity {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  success: false,
+  confidenceScore: 0,
+  installmentCount: 316,
+  datedInstallmentCount: 316,
+  undatedInstallmentCount: 0,
+  detectedInstallmentRows: 316,
+  stageErrors: [],
+  traceShape: {
+    stageA_cells: 4096,
+    stageB_rows: 463,
+    stageC_candidates: 23,
+    stageD_segments: 1,
+    stageE_hypotheses: 1,
+    stageF_validated: 316,
+    stageG_present: false,
+    stageH_success: false
+  },
+  stageH: {
+    overallConfidence: 0,
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    },
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    success: false
+  },
+  rejectedHypotheses: [],
+  chosenHypothesisId: 'h0_amortization_baseline',
+  mergedInstallmentSample: [
+    {
+      date: '2024-06-24',
+      interest: 2362.92,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 2362.92
+    },
+    {
+      date: '2024-08-05',
+      interest: 75.49,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 75.49
+    },
+    {
+      date: '2024-09-05',
+      interest: 54.67,
+      payment: 0,
+      principal: 0,
+      remainingCapital: 131481.96,
+      insurance: 54.67
+    }
+  ]
+}
+[amortization-pipeline-debug] pipeline_result_not_success {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  reason: 'confidence_0_below_min_35',
+  stageH: {
+    overallConfidence: 0,
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    },
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    success: false
+  }
+}
+[amortization-pipeline-debug] parseSpatialAmortizationFromRows_result {
+  source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf",
+  pipelineSuccess: false,
+  confidenceScore: 0,
+  installmentCount: 316,
+  datedInstallmentCount: 316,
+  spatialParseResultSuccess: false,
+  traceStageH: {
+    overallConfidence: 0,
+    fieldConfidences: {
+      installments: 0,
+      balance: 0.0033333333333333335,
+      crd: 0.05714285714285714,
+      temporal: 1
+    },
+    recommendGptFallback: true,
+    fallbackReason: 'low_confidence_0',
+    success: false
+  }
+}
+[spatial-parser-trace] {
+  functionName: 'parseSpatialAmortizationFromRows',
+  entered: false,
+  rowCount: 463,
+  extra: {
+    success: false,
+    confidenceScore: 0,
+    installmentCount: 316,
+    datedInstallmentCount: 316
+  }
+}
+[pipeline-entry-debug] {
+  functionName: 'parseSpatialAmortizationFromRows',
+  returned: true,
+  success: false,
+  failureReason: 'confidence_0',
+  installmentCount: 316,
+  datedInstallmentCount: 316,
+  extra: {
+    source: "/Users/forniantoine/Desktop/JEDECLAREMONMEUBLE/Déclaration appartement - Elsa BOUVARD/Tableau d'amortissement.pdf"
+  }
+}

@@ -9,6 +9,11 @@ import {
   computeFiscalYearInstallmentMetrics,
   findFirstAmortizingInstallment,
 } from "@/lib/lmnp/services/credit-fiscal-from-installments";
+import {
+  attachAmortizationSupervision,
+  buildAmortizationSupervision,
+  buildStructuralFailureSupervision,
+} from "@/lib/lmnp/services/amortization-supervision";
 import type { LoanInstallment } from "@/lib/lmnp/types";
 
 import type { SpatialAmortizationParseResult, SpatialInstallment } from "./spatial-amortization-core";
@@ -23,10 +28,19 @@ import {
   spatialRowsToVisibleLoanInstallments,
 } from "@/lib/lmnp/services/credit-installment-visibility";
 
+/** @deprecated Internal diagnostics only — never gates UI table selection. */
 export const SPATIAL_PRIMARY_MIN_CONFIDENCE = 80;
+/** @deprecated Internal diagnostics only — never gates UI table selection. */
 export const SPATIAL_PRIMARY_MIN_INSTALLMENTS = 12;
 
-export type SpatialPrimarySource = "spatial" | "gpt_fallback";
+export type SpatialPrimarySource = "spatial" | "structural_failure";
+
+export type SpatialFinancialTruthDecision = {
+  useSpatial: boolean;
+  reason: string;
+  visibleLoanInstallmentCount: number;
+  parserConfidence: number | null;
+};
 
 const LOG_PRIMARY = "[spatial-parser-primary]";
 
@@ -150,52 +164,82 @@ export function buildCreditAmortizationFromSpatial(
   return extraction;
 }
 
-/** GPT scalar fields only — installments always come from the spatial parser. */
+/** Installments and fiscal scalars always come from the spatial parser — never GPT. */
 export function mergeSpatialInstallmentsWithGptMetadata(
   spatialExtraction: CreditAmortizationExtraction,
-  gptMetadata: CreditAmortizationExtraction,
+  _gptMetadata: CreditAmortizationExtraction,
 ): CreditAmortizationExtraction {
-  return {
-    ...spatialExtraction,
-    detectedFiscalYear: gptMetadata.detectedFiscalYear ?? spatialExtraction.detectedFiscalYear,
-    loanAmount: gptMetadata.loanAmount ?? spatialExtraction.loanAmount,
-    loanDurationMonths: gptMetadata.loanDurationMonths ?? spatialExtraction.loanDurationMonths,
-    monthlyPayment: gptMetadata.monthlyPayment ?? spatialExtraction.monthlyPayment,
-    firstPaymentDate: gptMetadata.firstPaymentDate ?? spatialExtraction.firstPaymentDate,
-    remainingPrincipal: spatialExtraction.remainingPrincipal ?? gptMetadata.remainingPrincipal,
-    yearlyInterestTotal: spatialExtraction.yearlyInterestTotal ?? gptMetadata.yearlyInterestTotal,
-    yearlyInsuranceTotal: spatialExtraction.yearlyInsuranceTotal ?? gptMetadata.yearlyInsuranceTotal,
-    installments: spatialExtraction.installments,
-  };
+  return spatialExtraction;
 }
 
+/** Spatial parser output is the only financial reconstruction source when structurally usable. */
 export function shouldUseSpatialAsPrimary(params: {
   isPdf: boolean;
   ocrProvider: string;
   spatial: SpatialAmortizationParseResult | null;
-}): { useSpatial: boolean; reason: string } {
+}): SpatialFinancialTruthDecision {
+  const parserConfidence = params.spatial?.confidenceScore ?? null;
+  const visibleLoanInstallmentCount = params.spatial
+    ? spatialRowsToVisibleLoanInstallments(params.spatial.installments).installments.length
+    : 0;
+  const datedRawCount =
+    params.spatial?.installments.filter((row) => Boolean(row.date?.trim())).length ?? 0;
+
   if (!params.isPdf) {
-    return { useSpatial: false, reason: "not_pdf" };
+    return {
+      useSpatial: false,
+      reason: "not_pdf",
+      visibleLoanInstallmentCount,
+      parserConfidence,
+    };
   }
   if (params.ocrProvider !== "pdf_text") {
-    return { useSpatial: false, reason: `ocr_provider_${params.ocrProvider}` };
+    return {
+      useSpatial: false,
+      reason: `ocr_provider_${params.ocrProvider}`,
+      visibleLoanInstallmentCount,
+      parserConfidence,
+    };
   }
   if (!params.spatial) {
-    return { useSpatial: false, reason: "spatial_parse_failed" };
-  }
-  if (params.spatial.confidenceScore < SPATIAL_PRIMARY_MIN_CONFIDENCE) {
     return {
       useSpatial: false,
-      reason: `low_confidence_${params.spatial.confidenceScore}`,
+      reason: "spatial_parse_failed",
+      visibleLoanInstallmentCount: 0,
+      parserConfidence: null,
     };
   }
-  if (params.spatial.installments.length <= SPATIAL_PRIMARY_MIN_INSTALLMENTS) {
+  if (params.spatial.installments.length === 0) {
     return {
       useSpatial: false,
-      reason: `low_installment_count_${params.spatial.installments.length}`,
+      reason: "spatial_zero_raw_installments",
+      visibleLoanInstallmentCount: 0,
+      parserConfidence,
     };
   }
-  return { useSpatial: true, reason: "native_pdf_high_confidence" };
+  if (datedRawCount === 0) {
+    return {
+      useSpatial: false,
+      reason: "spatial_zero_dated_installments",
+      visibleLoanInstallmentCount: 0,
+      parserConfidence,
+    };
+  }
+  if (visibleLoanInstallmentCount === 0) {
+    return {
+      useSpatial: false,
+      reason: "spatial_zero_visible_installments",
+      visibleLoanInstallmentCount: 0,
+      parserConfidence,
+    };
+  }
+
+  return {
+    useSpatial: true,
+    reason: "spatial_financial_truth",
+    visibleLoanInstallmentCount,
+    parserConfidence,
+  };
 }
 
 export function logSpatialParserPrimary(params: {
@@ -218,16 +262,37 @@ export function logSpatialParserPrimary(params: {
   });
 }
 
+export function buildSpatialStructuralFailureResult(
+  reason: string,
+  spatial: SpatialAmortizationParseResult | null,
+): CreditAmortizationGptExtractionResult {
+  const supervision = buildStructuralFailureSupervision(reason, {
+    rawCount: spatial?.installments.length,
+    datedRawCount: spatial?.installments.filter((row) => Boolean(row.date?.trim())).length,
+    visibleLoanInstallmentCount: spatial
+      ? spatialRowsToVisibleLoanInstallments(spatial.installments).installments.length
+      : 0,
+  });
+
+  return {
+    success: false,
+    extraction: { supervision },
+    error: supervision.message,
+  };
+}
+
 export function buildSpatialPrimaryGptResult(
   spatial: SpatialAmortizationParseResult,
   revenueYear: number,
-  gptMetadata: CreditAmortizationGptExtractionResult,
+  _gptMetadata: CreditAmortizationGptExtractionResult,
 ): CreditAmortizationGptExtractionResult {
   const spatialExtraction = buildCreditAmortizationFromSpatial(spatial, revenueYear);
-  const extraction = mergeSpatialInstallmentsWithGptMetadata(
-    spatialExtraction,
-    gptMetadata.extraction ?? {},
-  );
+  const visibleLoanInstallmentCount = spatialExtraction.installments?.length ?? 0;
+  const supervision = buildAmortizationSupervision({
+    spatial,
+    visibleLoanInstallmentCount,
+  });
+  const extraction = attachAmortizationSupervision(spatialExtraction, supervision);
 
   const installmentCount = extraction.installments?.length ?? 0;
   const datedInstallmentCount =
@@ -272,18 +337,18 @@ export function buildSpatialPrimaryGptResult(
     loanInstallmentCount: installmentCount,
     datedLoanInstallmentCount: datedInstallmentCount,
     extractionKeyCount: Object.keys(extraction).length,
+    supervisionLevel: supervision.level,
     success,
     failureReason: success
       ? null
       : installmentCount === 0
         ? "loan_installment_count_zero_after_spatialInstallmentsToLoanInstallments"
         : "extraction_object_empty",
-    gptMetadataError: gptMetadata.error ?? null,
   });
 
   return {
     success,
     extraction,
-    error: success ? undefined : gptMetadata.error ?? "Spatial installments empty after merge.",
+    error: success ? undefined : supervision.message,
   };
 }

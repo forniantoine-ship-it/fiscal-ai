@@ -26,7 +26,7 @@ export class CreditGptExtractError extends Error {
 export async function requestCreditGptExtraction(params: {
   rawText: string;
   fileName: string;
-  documentKind: CreditDocumentKind;
+  documentKind: CreditDocumentKind | "documentary_metadata";
   declarationYear: number;
   revenueYear: number;
 }): Promise<CreditAmortizationGptExtractionResult | CreditLoanOfferGptExtractionResult> {
@@ -109,4 +109,52 @@ export async function requestCreditGptExtraction(params: {
   }
 
   return result;
+}
+
+/** Non-structural documentary metadata from full-document OCR (rate, fees, bank). */
+export async function requestCreditDocumentaryMetadataExtraction(params: {
+  rawText: string;
+  fileName: string;
+  declarationYear: number;
+  revenueYear: number;
+}): Promise<CreditLoanOfferGptExtractionResult> {
+  incrementCreditPipelineCounter("gpt_documentary_extract_requests");
+
+  const traceId = getCreditPipelineTraceId();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (traceId) {
+    headers["X-Credit-Pipeline-Trace-Id"] = traceId;
+  }
+
+  const bodyJson = JSON.stringify({
+    ...params,
+    documentKind: "documentary_metadata" as const,
+  });
+
+  const response = await measureCreditPipelineAwait(
+    "gpt_http_fetch_documentary",
+    fetch("/api/lmnp/credit/extract", {
+      method: "POST",
+      headers,
+      body: bodyJson,
+    }),
+    { documentKind: "documentary_metadata", textLength: params.rawText.length },
+  );
+
+  if (!response.ok) {
+    const payload = await measureCreditPipelineAwait(
+      "gpt_error_response_json_parse",
+      response.json().catch(() => ({})) as Promise<{ error?: string }>,
+    );
+    throw new CreditGptExtractError(
+      payload.error ?? `Documentary GPT extraction failed (${response.status})`,
+      response.status,
+    );
+  }
+
+  return measureCreditPipelineAwait(
+    "gpt_response_json_parse",
+    response.json() as Promise<CreditLoanOfferGptExtractionResult>,
+    { documentKind: "documentary_metadata" },
+  );
 }

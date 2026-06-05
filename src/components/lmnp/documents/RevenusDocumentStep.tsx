@@ -8,6 +8,7 @@ import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProce
 import { DOCUMENT_WORKFLOW_CARD_STYLE } from "@/components/lmnp/documents/document-workflow-shared";
 import { RevenusHero } from "@/components/lmnp/revenus/RevenusHero";
 import { RevenusPropertyGridCards } from "@/components/lmnp/revenus/RevenusPropertyGridCards";
+import { RevenueSupervisionCard } from "@/components/lmnp/revenus/RevenueSupervisionCard";
 import { RevenusSummaryCard } from "@/components/lmnp/revenus/RevenusSummaryCard";
 import { ConfiguredDossierCard } from "@/components/lmnp/shared/ConfiguredDossierCard";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
@@ -58,6 +59,7 @@ import { AiActivityFeed } from "@/components/lmnp/ai-activity";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { RevenueGptSession } from "@/lib/lmnp/types";
+import type { RevenueSupervisionStatus } from "@/lib/lmnp/services/revenue-supervision";
 
 const REVENUS_UPLOAD_CATEGORY = "revenus" as const;
 
@@ -125,6 +127,9 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
   const [isExecutionRunning, setIsExecutionRunning] = useState(false);
   const [ocrReadFailure, setOcrReadFailure] = useState(false);
   const [pipelineError, setPipelineError] = useState<string | null>(null);
+  const [extractionSupervision, setExtractionSupervision] = useState<
+    RevenueSupervisionStatus | undefined
+  >(() => draft?.revenueGptSession?.meta?.extractionSupervision);
   const [session, setSession] = useState<RevenueGptSession>(() =>
     restoreRevenueSessionPassive(draft, fiscalYear, workspace.properties),
   );
@@ -168,6 +173,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       allowPrefill: boolean;
       linesByPropertyId: Map<string, import("@/lib/lmnp/types").RevenueRawLine[]>;
       gridSource: "ocr_lines" | "mock_lines";
+      supervision?: RevenueSupervisionStatus;
     }) => {
       logRevenueRuntimeStage("session_prefill", {
         allowPrefill: options.allowPrefill,
@@ -187,12 +193,17 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
         { lineBuckets: options.linesByPropertyId.size },
       );
 
+      if (options.supervision) setExtractionSupervision(options.supervision);
+
       const nextSession = sessionFromPipelineLines(
         workspace.properties,
         fiscalYear,
         options.linesByPropertyId,
         options.gridSource,
         sessionRef.current ?? undefined,
+        options.supervision
+          ? { extractionSupervision: options.supervision }
+          : undefined,
       );
 
       persistSession(nextSession);
@@ -243,6 +254,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
         if (!pipelineResult.success) {
           setOcrReadFailure(Boolean(pipelineResult.ocrFailure));
           setPipelineError(pipelineResult.error ?? null);
+          if (pipelineResult.supervision) setExtractionSupervision(pipelineResult.supervision);
 
           const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";
           dispatch({
@@ -291,6 +303,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
           allowPrefill: shouldApplyPrefill(),
           linesByPropertyId: pipelineResult.linesByPropertyId,
           gridSource: pipelineResult.gridSource,
+          supervision: pipelineResult.supervision,
         });
       } catch {
         for (const documentId of documentIds) {
@@ -518,6 +531,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
 
       {showGrid ? (
         <>
+          <RevenueSupervisionCard supervision={extractionSupervision ?? session.meta?.extractionSupervision} />
           <RevenusSummaryCard
             summary={{
               totalRevenue: summary.totalRevenue,
@@ -565,6 +579,8 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       ) : null}
 
       {showOcrFailure ? (
+        <>
+          <RevenueSupervisionCard supervision={extractionSupervision} />
         <div
           className="w-full text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
           style={{
@@ -598,6 +614,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
             </Button>
           </div>
         </div>
+        </>
       ) : null}
 
       {isFailed && !showOcrFailure ? (

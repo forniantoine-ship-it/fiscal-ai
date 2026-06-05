@@ -9,6 +9,7 @@ import { isPdfFile } from "@/lib/documents/ocr/pdf-native-text";
 import { parseSpatialAmortizationFromFile } from "@/lib/lmnp/parsers/spatial-amortization-browser";
 import {
   buildSpatialPrimaryGptResult,
+  buildSpatialStructuralFailureResult,
   logSpatialParserPrimary,
   shouldUseSpatialAsPrimary,
 } from "@/lib/lmnp/parsers/spatial-amortization-primary";
@@ -36,8 +37,15 @@ import {
   measureCreditPipelineSync,
   traceCreditPipelineStep,
 } from "./credit-pipeline-timing";
-import { requestCreditGptExtraction } from "./credit-gpt-extract-client";
+import {
+  requestCreditDocumentaryMetadataExtraction,
+  requestCreditGptExtraction,
+} from "./credit-gpt-extract-client";
 import { resolveDocumentFile } from "./resolve-document-file";
+import {
+  logDocumentaryExtractionAfter,
+  logDocumentaryExtractionBefore,
+} from "./documentary-extraction-debug";
 
 export { DocumentOcrFailedError };
 
@@ -287,7 +295,7 @@ export async function runCreditGptPipeline(
       console.warn("[spatial-parser-primary]", {
         documentId: document.id,
         fileName: document.fileName,
-        sourceUsed: "gpt_fallback",
+        sourceUsed: "structural_failure",
         confidenceScore: 0,
         installmentCount: 0,
         ocrProvider: ocrResult.provider,
@@ -359,33 +367,17 @@ export async function runCreditGptPipeline(
 
   let amortization;
   try {
-    setAmortizationGptClientTraceContext({
-      traceId: getCreditPipelineTraceId(),
-      documentId: document.id,
-      fileName: document.fileName,
-      ocrPageCount: ocrResult.pageCount,
-      ocrProvider: ocrResult.provider,
-      ocrTextCharCount: rawText.length,
-    });
     traceCreditPipelineStep("gpt_request_start", {
       documentKind: "amortization",
       spatialPrimary: spatialPrimaryDecision.useSpatial,
+      skipGptFinancialExtract: spatialPrimaryDecision.useSpatial,
     });
 
-    const gptResult = (await measureCreditPipelineAwait(
-      "gpt_extract_amortization",
-      requestCreditGptExtraction({
-        rawText,
-        fileName: document.fileName,
-        documentKind: "amortization",
-        declarationYear: fiscalYear,
-        revenueYear,
-      }),
-      { documentKind: "amortization", textLength: rawText.length },
-    )) as CreditAmortizationGptExtractionResult;
-
     if (spatialPrimaryDecision.useSpatial && spatialParse) {
-      amortization = buildSpatialPrimaryGptResult(spatialParse, revenueYear, gptResult);
+      amortization = buildSpatialPrimaryGptResult(spatialParse, revenueYear, {
+        success: true,
+        extraction: {},
+      });
       logPipelineEntry({
         functionName: "runCreditGptPipeline.buildSpatialPrimaryGptResult",
         returned: true,
@@ -396,17 +388,24 @@ export async function runCreditGptPipeline(
         documentId: document.id,
         fileName: document.fileName,
         installmentCount: amortization.extraction.installments?.length ?? null,
-        extra: { branch: "spatial_primary" },
+        extra: {
+          branch: "spatial_financial_truth",
+          parserConfidence: spatialPrimaryDecision.parserConfidence,
+          visibleLoanInstallmentCount: spatialPrimaryDecision.visibleLoanInstallmentCount,
+          supervisionLevel: amortization.extraction.supervision?.level ?? null,
+        },
       });
       console.log("[amortization-pipeline-debug] credit_pipeline_bridge", {
         documentId: document.id,
         fileName: document.fileName,
-        phase: "spatial_primary_build_result",
+        phase: "spatial_financial_truth",
         amortizationSuccess: amortization.success,
         amortizationError: amortization.error ?? null,
         extractionInstallmentCount: amortization.extraction.installments?.length ?? 0,
         loanInstallmentCount: amortization.extraction.installments?.filter((row) => row.date?.trim())
           .length ?? 0,
+        parserConfidence: spatialPrimaryDecision.parserConfidence,
+        supervisionLevel: amortization.extraction.supervision?.level ?? null,
       });
       logSpatialParserPrimary({
         sourceUsed: "spatial",
@@ -418,9 +417,12 @@ export async function runCreditGptPipeline(
         fileName: document.fileName,
       });
     } else {
-      amortization = gptResult;
+      amortization = buildSpatialStructuralFailureResult(
+        spatialPrimaryDecision.reason,
+        spatialParse,
+      );
       logPipelineEntry({
-        functionName: "runCreditGptPipeline.gptFallback",
+        functionName: "runCreditGptPipeline.spatialStructuralFailure",
         returned: true,
         success: amortization.success,
         failureReason: amortization.error ?? null,
@@ -428,13 +430,18 @@ export async function runCreditGptPipeline(
         ocrProvider: ocrResult.provider,
         documentId: document.id,
         fileName: document.fileName,
-        installmentCount: gptResult.extraction.installments?.length ?? null,
-        extra: { branch: "gpt_fallback", spatialPrimaryReason: spatialPrimaryDecision.reason },
+        installmentCount: 0,
+        extra: {
+          branch: "structural_failure",
+          spatialPrimaryReason: spatialPrimaryDecision.reason,
+          parserConfidence: spatialPrimaryDecision.parserConfidence,
+          supervisionLevel: amortization.extraction.supervision?.level ?? null,
+        },
       });
       logSpatialParserPrimary({
-        sourceUsed: "gpt_fallback",
+        sourceUsed: "structural_failure",
         confidenceScore: spatialParse?.confidenceScore ?? 0,
-        installmentCount: gptResult.extraction.installments?.length ?? 0,
+        installmentCount: 0,
         ocrProvider: ocrResult.provider,
         reason: spatialPrimaryDecision.reason,
         documentId: document.id,
@@ -445,7 +452,7 @@ export async function runCreditGptPipeline(
     traceCreditPipelineStep("gpt_request_end", {
       documentKind: "amortization",
       success: amortization.success,
-      sourceUsed: spatialPrimaryDecision.useSpatial ? "spatial" : "gpt_fallback",
+      sourceUsed: spatialPrimaryDecision.useSpatial ? "spatial" : "structural_failure",
       installmentCount: amortization.extraction.installments?.length ?? 0,
     });
     logCreditExtractionFromGptResponse({
@@ -481,6 +488,62 @@ export async function runCreditGptPipeline(
         : 0,
   });
 
+  let documentaryMetadata: CreditLoanOfferGptExtractionResult | undefined;
+  logDocumentaryExtractionBefore({
+    documentId: document.id,
+    fileName: document.fileName,
+    useSpatial: spatialPrimaryDecision.useSpatial,
+    spatialSuccess: spatialParse?.success ?? null,
+    spatialInstallmentCount: spatialParse?.installments.length ?? null,
+    pageCount: ocrResult.pageCount ?? null,
+    ocrTextCharCount: rawText.length,
+    ocrProvider: ocrResult.provider,
+  });
+
+  try {
+    traceCreditPipelineStep("gpt_documentary_request_start", {
+      documentKind: "documentary_metadata",
+      spatialPrimary: spatialPrimaryDecision.useSpatial,
+      pageCount: ocrResult.pageCount,
+      textLength: rawText.length,
+    });
+    documentaryMetadata = await measureCreditPipelineAwait(
+      "gpt_extract_documentary_metadata",
+      requestCreditDocumentaryMetadataExtraction({
+        rawText,
+        fileName: document.fileName,
+        declarationYear: fiscalYear,
+        revenueYear,
+      }),
+      { textLength: rawText.length, pageCount: ocrResult.pageCount },
+    );
+    traceCreditPipelineStep("gpt_documentary_request_end", {
+      success: documentaryMetadata.success,
+      fieldCount: Object.keys(documentaryMetadata.extraction ?? {}).length,
+    });
+    logDocumentaryExtractionAfter({
+      documentId: document.id,
+      fileName: document.fileName,
+      success: documentaryMetadata.success,
+      error: documentaryMetadata.error ?? null,
+      extraction: documentaryMetadata.extraction,
+    });
+  } catch (documentaryErr) {
+    const message =
+      documentaryErr instanceof Error ? documentaryErr.message : String(documentaryErr);
+    logDocumentaryExtractionAfter({
+      documentId: document.id,
+      fileName: document.fileName,
+      success: false,
+      error: message,
+    });
+    console.warn("[documentary-extraction-debug] documentary_gpt_failed_non_blocking", {
+      documentId: document.id,
+      fileName: document.fileName,
+      error: message,
+    });
+  }
+
   const pipelineResult: CreditGptPipelineResult = {
     documentId: document.id,
     fileName: document.fileName,
@@ -488,6 +551,7 @@ export async function runCreditGptPipeline(
     rawText,
     ocrProvider: ocrResult.provider,
     amortization: amortization as CreditAmortizationGptExtractionResult,
+    loanOffer: documentaryMetadata,
     success: amortization.success,
     error: amortization.error,
   };
@@ -508,7 +572,7 @@ export async function runCreditGptPipeline(
       "installments" in pipelineResult.amortization.extraction
         ? (pipelineResult.amortization.extraction.installments?.length ?? null)
         : null,
-    extra: { branch: "amortization_final" },
+    extra: { branch: "amortization_final", hasDocumentaryLoanOffer: Boolean(documentaryMetadata?.success) },
   });
 
   console.log("[amortization-pipeline-debug] credit_pipeline_bridge", {
@@ -519,6 +583,10 @@ export async function runCreditGptPipeline(
     creditResultError: pipelineResult.error ?? null,
     spatialPrimaryUsed: spatialPrimaryDecision.useSpatial,
     spatialPrimaryReason: spatialPrimaryDecision.reason,
+    documentaryMetadataSuccess: documentaryMetadata?.success ?? false,
+    documentaryNominalRate: documentaryMetadata?.extraction?.interestRate ?? null,
+    documentaryDossierFees: documentaryMetadata?.extraction?.applicationFees ?? null,
+    documentaryGuaranteeFees: documentaryMetadata?.extraction?.guaranteeFees ?? null,
     installmentCount:
       pipelineResult.amortization?.extraction &&
       "installments" in pipelineResult.amortization.extraction

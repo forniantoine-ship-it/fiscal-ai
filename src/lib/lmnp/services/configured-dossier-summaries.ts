@@ -95,7 +95,7 @@ function topChargeCategories(extraction?: ChargesExtractionData, limit = 3): str
     .slice()
     .sort((a, b) => b.annualTotal - a.annualTotal)
     .slice(0, limit)
-    .map((cat) => cat.label ?? categoryLabel(cat.category))
+    .map((cat) => categoryLabel(cat.category))
     .join(" · ");
 }
 

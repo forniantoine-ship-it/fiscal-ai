@@ -5,6 +5,7 @@ import {
   normalizeNumber,
   normalizeString,
 } from "@/lib/documents/gpt/schemas/logement-acte.schema";
+import type { AmortizationSupervisionStatus } from "@/lib/lmnp/services/amortization-supervision";
 import type { LoanInstallment } from "@/lib/lmnp/types";
 
 const nullableString = z.string().nullable().optional();
@@ -46,6 +47,8 @@ export type CreditAmortizationExtraction = {
   loanDurationMonths?: number;
   loanAmount?: number;
   installments?: CreditAmortizationInstallment[];
+  /** Business-facing supervision — never a raw confidence score. */
+  supervision?: AmortizationSupervisionStatus;
 };
 
 export const CREDIT_AMORTIZATION_FIELD_KEYS = [

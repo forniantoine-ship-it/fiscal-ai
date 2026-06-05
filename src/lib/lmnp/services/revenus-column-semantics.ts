@@ -1,11 +1,23 @@
 import type { RevenueTransactionCategory } from "../types";
 import {
+  hasCurrencyContext,
+  hasMonetaryDecimalStructure,
+  looksLikeMonetaryAmount,
+  normalizeMonetaryValue,
+} from "./revenue-monetary-normalize";
+import {
   categoryFromColumnHeader,
   classifyRevenueHeader,
   isProtectedMonetaryHeader,
   logRevenueHeaderClassification,
 } from "./revenus-header-classification";
 import type { RevenueGridColumn } from "./revenus-row-mapping";
+
+export {
+  hasCurrencyContext,
+  looksLikeMonetaryAmount,
+  normalizeMonetaryValue,
+} from "./revenue-monetary-normalize";
 
 export type ColumnSemanticType = "date" | "amount" | "label" | "month" | "text";
 
@@ -157,6 +169,10 @@ export function looksLikeCalendarInteger(raw: string): boolean {
 export function isDateLikeValue(raw: string): boolean {
   const trimmed = raw.trim();
   if (!trimmed) return false;
+
+  if (looksLikeMonetaryAmount(trimmed)) {
+    return false;
+  }
 
   if (DATE_TOKEN_PATTERNS.some((pattern) => pattern.test(trimmed))) {
     return true;
@@ -387,17 +403,18 @@ export function lockTableColumns(headerCells: string[], dataRows: string[][]): L
   return locked;
 }
 
-function hasCurrencyContext(raw: string): boolean {
-  return /€|\bEUR\b|\beuro?s?\b/i.test(raw);
-}
-
 function hasDecimalStructure(raw: string): boolean {
-  return /[.,]\d{1,2}\b/.test(raw.trim());
+  return hasMonetaryDecimalStructure(raw) || /[.,]\d{1,2}\b/.test(raw.trim());
 }
 
 export function qualifiesAsMonetaryShape(raw: string, allowPlainInteger = false): boolean {
   const trimmed = raw.trim();
   if (!trimmed) return false;
+
+  if (looksLikeMonetaryAmount(trimmed)) {
+    return true;
+  }
+
   if (isDateLikeValue(trimmed)) return false;
   if (hadDateSeparators(trimmed)) return false;
   if (looksLikeCalendarInteger(trimmed)) return false;
@@ -416,6 +433,7 @@ export function qualifiesAsMonetaryShape(raw: string, allowPlainInteger = false)
 }
 
 export function isDateDerivedAmount(amount: number, rawValue: string): boolean {
+  if (looksLikeMonetaryAmount(rawValue)) return false;
   if (isDateLikeValue(rawValue)) return true;
   if (hadDateSeparators(rawValue)) return true;
   if (looksLikeCalendarInteger(rawValue)) return true;
@@ -478,7 +496,7 @@ export function parseMonetaryCell(
     return null;
   }
 
-  if (isDateLikeValue(trimmed)) {
+  if (isDateLikeValue(trimmed) && !looksLikeMonetaryAmount(trimmed)) {
     logRevenueDateRejected({
       rawValue: trimmed,
       columnType: column.lockedType,
@@ -520,14 +538,8 @@ export function parseMonetaryCell(
     return null;
   }
 
-  const normalized = trimmed
-    .replace(/\u00a0/g, " ")
-    .replace(/[^\d.,\s-€]/g, "")
-    .replace(/\s/g, "")
-    .replace(",", ".");
-
-  const value = Number.parseFloat(normalized);
-  if (!Number.isFinite(value) || value <= 0) {
+  const monetary = normalizeMonetaryValue(trimmed, { log: true });
+  if (!monetary) {
     logRevenueDateRejected({
       rawValue: trimmed,
       columnType: column.lockedType,
@@ -538,7 +550,7 @@ export function parseMonetaryCell(
     return null;
   }
 
-  const amount = Math.round(value * 100) / 100;
+  const amount = monetary.parsedAmount;
 
   if (isDateDerivedAmount(amount, trimmed) || amount > MAX_REASONABLE_MONTHLY_AMOUNT) {
     logRevenueDateRejected({
@@ -565,13 +577,18 @@ export function parseMonetaryCell(
 export function parseMonetaryCellWithHeader(
   rawValue: string,
   header: string,
+  options?: { monetaryHeaderOverride?: boolean },
 ): { amount: number; parsedType: "amount" } | null {
+  const explicitMonetary = isExplicitMonetaryHeader(header);
   const column: LockedColumn = {
     index: -1,
     header,
-    lockedType: columnTypeFromHeader(header),
+    lockedType:
+      explicitMonetary || options?.monetaryHeaderOverride
+        ? "amount"
+        : columnTypeFromHeader(header),
     targetField: targetFieldFromHeader(header),
-    monetaryHeader: isExplicitMonetaryHeader(header),
+    monetaryHeader: explicitMonetary || options?.monetaryHeaderOverride === true,
   };
   return parseMonetaryCell(rawValue, column);
 }

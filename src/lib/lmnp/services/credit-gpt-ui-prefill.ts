@@ -26,6 +26,7 @@ import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { LoanDeferralType, LoanInstallment } from "@/lib/lmnp/types";
 
 import { logCreditExtractionMerge } from "./credit-extraction-payload";
+import { logDocumentaryFormHydration } from "./documentary-extraction-debug";
 import {
   classifyLoanInstallmentPhase,
   logUiInstallmentVisibility,
@@ -48,6 +49,7 @@ export type CreditGptPrefillInput = {
   manualOverrides?: CreditFormValues;
   /** Scope governed-field ingestion to the document that just finished extraction. */
   governedPayloadFor?: "amortization" | "loan_offer";
+  documentId?: string;
 };
 
 export type CreditGptPrefillResult = {
@@ -579,6 +581,17 @@ export function hydrateCreditFormFromSession(input: CreditGptPrefillInput): Cred
 
   const { payload, fields } = buildGovernedPayload(nextValues, installments, {
     documentKind: input.governedPayloadFor,
+  });
+
+  logDocumentaryFormHydration({
+    documentId: input.documentId,
+    revenueYear: input.revenueYear,
+    sessionHasLoanOffer: Boolean(input.session.loanOffer),
+    rate: loan.rate,
+    loanApplicationFees: loan.loanApplicationFees,
+    loanGuaranteeFees: loan.loanGuaranteeFees,
+    bank: loan.bank,
+    fieldSources: fieldSources as Record<string, string | undefined>,
   });
 
   return {

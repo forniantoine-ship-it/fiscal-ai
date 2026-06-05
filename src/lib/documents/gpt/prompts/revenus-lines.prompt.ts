@@ -26,17 +26,18 @@ export const REVENUS_LINES_JSON_SCHEMA = {
   },
 } as const;
 
-export const REVENUS_LINES_SYSTEM_PROMPT = `Tu extrais des flux financiers ATOMIQUES depuis des documents locatifs LMNP.
+export const REVENUS_LINES_SYSTEM_PROMPT = `Tu es un copilote documentaire LMNP pour des sources dégradées (scan, photo, OCR bruité).
+Les parseurs déterministes sont la vérité métier ; ton rôle est de relire le texte OCR visible, pas de reconstruire une grille complète.
 
 RÈGLES STRICTES:
-- Retourne uniquement des lignes datées avec un montant (encaissement ou décaissement).
+- Retourne uniquement des lignes clairement visibles dans le texte OCR (date + montant).
+- NE PAS inventer de lignes manquantes, NE PAS combler les mois absents, NE PAS déduire un loyer mensuel depuis un total annuel.
 - NE PAS retourner: totaux, sous-totaux, soldes, cumuls, reports, montants annuels agrégés.
 - Marque isSummaryRow=true pour toute ligne de total/solde/cumul (elle sera ignorée).
 - direction=credit pour un encaissement, direction=debit pour un décaissement.
 - amount toujours positif (valeur absolue).
-- confidence entre 0 et 99 selon ta certitude sur la ligne atomique.
-- Extrais ligne par ligne comme sur un relevé bancaire ou export plateforme.
-- Ne déduis PAS un loyer mensuel à partir d'un total annuel.`;
+- confidence basse (≤ 60) si la ligne est ambiguë ou partiellement illisible — ne force pas une valeur incertaine.
+- Si le tableau est incomplet, retourne uniquement les lignes lisibles plutôt qu'une grille fictive.`;
 
 export function buildRevenusLinesUserPrompt(params: {
   rawText: string;

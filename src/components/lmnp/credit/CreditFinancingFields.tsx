@@ -6,6 +6,7 @@ import {
   installmentTableRowKey,
   logInstallmentReactKeyAudit,
 } from "@/components/lmnp/credit/installment-table-render-debug";
+import { AmortizationSupervisionCard } from "@/components/lmnp/credit/AmortizationSupervisionCard";
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
 import { motions } from "@/design-system/theme/motions";
@@ -18,6 +19,8 @@ import {
   type CreditFormValues,
 } from "@/lib/lmnp/services/credit-profile";
 import type { LoanInstallment } from "@/lib/lmnp/types";
+import type { AmortizationSupervisionStatus } from "@/lib/lmnp/services/amortization-supervision";
+import { logDocumentaryUiRender } from "@/lib/lmnp/services/documentary-extraction-debug";
 
 function LightField({
   label,
@@ -294,6 +297,7 @@ type CreditFinancingFieldsProps = {
   visibleSections?: number;
   uncertainFields?: CreditFieldKey[];
   showConfirm?: boolean;
+  amortizationSupervision?: AmortizationSupervisionStatus;
 };
 
 export function CreditFinancingFields({
@@ -308,9 +312,20 @@ export function CreditFinancingFields({
   visibleSections = 2,
   uncertainFields = [],
   showConfirm = true,
+  amortizationSupervision,
 }: CreditFinancingFieldsProps) {
   const [showSchedule, setShowSchedule] = useState(false);
   const uncertain = new Set(uncertainFields);
+  const loan = values.loans[0];
+
+  useEffect(() => {
+    logDocumentaryUiRender({
+      rate: loan?.rate,
+      loanApplicationFees: loan?.loanApplicationFees,
+      loanGuaranteeFees: loan?.loanGuaranteeFees,
+      bank: loan?.bank,
+    });
+  }, [loan?.rate, loan?.loanApplicationFees, loan?.loanGuaranteeFees, loan?.bank]);
 
   useEffect(() => {
     if (!showSchedule || installments.length === 0) return;
@@ -357,6 +372,7 @@ export function CreditFinancingFields({
 
   const form = (
     <div className="w-full">
+      <AmortizationSupervisionCard supervision={amortizationSupervision} />
       {visibleSections >= 1 ? (
         <>
           <h3

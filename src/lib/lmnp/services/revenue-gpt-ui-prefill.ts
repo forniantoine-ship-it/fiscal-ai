@@ -179,13 +179,25 @@ export function sessionFromPipelineLines(
   linesByPropertyId: Map<string, RevenueRawLine[]>,
   gridSource: RevenueGridSource,
   previous?: RevenueGptSession,
+  metaExtras?: Pick<
+    NonNullable<RevenueGptSession["meta"]>,
+    "extractionSupervision" | "extractionPipelineId"
+  >,
 ): RevenueGptSession {
-  return sessionFromTransactions(properties, fiscalYear, {
+  const session = sessionFromTransactions(properties, fiscalYear, {
     mode: "upload",
     previous,
     linesByPropertyId,
     gridSource,
   });
+  if (!metaExtras) return session;
+  return {
+    ...session,
+    meta: {
+      ...session.meta,
+      ...metaExtras,
+    },
+  };
 }
 
 function summarizeSession(session: RevenueGptSession): RevenueGptSession {

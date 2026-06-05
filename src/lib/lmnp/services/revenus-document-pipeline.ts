@@ -1,23 +1,18 @@
 import {
   REVENUE_OCR_READ_FAILURE_MESSAGE,
-  resolveRevenueDocumentTextOrThrow,
   RevenueDocumentOcrFailedError,
 } from "@/lib/documents/ocr";
 import type { LmnpDocument, Property, RevenueRawLine } from "@/lib/lmnp/types";
+import type { RevenueSupervisionStatus } from "@/lib/lmnp/services/revenue-supervision";
 
-import {
-  adaptGptLinesToRevenueRawLines,
-  inferRevenusSourceType,
-} from "./revenus-ocr-lines-adapter";
-import { requestRevenusGptExtraction } from "./revenus-gpt-extract-client";
+import { runRoutedRevenuePipeline } from "./pipelines/revenus/run-routed-revenue-pipeline";
+import type { RevenuePipelineId } from "./pipelines/revenus/revenue-pipeline-types";
 import { buildMockLinesByProperty, isRevenusMockEnabled } from "./revenus-mock";
 import {
   logRevenueGridSource,
   logRevenueRuntimeStage,
   logRevenueSourceOfTruth,
 } from "./revenus-runtime-trace";
-import { resolveDocumentFile } from "./resolve-document-file";
-import { parseStructuredRevenueTable } from "./revenus-structured-table-parser";
 
 export type RevenusGptPipelineResult = {
   documentId: string;
@@ -30,6 +25,8 @@ export type RevenusGptPipelineResult = {
   success: boolean;
   ocrFailure?: boolean;
   error?: string;
+  pipelineId?: RevenuePipelineId;
+  supervision?: RevenueSupervisionStatus;
 };
 
 export type RunRevenusGptPipelineParams = {
@@ -38,115 +35,57 @@ export type RunRevenusGptPipelineParams = {
   fiscalYear: number;
 };
 
+/**
+ * Single-document revenue extraction — routed to specialized pipelines.
+ * @deprecated Name kept for callers; implementation is multi-engine, not GPT-only.
+ */
 export async function runRevenusGptPipeline(
   params: RunRevenusGptPipelineParams,
 ): Promise<RevenusGptPipelineResult> {
-  const { document, getFile, fiscalYear } = params;
-  const sourceType = inferRevenusSourceType(document);
+  const { document, fiscalYear, getFile } = params;
 
-  const file = await resolveDocumentFile(document, getFile);
-
-  let ocrResult;
-  try {
-    ocrResult = await resolveRevenueDocumentTextOrThrow(file);
-  } catch (err) {
-    if (err instanceof RevenueDocumentOcrFailedError) {
-      return {
-        documentId: document.id,
-        fileName: document.fileName,
-        rawText: "",
-        ocrProvider: err.provider,
-        ocrStrategy: err.strategy,
-        ocrQualityScore: err.quality.score,
-        lines: [],
-        success: false,
-        ocrFailure: true,
-        error: err.message,
-      };
-    }
-    throw err;
-  }
-
-  const rawText = ocrResult.rawText;
+  const result = await runRoutedRevenuePipeline({ document, getFile, fiscalYear });
 
   logRevenueRuntimeStage("ocr_complete", {
     fn: "runRevenusGptPipeline",
     documentId: document.id,
-    provider: ocrResult.provider,
-    strategy: ocrResult.strategy,
-    qualityScore: ocrResult.quality.score,
-    textLength: rawText.length,
-    sourceType,
+    pipelineId: result.pipelineId,
+    provider: result.ocrProvider,
+    strategy: result.ocrStrategy,
+    qualityScore: result.ocrQualityScore,
+    textLength: result.rawText.length,
+    lineCount: result.lines.length,
   });
 
-  if (!rawText.trim()) {
-    return {
-      documentId: document.id,
-      fileName: document.fileName,
-      rawText,
-      ocrProvider: ocrResult.provider,
-      ocrStrategy: ocrResult.strategy,
-      ocrQualityScore: ocrResult.quality.score,
-      lines: [],
-      success: false,
-      ocrFailure: true,
-      error: REVENUE_OCR_READ_FAILURE_MESSAGE,
-    };
+  if (result.lines.length > 0) {
+    logRevenueSourceOfTruth(
+      result.pipelineId === "spreadsheet" || result.pipelineId === "pdf_structured"
+        ? "structured_table_parser"
+        : result.pipelineId === "vision"
+          ? "gpt_extraction"
+          : "ocr_extraction",
+      {
+        fn: "runRevenusGptPipeline",
+        documentId: document.id,
+        pipelineId: result.pipelineId,
+        lineCount: result.lines.length,
+      },
+    );
   }
-
-  const structured = parseStructuredRevenueTable(
-    rawText,
-    fiscalYear,
-    document.id,
-    sourceType,
-  );
-
-  if (structured.detected && structured.lines.length > 0) {
-    logRevenueSourceOfTruth("structured_table_parser", {
-      fn: "runRevenusGptPipeline",
-      documentId: document.id,
-      lineCount: structured.lines.length,
-      skipGpt: true,
-    });
-
-    return {
-      documentId: document.id,
-      fileName: document.fileName,
-      rawText,
-      ocrProvider: ocrResult.provider,
-      ocrStrategy: ocrResult.strategy,
-      ocrQualityScore: ocrResult.quality.score,
-      lines: structured.lines,
-      success: true,
-    };
-  }
-
-  const gptResult = await requestRevenusGptExtraction({
-    rawText,
-    fileName: document.fileName,
-    fiscalYear,
-    sourceType,
-  });
-
-  logRevenueSourceOfTruth("gpt_extraction", {
-    fn: "runRevenusGptPipeline",
-    documentId: document.id,
-    lineCount: gptResult.extraction.lines.length,
-    success: gptResult.success,
-  });
-
-  const lines = adaptGptLinesToRevenueRawLines(gptResult.extraction.lines, document, sourceType);
 
   return {
-    documentId: document.id,
-    fileName: document.fileName,
-    rawText,
-    ocrProvider: ocrResult.provider,
-    ocrStrategy: ocrResult.strategy,
-    ocrQualityScore: ocrResult.quality.score,
-    lines,
-    success: gptResult.success && lines.length > 0,
-    error: gptResult.error,
+    documentId: result.documentId,
+    fileName: result.fileName,
+    rawText: result.rawText,
+    ocrProvider: result.ocrProvider,
+    ocrStrategy: result.ocrStrategy,
+    ocrQualityScore: result.ocrQualityScore,
+    lines: result.lines,
+    success: result.success,
+    ocrFailure: result.ocrFailure,
+    error: result.error,
+    pipelineId: result.pipelineId,
+    supervision: result.supervision,
   };
 }
 
@@ -159,6 +98,7 @@ export type RevenusDocumentPipelineResult = {
   success: boolean;
   ocrFailure?: boolean;
   error?: string;
+  supervision?: RevenueSupervisionStatus;
 };
 
 export type RunRevenusDocumentPipelineParams = {
@@ -196,11 +136,12 @@ export async function runRevenusDocumentPipeline(
   const failedDocumentIds: string[] = [];
   const ocrFailedDocumentIds: string[] = [];
   const primaryId = properties[0]?.id;
+  let lastSupervision: RevenueSupervisionStatus | undefined;
 
   logRevenueRuntimeStage("ocr_dispatch", {
     fn: "runRevenusDocumentPipeline",
     documentIds,
-    pipeline: "revenus-ocr-gpt",
+    pipeline: "revenus-routed",
   });
 
   for (const documentId of documentIds) {
@@ -209,6 +150,7 @@ export async function runRevenusDocumentPipeline(
 
     try {
       const result = await runRevenusGptPipeline({ document, getFile, fiscalYear });
+      if (result.supervision) lastSupervision = result.supervision;
 
       if (result.ocrFailure) {
         ocrFailedDocumentIds.push(documentId);
@@ -259,6 +201,7 @@ export async function runRevenusDocumentPipeline(
     gridSource: "ocr_lines",
     success,
     ocrFailure,
+    supervision: lastSupervision,
     error: ocrFailure
       ? REVENUE_OCR_READ_FAILURE_MESSAGE
       : success

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { extractCreditAmortizationWithGpt } from "@/lib/documents/gpt/extract-credit-amortization-with-gpt";
-import { extractCreditLoanOfferWithGpt } from "@/lib/documents/gpt/extract-credit-loan-offer-with-gpt";
+import {
+  extractCreditDocumentaryMetadataWithGpt,
+  extractCreditLoanOfferWithGpt,
+} from "@/lib/documents/gpt/extract-credit-loan-offer-with-gpt";
 import { logAmortizationGptServerIngress } from "@/lib/lmnp/services/credit-amortization-gpt-trace";
 import {
   attachCreditPipelineServerTiming,
@@ -20,7 +23,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       rawText?: string;
       fileName?: string;
-      documentKind?: "amortization" | "loan_offer";
+      documentKind?: "amortization" | "loan_offer" | "documentary_metadata";
       declarationYear?: number;
       revenueYear?: number;
     };
@@ -48,6 +51,19 @@ export async function POST(request: Request) {
       const result = await measureCreditPipelineAwait(
         "server_gpt_extract_loan_offer",
         extractCreditLoanOfferWithGpt({ rawText, fileName }),
+        { fileName, textLength: rawText.length },
+      );
+      return NextResponse.json(result);
+    }
+
+    if (documentKind === "documentary_metadata") {
+      const result = await measureCreditPipelineAwait(
+        "server_gpt_extract_documentary_metadata",
+        extractCreditDocumentaryMetadataWithGpt({
+          rawText,
+          fileName,
+          sourceDocumentKind: "amortization_schedule",
+        }),
         { fileName, textLength: rawText.length },
       );
       return NextResponse.json(result);

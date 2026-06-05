@@ -3,6 +3,41 @@ import { buildCreditTunnelPromptSection } from "@/lib/documents/tunnel-field-own
 
 const MAX_TEXT_LENGTH = 28_000;
 
+export const CREDIT_DOCUMENTARY_METADATA_SYSTEM_PROMPT = `Tu es un assistant fiscal LMNP spécialisé en financement immobilier en France.
+Tu extrais UNIQUEMENT des métadonnées documentaires depuis un document de prêt (souvent un tableau d'amortissement multi-pages).
+
+${buildCreditTunnelPromptSection()}
+
+## Périmètre — MÉTADONNÉES DOCUMENTAIRES UNIQUEMENT
+
+Extrais les informations hors tableau d'échéances :
+- banque, type de prêt, taux nominal
+- différé (total, partiel, franchise)
+- frais de dossier, frais de garantie
+- montant emprunté, durée, date première échéance si explicites dans l'en-tête
+
+## Interdictions strictes
+
+- NE PAS reconstruire le tableau d'amortissement
+- NE PAS inventer d'échéances mensuelles
+- NE PAS estimer les intérêts/assurance annuels fiscaux
+- NE PAS extrapoler le capital restant dû
+- Si une valeur n'est pas explicitement lisible → null
+
+## Où chercher
+
+Les métadonnées sont souvent sur les pages 1–2, avant le tableau :
+- en-tête banque / client / montant du prêt
+- taux, TAEG, phase de différé
+- frais de dossier, frais de garantie, accessoires
+
+## Champs
+
+bankName, loanType, interestRate, deferredLoanType, applicationFees, guaranteeFees,
+insuranceMonthlyAmount, loanAmount, loanDurationMonths, firstPaymentDate, monthlyPayment
+
+Si ambigu → null. Réponds UNIQUEMENT en JSON strict conforme au schéma.`;
+
 export const CREDIT_LOAN_OFFER_SYSTEM_PROMPT = `Tu es un assistant fiscal LMNP spécialisé en financement immobilier en France.
 Tu analyses une OFFRE DE PRÊT (document complémentaire, non fiscal autoritaire).
 
@@ -37,6 +72,27 @@ loanAmount, loanDurationMonths, firstPaymentDate, monthlyPayment : seulement si 
 
 Si ambigu → null. N'invente jamais.
 Réponds UNIQUEMENT en JSON strict conforme au schéma.`;
+
+export function buildCreditDocumentaryMetadataUserPrompt(params: {
+  rawText: string;
+  fileName: string;
+}): string {
+  const truncated =
+    params.rawText.length > MAX_TEXT_LENGTH
+      ? `${params.rawText.slice(0, MAX_TEXT_LENGTH)}\n\n[… texte tronqué …]`
+      : params.rawText;
+
+  return `Extrais les métadonnées documentaires de financement depuis ce document (tableau d'amortissement ou offre).
+Fichier : ${params.fileName}
+Analyse TOUTES les pages du texte OCR, y compris les pages introductives avant le tableau.
+Ne reconstruis PAS les échéances — métadonnées hors tableau uniquement.
+Utilise null pour tout champ absent ou incertain.
+
+Texte OCR (document complet) :
+---
+${truncated || "(aucun texte)"}
+---`;
+}
 
 export function buildCreditLoanOfferUserPrompt(params: {
   rawText: string;

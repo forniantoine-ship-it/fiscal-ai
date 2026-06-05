@@ -1,0 +1,8 @@
+npm warn exec The following package was not found and will be installed: tsx@4.22.4
+TypeError: columns.join is not a function
+    at rowContainsDate (/Users/forniantoine/Documents/fiscal-ai/src/lib/lmnp/parsers/spatial-amortization-core.ts:137:26)
+    at isProbableInstallmentRow (/Users/forniantoine/Documents/fiscal-ai/src/lib/lmnp/parsers/spatial-amortization-core.ts:205:8)
+    at <anonymous> (/Users/forniantoine/Documents/fiscal-ai/.tmp/debug-column-mapping.ts:14:39)
+    at Array.filter (<anonymous>)
+    at main (/Users/forniantoine/Documents/fiscal-ai/.tmp/debug-column-mapping.ts:14:25)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)

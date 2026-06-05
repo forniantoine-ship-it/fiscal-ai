@@ -192,10 +192,15 @@ function buildHypothesisForSegment(
   const stats = computeColumnNumericStats(calibrationRows);
 
   const loanPhase = isDeferredPhase(segment.phase) ? "deferred" : "amortization";
+  const headerColumnCount = mappingColumnSpan(baseMapping) || records[0]?.spatialRow.columns.length || 0;
   const mapping = refineColumnRoleMapping(
     options.mappingOverride ?? baseMapping,
     stats,
-    { loanPhase },
+    {
+      loanPhase,
+      calibrationRows,
+      headerColumnCount,
+    },
   );
   const medians = buildColumnMedianContext(mapping, stats);
 
