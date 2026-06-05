@@ -2,6 +2,7 @@
  * Semantic text recovery eligibility tests.
  * Run: npm run test:document-text-extraction
  */
+import "./invalid-corpus-detection.test";
 import {
   isEffectivelyEmpty,
   isNarrativeLegalDocumentHint,

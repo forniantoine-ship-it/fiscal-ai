@@ -3,6 +3,7 @@
  * Used when OCR quality checks fail but non-empty text may still support GPT extraction.
  */
 
+import { detectInvalidCorpus } from "./invalid-corpus-detection";
 import { computeOcrQualityMetrics, type OcrQualityMetrics } from "./ocr-quality";
 
 /** Below this length the corpus is treated as effectively empty. */
@@ -35,13 +36,17 @@ export function hasNarrativeLegalTextSignals(text: string): boolean {
 }
 
 export function isEffectivelyEmpty(text: string): boolean {
-  return text.trim().length < EFFECTIVELY_EMPTY_MIN_LENGTH;
+  const trimmed = text.trim();
+  if (trimmed.length < EFFECTIVELY_EMPTY_MIN_LENGTH) return true;
+  return detectInvalidCorpus(trimmed).invalidCorpusDetected;
 }
 
 /**
  * Whether partial extracted text is worth attempting GPT semantic understanding.
  */
 export function isSemanticRecoveryEligible(text: string, fileName?: string): boolean {
+  if (detectInvalidCorpus(text).invalidCorpusDetected) return false;
+
   const metrics = computeOcrQualityMetrics(text);
   if (metrics.textLength < PARTIAL_TEXT_MIN_LENGTH) return false;
 

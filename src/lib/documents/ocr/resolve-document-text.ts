@@ -20,6 +20,11 @@ import { extractNativePdfText, isPdfFile } from "@/lib/documents/ocr/pdf-native-
 import { preprocessRasterImagesForOcr } from "@/lib/documents/ocr/preprocess-raster-images";
 import { fileToRasterImages } from "@/lib/documents/ocr/pdf-to-images";
 import {
+  detectInvalidCorpus,
+  logInvalidCorpusDebug,
+  sanitizeCorpusText,
+} from "@/lib/documents/ocr/invalid-corpus-detection";
+import {
   isEffectivelyEmpty,
   isSemanticRecoveryEligible,
 } from "@/lib/documents/ocr/semantic-text-recovery";
@@ -116,7 +121,11 @@ function finalizeAttempt(params: {
   strategiesAttempted: DocumentTextExtractionStrategy[];
   fileName?: string;
 }): AttemptResult {
-  const normalized = normalizeOcrText(params.rawText);
+  const sanitizedRaw = sanitizeCorpusText(params.rawText, params.provider, {
+    stage: params.strategy,
+    fileName: params.fileName,
+  });
+  const normalized = normalizeOcrText(sanitizedRaw);
   const quality = computeOcrQualityMetrics(normalized);
   const density = computeTextDensity(normalized, params.pageCount);
   const qualityOk = isOcrQualityAcceptable(quality);
@@ -141,9 +150,10 @@ function finalizeAttempt(params: {
 }
 
 function pickBestAttempt(attempts: AttemptResult[]): AttemptResult | null {
-  if (!attempts.length) return null;
+  const viable = attempts.filter((attempt) => !isEffectivelyEmpty(attempt.rawText));
+  if (!viable.length) return null;
 
-  return [...attempts].sort((a, b) => {
+  return [...viable].sort((a, b) => {
     if (a.ok !== b.ok) return a.ok ? -1 : 1;
     if (a.semanticRecoveryEligible !== b.semanticRecoveryEligible) {
       return a.semanticRecoveryEligible ? -1 : 1;
@@ -252,11 +262,15 @@ export async function resolveDocumentText(
   try {
     incrementCreditPipelineCounter("vision_ocr_requests");
     strategiesAttempted.push("vision_ocr");
-    const visionText = await measureCreditPipelineAwait(
+    const visionTextRaw = await measureCreditPipelineAwait(
       "ocr_vision_request",
       requestVisionOcrText(images, { fileName: file.name }),
       { pageCount: images.length },
     );
+    const visionText = sanitizeCorpusText(visionTextRaw, "vision_ocr", {
+      stage: "vision_ocr_pre_merge",
+      fileName: file.name,
+    });
 
     const combined = measureCreditPipelineSync(
       "ocr_native_vision_text_merge",
@@ -306,11 +320,15 @@ export async function resolveDocumentText(
     incrementCreditPipelineCounter("vision_ocr_requests");
     strategiesAttempted.push("vision_ocr_preprocessed");
     const preprocessed = await preprocessRasterImagesForOcr(images);
-    const preprocessedText = await measureCreditPipelineAwait(
+    const preprocessedTextRaw = await measureCreditPipelineAwait(
       "ocr_vision_preprocessed_request",
       requestVisionOcrText(preprocessed, { fileName: `${file.name} (preprocessed)` }),
       { pageCount: preprocessed.length },
     );
+    const preprocessedText = sanitizeCorpusText(preprocessedTextRaw, "vision_ocr_preprocessed", {
+      stage: "vision_ocr_preprocessed_pre_merge",
+      fileName: file.name,
+    });
 
     const combined = measureCreditPipelineSync(
       "ocr_native_preprocessed_text_merge",
@@ -354,8 +372,22 @@ export async function resolveDocumentText(
 
   // Stage 4: partial-text semantic recovery — return best non-empty attempt
   const best = pickBestAttempt(attempts);
-  if (best && !isEffectivelyEmpty(best.rawText)) {
-    if (best.semanticRecoveryEligible || best.density.textLength >= 40) {
+  if (best) {
+    const invalidBest = detectInvalidCorpus(best.rawText);
+    if (invalidBest.invalidCorpusDetected) {
+      logInvalidCorpusDebug({
+        invalidCorpusDetected: true,
+        rejectionReason: invalidBest.rejectionReason,
+        rejectedCorpusPreview: best.rawText,
+        providerSource: best.provider,
+        originalLength: best.rawText.length,
+        stage: "partial_semantic_recovery_blocked",
+        fileName: file.name,
+      });
+    } else if (
+      !isEffectivelyEmpty(best.rawText) &&
+      (best.semanticRecoveryEligible || best.density.textLength >= 40)
+    ) {
       strategiesAttempted.push("partial_semantic_recovery");
       const recoveryResult: ResolveDocumentTextResult = {
         ...best,

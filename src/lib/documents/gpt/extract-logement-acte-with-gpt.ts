@@ -1,15 +1,20 @@
 import OpenAI from "openai";
 
+import { CANONICAL_FIELD_KEYS_BY_INTENT } from "@/lib/lmnp/services/logement/logement-canonical-schema";
+import { resolveLogementDocumentIntent } from "@/lib/lmnp/services/logement/logement-document-intent";
 import {
-  LOGEMENT_ACTE_JSON_SCHEMA,
-  LOGEMENT_ACTE_SYSTEM_PROMPT,
-  buildLogementActeUserPrompt,
-} from "./prompts/logement-acte.prompt";
+  logLogementPipelineDebug,
+  logLogementPipelineDebugFull,
+} from "@/lib/lmnp/services/logement/logement-pipeline-trace";
+import type { LogementSemanticNormalizationResult } from "@/lib/lmnp/services/logement/logement-semantic-normalization";
+
+import { processLogementCanonicalGptJson } from "./logement-canonical-gpt-processor";
 import {
-  LogementActeExtractionSchema,
-  normalizeLogementActeExtraction,
-  type LogementActeExtraction,
-} from "./schemas/logement-acte.schema";
+  buildLogementCanonicalSystemPrompt,
+  buildLogementCanonicalUserPrompt,
+} from "./prompts/logement-canonical.prompt";
+import { buildLogementCanonicalJsonSchema } from "./schemas/logement-canonical-extraction.schema";
+import type { LogementActeExtraction } from "./schemas/logement-acte.schema";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
@@ -22,10 +27,11 @@ export type LogementActeGptExtractionResult = {
   success: boolean;
   extraction: LogementActeExtraction;
   error?: string;
-  /** Temporary diagnostics — compare GPT raw vs normalized vs UI. */
+  semantic?: LogementSemanticNormalizationResult;
   debug?: {
     rawGptJson: unknown;
     normalized: LogementActeExtraction;
+    semantic?: LogementSemanticNormalizationResult;
   };
 };
 
@@ -37,13 +43,9 @@ function getModel(): string {
   );
 }
 
-function snapshotExtraction(extraction: LogementActeExtraction): Record<string, unknown> {
-  return { ...extraction };
-}
-
 /**
- * GPT-first structured extraction for Logement / acte notarié documents.
- * Server-side only — call via /api/lmnp/logement/extract.
+ * GPT text-path structured extraction for Logement documents.
+ * Flow: intent resolution → canonical schema fill → semantic normalization → legacy bridge.
  */
 export async function extractLogementActeWithGpt(
   input: ExtractLogementActeWithGptInput,
@@ -72,7 +74,38 @@ export async function extractLogementActeWithGpt(
     };
   }
 
+  const intentResolution = resolveLogementDocumentIntent({
+    fileName: input.fileName,
+    rawText: input.rawText,
+  });
+  const intent = intentResolution.intent;
   const model = getModel();
+
+  logLogementPipelineDebug("intent_resolved", {
+    fileName: input.fileName,
+    detectedIntent: intentResolution.intent,
+    confidence: intentResolution.confidence,
+    matchedKeywords: intentResolution.signals,
+    resolvedAt: "gpt_extractor",
+  });
+
+  const systemPrompt = buildLogementCanonicalSystemPrompt(intent);
+  const userPrompt = buildLogementCanonicalUserPrompt(input.rawText, intent);
+  const jsonSchema = buildLogementCanonicalJsonSchema(intent);
+
+  logLogementPipelineDebug("gpt_request", {
+    fileName: input.fileName,
+    model,
+    extractionPath: "text",
+    promptIntent: intent,
+    schemaKeysExpected: [...CANONICAL_FIELD_KEYS_BY_INTENT[intent]],
+    corpusLength: input.rawText.length,
+    systemPromptLength: systemPrompt.length,
+    userPromptLength: userPrompt.length,
+    systemPrompt,
+    userPrompt,
+    jsonSchema,
+  });
 
   try {
     const openai = new OpenAI({ apiKey });
@@ -80,18 +113,31 @@ export async function extractLogementActeWithGpt(
       model,
       temperature: 0,
       messages: [
-        { role: "system", content: LOGEMENT_ACTE_SYSTEM_PROMPT },
-        { role: "user", content: buildLogementActeUserPrompt(input.rawText) },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
       response_format: {
         type: "json_schema",
-        json_schema: LOGEMENT_ACTE_JSON_SCHEMA,
+        json_schema: jsonSchema,
       },
     });
 
     const content = completion.choices[0]?.message?.content;
+
+    logLogementPipelineDebugFull("gpt_raw_response", {
+      fileName: input.fileName,
+      model,
+      extractionPath: "text",
+      promptIntent: intent,
+      responseContentLength: content?.length ?? 0,
+      responseContentEmpty: !content?.trim(),
+      rawGptResponse: content ?? null,
+      completionId: completion.id,
+      finishReason: completion.choices[0]?.finish_reason ?? null,
+      usage: completion.usage ?? null,
+    });
+
     if (!content?.trim()) {
-      console.log("[logement-gpt] extraction failed", { reason: "empty_response" });
       return {
         success: false,
         extraction: {},
@@ -103,7 +149,6 @@ export async function extractLogementActeWithGpt(
     try {
       rawResponse = JSON.parse(content) as unknown;
     } catch {
-      console.log("[logement-gpt] extraction failed", { reason: "invalid_json" });
       return {
         success: false,
         extraction: {},
@@ -111,53 +156,20 @@ export async function extractLogementActeWithGpt(
       };
     }
 
-    console.log("[logement-debug-gpt-raw]", {
+    logLogementPipelineDebugFull("gpt_raw_response", {
       fileName: input.fileName,
+      extractionPath: "text",
+      jsonParseFailed: false,
       rawGptJson: rawResponse,
+      rawGptResponse: content,
     });
 
-    const validation = LogementActeExtractionSchema.safeParse(rawResponse);
-    if (!validation.success) {
-      console.log("[logement-gpt] extraction failed", {
-        reason: "schema_validation",
-        issues: validation.error.issues.map((issue) => issue.message),
-      });
-      return {
-        success: false,
-        extraction: {},
-        error: "GPT response failed schema validation",
-        debug: { rawGptJson: rawResponse, normalized: {} },
-      };
-    }
-
-    const extraction = normalizeLogementActeExtraction(validation.data);
-    console.log("[logement-debug-normalized]", {
+    return processLogementCanonicalGptJson({
+      rawResponse,
       fileName: input.fileName,
-      normalized: extraction,
+      intentResolution,
+      extractionSource: "text",
     });
-    const fieldCount = Object.keys(extraction).length;
-
-    console.log("[logement-gpt] parsed fields snapshot", snapshotExtraction(extraction));
-    console.log("[logement-gpt] extraction complete", {
-      fileName: input.fileName,
-      model,
-      fieldCount,
-      fields: Object.keys(extraction),
-    });
-
-    if (fieldCount === 0) {
-      return {
-        success: false,
-        extraction: {},
-        error: "Aucun champ extrait.",
-      };
-    }
-
-    return {
-      success: true,
-      extraction,
-      debug: { rawGptJson: rawResponse, normalized: extraction },
-    };
   } catch (err) {
     const message = err instanceof Error ? err.message : "GPT extraction failed";
     console.log("[logement-gpt] extraction failed", {
@@ -170,4 +182,12 @@ export async function extractLogementActeWithGpt(
       error: message,
     };
   }
+}
+
+export function countLogementSemanticFields(result: LogementActeGptExtractionResult): number {
+  const canonical = result.semantic?.normalizedCanonicalFields as Record<string, unknown> | undefined;
+  if (canonical) {
+    return Object.keys(canonical).filter((key) => canonical[key] !== undefined).length;
+  }
+  return Object.keys(result.extraction).length;
 }

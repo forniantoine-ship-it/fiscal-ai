@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
 import {
   DOCUMENT_WORKFLOW_CARD_STYLE,
 } from "@/components/lmnp/documents/document-workflow-shared";
+import { LogementExtractionFallbackCard } from "@/components/lmnp/logement/LogementExtractionFallbackCard";
+import { LogementExtractionRecoveryActions } from "@/components/lmnp/logement/LogementExtractionRecoveryActions";
 import { LogementHero } from "@/components/lmnp/logement/LogementHero";
 import {
   LogementProfileFields,
@@ -60,6 +61,17 @@ import {
 } from "@/lib/lmnp/services/passive-form-restore";
 import { useTunnelHydration } from "@/lib/lmnp/hydration";
 import { buildLogementConfiguredSummary } from "@/lib/lmnp/services/configured-dossier-summaries";
+import { countLogementSemanticFields } from "@/lib/documents/gpt/extract-logement-acte-with-gpt";
+import {
+  deriveLogementExtractionState,
+  LOGEMENT_CORE_FIELD_KEYS,
+  type LogementExtractionOutcome,
+} from "@/lib/lmnp/services/logement/logement-extraction-state";
+import {
+  countEmptyLogementFormFields,
+  logLogementPipelineDebug,
+} from "@/lib/lmnp/services/logement/logement-pipeline-trace";
+import { logVisionFallbackCheckpoint } from "@/lib/lmnp/services/logement/vision-fallback-trace";
 import {
   runLogementDocumentPipeline,
   type LogementGptPipelineResult,
@@ -77,6 +89,12 @@ import {
 
 const SECTION_REVEAL_DELAYS_MS = [0, 400];
 const LOGEMENT_UPLOAD_CATEGORY = getDocumentJourneyStep("logement").category;
+
+/** TEMP — set true to verify fallback branch is in the render tree. Remove after DOM trace. */
+const SHOULD_FORCE_FALLBACK_CARD_DEBUG = false;
+
+/** TEMP — set true to validate render layer when vision flag propagation is broken. */
+const SHOULD_FORCE_VISION_FALLBACK_ATTEMPTED_DEBUG = false;
 
 function resolveLogementDocument(
   documents: LmnpDocument[],
@@ -113,14 +131,14 @@ function createInitialLogementState(workspace: Parameters<typeof hydrateLogement
 }
 
 function isLogementFormEmpty(values: LogementFormValues): boolean {
-  return (
-    !values.address?.trim() &&
-    !values.city?.trim() &&
-    !values.postalCode?.trim() &&
-    !values.propertyPurchasePrice?.trim() &&
-    !values.acquisitionDate?.trim() &&
-    !values.surface?.trim()
-  );
+  return countHydratedLogementFields(values) === 0;
+}
+
+function countHydratedLogementFields(values: LogementFormValues): number {
+  return LOGEMENT_CORE_FIELD_KEYS.filter((key) => {
+    const value = values[key as keyof LogementFormValues];
+    return typeof value === "string" && value.trim().length > 0;
+  }).length;
 }
 
 function resolveDisplayedLogementFormValues(
@@ -172,6 +190,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   const pendingUncertainFieldsRef = useRef<LogementFieldKey[]>([]);
   const allowPrefillAtExecutionStartRef = useRef(false);
   const prefillAppliedRef = useRef(false);
+  const formSectionRef = useRef<HTMLDivElement>(null);
   const prevShowExtractionFormRef = useRef(false);
   const pendingUploadRef = useRef(false);
   const executionPendingRef = useRef(false);
@@ -213,6 +232,15 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState<LogementFormValues>(() => initialState().formValues);
   const [userValidatedFields, setUserValidatedFields] = useState<LogementUserValidatedFields>({});
+  const [extractionOutcome, setExtractionOutcome] = useState<LogementExtractionOutcome | null>(null);
+  const [manualFormUnlocked, setManualFormUnlocked] = useState(false);
+  const [visionFallbackAttempted, setVisionFallbackAttempted] = useState(false);
+  const visionFallbackFromPipelineRef = useRef(false);
+  const [lastPipelineExtractionSuccess, setLastPipelineExtractionSuccess] = useState<boolean | null>(
+    null,
+  );
+  const [lastPatchedFieldNames, setLastPatchedFieldNames] = useState<LogementPrefillFieldKey[]>([]);
+  const [lastExtractionKeysCount, setLastExtractionKeysCount] = useState(0);
 
   visibleSectionsRef.current = visibleSections;
 
@@ -229,14 +257,90 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     formValuesRef.current = formValues;
   }, [formValues]);
 
-  const isFailed =
-    logementDoc?.status === "failed" && !aiAnimationDone && !multiPropertyDetected && !isExecutionRunning;
-  const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
+  // validatedSuccess only — `confirmed` (draft timestamp) must not block re-upload recovery UX.
+  const showConfiguredCard = validatedSuccess && !isEditing;
   const showExtractionForm =
     aiAnimationDone &&
     !isExecutionRunning &&
     !multiPropertyDetected &&
     !showConfiguredCard;
+
+  const showFormFields =
+    showExtractionForm &&
+    (manualFormUnlocked ||
+      extractionOutcome?.state === "success" ||
+      (extractionOutcome?.state === "partial" && lastPatchedFieldNames.length > 0));
+
+  const isAnalyzing = isExecutionRunning;
+
+  const hydratedFieldCount = Math.max(
+    extractionOutcome?.patchedFieldCount ?? 0,
+    lastPatchedFieldNames.length,
+    countHydratedLogementFields(formValues),
+  );
+
+  const extractionState = extractionOutcome?.state ?? null;
+  const extractionSuccess = lastPipelineExtractionSuccess;
+  const documentsPresent = uploadedCount > 0 || hasUploaded;
+
+  const extractionAttempted =
+    extractionOutcome !== null ||
+    lastPipelineExtractionSuccess !== null ||
+    logementDoc?.status === "failed" ||
+    logementDoc?.status === "analyzed";
+
+  const pipelineVisionFromSession = Boolean(gptSessionRef.current?.visionFallbackActivated);
+  const visionFallbackForRender =
+    SHOULD_FORCE_VISION_FALLBACK_ATTEMPTED_DEBUG ||
+    visionFallbackAttempted ||
+    visionFallbackFromPipelineRef.current ||
+    pipelineVisionFromSession;
+
+  const extractionFailedProductSignal =
+    extractionState === "failed" ||
+    extractionSuccess === false ||
+    lastPatchedFieldNames.length === 0;
+
+  const shouldShowFallbackCardProduct =
+    documentsPresent &&
+    extractionAttempted &&
+    !manualFormUnlocked &&
+    !isAnalyzing &&
+    !showConfiguredCard &&
+    !multiPropertyDetected &&
+    hydratedFieldCount === 0 &&
+    extractionFailedProductSignal;
+
+  const shouldShowFallbackCardResilient =
+    hasUploaded &&
+    !manualFormUnlocked &&
+    !isAnalyzing &&
+    hydratedFieldCount === 0 &&
+    !showConfiguredCard &&
+    !multiPropertyDetected &&
+    (aiAnimationDone || logementDoc?.status === "failed");
+
+  const shouldShowFallbackCardComputed =
+    shouldShowFallbackCardResilient &&
+    (shouldShowFallbackCardProduct || extractionAttempted);
+
+  const shouldShowFallbackCard =
+    SHOULD_FORCE_FALLBACK_CARD_DEBUG ||
+    (SHOULD_FORCE_VISION_FALLBACK_ATTEMPTED_DEBUG
+      ? hasUploaded &&
+        !manualFormUnlocked &&
+        !isAnalyzing &&
+        !showConfiguredCard &&
+        !multiPropertyDetected &&
+        visionFallbackForRender
+      : shouldShowFallbackCardComputed);
+
+  const showPartialOrSuccessRecovery =
+    showExtractionForm &&
+    !shouldShowFallbackCard &&
+    extractionOutcome !== null &&
+    (extractionOutcome.state === "success" ||
+      (extractionOutcome.state === "partial" && lastPatchedFieldNames.length > 0));
 
   const displayedFormValues = useMemo(
     () =>
@@ -277,7 +381,6 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const prevDerivedVisualRef = useRef({
     isExecutionRunning,
-    isFailed,
     showExtractionForm,
     showConfiguredCard,
   });
@@ -291,9 +394,6 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         prev.isExecutionRunning,
         isExecutionRunning,
       );
-    }
-    if (prev.isFailed !== isFailed) {
-      logVisualMutation("loading-state-change", "derived.isFailed", prev.isFailed, isFailed);
     }
     if (prev.showExtractionForm !== showExtractionForm) {
       logVisualMutation(
@@ -319,11 +419,10 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     }
     prevDerivedVisualRef.current = {
       isExecutionRunning,
-      isFailed,
       showExtractionForm,
       showConfiguredCard,
     };
-  }, [isExecutionRunning, isFailed, showExtractionForm, showConfiguredCard, aiAnimationDone, confirmed]);
+  }, [isExecutionRunning, showExtractionForm, showConfiguredCard, aiAnimationDone, confirmed]);
 
   const prevWorkspaceRef = useRef(workspace);
   useEffect(() => {
@@ -336,6 +435,47 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     prevWorkspaceRef.current = workspace;
   }, [workspace]);
 
+  const unlockManualForm = useCallback(
+    (options?: { scroll?: boolean }) => {
+      const pending = pendingFormPrefillRef.current;
+      const persisted = workspace.declarationDraft?.logementWorkspaceForm;
+      const source =
+        pending && !isLogementFormEmpty(pending)
+          ? pending
+          : persisted && !isLogementFormEmpty(persisted)
+            ? persisted
+            : null;
+
+      if (source && isLogementFormEmpty(formValuesRef.current)) {
+        setFormValues(source);
+      }
+
+      setManualFormUnlocked(true);
+      setAiAnimationDone(true);
+      setVisibleSections(2);
+      skipRevealAnimationRef.current = true;
+      prefillAppliedRef.current = true;
+
+      if (pendingUncertainFieldsRef.current.length > 0) {
+        setUncertainFields(pendingUncertainFieldsRef.current);
+      }
+
+      if (options?.scroll) {
+        requestAnimationFrame(() => {
+          formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
+    },
+    [workspace.declarationDraft?.logementWorkspaceForm],
+  );
+
+  const syncVisionFallbackFlag = useCallback((raw: boolean | undefined, _source: string) => {
+    const pipelineVisionFlag = Boolean(raw);
+    visionFallbackFromPipelineRef.current = pipelineVisionFlag;
+    setVisionFallbackAttempted(pipelineVisionFlag);
+    return pipelineVisionFlag;
+  }, []);
+
   const applyPipelineResult = useCallback(
     (result: LogementGptPipelineResult, options: { allowPrefill: boolean }) => {
       gptSessionRef.current = result;
@@ -347,7 +487,31 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       });
 
       if (!options.allowPrefill) {
+        logLogementPipelineDebug("prefill_state_update", {
+          documentId: result.documentId,
+          statePatchedSuccessfully: false,
+          skippedReason: "allowPrefill_false_passive_or_no_execution",
+          allowPrefill: options.allowPrefill,
+          extractionSuccess: result.extraction.success,
+          extractedKeys: Object.keys(result.extraction.extraction),
+          currentFormValues: formValuesRef.current,
+          pendingFormPrefill: pendingFormPrefillRef.current,
+        });
         console.log("[logement-prefill-skipped]", { reason: "passive_or_no_execution" });
+        setLastPipelineExtractionSuccess(result.extraction.success);
+        setLastPatchedFieldNames([]);
+        setLastExtractionKeysCount(Object.keys(result.extraction.extraction).length);
+        setExtractionOutcome(
+          deriveLogementExtractionState({
+            extractionSuccess: result.extraction.success,
+            patchedFieldNames: [],
+            canonicalFieldCount: countLogementSemanticFields(result.extraction),
+            formValues: formValuesRef.current,
+            visionFallbackActivated: result.visionFallbackActivated,
+          }),
+        );
+        syncVisionFallbackFlag(result.visionFallbackActivated, "allowPrefill_false");
+        setManualFormUnlocked(false);
         setAiAnimationDone(true);
         clearExecution();
         return;
@@ -396,13 +560,41 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         status: result.extraction.success ? "analyzed" : "failed",
       });
 
+      let patchedFieldNames: LogementPrefillFieldKey[] = [];
+      let outcomeFormValues = formValuesRef.current;
+
       if (result.extraction.success) {
         prefillAppliedRef.current = false;
         const prefill = prefillLogementFormFromGpt({
           extraction: result.extraction.extraction,
+          semantic: result.semantic ?? result.extraction.semantic,
           currentValues: formValuesRef.current,
           userValidatedFields,
           currentBackground: workspace.declarationDraft?.propertyBackgroundExtraction,
+          visionFallbackActivated: result.visionFallbackActivated,
+        });
+
+        const hydratedFieldStats = countEmptyLogementFormFields(
+          prefill.nextValues as unknown as Record<string, unknown>,
+        );
+        patchedFieldNames = prefill.changedFields;
+        outcomeFormValues = prefill.nextValues;
+
+        logLogementPipelineDebug("prefill_state_update", {
+          documentId: result.documentId,
+          phase: "after_prefill_compute_before_react_patch",
+          statePatchedSuccessfully: patchedFieldNames.length > 0,
+          finalHydratedFields: prefill.nextValues,
+          emptyFieldCount: hydratedFieldStats.emptyFieldCount,
+          fieldStates: hydratedFieldStats.fieldStates,
+          patchedFieldNames,
+          skippedFields: prefill.skippedFields,
+          changedFields: prefill.changedFields,
+          extractionKeys: Object.keys(result.extraction.extraction),
+          extractionPayload: result.extraction.extraction,
+          pendingFormPrefillQueued: true,
+          prefillAppliedRef: prefillAppliedRef.current,
+          showExtractionForm,
         });
 
         pendingFormPrefillRef.current = prefill.nextValues;
@@ -454,6 +646,83 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           prefillChangedFields: prefill.changedFields,
           gptNormalized: result.extraction.extraction,
         });
+
+        logLogementPipelineDebug("prefill_state_update", {
+          documentId: result.documentId,
+          phase: "after_draft_dispatch",
+          statePatchedSuccessfully: true,
+          draftLogementWorkspaceForm: prefill.nextValues,
+          patchedFieldNames: prefill.changedFields,
+          pendingFormPrefillRef: pendingFormPrefillRef.current,
+          localFormValuesStill: formValuesRef.current,
+          note: "draft patched; React setFormValues may still be pending until showExtractionForm",
+        });
+      } else {
+        const partialKeys = Object.keys(result.extraction.extraction);
+        if (partialKeys.length > 0) {
+          const prefill = prefillLogementFormFromGpt({
+            extraction: result.extraction.extraction,
+            semantic: result.semantic ?? result.extraction.semantic,
+            currentValues: formValuesRef.current,
+            userValidatedFields,
+            currentBackground: workspace.declarationDraft?.propertyBackgroundExtraction,
+            visionFallbackActivated: result.visionFallbackActivated,
+          });
+          pendingFormPrefillRef.current = prefill.nextValues;
+          pendingUncertainFieldsRef.current = logementPrefillUncertainFields(prefill.changedFields);
+          patchedFieldNames = prefill.changedFields;
+          outcomeFormValues = prefill.nextValues;
+        }
+
+        logLogementPipelineDebug("prefill_state_update", {
+          documentId: result.documentId,
+          phase: "extraction_failed",
+          statePatchedSuccessfully: patchedFieldNames.length > 0,
+          skippedReason: "extraction_success_false",
+          extractionError: result.extraction.error ?? null,
+          extractionPayload: result.extraction.extraction,
+          extractedKeys: partialKeys,
+          partialPrefillApplied: patchedFieldNames.length > 0,
+        });
+      }
+
+      const semanticFieldCount = countLogementSemanticFields(result.extraction);
+      const outcome = deriveLogementExtractionState({
+        extractionSuccess: result.extraction.success,
+        patchedFieldNames,
+        canonicalFieldCount: semanticFieldCount,
+        formValues: outcomeFormValues,
+        visionFallbackActivated: result.visionFallbackActivated,
+        visionExtractionSucceeded: Boolean(
+          result.visionFallbackActivated && result.extraction.success,
+        ),
+      });
+
+      const extractionKeysCount = Object.keys(result.extraction.extraction).length;
+
+      setLastPipelineExtractionSuccess(result.extraction.success);
+      setLastPatchedFieldNames(patchedFieldNames);
+      setLastExtractionKeysCount(extractionKeysCount);
+      setExtractionOutcome(outcome);
+      syncVisionFallbackFlag(result.visionFallbackActivated, "allowPrefill_true");
+      setManualFormUnlocked(
+        patchedFieldNames.length > 0 &&
+          (outcome.state === "success" || outcome.state === "partial"),
+      );
+
+      if (result.visionFallbackActivated) {
+        logVisionFallbackCheckpoint("final_prefill_after_vision", {
+          documentId: result.documentId,
+          fileName: result.fileName,
+          patchedFieldNames,
+          statePatchedSuccessfully: patchedFieldNames.length > 0,
+          extractionSuccess: result.extraction.success,
+          visionFallbackRecoveredFields: semanticFieldCount,
+          extractionKeys: Object.keys(result.extraction.extraction),
+          allowPrefill: options.allowPrefill,
+          outcomeState: outcome.state,
+          draftDispatched: result.extraction.success && patchedFieldNames.length > 0,
+        });
       }
 
       setAiAnimationDone(true);
@@ -462,6 +731,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     [
       dispatch,
       clearExecution,
+      syncVisionFallbackFlag,
       userValidatedFields,
       workspace.declarationDraft?.propertyBackgroundExtraction,
     ],
@@ -469,7 +739,12 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const runAnalysis = useCallback(
     async (documentId: string) => {
-      if (analyzingRef.current) return;
+      console.error("RUN_ANALYSIS_ENTER");
+
+      if (analyzingRef.current) {
+        console.error("RUN_ANALYSIS_BLOCKED", "analyzingRef_already_true");
+        return;
+      }
       const document = workspace.documents.find((doc) => doc.id === documentId);
       if (!document) return;
 
@@ -495,6 +770,20 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       } catch (err) {
         console.error("[LogementDocumentStep] GPT pipeline failed", err);
         dispatch({ type: "DOCUMENT_SET_STATUS", documentId, status: "failed" });
+        setLastPipelineExtractionSuccess(false);
+        setLastPatchedFieldNames([]);
+        setLastExtractionKeysCount(0);
+        setExtractionOutcome(
+          deriveLogementExtractionState({
+            extractionSuccess: false,
+            patchedFieldNames: [],
+            canonicalFieldCount: 0,
+            formValues: formValuesRef.current,
+            pipelineError: true,
+          }),
+        );
+        syncVisionFallbackFlag(false, "pipeline_catch_error");
+        setManualFormUnlocked(false);
         setAiAnimationDone(true);
         clearExecution();
       } finally {
@@ -509,8 +798,14 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       dispatch,
       applyPipelineResult,
       clearExecution,
+      syncVisionFallbackFlag,
     ],
   );
+
+  const runAnalysisRef = useRef(runAnalysis);
+  useEffect(() => {
+    runAnalysisRef.current = runAnalysis;
+  }, [runAnalysis]);
 
   const handleAiAnimationComplete = useCallback(() => {
     logVisualMutation("animation-replay", "handleAiAnimationComplete", aiAnimationDone, true);
@@ -571,7 +866,17 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       console.log("[showExtractionForm true]");
     }
 
-    if (prefillAppliedRef.current) return;
+    if (prefillAppliedRef.current) {
+      logLogementPipelineDebug("prefill_state_update", {
+        phase: "react_layout_effect_skipped",
+        skippedReason: "prefillAppliedRef_already_true",
+        showExtractionForm,
+        prefillAppliedRef: prefillAppliedRef.current,
+        currentFormValues: formValuesRef.current,
+        pendingFormPrefill: pendingFormPrefillRef.current,
+      });
+      return;
+    }
 
     const pending = pendingFormPrefillRef.current;
     const persisted = draft?.logementWorkspaceForm;
@@ -582,17 +887,58 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           ? persisted
           : null;
 
-    if (!source) return;
+    if (!source) {
+      logLogementPipelineDebug("prefill_state_update", {
+        phase: "react_layout_effect_no_source",
+        statePatchedSuccessfully: false,
+        skippedReason: "no_pending_or_persisted_form_values",
+        showExtractionForm,
+        pendingFormPrefill: pending,
+        persistedForm: persisted,
+        currentFormValues: formValuesRef.current,
+      });
+      return;
+    }
     if (!isLogementFormEmpty(formValuesRef.current)) {
+      logLogementPipelineDebug("prefill_state_update", {
+        phase: "react_layout_effect_skipped",
+        statePatchedSuccessfully: false,
+        skippedReason: "form_values_already_non_empty",
+        showExtractionForm,
+        currentFormValues: formValuesRef.current,
+        pendingFormPrefill: pending,
+        wouldHaveUsedSource: source,
+      });
       prefillAppliedRef.current = true;
       pendingFormPrefillRef.current = null;
       return;
     }
 
+    const sourceLabel =
+      pending && !isLogementFormEmpty(pending) ? "pending" : "draft";
+    const hydratedFieldStats = countEmptyLogementFormFields(
+      source as unknown as Record<string, unknown>,
+    );
+
     console.log("[prefill applied]", {
-      source: pending && !isLogementFormEmpty(pending) ? "pending" : "draft",
+      source: sourceLabel,
       values: source,
     });
+
+    logLogementPipelineDebug("prefill_state_update", {
+      phase: "react_setFormValues",
+      statePatchedSuccessfully: true,
+      source: sourceLabel,
+      finalHydratedFields: source,
+      emptyFieldCount: hydratedFieldStats.emptyFieldCount,
+      fieldStates: hydratedFieldStats.fieldStates,
+      patchedFieldNames: Object.entries(source)
+        .filter(([, value]) => typeof value === "string" && value.trim())
+        .map(([key]) => key),
+      pendingUncertainFields: pendingUncertainFieldsRef.current,
+      formValuesBefore: formValuesRef.current,
+    });
+
     prefillAppliedRef.current = true;
     pendingFormPrefillRef.current = null;
     setFormValues(source);
@@ -714,19 +1060,10 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[ocr-trigger-owner]", {
-      system: "T4-logement-gated",
-      component: "LogementDocumentStep",
-      reason: "logementDoc uploaded + executionPendingRef + shouldRunExtraction",
-      docs: [logementDoc.id],
-      step: "logement",
-      category: "acte-notarie",
-      guard: "status=uploaded + analyzingRef + multiPropertyDetected + executionPendingRef + shouldRunExtraction(hydration-aware)",
-    });
+    console.error("RUN_ANALYSIS_TRIGGERED");
     executionPendingRef.current = false;
-    void runAnalysis(logementDoc.id);
-  }, [logementDoc?.id, logementDoc?.status, runAnalysis, multiPropertyDetected, shouldRunExtraction]);
+    void runAnalysisRef.current(logementDoc.id);
+  }, [logementDoc?.id, logementDoc?.status, multiPropertyDetected, shouldRunExtraction]);
 
   async function handleUpload(files: File[]) {
     if (!files.length) return;
@@ -758,18 +1095,27 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     logVisualMutation("visual-reset", "handleUpload.setHasUploaded", hasUploaded, true);
     setHasUploaded(true);
 
-    dispatch({
-      type: "UPLOAD_DOCUMENTS",
-      files: uploadedFiles.map((file) => ({ file, category: LOGEMENT_UPLOAD_CATEGORY })),
-    });
-
     if (multiProperty) {
+      dispatch({
+        type: "UPLOAD_DOCUMENTS",
+        files: uploadedFiles.map((file) => ({ file, category: LOGEMENT_UPLOAD_CATEGORY })),
+      });
       showInfo(
         "Plusieurs biens détectés",
         "Notre équipe vous contactera pour un devis personnalisé.",
       );
       return;
     }
+
+    executionPendingRef.current = true;
+    markExecution("document_upload");
+    setIsExecutionRunning(true);
+    console.log("[logement-execution-event]", { trigger: "document_upload" });
+
+    dispatch({
+      type: "UPLOAD_DOCUMENTS",
+      files: uploadedFiles.map((file) => ({ file, category: LOGEMENT_UPLOAD_CATEGORY })),
+    });
 
     const governed = snapshotGovernedFieldsForDebug(draft);
     console.log("[logement-debug-pre-upload-snapshot]", {
@@ -783,9 +1129,17 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     });
 
     setValidatedSuccess(false);
+    setExtractionOutcome(null);
+    visionFallbackFromPipelineRef.current = false;
+    setVisionFallbackAttempted(false);
+    setLastPipelineExtractionSuccess(null);
+    setLastPatchedFieldNames([]);
+    setLastExtractionKeysCount(0);
+    setManualFormUnlocked(false);
     prefillAppliedRef.current = false;
     pendingFormPrefillRef.current = null;
     pendingUncertainFieldsRef.current = [];
+    gptSessionRef.current = null;
     logVisualMutation("animation-replay", "handleUpload.resetAnimation", aiAnimationDone, false);
     setAiAnimationDone(false);
     logVisualMutation(
@@ -797,10 +1151,6 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     setVisibleSections(0);
     skipRevealAnimationRef.current = false;
     pendingUploadRef.current = true;
-    executionPendingRef.current = true;
-    markExecution("document_upload");
-    setIsExecutionRunning(true);
-    console.log("[logement-execution-event]", { trigger: "document_upload" });
 
     showInfo(
       `${uploadedFiles.length} fichier${uploadedFiles.length > 1 ? "s" : ""} reçu${uploadedFiles.length > 1 ? "s" : ""}`,
@@ -861,9 +1211,17 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
 
   function handleRetry() {
     if (!logementDoc) return;
+    setExtractionOutcome(null);
+    visionFallbackFromPipelineRef.current = false;
+    setVisionFallbackAttempted(false);
+    setLastPipelineExtractionSuccess(null);
+    setLastPatchedFieldNames([]);
+    setLastExtractionKeysCount(0);
+    setManualFormUnlocked(false);
     prefillAppliedRef.current = false;
     pendingFormPrefillRef.current = null;
     pendingUncertainFieldsRef.current = [];
+    gptSessionRef.current = null;
     logVisualMutation("animation-replay", "handleRetry", aiAnimationDone, false);
     setAiAnimationDone(false);
     logVisualMutation(
@@ -879,21 +1237,6 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     setIsExecutionRunning(true);
     console.log("[logement-execution-event]", { trigger: "reanalyze" });
     dispatch({ type: "DOCUMENT_SET_STATUS", documentId: logementDoc.id, status: "uploaded" });
-  }
-
-  function handleManualContinue() {
-    setMultiPropertyDetected(false);
-    logVisualMutation("animation-replay", "handleManualContinue", aiAnimationDone, true);
-    setAiAnimationDone(true);
-    logVisualMutation(
-      "visible-sections-change",
-      "handleManualContinue",
-      visibleSectionsRef.current,
-      2,
-    );
-    setVisibleSections(2);
-    skipRevealAnimationRef.current = true;
-    setUncertainFields([]);
   }
 
   function handleConfirm() {
@@ -966,17 +1309,50 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         />
       ) : null}
 
-      {showExtractionForm ? (
-        <LogementProfileFields
-          values={displayedFormValues}
-          onChange={handleFormChange}
-          showIncompleteWarning={incomplete}
-          onConfirm={handleConfirm}
-          cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
-          visibleSections={effectiveVisibleSections}
-          uncertainFields={uncertainFields}
-          showConfirm={effectiveVisibleSections >= 2}
+      {shouldShowFallbackCard ? (
+        <>
+          <div
+            data-fallback-card-render-probe="true"
+            style={{
+              background: "red",
+              color: "white",
+              padding: 20,
+              fontSize: 24,
+              zIndex: 999999,
+              position: "relative",
+            }}
+          >
+            FALLBACK CARD RENDERED
+          </div>
+          <LogementExtractionFallbackCard
+            onManualFallback={() => unlockManualForm({ scroll: true })}
+            onRetry={handleRetry}
+          />
+        </>
+      ) : null}
+
+      {showPartialOrSuccessRecovery && extractionOutcome ? (
+        <LogementExtractionRecoveryActions
+          extractionState={extractionOutcome.state}
+          hasPartialFields={extractionOutcome.hasPartialFields}
+          onManualFallback={() => unlockManualForm({ scroll: true })}
+          onEditFields={() => unlockManualForm({ scroll: true })}
         />
+      ) : null}
+
+      {showFormFields ? (
+        <div ref={formSectionRef} className="w-full">
+          <LogementProfileFields
+            values={displayedFormValues}
+            onChange={handleFormChange}
+            showIncompleteWarning={incomplete}
+            onConfirm={handleConfirm}
+            cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+            visibleSections={effectiveVisibleSections}
+            uncertainFields={uncertainFields}
+            showConfirm={effectiveVisibleSections >= 2}
+          />
+        </div>
       ) : null}
 
       {showConfiguredCard ? (
@@ -1004,37 +1380,6 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         </>
       ) : null}
 
-      {isFailed ? (
-        <div
-          className={`w-full text-center ${LOGEMENT_FADE_IN}`}
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.border.subtle}`,
-            backgroundColor: colors.surface.primary,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-          }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.text.primary,
-            }}
-          >
-            Certaines informations n&apos;ont pas pu être détectées automatiquement.
-          </p>
-          <p className="mt-3" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Vous pouvez réessayer l&apos;import ou compléter les champs manuellement.
-          </p>
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Button onClick={handleRetry}>Réessayer l&apos;import</Button>
-            <Button variant="secondary" onClick={handleManualContinue}>
-              Compléter manuellement
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </div>
     </LogementStaticRoot>
   );

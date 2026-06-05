@@ -1,5 +1,14 @@
 import type { LogementActeExtraction } from "@/lib/documents/gpt/schemas/logement-acte.schema";
 import type { CanonicalFieldKey } from "@/lib/documents/tunnel-field-ownership";
+import {
+  countEmptyLogementFormFields,
+  logLogementPipelineDebug,
+} from "@/lib/lmnp/services/logement/logement-pipeline-trace";
+import {
+  logVisionFallbackCheckpoint,
+  type VisionHydrationFieldTrace,
+} from "@/lib/lmnp/services/logement/vision-fallback-trace";
+import type { LogementSemanticNormalizationResult } from "@/lib/lmnp/services/logement/logement-semantic-normalization";
 import type {
   LogementFieldKey,
   LogementFormValues,
@@ -12,10 +21,14 @@ export type LogementUserValidatedFields = Partial<Record<LogementPrefillFieldKey
 
 export type LogementGptPrefillInput = {
   extraction: LogementActeExtraction;
+  /** Canonical semantic layer — used for hydration debug trace. */
+  semantic?: LogementSemanticNormalizationResult;
   currentValues: LogementFormValues;
   userValidatedFields?: LogementUserValidatedFields;
   /** Existing background hints — avoids overwriting persisted acquisition data. */
   currentBackground?: PropertyBackgroundExtraction;
+  /** When true, emit [vision-fallback-debug] hydration_after_vision checkpoint. */
+  visionFallbackActivated?: boolean;
 };
 
 export type LogementGptGovernedExtractions = {
@@ -200,6 +213,15 @@ function buildBackgroundExtraction(
  * Maps normalized acte notarié GPT extraction into Logement form values and governed hints.
  * Never overwrites user-validated fields. Credit hints are returned for governed ingest only.
  */
+type HydrationMappingTrace = {
+  extractionSource: string;
+  targetUiField: string;
+  extractionValue: unknown;
+  mappedValue?: string;
+  applied: boolean;
+  skippedReason?: string;
+};
+
 export function prefillLogementFormFromGpt(
   input: LogementGptPrefillInput,
 ): LogementGptPrefillResult {
@@ -207,20 +229,50 @@ export function prefillLogementFormFromGpt(
   const nextValues: LogementFormValues = { ...input.currentValues };
   const changedFields: LogementPrefillFieldKey[] = [];
   const skippedFields: LogementPrefillFieldKey[] = [];
+  const hydrationMappingTraces: HydrationMappingTrace[] = [];
 
   for (const mapping of LOGEMENT_SCALAR_MAPPINGS) {
     const raw = input.extraction[mapping.source];
-    if (raw === undefined || raw === null) continue;
-    if (typeof raw === "string" && !raw.trim()) continue;
+    const trace: HydrationMappingTrace = {
+      extractionSource: mapping.source,
+      targetUiField: mapping.target,
+      extractionValue: raw,
+      applied: false,
+    };
 
-    if (!canAutofillFormField(nextValues, mapping.target, mapping.fieldKey, userValidatedFields)) {
+    if (raw === undefined || raw === null) {
+      trace.skippedReason = "extraction_source_missing";
+      hydrationMappingTraces.push(trace);
+      continue;
+    }
+    if (typeof raw === "string" && !raw.trim()) {
+      trace.skippedReason = "extraction_source_empty_string";
+      hydrationMappingTraces.push(trace);
+      continue;
+    }
+
+    if (isFieldLocked(mapping.fieldKey, userValidatedFields)) {
+      trace.skippedReason = "field_locked_by_user";
       skippedFields.push(mapping.fieldKey);
+      hydrationMappingTraces.push(trace);
+      continue;
+    }
+    if (!isFormValueEmpty(nextValues, mapping.target)) {
+      trace.skippedReason = "target_ui_field_not_empty";
+      skippedFields.push(mapping.fieldKey);
+      hydrationMappingTraces.push(trace);
       continue;
     }
 
     const nextValue = mapping.transform ? mapping.transform(raw) : String(raw).trim();
-    if (!nextValue) continue;
+    if (!nextValue) {
+      trace.skippedReason = "transform_produced_empty_value";
+      hydrationMappingTraces.push(trace);
+      continue;
+    }
 
+    trace.mappedValue = nextValue;
+    trace.applied = true;
     assignStringField(
       nextValues,
       mapping.target as
@@ -234,19 +286,43 @@ export function prefillLogementFormFromGpt(
       nextValue,
     );
     changedFields.push(mapping.fieldKey);
+    hydrationMappingTraces.push(trace);
   }
 
-  if (input.extraction.propertyType?.trim()) {
+  {
     const fieldKey: LogementPrefillFieldKey = "propertyType";
-    const normalizedType = normalizePropertyType(input.extraction.propertyType);
+    const rawType = input.extraction.propertyType;
+    const trace: HydrationMappingTrace = {
+      extractionSource: "propertyType",
+      targetUiField: "propertyType",
+      extractionValue: rawType,
+      applied: false,
+    };
 
-    if (!normalizedType) {
-      skippedFields.push(fieldKey);
-    } else if (!canAutofillFormField(nextValues, "propertyType", fieldKey, userValidatedFields)) {
-      skippedFields.push(fieldKey);
+    if (!rawType?.trim()) {
+      trace.skippedReason = "extraction_source_missing";
+      hydrationMappingTraces.push(trace);
     } else {
-      nextValues.propertyType = normalizedType;
-      changedFields.push(fieldKey);
+      const normalizedType = normalizePropertyType(rawType);
+      if (!normalizedType) {
+        trace.skippedReason = "property_type_unrecognized";
+        skippedFields.push(fieldKey);
+        hydrationMappingTraces.push(trace);
+      } else if (isFieldLocked(fieldKey, userValidatedFields)) {
+        trace.skippedReason = "field_locked_by_user";
+        skippedFields.push(fieldKey);
+        hydrationMappingTraces.push(trace);
+      } else if (!isFormValueEmpty(nextValues, "propertyType")) {
+        trace.skippedReason = "target_ui_field_not_empty";
+        skippedFields.push(fieldKey);
+        hydrationMappingTraces.push(trace);
+      } else {
+        trace.mappedValue = normalizedType;
+        trace.applied = true;
+        nextValues.propertyType = normalizedType;
+        changedFields.push(fieldKey);
+        hydrationMappingTraces.push(trace);
+      }
     }
   }
 
@@ -272,6 +348,89 @@ export function prefillLogementFormFromGpt(
     nextValues,
     changedFields,
   });
+
+  if (input.semantic) {
+    for (const mapping of input.semantic.hydrationMappings) {
+      hydrationMappingTraces.push({
+        extractionSource: mapping.canonicalField,
+        targetUiField: mapping.formField,
+        extractionValue: mapping.value,
+        mappedValue:
+          typeof mapping.value === "string" || typeof mapping.value === "number"
+            ? String(mapping.value)
+            : undefined,
+        applied: changedFields.includes(mapping.formField as LogementPrefillFieldKey),
+        skippedReason: changedFields.includes(mapping.formField as LogementPrefillFieldKey)
+          ? undefined
+          : "canonical_mapping_not_applied_in_prefill",
+      });
+    }
+  }
+
+  logLogementPipelineDebug("hydration_mapping", {
+    extractionInput: input.extraction,
+    semanticHydrationMappings: input.semantic?.hydrationMappings ?? [],
+    fieldTraces: hydrationMappingTraces,
+    changedFields,
+    skippedFields,
+    currentValuesBefore: input.currentValues,
+    nextValuesAfter: nextValues,
+  });
+
+  if (input.visionFallbackActivated) {
+    const visionHydrationFields: VisionHydrationFieldTrace[] = hydrationMappingTraces.map(
+      (trace) => ({
+        canonicalField: trace.extractionSource,
+        targetUiField: trace.targetUiField,
+        mappedValue: trace.mappedValue,
+        skippedReason: trace.skippedReason,
+        applied: trace.applied,
+      }),
+    );
+
+    if (input.semantic) {
+      for (const mapping of input.semantic.hydrationMappings) {
+        const alreadyTraced = visionHydrationFields.some(
+          (field) =>
+            field.canonicalField === mapping.canonicalField &&
+            field.targetUiField === mapping.formField,
+        );
+        if (!alreadyTraced) {
+          visionHydrationFields.push({
+            canonicalField: mapping.canonicalField,
+            targetUiField: mapping.formField,
+            mappedValue:
+              typeof mapping.value === "string" || typeof mapping.value === "number"
+                ? String(mapping.value)
+                : undefined,
+            skippedReason: changedFields.includes(mapping.formField as LogementPrefillFieldKey)
+              ? undefined
+              : "canonical_mapping_not_applied_in_prefill",
+            applied: changedFields.includes(mapping.formField as LogementPrefillFieldKey),
+          });
+        }
+      }
+    }
+
+    logVisionFallbackCheckpoint("hydration_after_vision", {
+      fields: visionHydrationFields,
+      changedFields,
+      skippedFields,
+      extractionInput: input.extraction,
+      currentValuesBefore: input.currentValues,
+      nextValuesAfter: nextValues,
+    });
+  }
+
+  if (input.semantic) {
+    console.log("[logement-semantic-normalization-debug]", {
+      detectedIntent: input.semantic.detectedIntent,
+      rawDocumentTerms: input.semantic.rawDocumentTerms,
+      normalizedCanonicalFields: input.semantic.normalizedCanonicalFields,
+      unmatchedTerms: input.semantic.unmatchedTerms,
+      hydrationMappings: input.semantic.hydrationMappings,
+    });
+  }
 
   return {
     nextValues,

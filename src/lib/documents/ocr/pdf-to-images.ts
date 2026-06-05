@@ -3,12 +3,29 @@
  */
 
 import {
+  canvasToPngBase64,
+  enhanceCanvasForVisionOcr,
+  logCanvasVisionQuality,
+} from "@/lib/documents/ocr/vision-image-preprocess";
+import {
   incrementCreditPipelineCounter,
   measureCreditPipelineAwait,
 } from "@/lib/lmnp/services/credit-pipeline-timing";
 
-const MIN_RENDER_SCALE = 2;
+/** Default scale for cheap vision OCR (~144 DPI from 72pt PDF base). */
+export const OCR_RENDER_SCALE = 2;
+
+/** High-quality render for logement Vision fallback (~360 DPI from 72pt PDF base). */
+export const VISION_FALLBACK_RENDER_SCALE = 5;
+
 const MAX_PDF_PAGES = 12;
+
+export type RasterizePdfOptions = {
+  scale?: number;
+  maxPages?: number;
+  /** Apply grayscale/contrast/sharpen for Vision OCR (logement fallback). */
+  visionEnhance?: boolean;
+};
 
 export type RasterPageImage = {
   mimeType: "image/png" | "image/jpeg" | "image/webp";
@@ -29,6 +46,41 @@ function guessImageMime(fileName: string): string {
   if (/\.webp$/i.test(fileName)) return "image/webp";
   if (/\.gif$/i.test(fileName)) return "image/gif";
   return "image/jpeg";
+}
+
+async function rasterizeImageFileForVision(
+  dataUrl: string,
+  renderScale: number,
+): Promise<RasterPageImage> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = dataUrl;
+  });
+
+  const upscale = Math.max(1, renderScale / OCR_RENDER_SCALE);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * upscale);
+  canvas.height = Math.round(img.naturalHeight * upscale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas non disponible pour l'image Vision.");
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  const enhance = enhanceCanvasForVisionOcr(canvas);
+  const base64 = canvasToPngBase64(canvas);
+  logCanvasVisionQuality({
+    canvas,
+    pageNumber: 1,
+    renderScale,
+    base64,
+    enhance,
+  });
+
+  return { mimeType: "image/png", base64, pageNumber: 1 };
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {
@@ -53,7 +105,12 @@ async function configurePdfWorker(): Promise<typeof import("pdfjs-dist")> {
   return pdfjs;
 }
 
-async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
+async function rasterizePdfPages(
+  file: File,
+  options?: RasterizePdfOptions,
+): Promise<RasterPageImage[]> {
+  const scale = options?.scale ?? OCR_RENDER_SCALE;
+  const maxPages = options?.maxPages ?? MAX_PDF_PAGES;
   const pdfjs = await measureCreditPipelineAwait("pdf_worker_configure", configurePdfWorker());
   const buffer = await measureCreditPipelineAwait("pdf_array_buffer_read", file.arrayBuffer(), {
     fileName: file.name,
@@ -67,13 +124,14 @@ async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
     { fileName: file.name },
   );
 
-  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  const pageCount = Math.min(pdf.numPages, maxPages);
   const images: RasterPageImage[] = [];
 
   console.log("[ocr-rasterization] start", {
     totalPages: pdf.numPages,
     pagesToRender: pageCount,
-    scale: MIN_RENDER_SCALE,
+    scale,
+    purpose: scale >= VISION_FALLBACK_RENDER_SCALE ? "vision_fallback" : "ocr",
   });
 
   for (let pageNum = 1; pageNum <= pageCount; pageNum++) {
@@ -81,7 +139,7 @@ async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
       `pdf_page_rasterize`,
       (async () => {
         const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: MIN_RENDER_SCALE });
+        const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
         if (!context) throw new Error("Canvas non disponible pour la conversion PDF.");
@@ -91,13 +149,23 @@ async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
 
         await page.render({ canvasContext: context, viewport, canvas }).promise;
 
-        const dataUrl = canvas.toDataURL("image/png");
-        const base64 = dataUrl.split(",")[1];
-        if (base64) {
-          images.push({ mimeType: "image/png", base64, pageNumber: pageNum });
+        const enhance =
+          options?.visionEnhance === true
+            ? enhanceCanvasForVisionOcr(canvas)
+            : null;
+        const base64 = canvasToPngBase64(canvas);
+        if (options?.visionEnhance === true && enhance) {
+          logCanvasVisionQuality({
+            canvas,
+            pageNumber: pageNum,
+            renderScale: scale,
+            base64,
+            enhance,
+          });
         }
+        images.push({ mimeType: "image/png", base64, pageNumber: pageNum });
       })(),
-      { pageNum, totalPages: pdf.numPages, scale: MIN_RENDER_SCALE },
+      { pageNum, totalPages: pdf.numPages, scale },
     );
   }
 
@@ -116,13 +184,23 @@ async function rasterizePdfPages(file: File): Promise<RasterPageImage[]> {
 /**
  * Converts a PDF or image file into PNG page images for vision OCR.
  */
-export async function fileToRasterImages(file: File): Promise<RasterPageImage[]> {
+export async function fileToRasterImages(
+  file: File,
+  options?: RasterizePdfOptions,
+): Promise<RasterPageImage[]> {
   if (isPdfFile(file)) {
-    return rasterizePdfPages(file);
+    return rasterizePdfPages(file, options);
   }
 
   if (isImageFile(file)) {
+    const scale = options?.scale ?? OCR_RENDER_SCALE;
     const dataUrl = await readFileAsDataUrl(file);
+
+    if (options?.visionEnhance === true && typeof document !== "undefined") {
+      const raster = await rasterizeImageFileForVision(dataUrl, scale);
+      return [raster];
+    }
+
     const base64 = dataUrl.split(",")[1];
     if (!base64) throw new Error("Impossible de lire le fichier image.");
     const mime: RasterPageImage["mimeType"] =
