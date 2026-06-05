@@ -200,7 +200,6 @@ export async function runLogementGptPipeline(
       phase: "pipeline_execution_start",
     });
 
-    console.error("PIPELINE_VISION_FALLBACK_START", visionFallbackReason ?? "vision_fallback");
     extraction = await runLogementVisionFallback({
       file,
       fileName: document.fileName,
@@ -208,7 +207,6 @@ export async function runLogementGptPipeline(
       activationReason: visionFallbackReason ?? "vision_fallback",
       ocrFailureReason: ocrFailure?.message,
     });
-    console.error("PIPELINE_VISION_FALLBACK_DONE", extraction.success);
   }
 
   if (!extraction.success && ocrFailure && !visionFallbackActivated) {
@@ -225,11 +223,6 @@ export async function runLogementGptPipeline(
       fileName: document.fileName,
     });
   }
-
-  console.error("PIPELINE_RESULT_VISION_FLAG", visionFallbackActivated);
-  console.error("TYPE_PIPELINE_RESULT_VISION_FLAG", typeof visionFallbackActivated);
-  console.error("PIPELINE_RESULT_VISION_REASON", visionFallbackReason ?? "null");
-  console.error("PIPELINE_RESULT_EXTRACTION_SUCCESS", extraction.success);
 
   return {
     documentId: document.id,

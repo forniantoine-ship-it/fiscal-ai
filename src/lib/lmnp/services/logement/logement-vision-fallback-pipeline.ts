@@ -72,10 +72,6 @@ export async function runLogementVisionFallback(
     ? extractCanonicalFieldsBeforeNormalization(parsedRawGptJson)
     : {};
 
-  console.error("PIPELINE_RESULT_VISION_FLAG_visionFallback", true);
-  console.error("TYPE_PIPELINE_RESULT_VISION_FLAG_visionFallback", "boolean");
-  console.error("PIPELINE_VISION_FALLBACK_EXTRACTION_SUCCESS", result.success);
-
   logVisionFallbackCheckpoint("multimodal_raw_response", {
     phase: "client_after_api",
     fileName: params.fileName,

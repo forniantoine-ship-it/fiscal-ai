@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
-
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
@@ -70,15 +68,6 @@ export function LogementExtractionFallbackCard({
   onManualFallback,
   onRetry,
 }: LogementExtractionFallbackCardProps) {
-  useEffect(() => {
-    console.error("FALLBACK_CARD_MOUNTED");
-    console.error("FALLBACK_CARD_MOUNTED_at", new Date().toISOString());
-    return () => {
-      console.error("FALLBACK_CARD_UNMOUNTED");
-      console.error("FALLBACK_CARD_UNMOUNTED_at", new Date().toISOString());
-    };
-  }, []);
-
   return (
     <section
       className={`w-full ${LOGEMENT_FADE_IN}`}
