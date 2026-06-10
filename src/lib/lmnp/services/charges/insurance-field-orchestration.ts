@@ -15,6 +15,9 @@ export type FieldArbitrationMode =
   | "pending_semantic"
   | "semantic_resolved";
 
+/** Parser dispatch input — excludes post-semantic output state. */
+export type ParserArbitrationMode = Exclude<FieldArbitrationMode, "semantic_resolved">;
+
 /**
  * One ranked amount candidate exposed to the semantic layer.
  * GPT may only reference `candidateId` values present in this list.

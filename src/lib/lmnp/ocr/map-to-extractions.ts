@@ -140,7 +140,7 @@ export function buildAnalysisResult(params: {
     suggestedType: suggestedType ?? "unknown",
   });
 
-  const targetField = getPrimaryAmountField(resolvedType);
+  const targetField = getPrimaryAmountField(resolvedType, userCategory);
   const sanitized = sanitizeOcrResult(
     { ...ocr, documentType: resolvedType },
     { targetAmountFieldKey: targetField, fiscalYear },
@@ -160,6 +160,7 @@ export function buildAnalysisResult(params: {
     resolvedType,
     sanitized,
     inconsistencies,
+    targetField,
   );
 
   const fieldsDetected = countDetectedFields(sanitized);
@@ -208,9 +209,11 @@ function sanitizedToExtractions(
   documentType: DocumentType,
   sanitized: SanitizedOcrResult,
   inconsistencies: DocumentInconsistency[],
+  primaryAmountField?: FieldKey | null,
 ): Omit<Extraction, "validationItemId">[] {
   const extractions: Omit<Extraction, "validationItemId">[] = [];
-  const amountField = AMOUNT_FIELD_BY_DOCUMENT_TYPE[documentType];
+  const amountField =
+    primaryAmountField ?? AMOUNT_FIELD_BY_DOCUMENT_TYPE[documentType] ?? null;
   const inconsistencyWarnings = inconsistencies.map((i) => i.message);
 
   if (sanitized.totalAmount && !sanitized.totalAmount.rejected && amountField) {

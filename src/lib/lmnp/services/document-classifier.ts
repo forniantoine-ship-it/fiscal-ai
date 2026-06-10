@@ -34,7 +34,7 @@ export function inferDocumentType(
   const fallbackByCategory: Record<DocumentCategory, DocumentType> = {
     bail: "lease_contract",
     revenus: "rent_bank_statement",
-    charges: "insurance_invoice",
+    charges: "unknown",
     amortissement: "furniture_invoice",
     emprunt: "loan_interest_certificate",
     autre: "property_tax",

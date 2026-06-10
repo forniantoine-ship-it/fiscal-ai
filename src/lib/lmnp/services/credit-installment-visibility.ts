@@ -31,6 +31,8 @@ export type InstallmentVisibilityAudit = {
   amortizingSpatialCount: number;
   amortizingLoanCount: number;
   insuranceBearingLoanCount: number;
+  uniqueDateCount: number;
+  duplicateDateSlots: number;
   byPhase: Record<InstallmentPhaseKind, number>;
   exclusions: InstallmentVisibilityExclusion[];
 };
@@ -128,10 +130,10 @@ export function spatialRowsToVisibleLoanInstallments(
       fees: 0,
       comment:
         phase === "deferred"
-          ? row.comment ?? "Différé / intercalaire"
+          ? "Différé / intercalaire"
           : phase === "interest_only"
-            ? row.comment ?? "Intérêts seuls"
-            : row.comment,
+            ? "Intérêts seuls"
+            : undefined,
     });
 
     installments.push(loanRow);

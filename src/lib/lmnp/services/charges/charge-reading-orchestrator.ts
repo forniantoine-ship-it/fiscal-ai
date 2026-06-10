@@ -7,7 +7,7 @@
 
 import type { Extraction, LmnpDocument } from "@/lib/lmnp/types/domain";
 import type { ChargeDocumentType } from "@/lib/lmnp/services/classify-charge-document";
-import type { FieldArbitrationMode } from "./insurance-field-orchestration";
+import type { ParserArbitrationMode } from "./insurance-field-orchestration";
 import { logDocumentReadingModeDebug } from "./document-reading-mode-debug";
 import {
   resolveDocumentReadingMode,
@@ -29,7 +29,7 @@ export type ChargeReadingOrchestrationContext = {
 
 export type ChargeParserDispatchConfig = {
   readingMode: DocumentReadingMode;
-  arbitrationMode: FieldArbitrationMode;
+  arbitrationMode: ParserArbitrationMode;
   candidatePoolsSelected: CandidatePoolId[];
   parserDominant: boolean;
   semanticGuidanceEnabled: boolean;

@@ -159,6 +159,19 @@ export function resolveDocumentType(params: {
     return suggestedType;
   }
 
+  if (ocrType === "unknown" && userCategory === "charges") {
+    // Filename-inferred charge types are kept; generic uploads stay unknown (expense.other).
+    if (
+      suggestedType === "insurance_invoice" ||
+      suggestedType === "property_tax" ||
+      suggestedType === "condo_charges" ||
+      suggestedType === "works_invoice"
+    ) {
+      return suggestedType;
+    }
+    return "unknown";
+  }
+
   if (ocrType === "unknown") {
     return suggestedType !== "unknown" ? suggestedType : inferFromCategory(userCategory);
   }
@@ -170,7 +183,7 @@ function inferFromCategory(category: DocumentCategory): DocumentType {
   const map: Record<DocumentCategory, DocumentType> = {
     bail: "lease_contract",
     revenus: "rent_bank_statement",
-    charges: "insurance_invoice",
+    charges: "unknown",
     amortissement: "furniture_invoice",
     emprunt: "loan_interest_certificate",
     autre: "property_tax",
@@ -199,7 +212,14 @@ export function inconsistencyAffectsTrust(issues: DocumentInconsistency[]): bool
   );
 }
 
-export function getPrimaryAmountField(documentType: DocumentType): FieldKey | null {
+export function getPrimaryAmountField(
+  documentType: DocumentType,
+  userCategory?: DocumentCategory,
+): FieldKey | null {
+  if (documentType === "unknown" && userCategory === "charges") {
+    return "expense.other";
+  }
+
   const map: Partial<Record<DocumentType, FieldKey>> = {
     lease_contract: "income.annualRent",
     rent_receipt: "income.annualRent",

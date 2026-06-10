@@ -126,17 +126,8 @@ function classifyDocument(doc: LmnpDocument, docExtractions: Extraction[]): Char
       hasChargeParserCorpus: Boolean(doc.chargeParserCorpus?.trim()),
     });
   }
-  console.log("[charges-pno-debug] classifyChargeDocument", {
-    documentId: doc.id,
-    fileName: doc.fileName,
-    workspaceDocumentType: doc.documentType,
-    detectedChargeType: result.type,
-    classifierConfidence: result.confidence,
-    rejectedReason: result.rejectedReason,
-    ocrCorpusLength: corpus.length,
-    extractionFieldCount: docExtractions.length,
-  });
   if (result.type !== "inconnu") return result.type;
+  if (doc.documentType === "unknown") return "inconnu";
   if (doc.documentType === "insurance_invoice") return "insurance_habitation";
   if (doc.documentType === "property_tax") return "taxe_fonciere";
   if (doc.documentType === "condo_charges") return "charges_copropriete";
@@ -153,16 +144,6 @@ function fallbackRawTransactions(
     (e) => e.normalizedValue.type === "money" && e.fieldKey.startsWith("expense."),
   ) ?? docExtractions.find((e) => e.normalizedValue.type === "money");
 
-  console.log("[charges-fallback-raw]", {
-    documentId: doc.id,
-    fileName: doc.fileName,
-    chargeType,
-    foundPrimary: !!primary,
-    primaryFieldKey: primary?.fieldKey ?? null,
-    primaryRawValue: primary?.rawValue ?? null,
-    allExtractionFieldKeys: docExtractions.map((e) => e.fieldKey),
-  });
-
   if (!primary) return [];
 
   const amount = eurosFromValue(primary.normalizedValue);
@@ -177,12 +158,6 @@ function fallbackRawTransactions(
     chargeType && chargeType !== "inconnu"
       ? chargeType
       : (FIELD_KEY_TO_CHARGE_TYPE[primary.fieldKey as FieldKey] ?? chargeType);
-
-  console.log("[charges-category-resolution]", {
-    chargeType,
-    primaryFieldKey: primary.fieldKey,
-    resolvedCategory: category,
-  });
 
   return [
     {
@@ -224,24 +199,9 @@ function parseDocumentToRawTransactions(
       logTraces: false,
       arbitrationMode: dispatchConfig.arbitrationMode,
     });
-    console.log("[charges-insurance-parse]", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      parseSuccess: !!parsed.data,
-      montantTTC: parsed.data?.montantTTC ?? null,
-      errors: parsed.errors,
-      corpusLength: corpus.length,
-    });
     if (parsed.data) {
       return rawTransactionsFromInsurance(parsed.data, doc.fileName, parsed.data.montantTTC);
     }
-    console.log("[charges-pno-debug] insurance parser incomplete", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      errors: parsed.errors,
-      ocrCorpusLength: corpus.length,
-      fallback: "ocr_extractions",
-    });
   }
 
   if (
@@ -275,21 +235,6 @@ function parseDocumentToRawTransactions(
     const parsed = parseTaxeFonciereDocument(corpus, {
       logTraces: false,
       arbitrationMode: dispatchConfig.arbitrationMode,
-    });
-    console.log("[charges-taxe-fonciere-parse]", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      parseSuccess: !!parsed.data,
-      montantPayable: parsed.data?.montantPayable ?? null,
-      errors: parsed.errors,
-      amountFieldRanking: parsed.amountFieldRanking
-        ? {
-            targetField: parsed.amountFieldRanking.targetField,
-            arbitrationMode: parsed.amountFieldRanking.arbitration.mode,
-            candidateCount: parsed.amountFieldRanking.candidates.length,
-            deterministicDefault: parsed.amountFieldRanking.deterministicDefault,
-          }
-        : null,
     });
     if (parsed.data) {
       const raw = rawTransactionsFromTaxeFonciere(
@@ -385,75 +330,24 @@ export type BuildDocumentChargesInput = {
   extractions: Extraction[];
   chargeDocumentIds?: string[];
   properties: Property[];
+  /** TEMPORARY — diagnostic only; invoked outside per-document loops. */
+  onCheckpoint?: (checkpoint: string, meta?: Record<string, number | string | boolean>) => void;
 };
 
 export function buildDocumentDerivedChargeCategories(
   input: BuildDocumentChargesInput,
 ): ChargesCategoryData[] {
-  const { documents, extractions, chargeDocumentIds, properties } = input;
+  const { documents, extractions, chargeDocumentIds, properties, onCheckpoint } = input;
   const primary = properties[0];
   const propertyLabel =
     primary?.label?.trim() ||
     (primary?.city?.trim() ? `Appartement ${primary.city}` : "Bien locatif");
 
-  const uploadedDocumentIds = documents
-    .filter((doc) => matchesChargeDocumentScope(doc, chargeDocumentIds) && doc.status === "uploaded")
-    .map((doc) => doc.id);
-  const analyzedDocumentIds = documents
-    .filter((doc) => matchesChargeDocumentScope(doc, chargeDocumentIds) && doc.status === "analyzed")
-    .map((doc) => doc.id);
-
-  const chargesDocsInScope = documents.filter((doc) =>
-    matchesChargeDocumentScope(doc, chargeDocumentIds),
-  );
-
-  console.log("[charges-debug-documents]", {
-    uploadedDocs: chargesDocsInScope.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      detectedType: doc.documentType,
-      analyzed: doc.status === "analyzed",
-    })),
-    chargeDocumentIds: chargeDocumentIds ?? [],
-    analyzedDocumentIds,
-    uploadedDocumentIds,
-  });
-
-  console.log("[charges-pno-debug] buildDocumentDerivedChargeCategories", {
-    chargeDocumentIds: chargeDocumentIds ?? [],
-    uploadedDocumentIds,
-    analyzedDocumentIds,
-    workspaceDocuments: documents.map((doc) => ({
-      id: doc.id,
-      status: doc.status,
-      category: doc.category,
-      documentType: doc.documentType,
-      fileName: doc.fileName,
-      inScope: matchesChargeDocumentScope(doc, chargeDocumentIds),
-    })),
-  });
-
   const chargeDocs = documents.filter((doc) => {
     if (doc.status !== "analyzed") {
-      if (matchesChargeDocumentScope(doc, chargeDocumentIds)) {
-        console.log("[charges-pno-debug] skip document", {
-          documentId: doc.id,
-          fileName: doc.fileName,
-          reason: `status_${doc.status}_not_analyzed`,
-          documentType: doc.documentType,
-        });
-      }
       return false;
     }
     if (!matchesChargeDocumentScope(doc, chargeDocumentIds)) {
-      console.log("[charges-pno-debug] skip document", {
-        documentId: doc.id,
-        fileName: doc.fileName,
-        reason: "outside_charge_document_scope",
-        documentType: doc.documentType,
-        chargeDocumentIds: chargeDocumentIds ?? [],
-      });
       return false;
     }
     return true;
@@ -461,70 +355,21 @@ export function buildDocumentDerivedChargeCategories(
 
   const allGroups: ChargesCategoryData[] = [];
 
-  console.log("[charges-extraction-input]", {
-    extractionDocs: chargeDocs.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      documentType: doc.documentType,
-      category: doc.category,
-    })),
-    chargeDocumentIds: chargeDocumentIds ?? [],
-    totalDocumentsInWorkspace: documents.length,
+  onCheckpoint?.("CHECKPOINT_C_AFTER_CLASSIFICATION", {
+    chargeDocCount: chargeDocs.length,
   });
 
   for (const doc of chargeDocs) {
     const docExtractions = extractions.filter((e) => e.documentId === doc.id);
-    console.log("[charges-doc-extractions]", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      documentType: doc.documentType,
-      extractionCount: docExtractions.length,
-      hasMoneyExtraction: docExtractions.some((e) => e.normalizedValue.type === "money"),
-      moneyExtractions: docExtractions
-        .filter((e) => e.normalizedValue.type === "money")
-        .map((e) => ({ fieldKey: e.fieldKey, rawValue: e.rawValue })),
-      allFieldKeys: docExtractions.map((e) => e.fieldKey),
-    });
-    const corpus = buildClassifierCorpusFromExtractions(doc, docExtractions);
-    console.log("[charges-corpus]", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      corpusLength: corpus.length,
-      corpus,
-    });
     const raw = parseDocumentToRawTransactions(doc, docExtractions);
     if (!raw.length) {
-      console.log("[charges-pno-debug] skip document", {
-        documentId: doc.id,
-        fileName: doc.fileName,
-        reason: "no_raw_transactions_after_parse",
-        documentType: doc.documentType,
-        ocrCorpusLength: corpus.length,
-        extractionCount: docExtractions.length,
-      });
       continue;
     }
 
     const { transactions } = normalizeChargeTransactions(raw, { logTraces: false });
     if (!transactions.length) {
-      console.log("[charges-pno-debug] skip document", {
-        documentId: doc.id,
-        fileName: doc.fileName,
-        reason: "normalizer_rejected_all_transactions",
-        documentType: doc.documentType,
-        rawTransactionCount: raw.length,
-      });
       continue;
     }
-
-    console.log("[charges-pno-debug] document accepted", {
-      documentId: doc.id,
-      fileName: doc.fileName,
-      documentType: doc.documentType,
-      categoryCount: transactions.length,
-      ocrCorpusLength: corpus.length,
-    });
 
     const groups = mapNormalizedToCategoryGroups(transactions, doc, propertyLabel);
     const taxeFonciereLine = groups
@@ -543,5 +388,15 @@ export function buildDocumentDerivedChargeCategories(
     allGroups.push(...groups);
   }
 
-  return mergeUploadCategories(allGroups);
+  onCheckpoint?.("CHECKPOINT_D_AFTER_PARSE", {
+    chargeDocCount: chargeDocs.length,
+  });
+
+  const merged = mergeUploadCategories(allGroups);
+
+  onCheckpoint?.("CHECKPOINT_E_AFTER_NORMALIZE", {
+    groupCount: merged.length,
+  });
+
+  return merged;
 }

@@ -13,10 +13,9 @@ import {
   buildAmortizationSuggestionsFromCategories,
   mergeSuggestionsIntoDecisions,
 } from "./charges-amortization-intelligence";
+import { logBuildChargesCheckpoint } from "./charges/build-charges-checkpoint-instrumentation";
 import { buildDocumentDerivedChargeCategories } from "./charges/charges-document-extraction";
 import { hydrateChargesCategoriesForPresentation } from "./charges/charge-category-presentation";
-import { logInsuranceRuntime } from "./charges/insurance-runtime-debug";
-
 export type {
   ChargesCategoryData,
   ChargesExtractionData,
@@ -34,22 +33,6 @@ const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
 };
 
 export function formatCurrency(value: number, options?: { insuranceTrace?: boolean }): string {
-  if (options?.insuranceTrace) {
-    logInsuranceRuntime("ui_formatCurrency_insurance", {
-      rawAmount: value,
-      note: "Displayed via formatCurrency — not the extraction source of truth",
-    });
-  }
-  console.log("[charges-amount-debug]", {
-    rawAmount: value,
-    normalizedAmount: Math.round(value * 100) / 100,
-    displayedAmount: new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "EUR",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(value),
-  });
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
@@ -87,34 +70,9 @@ export function resolveChargesDocuments(
   documents: LmnpDocument[],
   linkedDocumentIds?: string[],
 ): LmnpDocument[] {
-  const resolved = [...documents]
+  return [...documents]
     .filter((doc) => isChargesDocument(doc, linkedDocumentIds))
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  console.log("[charges-resolve-docs]", {
-    totalDocuments: documents.length,
-    chargeDocumentIds: linkedDocumentIds ?? [],
-    resolvedDocs: resolved.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      category: doc.category,
-      documentType: doc.documentType,
-      inLinkedIds: linkedDocumentIds?.includes(doc.id) ?? false,
-      matchedBy:
-        linkedDocumentIds?.includes(doc.id)
-          ? "linkedId"
-          : doc.category === "charges"
-            ? "category"
-            : doc.documentType === "property_tax" ||
-                doc.documentType === "insurance_invoice" ||
-                doc.documentType === "condo_charges" ||
-                doc.documentType === "works_invoice"
-              ? "documentType"
-              : "fileNameRegex",
-    })),
-  });
-  return resolved;
 }
 
 function propertyLabel(property: Property | undefined, fallback: string): string {
@@ -337,7 +295,7 @@ export function createEmptyChargesExtraction(): ChargesExtractionData {
   };
 }
 
-export function logChargesAuthority(payload: {
+export function logChargesAuthority(_payload: {
   source: ChargesExtractionSource;
   authoritative: boolean;
   replacedPreviousExtraction: boolean;
@@ -345,26 +303,20 @@ export function logChargesAuthority(payload: {
   uploadedDocumentCount?: number;
   analyzedDocumentCount?: number;
   includeCrossStepRecovery?: boolean;
-}): void {
-  console.log("[charges-authority]", payload);
-}
+}): void {}
 
-export function logChargesExtractionTrace(payload: {
+export function logChargesExtractionTrace(_payload: {
   source: ChargesExtractionSource;
   categoryCount: number;
   uploadedDocumentCount: number;
   documentCategoryCount?: number;
   recoveredCategoryCount?: number;
-}): void {
-  console.log("[charges-extraction]", payload);
-}
+}): void {}
 
-export function logChargesLoopGuard(payload: {
+export function logChargesLoopGuard(_payload: {
   skippedBecauseEqual: boolean;
   triggeredBy: string;
-}): void {
-  console.log("[charges-loop-guard]", payload);
-}
+}): void {}
 
 /** Stable semantic fingerprint — ignores volatile line/suggestion ids. */
 export function chargesExtractionFingerprint(data: ChargesExtractionData): string {
@@ -456,6 +408,8 @@ export function buildChargesExtraction(
   draft?: DeclarationDraft,
   context?: ChargesExtractionBuildContext,
 ): ChargesExtractionData {
+  logBuildChargesCheckpoint("CHECKPOINT_A_ENTRY");
+
   const primary = properties[0];
   const primaryLabel = propertyLabel(primary, "Bien locatif");
   const documents = context?.documents ?? [];
@@ -469,6 +423,7 @@ export function buildChargesExtraction(
     linkedUploadedCount > 0 &&
     analyzedDocumentCount === 0
   ) {
+    logBuildChargesCheckpoint("CHECKPOINT_F_BEFORE_RETURN", { earlyEmpty: true });
     return createEmptyChargesExtraction();
   }
 
@@ -476,16 +431,8 @@ export function buildChargesExtraction(
     (doc) => doc.status === "analyzed" && isChargesDocument(doc, chargeDocumentIds),
   );
 
-  console.log("[charges-debug-extraction-input]", {
-    extractionDocs: analyzedDocuments.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      documentType: doc.documentType,
-    })),
-    chargeDocumentIds: chargeDocumentIds ?? [],
-    requireAnalyzedDocuments: context?.requireAnalyzedDocuments ?? false,
-    linkedUploadedCount,
-    analyzedDocumentCount,
+  logBuildChargesCheckpoint("CHECKPOINT_B_AFTER_DOCUMENT_COLLECTION", {
+    analyzedDocCount: analyzedDocuments.length,
   });
 
   const documentCategories = buildDocumentDerivedChargeCategories({
@@ -493,23 +440,8 @@ export function buildChargesExtraction(
     extractions,
     chargeDocumentIds,
     properties,
+    onCheckpoint: logBuildChargesCheckpoint,
   });
-
-  const insuranceCategories = documentCategories.filter((cat) => cat.category === "insurance");
-  if (insuranceCategories.length > 0) {
-    logInsuranceRuntime("buildChargesExtraction_insurance_lines", {
-      source: "charges-profile.buildChargesExtraction",
-      categories: insuranceCategories.map((cat) => ({
-        id: cat.id,
-        annualTotal: cat.annualTotal,
-        lines: cat.lines.map((line) => ({
-          label: line.label,
-          amount: line.amount,
-          source: line.source,
-        })),
-      })),
-    });
-  }
 
   const includeRecovery = shouldIncludeCrossStepRecovery(
     draft,
@@ -549,6 +481,10 @@ export function buildChargesExtraction(
     linkedUploadedCount > 0 && !includeRecovery ? uploadOnlyCategories : categories,
     draft?.chargesAmortizationDecisions,
   );
+
+  logBuildChargesCheckpoint("CHECKPOINT_F_BEFORE_RETURN", {
+    categoryCount: categories.length,
+  });
 
   return {
     categories,
@@ -639,17 +575,6 @@ export function chargesFromDraft(
         .length,
     ),
   };
-
-  const draftInsurance = purged.categories.filter((cat) => cat.category === "insurance");
-  if (draftInsurance.length > 0) {
-    logInsuranceRuntime("chargesFromDraft_insurance_lines", {
-      categories: draftInsurance.map((cat) => ({
-        id: cat.id,
-        annualTotal: cat.annualTotal,
-        lines: cat.lines.map((line) => ({ label: line.label, amount: line.amount, source: line.source })),
-      })),
-    });
-  }
 
   return {
     ...purged,

@@ -70,7 +70,7 @@ const PERIOD_DU_AU_PATTERN =
   /\bdu\s+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+[a-zéû]+?\s+\d{4})\s+au\s+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{1,2}\s+[a-zéû]+?\s+\d{4})/i;
 
 const EFFET_ECHEANCE_PATTERN =
-  /date\s+d['']?effet\s*:?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}).{0,80}date\s+d['']?[eé]ch[eé]ance\s*:?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})/is;
+  /date\s+d['']?effet\s*:?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})[\s\S]{0,80}date\s+d['']?[eé]ch[eé]ance\s*:?\s*(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})/i;
 
 const ADDRESS_HEADER_PATTERN =
   /(?:risque\s+situ[eé]|adresse\s+du\s+risque(?:\s+assur[eé])?|situation\s+du\s+risque|bien\s+assur[eé]|lieu\s+du\s+risque)\s*:?\s*/i;

@@ -119,6 +119,9 @@ const SOFT_NEGATIVE_SIGNALS: ReadonlyArray<{ pattern: RegExp; label: string; wei
   { pattern: /contribution\s+attentat/i, label: "contribution attentat", weight: 85 },
 ];
 
+const HARD_NEGATIVE_LABELS = new Set(HARD_NEGATIVE_SIGNALS.map((signal) => signal.label));
+const SOFT_NEGATIVE_LABELS = new Set(SOFT_NEGATIVE_SIGNALS.map((signal) => signal.label));
+
 function hasPrimaryAnnualSignal(positiveSignals: string[]): boolean {
   return positiveSignals.some((label) => PRIMARY_ANNUAL_LABELS.has(label));
 }
@@ -387,7 +390,11 @@ export function selectBestInsuranceCandidate(
     nearbyText: ranked.context,
     positiveSignals: ranked.positiveSignals,
     negativeSignals: ranked.negativeSignals,
+    hardNegativeSignals: ranked.negativeSignals.filter((label) => HARD_NEGATIVE_LABELS.has(label)),
+    softNegativeSignals: ranked.negativeSignals.filter((label) => SOFT_NEGATIVE_LABELS.has(label)),
     finalScore: ranked.score,
+    hardExcluded: ranked.hardExcluded,
+    hasPrimaryAnnualSignal: hasPrimaryAnnualSignal(ranked.positiveSignals),
     selected: ranked.deterministicRankWinner,
   }));
 }

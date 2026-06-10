@@ -38,6 +38,8 @@ function comparePersistentTunnelPanel(
 }
 
 function PersistentTunnelPanelView({ tunnel, active, children }: PersistentTunnelPanelProps) {
+  console.log("[render-checkpoint]", `PersistentTunnelPanel:${tunnel}`, "entry");
+  console.log("[render-checkpoint]", `PersistentTunnelPanel:${tunnel}`, "exit");
   return (
     <div
       data-tunnel={tunnel}

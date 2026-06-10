@@ -33,6 +33,10 @@ const ALWAYS_CHARGE_CATEGORIES = new Set<ExpenseCategory>([
 const OPERATING_CHARGE_LABEL =
   /internet|edf|gdf|engie|cfe|eau|abonnement|comptab|syndic|taxe|fonci|assurance|loyer|gestion|honoraire|frais\s+banc|plateforme/i;
 
+/** Recurring telecom / mobile / internet — never amortizable (even if miscategorized as travaux). */
+const TELECOM_MOBILE_INTERNET_LABEL =
+  /free\s*mobile|freebox|(?:^|\s)free(?:\s+(?:mobile|box|pro))?|orange|sosh|sfr|red\s+by\s+sfr|bouygues|b\s*&\s*r\b|bytel|nrj\s+mobile|prixtel|coriolis|ovh\s+telecom|la\s+poste\s+mobile|forfait\s+(?:mobile|5g|4g|internet)|abonnement\s+(?:mobile|internet|box)|\b(?:4g|5g)\b|telecom|télécom/i;
+
 const LIGHT_MAINTENANCE_LABEL =
   /retouche|touche[-\s]?up|petit\s+trav|reparation\s+simple|réparation\s+simple|debouchage|joint|entretien\s+courant|révision\s+annuelle/i;
 
@@ -66,6 +70,16 @@ export function assessExpenseAmortizationCandidate(
   }
 
   const text = line.label.toLowerCase();
+
+  if (TELECOM_MOBILE_INTERNET_LABEL.test(text)) {
+    return {
+      eligible: false,
+      workType: "operating_charge",
+      amortCategory: "",
+      durationYears: 0,
+      natureSummary: "Abonnement télécom / internet — charge récurrente",
+    };
+  }
 
   if (OPERATING_CHARGE_LABEL.test(text)) {
     return {

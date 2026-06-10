@@ -83,6 +83,7 @@ export async function runBulkDocumentAnalysis(params: {
         fieldKeys: result.extractions.map((entry) => entry.fieldKey),
       });
       dispatch({ type: "APPLY_DOCUMENT_ANALYSIS", documentId: docId, result });
+      console.log("[render-after-dispatch]");
       succeeded++;
       } catch (err) {
         console.error("[runBulkDocumentAnalysis]", doc.fileName, err);

@@ -13,8 +13,6 @@ export type TaxeFonciereRuntimeStage =
   | "buildChargesExtraction_taxe_fonciere_lines";
 
 export function logTaxeFonciereRuntime(
-  stage: TaxeFonciereRuntimeStage,
-  payload: Record<string, unknown>,
-): void {
-  console.log("[taxe-fonciere-runtime-debug]", { stage, ...payload });
-}
+  _stage: TaxeFonciereRuntimeStage,
+  _payload: Record<string, unknown>,
+): void {}

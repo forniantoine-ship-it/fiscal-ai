@@ -243,7 +243,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
             (d) => isCreditDocument(d, draft?.creditDocumentId) && d.status === "processing",
           );
 
-          if (doc?.status === "processing") {
+          if (doc?.status === "processing" && !analysisFailedRef.current) {
             dispatch({ type: "DOCUMENT_SET_STATUS", documentId, status: "analyzed" });
           }
 
@@ -399,7 +399,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
   const docIsProcessing = creditDoc?.status === "processing";
   const showAnimation = isExecutionRunning || anyCreditDocProcessing;
 
-  const isFailed = creditDoc?.status === "failed" && !aiAnimationDone && !showAnimation;
+  const isFailed = creditDoc?.status === "failed" && !showAnimation;
   const showInitialExtras = !hasUploaded && !confirmed && !noCreditDeclared;
   const showConfiguredCard =
     ((validatedSuccess || confirmed) && !isEditing) ||
@@ -644,7 +644,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
           installmentCount: result.amortization?.extraction?.installments?.length ?? null,
           extra: { uiOutcome: "analysis_failed_analyse_impossible" },
         });
-        console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+        console.log("[amortization-pipeline-debug] ui_analyse_impossible", {
           source: "CreditDocumentStep.applyPipelineResult",
           documentId: result.documentId,
           fileName: result.fileName,
@@ -1302,7 +1302,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
           extra: { uiOutcome: "status_failed_no_applyPipelineResult" },
         });
         analysisFailedRef.current = true;
-        console.error("[amortization-pipeline-debug] ui_analyse_impossible", {
+        console.log("[amortization-pipeline-debug] ui_analyse_impossible", {
           source: "CreditDocumentStep.runAnalysis.catch",
           documentId,
           fileName: document.fileName,

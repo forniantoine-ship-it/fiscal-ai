@@ -3,6 +3,7 @@ import type { CreditLoanOfferGptExtractionResult } from "@/lib/documents/gpt/ext
 import { normalizeOcrText } from "@/lib/documents/normalizers";
 import {
   DocumentOcrFailedError,
+  OCR_READ_FAILURE_MESSAGE,
   resolveDocumentTextOrThrow,
 } from "@/lib/documents/ocr";
 import { isPdfFile } from "@/lib/documents/ocr/pdf-native-text";
@@ -143,6 +144,38 @@ export async function runCreditGptPipeline(
   });
 
   if (documentKind === "loan_offer") {
+    if (!rawText.trim()) {
+      const pipelineResult: CreditGptPipelineResult = {
+        documentId: document.id,
+        fileName: document.fileName,
+        documentKind,
+        rawText,
+        ocrProvider: ocrResult.provider,
+        loanOffer: {
+          success: false,
+          extraction: {},
+          error: OCR_READ_FAILURE_MESSAGE,
+        },
+        success: false,
+        error: OCR_READ_FAILURE_MESSAGE,
+      };
+
+      logCreditExtractionPipelineResult(pipelineResult, "extraction_resolved");
+      logPipelineEntry({
+        functionName: "runCreditGptPipeline",
+        returned: true,
+        success: false,
+        documentType: documentKind,
+        ocrProvider: ocrResult.provider,
+        documentId: document.id,
+        fileName: document.fileName,
+        failureReason: OCR_READ_FAILURE_MESSAGE,
+        extra: { branch: "loan_offer", earlyReturn: "empty_normalized_corpus" },
+      });
+
+      return pipelineResult;
+    }
+
     traceCreditAnalysisTimeline("extraction_started", document.id, undefined, {
       documentKind: "loan_offer",
     });

@@ -391,6 +391,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
 }
 
 export function DocumentsWorkspace() {
+  console.log("[render-checkpoint]", "DocumentsWorkspace", "entry");
   const searchParams = useSearchParams();
   const stepId = resolveStepId(searchParams.get("step"));
   const activeTunnel = resolvePersistedTunnel(stepId);
@@ -459,6 +460,7 @@ export function DocumentsWorkspace() {
     </>
   );
 
+  console.log("[render-checkpoint]", "DocumentsWorkspace", "exit");
   return (
     <>
       {activeTunnel !== "generic" ? (

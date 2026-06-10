@@ -17,8 +17,6 @@ export type InsuranceRuntimeStage =
   | "ui_formatCurrency_insurance";
 
 export function logInsuranceRuntime(
-  stage: InsuranceRuntimeStage,
-  payload: Record<string, unknown>,
-): void {
-  console.log("[insurance-runtime-debug]", { stage, ...payload });
-}
+  _stage: InsuranceRuntimeStage,
+  _payload: Record<string, unknown>,
+): void {}

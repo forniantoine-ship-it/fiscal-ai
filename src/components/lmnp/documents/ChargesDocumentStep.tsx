@@ -26,6 +26,10 @@ import { pendingAmortizationSuggestions } from "@/lib/lmnp/services/charges-amor
 import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import {
+  logChargesRebuildDiag,
+  resetChargesRebuildDiag,
+} from "@/lib/lmnp/services/charges/charges-rebuild-loop-instrumentation";
+import {
   areChargesExtractionsEqual,
   buildChargesDraftPatch,
   buildChargesExtraction,
@@ -33,7 +37,6 @@ import {
   chargesFromDraft,
   countChargesDocuments,
   isChargesExtractionIncomplete,
-  logChargesAuthority,
   logChargesLoopGuard,
   resolveChargesAmortizationDecisions,
   resolveChargesDocuments,
@@ -79,74 +82,8 @@ function chargesBuildContext(
   };
 }
 
-function chargesRestoreDebugPayload(
-  trigger: string,
-  ws: PersistedWorkspace,
-  currentDraft: DeclarationDraft | undefined,
-  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
-  pendingDocIds: string[],
-): {
-  trigger: string;
-  restoredDocumentIds: string[];
-  currentUploadDocumentIds: string[];
-  staleDocumentIds: string[];
-  pendingDocumentIds: string[];
-  analyzedDocumentIds: string[];
-} {
-  const restoredDocumentIds = currentDraft?.chargesDocumentIds ?? [];
-  const currentUploadDocumentIds = chargesDocs.map((doc) => doc.id);
-  const analyzedDocumentIds = chargesDocs
-    .filter((doc) => doc.status === "analyzed")
-    .map((doc) => doc.id);
-  const staleDocumentIds = analyzedDocumentIds.filter(
-    (id) => pendingDocIds.length > 0 && !pendingDocIds.includes(id),
-  );
-
-  return {
-    trigger,
-    restoredDocumentIds,
-    currentUploadDocumentIds,
-    staleDocumentIds,
-    pendingDocumentIds: pendingDocIds,
-    analyzedDocumentIds,
-  };
-}
-
-function logChargesRestoreDebug(
-  trigger: string,
-  ws: PersistedWorkspace,
-  currentDraft: DeclarationDraft | undefined,
-  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
-  pendingDocIds: string[],
-): void {
-  console.log(
-    "[charges-debug-restore]",
-    chargesRestoreDebugPayload(trigger, ws, currentDraft, chargesDocs, pendingDocIds),
-  );
-}
-
-function logChargesAnalyzedDocumentsSelector(
-  chargesDocs: ReturnType<typeof resolveChargesDocuments>,
-): void {
-  const analyzedDocuments = chargesDocs.filter((doc) => doc.status === "analyzed");
-  console.log("[charges-analyzed-selector]", {
-    analyzedDocuments: analyzedDocuments.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      documentType: doc.documentType,
-      category: doc.category,
-    })),
-    allChargesDocs: chargesDocs.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      documentType: doc.documentType,
-    })),
-  });
-}
-
 export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
+  console.log("[render-checkpoint]", "ChargesDocumentStep", "entry");
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showInfo } = useFeedback();
   const { markExecution, shouldRunExtraction } = useTunnelHydration("charges");
@@ -159,6 +96,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const lastPersistedExtractionFingerprintRef = useRef<string>("");
   const lastRestoreRebuildKeyRef = useRef<string>("");
   const lastAnimationRebuildKeyRef = useRef<string>("");
+  const lastPostAnalysisRebuildBuildKeyRef = useRef<string>("");
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
 
@@ -205,108 +143,12 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const [transferringId, setTransferringId] = useState<string | null>(null);
   const [transferConfirmedId, setTransferConfirmedId] = useState<string | null>(null);
 
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  useEffect(() => {
-    const analyzedCount = chargesDocs.filter((d) => d.status === "analyzed").length;
-    const pendingCount = chargesDocs.filter((d) => d.status === "uploaded").length;
-    console.log("[charges-remount]", {
-      chargesDocsCount: chargesDocs.length,
-      analyzedCount,
-      pendingCount,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  useEffect(() => {
-    const pendingDocs = chargesDocs.filter((d) => d.status === "uploaded");
-    console.log("[charges-pending-derivation]", {
-      pendingDocs: pendingDocs.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
-      })),
-    });
-  }, [chargesDocs]);
-
   const pendingDocIds = useMemo(
     () => chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id),
     [chargesDocs],
   );
-  const analyzedDocuments = useMemo(
-    () => chargesDocs.filter((doc) => doc.status === "analyzed"),
-    [chargesDocs],
-  );
   const hasProcessing = chargesDocs.some((doc) => doc.status === "processing");
   const hasFailed = chargesDocs.some((doc) => doc.status === "failed");
-
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  useEffect(() => {
-    const ws = workspaceRef.current;
-    console.log("[charges-analyzed-debug]", {
-      allChargesDocs: chargesDocs.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-        category: doc.category,
-        documentType: doc.documentType,
-        hasExtractions: ws.extractions.some((e) => e.documentId === doc.id),
-      })),
-      analyzedDocs: analyzedDocuments.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-      })),
-    });
-  }, [chargesDocs, analyzedDocuments]);
-
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  useEffect(() => {
-    const ws = workspaceRef.current;
-    console.log("[charges-pending-debug]", {
-      pendingDocs: pendingDocIds.map((id) => {
-        const doc = chargesDocs.find((d) => d.id === id);
-        return {
-          id,
-          fileName: doc?.fileName,
-          status: doc?.status,
-          category: doc?.category,
-          documentType: doc?.documentType,
-          hasExtractions: ws.extractions.some((e) => e.documentId === id),
-        };
-      }),
-    });
-  }, [pendingDocIds, chargesDocs]);
-
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  useEffect(() => {
-    const ws = workspaceRef.current;
-    console.log("[charges-final-selector-state]", {
-      allChargesDocs: chargesDocs.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-        category: doc.category,
-        documentType: doc.documentType,
-        hasExtractions: ws.extractions.some((e) => e.documentId === doc.id),
-      })),
-      analyzedDocs: analyzedDocuments.map((doc) => ({
-        id: doc.id,
-        status: doc.status,
-      })),
-      pendingDocs: pendingDocIds.map((id) => {
-        const doc = chargesDocs.find((d) => d.id === id);
-        return { id, status: doc?.status };
-      }),
-      totalExtractions: ws.extractions.length,
-      chargesExtractionDocIds: ws.extractions
-        .filter((e) =>
-          chargesDocs.some((d) => d.id === e.documentId),
-        )
-        .map((e) => e.documentId)
-        .filter((v, i, a) => a.indexOf(v) === i),
-    });
-  }, [chargesDocs, analyzedDocuments, pendingDocIds]);
 
   const isProcessing =
     hasUploaded &&
@@ -418,19 +260,64 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const extractionRef = useRef(extraction);
   extractionRef.current = extraction;
 
+  const buildChargesWithDiag = useCallback(
+    (source: string, ...args: Parameters<typeof buildChargesExtraction>) => {
+      const rebuilt = buildChargesExtraction(...args);
+      const fingerprint = chargesExtractionFingerprint(rebuilt);
+      const prevFingerprint = extractionRef.current
+        ? chargesExtractionFingerprint(extractionRef.current)
+        : null;
+      logChargesRebuildDiag({
+        phase: "build",
+        source,
+        fingerprint,
+        prevFingerprint,
+      });
+      return rebuilt;
+    },
+    [],
+  );
+
   const persistChargesExtraction = useCallback(
     (nextExtraction: ChargesExtractionData, triggeredBy: string) => {
+      const fingerprint = chargesExtractionFingerprint(nextExtraction);
+      const prevFingerprint = extractionRef.current
+        ? chargesExtractionFingerprint(extractionRef.current)
+        : null;
+
       if (areChargesExtractionsEqual(extractionRef.current, nextExtraction)) {
         logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        logChargesRebuildDiag({
+          phase: "persist",
+          source: triggeredBy,
+          fingerprint,
+          prevFingerprint,
+          outcome: "skipped_equal",
+        });
         return;
       }
 
-      const fingerprint = chargesExtractionFingerprint(nextExtraction);
       if (fingerprint === lastPersistedExtractionFingerprintRef.current) {
         logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        logChargesRebuildDiag({
+          phase: "persist",
+          source: triggeredBy,
+          fingerprint,
+          prevFingerprint,
+          outcome: "skipped_fingerprint",
+        });
         return;
       }
       lastPersistedExtractionFingerprintRef.current = fingerprint;
+      extractionRef.current = nextExtraction;
+
+      logChargesRebuildDiag({
+        phase: "persist",
+        source: triggeredBy,
+        fingerprint,
+        prevFingerprint,
+        outcome: "dispatched",
+      });
 
       setExtraction(nextExtraction);
       dispatch({
@@ -444,22 +331,34 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const applyAuthoritativeExtraction = useCallback(
     (
       rebuilt: ChargesExtractionData,
-      authority: {
+      _authority: {
         source: ChargesExtractionSource;
         authoritative: boolean;
       },
       triggeredBy: string,
     ) => {
+      const fingerprint = chargesExtractionFingerprint(rebuilt);
+      const prevFingerprint = extractionRef.current
+        ? chargesExtractionFingerprint(extractionRef.current)
+        : null;
+
       if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
         logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy });
+        logChargesRebuildDiag({
+          phase: "apply",
+          source: triggeredBy,
+          fingerprint,
+          prevFingerprint,
+          outcome: "skipped_apply_equal",
+        });
         return;
       }
 
-      logChargesAuthority({
-        source: authority.source,
-        authoritative: authority.authoritative,
-        replacedPreviousExtraction: extractionRef.current !== undefined,
-        categoryCount: rebuilt.categories.length,
+      logChargesRebuildDiag({
+        phase: "apply",
+        source: triggeredBy,
+        fingerprint,
+        prevFingerprint,
       });
       persistChargesExtraction(rebuilt, triggeredBy);
     },
@@ -470,21 +369,8 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     if (!hasAnalyzedChargeDocs) return;
     const ws = workspaceRef.current;
     const currentDraft = draftRef.current;
-    const pendingIds = ws.documents
-      .filter((doc) => doc.status === "uploaded")
-      .map((doc) => doc.id);
-    logChargesRestoreDebug(
-      "ai-animation-complete",
-      ws,
-      currentDraft,
-      resolveChargesDocuments(ws.documents, currentDraft?.chargesDocumentIds),
-      pendingIds.filter((id) =>
-        resolveChargesDocuments(ws.documents, currentDraft?.chargesDocumentIds).some(
-          (doc) => doc.id === id,
-        ),
-      ),
-    );
-    const rebuilt = buildChargesExtraction(
+    const rebuilt = buildChargesWithDiag(
+      "ai-animation",
       ws.properties,
       currentDraft,
       chargesBuildContext(ws, currentDraft, {
@@ -494,7 +380,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     );
     applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "ai-animation");
     setAiAnimationDone(true);
-  }, [hasAnalyzedChargeDocs, crossStepRecoveryEnabled, applyAuthoritativeExtraction]);
+  }, [hasAnalyzedChargeDocs, crossStepRecoveryEnabled, applyAuthoritativeExtraction, buildChargesWithDiag]);
 
   useEffect(() => {
     if (!chargesConfirmedAt) {
@@ -520,47 +406,30 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   }, [chargesConfirmedAt, draft, workspace.documents, applyAuthoritativeExtraction]);
 
   useEffect(() => {
-    logChargesAnalyzedDocumentsSelector(chargesDocs);
-  }, [chargesDocs]);
-
-  useEffect(() => {
     if (chargesConfirmedAt) return;
     if (lastRestoreRebuildKeyRef.current === restoreRebuildKey) {
-      console.log("[charges-effect-skip]", { effect: "restore-rebuild", key: restoreRebuildKey });
       return;
     }
 
     const ws = workspaceRef.current;
     const currentDraft = draftRef.current;
-    const pendingIds = chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id);
 
     if (currentDraft?.chargesDocumentIds?.length) {
-      logChargesRestoreDebug("restore-rebuild:pre-check", ws, currentDraft, chargesDocs, pendingIds);
-
       if (!hasAnalyzedChargeDocs) return;
 
       if (pendingDocIds.length > 0) {
-        console.log("[charges-rebuild-guard]", {
-          reason: "pending-documents",
-          pendingDocIds,
-        });
         return;
       }
 
-      console.log("[charges-rebuild-snapshot]", {
-        trigger: "restore-rebuild",
-        workspaceDocuments: ws.documents.map((d) => ({
-          id: d.id,
-          fileName: d.fileName,
-          status: d.status,
-          documentType: d.documentType,
-          category: d.category,
-        })),
-        chargesDocumentIds: currentDraft?.chargesDocumentIds ?? [],
-        pendingDocIds,
-      });
+      if (lastPostAnalysisRebuildBuildKeyRef.current === chargesBuildKey) {
+        lastRestoreRebuildKeyRef.current = restoreRebuildKey;
+        setAiAnimationDone(true);
+        setHasUploaded(true);
+        return;
+      }
 
-      const rebuilt = buildChargesExtraction(
+      const rebuilt = buildChargesWithDiag(
+        "restore-rebuild",
         ws.properties,
         currentDraft,
         chargesBuildContext(ws, currentDraft, {
@@ -568,21 +437,15 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
           includeCrossStepRecovery: crossStepRecoveryEnabled,
         }),
       );
+      lastPostAnalysisRebuildBuildKeyRef.current = chargesBuildKey;
       if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
         lastRestoreRebuildKeyRef.current = restoreRebuildKey;
         logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "restore-rebuild" });
-        console.log("[charges-effect-skip]", {
-          effect: "restore-rebuild",
-          reason: "equalExtraction",
-          key: restoreRebuildKey,
-        });
         setAiAnimationDone(true);
         setHasUploaded(true);
         return;
       }
 
-      console.log("[charges-effect-run]", { effect: "restore-rebuild", key: restoreRebuildKey });
-      logChargesRestoreDebug("restore-rebuild:document-rebuild", ws, currentDraft, chargesDocs, pendingIds);
       lastRestoreRebuildKeyRef.current = restoreRebuildKey;
       applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "restore-rebuild");
       setAiAnimationDone(true);
@@ -592,21 +455,14 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
 
     const restored = chargesFromDraft(currentDraft, { documents: ws.documents });
     if (!restored) return;
-    logChargesRestoreDebug("restore-rebuild:draft-fallback", ws, currentDraft, chargesDocs, pendingIds);
     if (areChargesExtractionsEqual(extractionRef.current, restored)) {
       lastRestoreRebuildKeyRef.current = restoreRebuildKey;
       logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "restore-rebuild" });
-      console.log("[charges-effect-skip]", {
-        effect: "restore-rebuild",
-        reason: "equalExtraction",
-        key: restoreRebuildKey,
-      });
       setAiAnimationDone(true);
       setHasUploaded(true);
       return;
     }
 
-    console.log("[charges-effect-run]", { effect: "restore-rebuild", key: restoreRebuildKey });
     lastRestoreRebuildKeyRef.current = restoreRebuildKey;
     applyAuthoritativeExtraction(restored, { source: "draft_restore", authoritative: false }, "restore-rebuild");
     setAiAnimationDone(true);
@@ -614,9 +470,12 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   }, [
     chargesConfirmedAt,
     restoreRebuildKey,
+    chargesBuildKey,
     hasAnalyzedChargeDocs,
+    pendingDocIds.length,
     crossStepRecoveryEnabled,
     applyAuthoritativeExtraction,
+    buildChargesWithDiag,
   ]);
 
   useEffect(() => {
@@ -632,22 +491,6 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
 
     pendingUploadRef.current = false;
     ids.forEach((id) => existing.add(id));
-    console.log("[charges-pno-debug] chargesDocumentIds sync", {
-      added: missing,
-      merged: [...existing],
-      uploadedDocumentIds: chargesDocs
-        .filter((doc) => doc.status === "uploaded")
-        .map((doc) => doc.id),
-      analyzedDocumentIds: chargesDocs
-        .filter((doc) => doc.status === "analyzed")
-        .map((doc) => doc.id),
-      chargesDocStatuses: chargesDocs.map((doc) => ({
-        id: doc.id,
-        status: doc.status,
-        documentType: doc.documentType,
-        fileName: doc.fileName,
-      })),
-    });
     dispatch({
       type: "DECLARATION_PATCH_DRAFT",
       patch: { chargesDocumentIds: [...existing] },
@@ -656,49 +499,9 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const runAnalysis = useCallback(
     async (documentIds: string[]) => {
-      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-      const uploadedCount = workspaceRef.current.documents.filter(
-        (d) => d.status === "uploaded",
-      ).length;
-      const analyzedCount = workspaceRef.current.documents.filter(
-        (d) => d.status === "analyzed",
-      ).length;
-      console.log("[charges-runAnalysis-entry]", {
-        pendingDocIds: documentIds,
-        uploadedCount,
-        analyzedCount,
-        analyzingRefAlreadySet: analyzingRef.current,
-      });
-
-      if (!documentIds.length) {
-        console.log("[analysis] extraction skipped", {
-          source: "ChargesDocumentStep.runAnalysis",
-          reason: "empty documentIds",
-        });
-        return;
-      }
-      if (analyzingRef.current) {
-        console.log("[analysis] extraction skipped", {
-          source: "ChargesDocumentStep.runAnalysis",
-          reason: "already analyzing",
-          documentIds,
-        });
-        return;
-      }
+      if (!documentIds.length) return;
+      if (analyzingRef.current) return;
       analyzingRef.current = true;
-
-      console.log("[analysis] trigger requested", {
-        source: "ChargesDocumentStep.runAnalysis",
-        documentIds,
-        pipeline: "runBulkDocumentAnalysis",
-        note: "Charges does NOT call runBulkDocumentExtraction",
-      });
-      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-      console.log("[charges-runBulk-callsite]", {
-        source: "ChargesDocumentStep.runAnalysis",
-        documentIds,
-        stack: new Error().stack,
-      });
 
       try {
         const result = await runBulkDocumentAnalysis({
@@ -751,177 +554,36 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   );
 
   useEffect(() => {
-    const uploadedDocumentIds = chargesDocs
-      .filter((doc) => doc.status === "uploaded")
-      .map((doc) => doc.id);
-    const analyzedDocumentIds = chargesDocs
-      .filter((doc) => doc.status === "analyzed")
-      .map((doc) => doc.id);
+    if (!pendingDocIds.length) return;
+    if (hasProcessing) return;
+    if (analyzingRef.current) return;
+    if (!executionPendingRef.current || !shouldRunExtraction()) return;
 
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    const shouldTriggerAnalysis =
-      pendingDocIds.length > 0 && !hasProcessing && !analyzingRef.current;
-    console.log("[charges-analysis-trigger]", {
-      uploadedDocs: chargesDocs.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
-        detectedDocumentType: doc.documentType,
-      })),
-      pendingDocIds,
-      analyzedDocumentIds,
-      shouldTriggerAnalysis,
-    });
-
-    if (!pendingDocIds.length) {
-      if (hasUploaded || chargesDocs.length > 0) {
-        console.log("[charges-pno-debug] analysis gate", {
-          reason: "no pending uploaded docs",
-          chargeDocumentIds: draft?.chargesDocumentIds ?? [],
-          uploadedDocumentIds,
-          analyzedDocumentIds,
-          pendingDocIds,
-          hasProcessing,
-          analyzing: analyzingRef.current,
-          chargesDocStatuses: chargesDocs.map((doc) => ({
-            id: doc.id,
-            status: doc.status,
-            documentType: doc.documentType,
-            fileName: doc.fileName,
-          })),
-        });
-        console.log("[analysis] no analyzable documents", {
-          source: "ChargesDocumentStep.useEffect",
-          reason: "no pending uploaded docs",
-          hasUploaded,
-          chargesDocCount: chargesDocs.length,
-          chargesDocStatuses: chargesDocs.map((doc) => ({ id: doc.id, status: doc.status })),
-        });
-      }
-      return;
-    }
-    if (hasProcessing) {
-      console.log("[charges-pno-debug] analysis gate", {
-        reason: "hasProcessing",
-        chargeDocumentIds: draft?.chargesDocumentIds ?? [],
-        uploadedDocumentIds,
-        analyzedDocumentIds,
-        pendingDocIds,
-      });
-      console.log("[analysis] extraction skipped", {
-        source: "ChargesDocumentStep.useEffect",
-        reason: "hasProcessing",
-        pendingDocIds,
-      });
-      return;
-    }
-    if (analyzingRef.current) {
-      console.log("[charges-pno-debug] analysis gate", {
-        reason: "analyzingRef already set",
-        chargeDocumentIds: draft?.chargesDocumentIds ?? [],
-        uploadedDocumentIds,
-        analyzedDocumentIds,
-        pendingDocIds,
-      });
-      console.log("[analysis] extraction skipped", {
-        source: "ChargesDocumentStep.useEffect",
-        reason: "analyzingRef already set",
-        pendingDocIds,
-      });
-      return;
-    }
-
-    // LIFECYCLE FIREWALL — mirrors the pattern used in CreditDocumentStep / RevenusDocumentStep
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-lifecycle-firewall]", {
-      executionPending: executionPendingRef.current,
-      shouldRun: shouldRunExtraction(),
-      pendingDocIds,
-    });
-    if (!executionPendingRef.current || !shouldRunExtraction()) {
-      console.log("[analysis] extraction skipped", {
-        source: "ChargesDocumentStep.useEffect",
-        reason: !executionPendingRef.current ? "no_execution_pending" : "passive_hydration",
-        pendingDocIds,
-      });
-      return;
-    }
     executionPendingRef.current = false;
-
-    console.log("[charges-pno-debug] analysis gate", {
-      reason: "triggering runAnalysis",
-      chargeDocumentIds: draft?.chargesDocumentIds ?? [],
-      uploadedDocumentIds,
-      analyzedDocumentIds,
-      pendingDocIds,
-    });
-    console.log("[analysis] trigger requested", {
-      source: "ChargesDocumentStep.useEffect",
-      pendingDocIds,
-      pipeline: "runBulkDocumentAnalysis",
-    });
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-ocr-trigger]", {
-      reason: "pendingDocIds non-empty",
-      pendingDocIds,
-      documentsSnapshot: chargesDocs.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-        hasAnalysis: workspaceRef.current.extractions.some((e) => e.documentId === doc.id),
-      })),
-    });
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-runAnalysis-callsite]", {
-      source: "ChargesDocumentStep.useEffect[pendingDocIds]",
-      pendingDocIds,
-      shouldTriggerAnalysis: pendingDocIds.length > 0 && !hasProcessing && !analyzingRef.current,
-      stack: new Error().stack,
-    });
-    console.log("[ocr-trigger-owner]", {
-      system: "T1-charges-auto",
-      component: "ChargesDocumentStep",
-      reason: "pendingDocIds non-empty after upload/hydration",
-      docs: pendingDocIds,
-      step: "charges",
-      category: "charges",
-      guard: "pendingDocIds + hasProcessing + analyzingRef — NO executionPendingRef",
-    });
     void runAnalysis(pendingDocIds);
-  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, shouldRunExtraction, chargesDocs, hasUploaded, draft?.chargesDocumentIds]);
+  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, shouldRunExtraction]);
 
   useEffect(() => {
     if (!animationRebuildKey) return;
     if (lastAnimationRebuildKeyRef.current === animationRebuildKey) {
-      console.log("[charges-effect-skip]", { effect: "animation-rebuild", key: animationRebuildKey });
       return;
     }
 
     const ws = workspaceRef.current;
     const currentDraft = draftRef.current;
-    const pendingIds = chargesDocs.filter((doc) => doc.status === "uploaded").map((doc) => doc.id);
     if (pendingDocIds.length > 0) {
-      console.log("[charges-rebuild-guard]", {
-        reason: "pending-documents",
-        pendingDocIds,
-      });
       return;
     }
-    logChargesRestoreDebug("animation-rebuild", ws, currentDraft, chargesDocs, pendingIds);
-    console.log("[charges-rebuild-snapshot]", {
-      trigger: "animation-rebuild",
-      workspaceDocuments: ws.documents.map((d) => ({
-        id: d.id,
-        fileName: d.fileName,
-        status: d.status,
-        documentType: d.documentType,
-        category: d.category,
-      })),
-      chargesDocumentIds: currentDraft?.chargesDocumentIds ?? [],
-      pendingDocIds,
-    });
-    const rebuilt = buildChargesExtraction(
+
+    if (lastPostAnalysisRebuildBuildKeyRef.current === chargesBuildKey) {
+      lastAnimationRebuildKeyRef.current = animationRebuildKey;
+      setHasUploaded(true);
+      setAiAnimationDone(true);
+      return;
+    }
+
+    const rebuilt = buildChargesWithDiag(
+      "animation-rebuild",
       ws.properties,
       currentDraft,
       chargesBuildContext(ws, currentDraft, {
@@ -929,25 +591,27 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         includeCrossStepRecovery: crossStepRecoveryEnabled,
       }),
     );
+    lastPostAnalysisRebuildBuildKeyRef.current = chargesBuildKey;
     if (areChargesExtractionsEqual(extractionRef.current, rebuilt)) {
       lastAnimationRebuildKeyRef.current = animationRebuildKey;
       logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "animation-rebuild" });
-      console.log("[charges-effect-skip]", {
-        effect: "animation-rebuild",
-        reason: "equalExtraction",
-        key: animationRebuildKey,
-      });
       setHasUploaded(true);
       setAiAnimationDone(true);
       return;
     }
 
-    console.log("[charges-effect-run]", { effect: "animation-rebuild", key: animationRebuildKey });
     lastAnimationRebuildKeyRef.current = animationRebuildKey;
     setHasUploaded(true);
     applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "animation-rebuild");
     setAiAnimationDone(true);
-  }, [animationRebuildKey, crossStepRecoveryEnabled, applyAuthoritativeExtraction]);
+  }, [
+    animationRebuildKey,
+    chargesBuildKey,
+    pendingDocIds.length,
+    crossStepRecoveryEnabled,
+    applyAuthoritativeExtraction,
+    buildChargesWithDiag,
+  ]);
 
   async function handleUpload(files: File[]) {
     if (!files.length) return;
@@ -976,16 +640,13 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     pendingUploadRef.current = true;
     executionPendingRef.current = true;
     markExecution("document_upload");
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-execution-intent]", {
-      source: "handleUpload",
-      pendingDocIds: uploadedFiles.map((_, i) => documentIds[i]),
-    });
+    resetChargesRebuildDiag();
     lastAmortizationRefreshKeyRef.current = "";
     lastAmortizationAppliedFingerprintRef.current = "";
     lastPersistedExtractionFingerprintRef.current = "";
     lastRestoreRebuildKeyRef.current = "";
     lastAnimationRebuildKeyRef.current = "";
+    lastPostAnalysisRebuildBuildKeyRef.current = "";
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
@@ -994,14 +655,6 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[index],
         category: CHARGES_UPLOAD_CATEGORY,
       })),
-    });
-
-    console.log("[analysis] trigger requested", {
-      source: "ChargesDocumentStep.handleUpload",
-      uploadedCount: uploadedFiles.length,
-      fileNames: uploadedFiles.map((file) => file.name),
-      pipeline: "runBulkDocumentAnalysis",
-      note: "upload complete — analysis deferred to useEffect when pendingDocIds populate",
     });
 
     showInfo(
@@ -1017,18 +670,14 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     });
     executionPendingRef.current = true;
     markExecution("reanalyze");
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-execution-intent]", {
-      source: "handleRetry",
-      pendingDocIds: failedIds,
-    });
     setAiAnimationDone(false);
   }
 
   function handleManualContinue() {
     setManualMode(true);
     setAiAnimationDone(true);
-    const rebuilt = buildChargesExtraction(
+    const rebuilt = buildChargesWithDiag(
+      "manual-continue",
       workspace.properties,
       draft,
       chargesBuildContext(workspace, draft, {
@@ -1049,7 +698,8 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     });
     const ws = workspaceRef.current;
     const currentDraft = draftRef.current;
-    const rebuilt = buildChargesExtraction(
+    const rebuilt = buildChargesWithDiag(
+      "cross-step-recovery",
       ws.properties,
       { ...currentDraft, chargesCrossStepRecoveryEnabled: true },
       chargesBuildContext(ws, currentDraft, {
@@ -1064,18 +714,14 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   useEffect(() => {
     if (!aiAnimationDone || confirmed) return;
     if (lastAmortizationRefreshKeyRef.current === amortizationDecisionsKey) {
-      console.log("[charges-effect-skip]", {
-        effect: "amortization-refresh",
-        reason: "decisionsKey",
-        key: amortizationDecisionsKey,
-      });
       return;
     }
 
     const ws = workspaceRef.current;
     const draftState = draftRef.current;
     const decisions = draftState?.chargesAmortizationDecisions;
-    const rebuilt = buildChargesExtraction(
+    const rebuilt = buildChargesWithDiag(
+      "amortization-refresh",
       ws.properties,
       draftState,
       chargesBuildContext(ws, draftState, {
@@ -1098,18 +744,9 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     ) {
       lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
       logChargesLoopGuard({ skippedBecauseEqual: true, triggeredBy: "amortization-refresh" });
-      console.log("[charges-effect-skip]", {
-        effect: "amortization-refresh",
-        reason: "equalExtraction",
-        key: amortizationDecisionsKey,
-      });
       return;
     }
 
-    console.log("[charges-effect-run]", {
-      effect: "amortization-refresh",
-      key: amortizationDecisionsKey,
-    });
     lastAmortizationRefreshKeyRef.current = amortizationDecisionsKey;
     lastAmortizationAppliedFingerprintRef.current = fingerprint;
     applyAuthoritativeExtraction(
@@ -1117,13 +754,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       { source: "documents", authoritative: true },
       "amortization-refresh",
     );
-  }, [
-    amortizationDecisionsKey,
-    aiAnimationDone,
-    confirmed,
-    chargesBuildKey,
-    applyAuthoritativeExtraction,
-  ]);
+  }, [amortizationDecisionsKey, aiAnimationDone, confirmed, applyAuthoritativeExtraction, buildChargesWithDiag]);
 
   function handleTransferSuggestion(suggestionId: string) {
     const suggestion = amortizationDecisions.find((item) => item.id === suggestionId);
@@ -1185,6 +816,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     );
   }
 
+  console.log("[render-checkpoint]", "ChargesDocumentStep", "exit");
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
       <WorkflowPageBackLink />

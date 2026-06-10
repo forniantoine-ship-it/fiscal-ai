@@ -3,6 +3,7 @@
 import { ActiviteDocumentStep } from "@/components/lmnp/activite/ActiviteDocumentStep";
 import { AmortissementDocumentStep } from "@/components/lmnp/documents/AmortissementDocumentStep";
 import { ChargesDocumentStep } from "@/components/lmnp/documents/ChargesDocumentStep";
+import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import { CreditDocumentStep } from "@/components/lmnp/documents/CreditDocumentStep";
 import { withFrozenTunnelStep } from "@/components/lmnp/documents/frozen-tunnel-step";
 import { LogementDocumentStep } from "@/components/lmnp/documents/LogementDocumentStep";
@@ -34,8 +35,15 @@ export const FrozenRevenusDocumentStep = withFrozenTunnelStep(
   "FrozenRevenusDocumentStep",
 );
 
+function FrozenChargesDocumentStepRenderProbe(props: TunnelStepProps) {
+  console.log("[render-checkpoint]", "FrozenChargesDocumentStep", "entry");
+  const view = <ChargesDocumentStep {...props} />;
+  console.log("[render-checkpoint]", "FrozenChargesDocumentStep", "exit");
+  return view;
+}
+
 export const FrozenChargesDocumentStep = withFrozenTunnelStep(
-  ChargesDocumentStep,
+  FrozenChargesDocumentStepRenderProbe,
   "FrozenChargesDocumentStep",
 );
 
