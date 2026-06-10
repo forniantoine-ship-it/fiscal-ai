@@ -90,6 +90,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const analyzingRef = useRef(false);
   const pendingUploadRef = useRef(false);
   const executionPendingRef = useRef(false);
+  const [isExecutionRunning, setIsExecutionRunning] = useState(false);
   const syncedConfirmedAtRef = useRef<string | undefined>(undefined);
   const lastAmortizationRefreshKeyRef = useRef<string>("");
   const lastAmortizationAppliedFingerprintRef = useRef<string>("");
@@ -156,7 +157,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     !aiAnimationDone &&
     !manualMode &&
     uploadedCount > 0 &&
-    !hasAnalyzedChargeDocs;
+    (isExecutionRunning || hasProcessing || !hasAnalyzedChargeDocs);
   const isFailed = hasFailed && !aiAnimationDone && !manualMode && hasUploaded;
   const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
   const hasChargeRows =
@@ -366,9 +367,20 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   );
 
   const handleAiAnimationComplete = useCallback(() => {
-    if (!hasAnalyzedChargeDocs) return;
+    if (isExecutionRunning) return;
+
     const ws = workspaceRef.current;
     const currentDraft = draftRef.current;
+    const analyzedReady = resolveChargesDocuments(
+      ws.documents,
+      currentDraft?.chargesDocumentIds,
+    ).some((doc) => doc.status === "analyzed");
+
+    if (!analyzedReady) {
+      setAiAnimationDone(true);
+      return;
+    }
+
     const rebuilt = buildChargesWithDiag(
       "ai-animation",
       ws.properties,
@@ -380,7 +392,24 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     );
     applyAuthoritativeExtraction(rebuilt, { source: "documents", authoritative: true }, "ai-animation");
     setAiAnimationDone(true);
-  }, [hasAnalyzedChargeDocs, crossStepRecoveryEnabled, applyAuthoritativeExtraction, buildChargesWithDiag]);
+  }, [isExecutionRunning, crossStepRecoveryEnabled, applyAuthoritativeExtraction, buildChargesWithDiag]);
+
+  useEffect(() => {
+    if (isExecutionRunning || aiAnimationDone || confirmed || manualMode || !hasUploaded) return;
+    if (hasAnalyzedChargeDocs || hasProcessing || analyzingRef.current || pendingDocIds.length > 0) {
+      return;
+    }
+    setAiAnimationDone(true);
+  }, [
+    isExecutionRunning,
+    aiAnimationDone,
+    confirmed,
+    manualMode,
+    hasUploaded,
+    hasAnalyzedChargeDocs,
+    hasProcessing,
+    pendingDocIds.length,
+  ]);
 
   useEffect(() => {
     if (!chargesConfirmedAt) {
@@ -502,6 +531,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       if (!documentIds.length) return;
       if (analyzingRef.current) return;
       analyzingRef.current = true;
+      setIsExecutionRunning(true);
 
       try {
         const result = await runBulkDocumentAnalysis({
@@ -548,6 +578,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         }
       } finally {
         analyzingRef.current = false;
+        setIsExecutionRunning(false);
       }
     },
     [workspace.documents, workspace.fiscalYear.year, getFile, dispatch],
