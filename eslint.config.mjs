@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Sprint 0 — local experiment archive and temp workspace
+    "archive/**",
+    ".tmp/**",
   ]),
 ]);
 

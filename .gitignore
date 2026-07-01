@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# sprint 0 — local experiment archive (not versioned)
+/archive/
+
+# temp experiment workspace
+/.tmp/
