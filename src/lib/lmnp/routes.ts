@@ -4,8 +4,15 @@ import type { DocumentJourneyStepId } from "./constants/document-journey";
 export const LMNP_ROUTES = {
   dashboard: "/dashboard",
   documents: "/documents",
-  activite: "/documents?step=inpi",
-  revenus: "/documents?step=revenus",
+  activite: "/assistants/activite",
+  logement: "/assistants/logement",
+  financement: "/assistants/financement",
+  chargesAssistant: "/assistants/charges",
+  revenusAssistant: "/assistants/revenus",
+  amortissementsAssistant: "/assistants/amortissements",
+  fiscalEngine: "/assistants/fiscal",
+  liasseEngine: "/assistants/liasse",
+  revenus: "/assistants/revenus",
   charges: "/documents?step=charges",
   depenses: "/documents?step=charges",
   amortissements: "/documents?step=amortissements",
@@ -51,10 +58,14 @@ export function documentJourneyRoute(stepId?: DocumentJourneyStepId | string): s
 export function declarationFlowPathToRoute(path: string): string {
   if (path === "/documents") return LMNP_ROUTES.documents;
   if (path === "/activite") return documentJourneyRoute("inpi");
-  if (path === "/etape/logement") return documentJourneyRoute("logement");
+  if (path === "/etape/logement") return LMNP_ROUTES.logement;
+  if (path === "/etape/financement") return LMNP_ROUTES.financement;
+  if (path === "/etape/charges") return LMNP_ROUTES.chargesAssistant;
+  if (path === "/etape/revenus") return LMNP_ROUTES.revenusAssistant;
   if (path.startsWith("/etape/")) return LMNP_ROUTES.dashboard;
-  if (path === "/immobilisations") return documentJourneyRoute("amortissements");
-  if (path === "/recettes") return documentJourneyRoute("revenus");
+  if (path === "/etape/amortissements") return LMNP_ROUTES.amortissementsAssistant;
+  if (path === "/immobilisations") return LMNP_ROUTES.amortissementsAssistant;
+  if (path === "/recettes") return LMNP_ROUTES.revenusAssistant;
   if (path === "/depenses" || path === "/emprunts") return LMNP_ROUTES.charges;
   if (path === "/validation" || path === "/paiement") {
     return LMNP_ROUTES.validation;

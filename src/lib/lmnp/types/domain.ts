@@ -491,6 +491,110 @@ export interface CoOwner {
 
 export type LmnpActivityType = "LMNP" | "LMP";
 
+/** Sortie durable de F-010 (Assistant Logement) — consommée par F-006/F-012. */
+export interface LogementAmortissementOutput {
+  prixRevient: number;
+  valeurTerrain: number;
+  valeurBati: number;
+  baseAmortissableBati: number;
+  montantMobilier: number;
+  dotationAnnuelle: number;
+  dureeMoyenneAnnees: number;
+  prorataRatio: number;
+  plan: import("@/runtime").AmortissementPlan;
+  /** Provenance de chaque Field (extrait / estimé / saisi / choix de Jugement). */
+  fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
+  computedAt: string;
+}
+
+/** Sortie durable de F-011 (Assistant Financement) — consommée par F-006/F-012. */
+export interface FinancementChargesOutput {
+  exerciceFiscal: number;
+  totalInteretsEmprunt: number;
+  totalInteretsPreExploitation: number;
+  totalAssurance: number;
+  totalCapitalRembourse: number;
+  totalChargesFinancementExercice: number;
+  prets: import("@/runtime").PretFinancementExercice[];
+  fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
+  computedAt: string;
+}
+
+/** Sortie durable de F-012 (Assistant Charges) — consommée par F-006/F-010. */
+export interface ChargesAssistantOutput {
+  exerciceFiscal: number;
+  totalDeductible: number;
+  totalNonDeductible: number;
+  totalAmortissable: number;
+  totalPreExploitation: number;
+  parCategorie: Partial<Record<string, number>>;
+  composantsNouveaux: import("@/runtime").ComposantNouveau[];
+  fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
+  computedAt: string;
+}
+
+/** Sortie durable de F-014 (Assistant Amortissements) — consommée par F-006. */
+export interface AmortissementAssistantOutput {
+  exerciceFiscal: number;
+  totalDotations: number;
+  status: "validated" | "contested";
+  planVersion: string;
+  profil: "PROF-001" | "PROF-002" | "PROF-003";
+  validatedAt: string;
+  anneeValidationInitiale?: number;
+}
+
+/** Sortie durable de F-007 (Liasse Engine) — représentation documentaire partielle. */
+export interface LiasseEngineOutput {
+  exercice: number;
+  form2031Generated: boolean;
+  caseCount: number;
+  formulairesManquants: string[];
+  trace: {
+    ksArtifacts: string[];
+    generatedAt: string;
+    sourceFiscalResultAt: string;
+  };
+  generatedAt: string;
+}
+
+/** Sortie durable de F-006 (Fiscal Engine) — consommée par F-007. */
+export interface FiscalEngineOutput {
+  exercice: number;
+  resultatFiscal: number;
+  resultatAvantAmort: number;
+  totalRecettes: number;
+  totalCharges: number;
+  amortDeduct: number;
+  amortReporte: number;
+  deficitNouveau: number;
+  stocks: {
+    deficits: { millesime: number; montant: number }[];
+    amortissementsReportes: number;
+    deficitsExpires?: { millesime: number; montant: number }[];
+  };
+  trace: {
+    ksArtifacts: string[];
+    computedAt: string;
+    journal: { trf: string; label: string; value: number | string }[];
+  };
+  computedAt: string;
+}
+
+/** Sortie durable de F-013 (Assistant Revenus) — consommée par F-006. */
+export interface RevenusAssistantOutput {
+  exerciceFiscal: number;
+  totalRecettes: number;
+  loyersEncaisses: number;
+  indemnitesAssurance: number;
+  recettesPlateforme: number;
+  ajustementsJanDec: number;
+  moisLocationEffectifs: number;
+  revenuTheorique?: number;
+  fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
+  computedAt: string;
+}
+
 export interface DeclarationDraft {
   completedSteps: string[];
   documentStepsCompleted?: string[];
@@ -512,6 +616,8 @@ export interface DeclarationDraft {
   establishmentCity?: string;
   establishmentPostalCode?: string;
   activityStartDate?: string;
+  /** Date de première mise en location effective — F-009. */
+  dateMiseEnService?: string;
   activityType?: LmnpActivityType;
   indivision?: boolean;
   coOwners?: CoOwner[];
@@ -531,6 +637,22 @@ export interface DeclarationDraft {
   /** In-progress logement form — restored passively on tunnel navigation. */
   logementWorkspaceForm?: import("@/lib/lmnp/services/logement-profile").LogementFormValues;
   propertyBackgroundExtraction?: PropertyBackgroundExtraction;
+  /** Plan d'amortissement produit par l'Assistant Logement (F-010). */
+  logementAmortissement?: LogementAmortissementOutput;
+  /** Charges de financement produites par l'Assistant Financement (F-011). */
+  financementCharges?: FinancementChargesOutput;
+  /** Charges d'exploitation produites par l'Assistant Charges (F-012). */
+  chargesAssistant?: ChargesAssistantOutput;
+  /** Recettes locatives produites par l'Assistant Revenus (F-013). */
+  revenusAssistant?: RevenusAssistantOutput;
+  /** Validation du plan d'amortissement produite par l'Assistant Amortissements (F-014). */
+  amortissementAssistant?: AmortissementAssistantOutput;
+  /** Résultat fiscal produit par le Fiscal Engine (F-006). */
+  fiscalResult?: FiscalEngineOutput;
+  fiscalResultConfirmedAt?: string;
+  /** Représentation liasse produite par le Liasse Engine (F-007). */
+  liasseResult?: LiasseEngineOutput;
+  liasseGeneratedAt?: string;
   creditDocumentId?: string;
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;
