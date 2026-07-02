@@ -80,8 +80,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "logement",
     label: "Logement",
-    href: documentJourneyRoute("logement"),
-    uploadHref: documentJourneyRoute("logement"),
+    href: LMNP_ROUTES.logement,
+    uploadHref: LMNP_ROUTES.logement,
     requestedDocument: "Acte notarié",
     documentPrompt: "Ajoutez votre acte notarié.",
     aiExtracts: ["Adresse", "Surface", "Date d'acquisition"],
@@ -93,9 +93,9 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   },
   {
     id: "credit",
-    label: "Crédit",
-    href: documentJourneyRoute("credit"),
-    uploadHref: documentJourneyRoute("credit"),
+    label: "Financement",
+    href: LMNP_ROUTES.financement,
+    uploadHref: LMNP_ROUTES.financement,
     requestedDocument: "Tableau d'amortissement",
     documentPrompt: "Déposez votre tableau d'amortissement.",
     aiExtracts: ["Mensualité", "Durée", "Taux", "Intérêts"],
@@ -110,8 +110,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "revenus",
     label: "Revenus",
-    href: documentJourneyRoute("revenus"),
-    uploadHref: documentJourneyRoute("revenus"),
+    href: LMNP_ROUTES.revenusAssistant,
+    uploadHref: LMNP_ROUTES.revenusAssistant,
     requestedDocument: "Relevés de loyers",
     documentPrompt: "Ajoutez vos exports ou relevés de location.",
     aiExtracts: ["Loyers encaissés", "Périodes", "Frais détectés"],
@@ -121,14 +121,15 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.documentType === "lease_contract" ||
       doc.documentType === "rent_receipt" ||
       doc.documentType === "rent_bank_statement",
-    isComplete: (ws) => Boolean(ws.declarationDraft?.revenusConfirmedAt),
+    isComplete: (ws) =>
+      Boolean(ws.declarationDraft?.revenusConfirmedAt || ws.declarationDraft?.revenusAssistant),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "recettes",
   },
   {
     id: "charges",
     label: "Charges",
-    href: documentJourneyRoute("charges"),
-    uploadHref: documentJourneyRoute("charges"),
+    href: LMNP_ROUTES.chargesAssistant,
+    uploadHref: LMNP_ROUTES.chargesAssistant,
     requestedDocument: "Factures + Charges",
     documentPrompt: "Ajoutez taxe foncière, assurance et charges.",
     aiExtracts: ["Taxe foncière", "Assurance", "Copropriété"],
@@ -137,14 +138,15 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.documentType === "property_tax" ||
       doc.documentType === "insurance_invoice" ||
       doc.documentType === "condo_charges",
-    isComplete: (ws) => Boolean(ws.declarationDraft?.chargesConfirmedAt),
+    isComplete: (ws) =>
+      Boolean(ws.declarationDraft?.chargesConfirmedAt || ws.declarationDraft?.chargesAssistant),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "depenses",
   },
   {
     id: "amortissement",
     label: "Amortissement",
-    href: documentJourneyRoute("amortissements"),
-    uploadHref: documentJourneyRoute("amortissements"),
+    href: LMNP_ROUTES.amortissementsAssistant,
+    uploadHref: LMNP_ROUTES.amortissementsAssistant,
     requestedDocument: "Factures travaux / mobilier",
     documentPrompt: "Ajoutez vos factures de travaux ou de mobilier.",
     aiExtracts: ["Mobilier", "Travaux", "Amortissement annuel"],
@@ -152,7 +154,8 @@ const STEP_DEFINITIONS: StepDefinition[] = [
       doc.category === "amortissement" ||
       doc.documentType === "furniture_invoice" ||
       doc.documentType === "works_invoice",
-    isComplete: (ws) => Boolean(ws.declarationDraft?.amortissementConfirmedAt),
+    isComplete: (ws) =>
+      Boolean(ws.declarationDraft?.amortissementConfirmedAt || ws.declarationDraft?.amortissementAssistant),
     matchValidation: (item) => FIELD_REGISTRY[item.fieldKey]?.tab === "immobilisations",
   },
   {
@@ -369,7 +372,12 @@ export function resolveActiveWorkflowStepFromRoute(
   if (pathname === "/declarations") return "validation";
   if (pathname === "/documents" && stepQuery === "validation") return "validation";
   if (pathname === "/revenus") return "revenus";
-  if (pathname === "/amortissements") return "amortissement";
+  if (pathname === "/amortissements" || pathname === "/assistants/amortissements") return "amortissement";
+  if (pathname === "/assistants/financement") return "credit";
+  if (pathname === "/assistants/charges") return "charges";
+  if (pathname === "/assistants/revenus") return "revenus";
+  if (pathname === "/assistants/logement") return "logement";
+  if (pathname === "/assistants/activite") return "activite";
 
   if (pathname === "/documents" && stepQuery) {
     return DOCUMENT_STEP_TO_WORKFLOW_ID[stepQuery] ?? null;

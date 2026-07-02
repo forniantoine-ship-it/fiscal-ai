@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { documentJourneyRoute } from "@/lib/lmnp/routes";
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 
 export default function ActivitePage() {
-  redirect(documentJourneyRoute("inpi"));
+  redirect(LMNP_ROUTES.activite);
 }

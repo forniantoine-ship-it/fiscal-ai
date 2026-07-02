@@ -314,6 +314,10 @@ export function resolveChargesDashboardSummary(draft: DeclarationDraft | undefin
 }
 
 export function resolveAmortissementDashboardSummary(draft: DeclarationDraft | undefined): string | null {
-  if (!draft?.amortissementConfirmedAt) return null;
-  return "Calculs préparés";
+  if (!draft?.amortissementConfirmedAt && !draft?.amortissementAssistant) return null;
+  const total = draft.amortissementAssistant?.totalDotations;
+  if (total) {
+    return `${Math.round(total).toLocaleString("fr-FR")} € d'amortissements validés`;
+  }
+  return "Plan validé";
 }
