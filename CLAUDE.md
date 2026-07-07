@@ -1,1 +1,1 @@
-@AGENTS.md
+@knowledge/CLAUDE.md
