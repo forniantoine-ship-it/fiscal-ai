@@ -1,25 +1,20 @@
 # fiscal-ai
 
-## Architecture
+## Architecture du dépôt
 
 ```
-src/
-  Application — code Next.js (LMNP tax-filing SaaS)
-
 knowledge/
-  Knowledge Operating System — gouvernance, décisions, connaissances
-  métier, raisonnements, transformations, standards, prompts,
-  architectures, observations. Le code n'est pas la seule source de
-  vérité : le Knowledge System est versionné au même titre que le
-  code. Édité via Obsidian, ce dossier EST le vault (voir
+  Knowledge System — mémoire officielle du projet (gouvernance,
+  décisions, connaissances métier, raisonnements, transformations,
+  standards, prompts, architectures, observations). Source unique de
+  vérité, versionnée avec le code. Édité via Obsidian (voir
   knowledge/README.md).
 
+src/
+  Application — implémentation logicielle (Next.js).
+
 docs/
-  Documentation technique (specs produit, modèle de données, workflows)
-
-scripts/
-  Outils
-
-supabase/
-  Infrastructure (migrations, schéma)
+  Documentation technique (specs produit, modèle de données, workflows).
 ```
+
+Autres dossiers : `scripts/` (outils), `supabase/` (infrastructure — migrations, schéma).
