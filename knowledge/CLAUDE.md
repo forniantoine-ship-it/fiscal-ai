@@ -28,17 +28,20 @@ Version : 3.0
 
 ---
 
-# Deux espaces, un seul cerveau
+# Un seul dépôt, une seule source de vérité
 
-Il existe deux espaces distincts :
+Il n'existe plus qu'un seul espace : le dépôt Git `fiscal-ai`.
 
-1. **Le Knowledge System** (Vault Obsidian : `/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI`)
-   → source officielle de vérité.
+1. **`knowledge/`** → le Knowledge System, cerveau du projet, source
+   officielle de vérité.
 
-2. **Le projet Fiscal AI** (Next.js : `/Users/forniantoine/Developer/fiscal-ai`)
-   → implémentation de cette vérité.
+2. **`src/`** → l'implémentation logicielle (Next.js) de cette vérité.
 
-Le Vault est le cerveau de Fiscal AI. Le projet Next.js est son exécution.
+`knowledge/` et `src/` vivent dans le même dépôt et sont versionnés
+ensemble. `knowledge/` reste le cerveau de Fiscal AI ; `src/` est son
+exécution. Toute décision métier — nouvelle règle, nouvelle
+interprétation, nouvelle connaissance — doit être documentée dans
+`knowledge/` avant d'être codée dans `src/`.
 
 ---
 
