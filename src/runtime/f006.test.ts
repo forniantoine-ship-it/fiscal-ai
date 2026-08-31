@@ -247,3 +247,116 @@ describe("Cycle 16 — indemnitesAssurance ventilée dans FiscalResult.recettes"
     assert.equal(result?.recettes.total, 13000);
   });
 });
+/**
+ * Cycle 32 — audit 2033-B (264/270/310/312/314) : totalNonDeductible est un
+ * TRANSPORT pur depuis F-012 (ChargesAssistantOutput.totalNonDeductible),
+ * jamais recalculé par F-006. Aucun autre champ FiscalResult n'est affecté ;
+ * aucun ordre de calcul (SAV-027) n'est modifié.
+ */
+describe("Cycle 32 — FiscalResult.charges.totalNonDeductible : transport pur depuis F-012", () => {
+  it("un dossier avec 99,40 € de charges non déductibles expose ~99,40 € dans FiscalResult, sans transformation", () => {
+    const { result } = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: {
+        ...BASE_INPUT.chargesAssistant,
+        totalNonDeductible: 99.4,
+      },
+    });
+    assert.equal(result?.charges.totalNonDeductible, 99.4, "valeur transportée telle quelle, pas recalculée");
+  });
+
+  it("un dossier sans charge non déductible (0 €) expose exactement 0, jamais une valeur inventée", () => {
+    const { result } = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalNonDeductible: 0 },
+    });
+    assert.equal(result?.charges.totalNonDeductible, 0);
+  });
+
+  it("chargesAssistant.totalNonDeductible absent (assistant pas encore à jour) → 0, jamais undefined ni une estimation", () => {
+    const { result } = produceFiscalResult(BASE_INPUT);
+    assert.equal(result?.charges.totalNonDeductible, 0);
+  });
+
+  it("n'est PAS dérivé de totalDeductible, totalCharges, ni d'aucun autre champ — deux dossiers identiques sauf sur ce seul champ ne divergent que sur lui", () => {
+    const sansNonDeductible = produceFiscalResult(BASE_INPUT).result!;
+    const avecNonDeductible = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalNonDeductible: 250 },
+    }).result!;
+
+    assert.equal(avecNonDeductible.charges.totalNonDeductible, 250);
+    // Tous les autres champs de calcul fiscal restent strictement identiques —
+    // la preuve que totalNonDeductible ne recalcule ni ne perturbe rien d'autre.
+    assert.equal(avecNonDeductible.charges.totalDeductible, sansNonDeductible.charges.totalDeductible);
+    assert.equal(avecNonDeductible.charges.chargesExploitation, sansNonDeductible.charges.chargesExploitation);
+    assert.equal(avecNonDeductible.resultatAvantAmort, sansNonDeductible.resultatAvantAmort);
+    assert.equal(avecNonDeductible.resultatFiscal, sansNonDeductible.resultatFiscal);
+    assert.equal(avecNonDeductible.deficitNouveau, sansNonDeductible.deficitNouveau);
+    assert.equal(avecNonDeductible.amortDeduct, sansNonDeductible.amortDeduct);
+    assert.equal(avecNonDeductible.amortReporte, sansNonDeductible.amortReporte);
+  });
+
+  it("les champs FiscalResult historiques (hors charges.totalNonDeductible) restent identiques à ceux produits avant ce cycle", () => {
+    const { result } = produceFiscalResult(BASE_INPUT);
+    assert.equal(result?.exercice, 2024);
+    assert.equal(result?.recettes.total, 9000);
+    assert.equal(result?.charges.totalDeductible, 7000);
+    assert.equal(result?.charges.chargesExploitation, 7000);
+    assert.equal(result?.charges.chargesFinancement, 0);
+    assert.equal(result?.charges.chargesPreExploitation, 560);
+    assert.equal(result?.amortCalcule, 6779);
+  });
+});
+
+/**
+ * Cycle 32 — STEP 6 (audit de conformité 2033-B) : limitation documentée de
+ * la case 318 quand déficits antérieurs ET limitation d'amortissement
+ * coexistent la même année. Ce test ne change AUCUNE règle de F-006
+ * (SAV-027 reste intact, `applyAmortissementStocks` n'est pas modifié) : il
+ * prouve seulement, avec un cas construit, que amortReporte (case 318) et le
+ * "résultat fiscal avant imputation des déficits" (case 352/354) divergent
+ * de ce qu'un ordre de calcul indépendant des déficits produirait — d'où le
+ * blocage volontaire de 352/354 tant que ce n'est pas arbitré.
+ * Important : le RÉSULTAT FISCAL FINAL (bottom line) est identique dans les
+ * deux ordres — seule la répartition intermédiaire entre "amortissement
+ * reporté" et "déficit antérieur restant" diffère.
+ */
+describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (SAV-027) affecte la case 318 en présence de déficits antérieurs", () => {
+  it("déficit antérieur 4000, résultat avant amort 5000, amortissement calculé 3000 : F-006 reporte 2000 d'amortissement, un ordre 'art. 39C indépendant des déficits' n'en reporterait aucun — même résultat final", () => {
+    const applicationF006 = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 5000,
+      amortCalcule: 3000,
+      stockDeficitsAnterieurs: [{ millesime: 2023, montant: 4000 }],
+      stockAmortissementsReportes: 0,
+    });
+
+    // Ordre effectif de F-006 (SAV-027, non modifié) : déficits imputés avant l'amortissement.
+    assert.equal(applicationF006.deficitsImputes, 4000, "le déficit antérieur est intégralement imputé en premier");
+    assert.equal(applicationF006.amortDeduct, 1000, "il ne reste que 1000 de résultat pour l'amortissement");
+    assert.equal(applicationF006.amortReporte, 2000, "3000 calculé − 1000 déduit = 2000 reporté (case 318 actuelle)");
+    assert.equal(applicationF006.resultatFiscal, 0);
+
+    // Ordre alternatif "formulaire officiel" (art. 39 C appliqué indépendamment
+    // des déficits antérieurs, calculé ici SANS appeler applyAmortissementStocks
+    // — pure arithmétique de démonstration, pas une nouvelle règle F-006) :
+    const amortDeductFormOrder = Math.min(3000, Math.max(0, 5000)); // limitation sur resultatAvantAmort seul
+    const amortReporteFormOrder = 3000 - amortDeductFormOrder;
+    const resteApresAmortFormOrder = 5000 - amortDeductFormOrder;
+    const deficitImputeFormOrder = Math.min(4000, resteApresAmortFormOrder);
+    const resultatFiscalFormOrder = resteApresAmortFormOrder - deficitImputeFormOrder;
+
+    assert.equal(amortReporteFormOrder, 0, "dans cet ordre, aucune limitation d'amortissement n'aurait lieu");
+    assert.equal(deficitImputeFormOrder, 2000, "seule une partie du déficit antérieur serait imputée cette année");
+    assert.equal(resultatFiscalFormOrder, 0, "le résultat fiscal final est identique dans les deux ordres");
+
+    // La divergence documentée : même résultat final, répartition différente.
+    assert.notEqual(
+      applicationF006.amortReporte,
+      amortReporteFormOrder,
+      "case 318 (amortissements excédentaires) diverge selon l'ordre — raison du blocage de 352/354",
+    );
+    assert.notEqual(applicationF006.deficitsImputes, deficitImputeFormOrder);
+  });
+});
