@@ -8,9 +8,15 @@ import { determineAmortissementProfil } from "./capabilities/f014/determine-prof
 import { validateAmortissements } from "./capabilities/f014/validate-amortissements";
 import { toNomCourant } from "./capabilities/f014/nom-courant";
 import {
+  fiscalResultMatchesAmortissementTotal,
+  hasAmortissementDrifted,
+} from "./capabilities/f014/plan-consistency";
+import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
+import {
   EXP_F014_TERRAIN_BATI,
   explainAmortissements,
   expF014ImpactFiscal,
+  expF014UsageFiscal,
 } from "./presentation/explain-amortissements";
 import { F014AmortissementsAssistant } from "./assistants/f014-amortissements/assistant";
 
@@ -182,5 +188,89 @@ describe("F-014 — Assistant Amortissements", () => {
     assert.equal(turn.completed, true);
     assert.equal(turn.event, "AMORTISSEMENTS_TERMINE");
     assert.equal(turn.state.result?.validation.status, "validated");
+  });
+});
+
+describe("F-014 — Cohérence avec la valeur stockée (amortissementAssistant)", () => {
+  it("ne détecte pas de dérive quand le total validé et le total recalculé sont identiques", () => {
+    assert.equal(hasAmortissementDrifted(6779, 6779), false);
+    assert.equal(hasAmortissementDrifted(6779.001, 6779.004), false);
+  });
+
+  it("détecte une dérive quand le logement/travaux ont changé depuis la validation", () => {
+    assert.equal(hasAmortissementDrifted(6779, 7200), true);
+  });
+});
+
+describe("F-014 — Cohérence avec le FiscalResult (F-006)", () => {
+  const FISCAL_BASE_INPUT = {
+    exerciceFiscal: 2024,
+    activite: { dateMiseEnService: "2024-04-15", siret: "12345678901234" },
+    revenusAssistant: { exerciceFiscal: 2024, totalRecettes: 9000 },
+    chargesAssistant: {
+      exerciceFiscal: 2024,
+      totalDeductible: 7000,
+      totalPreExploitation: 0,
+      parCategorie: {},
+    },
+    logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
+  };
+
+  it("reconnaît un FiscalResult calculé à partir du total F-014 actuellement affiché", () => {
+    const { result } = produceFiscalResult({
+      ...FISCAL_BASE_INPUT,
+      amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 1500, status: "validated" },
+    });
+    assert.ok(result);
+    assert.equal(fiscalResultMatchesAmortissementTotal(result!.trace.journal, 1500), true);
+  });
+
+  it("rejette un FiscalResult obsolète (calculé avant une modification du logement)", () => {
+    const { result } = produceFiscalResult({
+      ...FISCAL_BASE_INPUT,
+      amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 1500, status: "validated" },
+    });
+    assert.ok(result);
+    // Le logement a été modifié après ce calcul : F-014 affiche désormais un total différent.
+    assert.equal(fiscalResultMatchesAmortissementTotal(result!.trace.journal, 6779), false);
+  });
+
+  it("intègre AX-015/AX-016 : l'amortissement ne crée pas de déficit, le surplus est reporté", () => {
+    const { result } = produceFiscalResult({
+      ...FISCAL_BASE_INPUT,
+      chargesAssistant: {
+        exerciceFiscal: 2024,
+        totalDeductible: 9000,
+        totalPreExploitation: 0,
+        parCategorie: {},
+      },
+      amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 6779, status: "validated" },
+    });
+    assert.ok(result);
+    assert.equal(result!.resultatAvantAmort, 0);
+    assert.equal(result!.amortDeduct, 0);
+    assert.equal(result!.amortReporte, 6779);
+    assert.equal(result!.resultatFiscal, 0);
+  });
+});
+
+describe("F-014 — Explication déduit / reporté (AX-015, AX-017)", () => {
+  it("indique une déduction totale sans jargon quand rien n'est reporté", () => {
+    const text = expF014UsageFiscal({ amortDeduct: 1500, amortReporte: 0 });
+    assert.match(text, /intégralité/i);
+    assert.doesNotMatch(text, /report/i);
+  });
+
+  it("indique un report total quand le résultat ne permet aucune déduction", () => {
+    const text = expF014UsageFiscal({ amortDeduct: 0, amortReporte: 6779 });
+    assert.match(text, /6.779/);
+    assert.match(text, /sans limite de durée/i);
+  });
+
+  it("indique un partage déduit/reporté quand les deux sont non nuls", () => {
+    const text = expF014UsageFiscal({ amortDeduct: 1200, amortReporte: 300 });
+    assert.match(text, /1.200/);
+    assert.match(text, /300/);
+    assert.match(text, /sans limite de durée/i);
   });
 });

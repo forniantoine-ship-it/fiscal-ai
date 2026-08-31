@@ -335,6 +335,11 @@ export type {
 } from "./capabilities/f014/validate-amortissements";
 export { validateAmortissements } from "./capabilities/f014/validate-amortissements";
 export { toNomCourant } from "./capabilities/f014/nom-courant";
+export type { FiscalResultJournalEntry } from "./capabilities/f014/plan-consistency";
+export {
+  hasAmortissementDrifted,
+  fiscalResultMatchesAmortissementTotal,
+} from "./capabilities/f014/plan-consistency";
 
 // F-014 — présentation
 export type {
@@ -349,6 +354,7 @@ export {
   expF014DureeComposant,
   expF014ImpactFiscal,
   expF014Prorata,
+  expF014UsageFiscal,
 } from "./presentation/explain-amortissements";
 
 export {
