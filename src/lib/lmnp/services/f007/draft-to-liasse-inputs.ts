@@ -27,6 +27,9 @@ export function identiteFromDeclarationDraft(
     exerciceFin: `31/12/${exercice}`,
     email: draft?.exploitantEmail,
     telephone: draft?.exploitantTelephone,
+    // Aucune source fiable de SIE compétent dans le dossier — jamais déduit du
+    // code postal (hypothèse fragile). Voir le commentaire sur le champ.
+    sieCompetent: undefined,
   };
 }
 

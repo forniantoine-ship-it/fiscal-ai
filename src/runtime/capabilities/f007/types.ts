@@ -18,6 +18,17 @@ export type IdentiteDeclarante = {
   exerciceFin?: string;
   email?: string;
   telephone?: string;
+  /**
+   * Service des Impôts des Entreprises compétent. Aucune source fiable
+   * (annuaire SIE par code postal/commune, ou donnée transmise par le SIE au
+   * démarrage de l'activité) n'existe aujourd'hui dans le dossier ni ailleurs
+   * dans le code — volontairement laissé `undefined` par
+   * `identiteFromDeclarationDraft()` plutôt que déduit du code postal, qui
+   * serait une hypothèse fragile (le ressort d'un SIE ne suit pas un
+   * découpage postal simple). À renseigner uniquement quand une source fiable
+   * sera disponible.
+   */
+  sieCompetent?: string;
 };
 
 export type CerfaCaseValue = number | string | boolean;
