@@ -71,6 +71,12 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       total: data.totalRecettes,
       loyersEncaisses: input.revenusAssistant?.loyersEncaisses,
       recettesPlateforme: input.revenusAssistant?.recettesPlateforme,
+      // Cycle 16 — champ manquant : indemnitesAssurance (GLI/VISALE, SAV-REV-04)
+      // était déjà comptée dans `total` (data.totalRecettes vient de
+      // revenusAssistant.totalRecettes, déjà correct) mais absente de la
+      // ventilation détaillée — aucun consommateur actuel ne la lisait encore,
+      // mais le contrat de données était incomplet.
+      indemnitesAssurance: input.revenusAssistant?.indemnitesAssurance,
       ajustementsJanDec: input.revenusAssistant?.ajustementsJanDec,
     },
     charges: {

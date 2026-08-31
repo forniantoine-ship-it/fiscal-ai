@@ -230,3 +230,20 @@ describe("F-006 — Assistant Fiscal Engine", () => {
     assert.equal(turn.event, "REDIRECT_PREREQUIS");
   });
 });
+
+describe("Cycle 16 — indemnitesAssurance ventilée dans FiscalResult.recettes", () => {
+  it("produceFiscalResult reprend indemnitesAssurance depuis revenusAssistant sans recalcul", () => {
+    const { result } = produceFiscalResult({
+      ...BASE_INPUT,
+      revenusAssistant: {
+        exerciceFiscal: 2024,
+        totalRecettes: 13000,
+        loyersEncaisses: 9000,
+        indemnitesAssurance: 4000,
+      },
+    });
+
+    assert.equal(result?.recettes.indemnitesAssurance, 4000);
+    assert.equal(result?.recettes.total, 13000);
+  });
+});

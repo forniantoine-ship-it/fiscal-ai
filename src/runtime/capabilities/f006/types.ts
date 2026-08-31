@@ -16,6 +16,7 @@ export type RevenusFiscalInput = {
   totalRecettes: number;
   loyersEncaisses?: number;
   recettesPlateforme?: number;
+  indemnitesAssurance?: number;
   ajustementsJanDec?: number;
 };
 
@@ -114,6 +115,7 @@ export type FiscalResult = {
     total: number;
     loyersEncaisses?: number;
     recettesPlateforme?: number;
+    indemnitesAssurance?: number;
     ajustementsJanDec?: number;
   };
   charges: {
