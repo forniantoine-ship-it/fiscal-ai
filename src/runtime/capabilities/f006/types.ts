@@ -23,6 +23,13 @@ export type ChargesFiscalInput = {
   exerciceFiscal: number;
   totalDeductible: number;
   totalPreExploitation: number;
+  /**
+   * Cycle 32 — charges comptabilisées mais fiscalement non déductibles
+   * (ex. avance de trésorerie/fonds de roulement de copropriété), déjà
+   * calculées et classifiées par F-012 (`ChargeDeductibilite: "non_deductible"`).
+   * Transport pur : F-006 ne recalcule jamais cette valeur.
+   */
+  totalNonDeductible?: number;
   parCategorie?: Partial<Record<string, number>>;
 };
 
@@ -76,6 +83,8 @@ export type AggregatedFiscalData = {
   chargesFinancement: number;
   chargesPreExploitation: number;
   totalChargesDeductibles: number;
+  /** Cycle 32 — transport pur depuis ChargesFiscalInput.totalNonDeductible (F-012), jamais recalculé. */
+  totalNonDeductible: number;
   amortCalcule: number;
   perteExceptionnelle: number;
 };
@@ -112,6 +121,13 @@ export type FiscalResult = {
     chargesExploitation: number;
     chargesFinancement: number;
     chargesPreExploitation: number;
+    /**
+     * Cycle 32 — audit 2033-B : charges comptabilisées mais fiscalement non
+     * déductibles (F-012). Transport pur, jamais recalculé par F-006. Permet
+     * de reconstituer le résultat comptable (distinct du résultat fiscal)
+     * pour la projection Cerfa 2033-B, cases 264/270/310/312/314.
+     */
+    totalNonDeductible: number;
     detailParCategorie?: Partial<Record<string, number>>;
   };
   resultatAvantAmort: number;

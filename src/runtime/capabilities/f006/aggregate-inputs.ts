@@ -16,6 +16,9 @@ export function aggregateFiscalInputs(
   }
 
   const chargesExploitation = round2(input.chargesAssistant.totalDeductible);
+  // Cycle 32 — transport pur depuis F-012 (ChargesAssistantOutput.totalNonDeductible),
+  // jamais recalculé ici. 0 si l'assistant n'a pas encore produit cette donnée.
+  const totalNonDeductible = round2(input.chargesAssistant.totalNonDeductible ?? 0);
   const chargesFinancement = round2(input.financementCharges?.totalChargesFinancementExercice ?? 0);
   const chargesPreExploitation = round2(
     input.chargesAssistant.totalPreExploitation +
@@ -51,6 +54,7 @@ export function aggregateFiscalInputs(
       chargesFinancement,
       chargesPreExploitation,
       totalChargesDeductibles,
+      totalNonDeductible,
       amortCalcule: round2(input.amortissementAssistant.totalDotations),
       perteExceptionnelle: round2(input.perteExceptionnelle ?? 0),
     },

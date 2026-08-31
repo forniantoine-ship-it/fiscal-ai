@@ -43,6 +43,11 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       value: data.chargesExploitation,
     },
     {
+      trf: "TRF-0020",
+      label: "Charges non déductibles (F-012)",
+      value: data.totalNonDeductible,
+    },
+    {
       trf: "TRF-0016",
       label: "Charges financement (F-011)",
       value: data.chargesFinancement,
@@ -73,6 +78,7 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       chargesExploitation: data.chargesExploitation,
       chargesFinancement: data.chargesFinancement,
       chargesPreExploitation: data.chargesPreExploitation,
+      totalNonDeductible: data.totalNonDeductible,
       detailParCategorie: input.chargesAssistant?.parCategorie,
     },
     resultatAvantAmort,

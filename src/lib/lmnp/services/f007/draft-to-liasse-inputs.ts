@@ -50,6 +50,7 @@ export function fiscalResultFromDraft(
       chargesExploitation: draft?.chargesAssistant?.totalDeductible ?? stored.totalCharges,
       chargesFinancement: draft?.financementCharges?.totalChargesFinancementExercice ?? 0,
       chargesPreExploitation: draft?.chargesAssistant?.totalPreExploitation ?? 0,
+      totalNonDeductible: draft?.chargesAssistant?.totalNonDeductible ?? 0,
       detailParCategorie: draft?.chargesAssistant?.parCategorie,
     },
     resultatAvantAmort: stored.resultatAvantAmort,
