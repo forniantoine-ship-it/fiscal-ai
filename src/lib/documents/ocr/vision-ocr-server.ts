@@ -1,6 +1,10 @@
 import OpenAI from "openai";
 
-import { VISION_OCR_SYSTEM_PROMPT } from "@/lib/documents/ocr/vision-ocr";
+import {
+  VISION_OCR_RETRY_SYSTEM_PROMPT,
+  VISION_OCR_SYSTEM_PROMPT,
+  type VisionOcrPromptVariant,
+} from "@/lib/documents/ocr/vision-ocr";
 import type { RasterPageImage } from "@/lib/documents/ocr/pdf-to-images";
 
 const DEFAULT_VISION_MODEL = "gpt-4o-mini";
@@ -24,10 +28,14 @@ function getVisionModel(): string {
 export async function extractVisionOcrTextFromImages(
   images: RasterPageImage[],
   fileName?: string,
+  promptVariant: VisionOcrPromptVariant = "default",
 ): Promise<string> {
   if (images.length === 0) {
     throw new Error("Aucune image fournie pour l'OCR vision.");
   }
+
+  const systemPrompt =
+    promptVariant === "retry_after_refusal" ? VISION_OCR_RETRY_SYSTEM_PROMPT : VISION_OCR_SYSTEM_PROMPT;
 
   const imageParts: { type: "image_url"; image_url: { url: string; detail: "high" } }[] =
     images.map((img) => ({
@@ -45,13 +53,14 @@ export async function extractVisionOcrTextFromImages(
     model,
     pageCount: images.length,
     fileName: fileName ?? null,
+    promptVariant,
   });
 
   const completion = await openai.chat.completions.create({
     model,
     temperature: 0,
     messages: [
-      { role: "system", content: VISION_OCR_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       {
         role: "user",
         content: [

@@ -10,6 +10,22 @@ Do not summarize.
 Do not interpret.
 Return raw text only.`;
 
+/**
+ * Correctif — un modèle vision peut, sur certaines images, répondre par un
+ * refus textuel ("I'm unable to extract text...") au lieu de transcrire —
+ * un comportement du modèle, jamais une mesure de la qualité de l'image.
+ * Utilisé uniquement en second essai, sur les mêmes images, après détection
+ * explicite d'un refus (voir `resolve-document-text.ts`).
+ */
+export const VISION_OCR_RETRY_SYSTEM_PROMPT = `You are shown an image: a scan or photo of a real paper document. You can see it directly and must transcribe it.
+Never respond that you are unable to process images, that the document "appears to be an image", or that you need a text version — you already have everything required.
+Extract ALL visible text from this administrative document, exactly as shown.
+Preserve line breaks.
+Do not summarize. Do not interpret. Do not apologize or explain limitations.
+Return raw text only.`;
+
+export type VisionOcrPromptVariant = "default" | "retry_after_refusal";
+
 export class VisionOcrError extends Error {
   constructor(
     message: string,
@@ -25,11 +41,14 @@ export class VisionOcrError extends Error {
  */
 export async function requestVisionOcrText(
   images: RasterPageImage[],
-  options?: { fileName?: string },
+  options?: { fileName?: string; promptVariant?: VisionOcrPromptVariant },
 ): Promise<string> {
   const formData = new FormData();
   if (options?.fileName) {
     formData.append("fileName", options.fileName);
+  }
+  if (options?.promptVariant) {
+    formData.append("promptVariant", options.promptVariant);
   }
 
   const traceId = getCreditPipelineTraceId();

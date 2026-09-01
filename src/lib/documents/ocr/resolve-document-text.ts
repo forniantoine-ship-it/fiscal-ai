@@ -18,7 +18,7 @@ import {
 } from "@/lib/documents/ocr/ocr-quality";
 import { extractNativePdfText, isPdfFile } from "@/lib/documents/ocr/pdf-native-text";
 import { preprocessRasterImagesForOcr } from "@/lib/documents/ocr/preprocess-raster-images";
-import { fileToRasterImages } from "@/lib/documents/ocr/pdf-to-images";
+import { fileToRasterImages, type RasterPageImage } from "@/lib/documents/ocr/pdf-to-images";
 import {
   detectInvalidCorpus,
   logInvalidCorpusDebug,
@@ -162,6 +162,82 @@ function pickBestAttempt(attempts: AttemptResult[]): AttemptResult | null {
   })[0] ?? null;
 }
 
+/**
+ * Correctif — un modèle vision peut répondre par un refus explicite ("I'm
+ * unable to extract text...") sur une image parfaitement lisible : c'est un
+ * comportement du modèle face à ce prompt précis, jamais une mesure de la
+ * qualité du document. `detectInvalidCorpus` reconnaît plusieurs familles de
+ * corpus invalide (refus du modèle, mais aussi erreurs de configuration,
+ * traces d'exception...) — seules les familles qui sont sans ambiguïté des
+ * refus à la première personne du modèle déclenchent une nouvelle tentative
+ * ici ; les autres suivent le chemin de repli existant, inchangé.
+ */
+const MODEL_REFUSAL_REASONS = new Set([
+  "vision_model_refusal_unable_to_extract",
+  "vision_model_refusal_unable_to_extract_from",
+  "model_refusal_unable_to_read",
+  "model_refusal_cannot_extract",
+  "model_apology_refusal",
+  "model_refusal_cannot_assist",
+  "short_model_refusal",
+]);
+
+/** Exporté uniquement pour les tests — la logique elle-même est déjà couverte par `invalid-corpus-detection.test.ts`. */
+export function isModelRefusalReason(reason: string | null): boolean {
+  return reason !== null && MODEL_REFUSAL_REASONS.has(reason);
+}
+
+/**
+ * Envoie la requête vision OCR ; si la réponse est un refus explicite du
+ * modèle (jamais une simple qualité insuffisante ou un document réellement
+ * illisible — voir `isModelRefusalReason`), retente une seule fois avec un
+ * prompt qui contre explicitement ce refus, sur les mêmes images. N'invente
+ * jamais de texte : si le retry échoue ou refuse à nouveau, retourne la
+ * réponse d'origine telle quelle — `sanitizeCorpusText`/`detectInvalidCorpus`
+ * la rejetteront exactement comme avant ce correctif, et le mécanisme de
+ * repli existant (étape suivante, puis échec dur) prend le relais sans
+ * aucun changement de comportement pour un document réellement illisible.
+ *
+ * `requester` est injectable uniquement pour les tests (défaut : le vrai
+ * client HTTP) — jamais utilisé pour contourner l'appel réel en production.
+ */
+export async function requestVisionTextWithRefusalRetry(
+  images: RasterPageImage[],
+  options: { fileName?: string },
+  requester: typeof requestVisionOcrText = requestVisionOcrText,
+): Promise<string> {
+  const first = await requester(images, options);
+  const detection = detectInvalidCorpus(first);
+  if (!isModelRefusalReason(detection.rejectionReason)) {
+    return first;
+  }
+
+  logInvalidCorpusDebug({
+    invalidCorpusDetected: true,
+    rejectionReason: detection.rejectionReason,
+    rejectedCorpusPreview: first,
+    providerSource: "vision_ocr",
+    originalLength: first.length,
+    stage: "vision_refusal_retry_triggered",
+    fileName: options.fileName,
+  });
+
+  try {
+    return await requester(images, { ...options, promptVariant: "retry_after_refusal" });
+  } catch (err) {
+    if (err instanceof VisionOcrError) {
+      traceCreditPipelineStep("ocr_vision_refusal_retry_failed", {
+        status: err.status,
+        message: err.message,
+      });
+    }
+    // Le retry lui-même a échoué (réseau/API) — pas de deuxième filet ici :
+    // on retourne le refus d'origine, qui sera de nouveau détecté comme
+    // corpus invalide en aval, jamais traité comme du texte exploitable.
+    return first;
+  }
+}
+
 function logSelectedResult(result: AttemptResult): void {
   logDocumentTextExtractionSelected({
     strategy: result.strategy,
@@ -264,7 +340,7 @@ export async function resolveDocumentText(
     strategiesAttempted.push("vision_ocr");
     const visionTextRaw = await measureCreditPipelineAwait(
       "ocr_vision_request",
-      requestVisionOcrText(images, { fileName: file.name }),
+      requestVisionTextWithRefusalRetry(images, { fileName: file.name }),
       { pageCount: images.length },
     );
     const visionText = sanitizeCorpusText(visionTextRaw, "vision_ocr", {
@@ -322,7 +398,7 @@ export async function resolveDocumentText(
     const preprocessed = await preprocessRasterImagesForOcr(images);
     const preprocessedTextRaw = await measureCreditPipelineAwait(
       "ocr_vision_preprocessed_request",
-      requestVisionOcrText(preprocessed, { fileName: `${file.name} (preprocessed)` }),
+      requestVisionTextWithRefusalRetry(preprocessed, { fileName: `${file.name} (preprocessed)` }),
       { pageCount: preprocessed.length },
     );
     const preprocessedText = sanitizeCorpusText(preprocessedTextRaw, "vision_ocr_preprocessed", {

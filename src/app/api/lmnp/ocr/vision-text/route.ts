@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { RasterPageImage } from "@/lib/documents/ocr/pdf-to-images";
+import type { VisionOcrPromptVariant } from "@/lib/documents/ocr/vision-ocr";
 import { extractVisionOcrTextFromImages } from "@/lib/documents/ocr/vision-ocr-server";
 import {
   attachCreditPipelineServerTiming,
@@ -18,6 +19,9 @@ export async function POST(request: Request) {
     request.headers.get("x-credit-pipeline-trace-id") ||
     `credit-pipeline-vision-${Date.now()}`;
   const fileName = String(formData.get("fileName") ?? "document");
+  const promptVariantRaw = formData.get("promptVariant");
+  const promptVariant: VisionOcrPromptVariant =
+    promptVariantRaw === "retry_after_refusal" ? "retry_after_refusal" : "default";
 
   attachCreditPipelineServerTiming(traceId, {
     segment: "api_vision_ocr",
@@ -60,7 +64,7 @@ export async function POST(request: Request) {
 
     const rawText = await measureCreditPipelineAwait(
       "server_vision_openai_request",
-      extractVisionOcrTextFromImages(images, fileName),
+      extractVisionOcrTextFromImages(images, fileName, promptVariant),
       { pageCount: images.length },
     );
 

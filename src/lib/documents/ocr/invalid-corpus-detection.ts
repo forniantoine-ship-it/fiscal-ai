@@ -41,6 +41,15 @@ const INVALID_CORPUS_RULES: InvalidCorpusRule[] = [
     reason: "model_apology_refusal",
   },
   {
+    // Diagnostic EP-VEZON (Cycle OCR) — observé sur le retry après un premier
+    // refus : "I'm sorry, but I can't assist with that." N'attrape que
+    // l'apologie combinée à un refus d'assistance ("can't/cannot assist/help"),
+    // jamais un simple "sorry"/"can't" isolé — un texte OCR réel ne produit
+    // jamais cette combinaison précise.
+    pattern: /i(?:['’`]m|\s+am)\s+sorry,?\s*(?:but\s+)?i\s*can(?:'t|\s*not)\s+(?:assist|help)\b/i,
+    reason: "model_refusal_cannot_assist",
+  },
+  {
     pattern: /no readable text (?:was )?found/i,
     reason: "no_readable_text_placeholder",
   },
