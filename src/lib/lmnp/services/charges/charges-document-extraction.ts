@@ -31,6 +31,25 @@ import {
   buildParserDispatchConfig,
   logChargeReadingOrchestration,
 } from "./charge-reading-orchestrator";
+import {
+  logClassifyTrace,
+  resetClassifyTraceClock,
+} from "./classify-document-trace-instrumentation";
+import {
+  logPostClassifyTrace,
+  resetPostClassifyTraceClock,
+  selectedParserForChargeType,
+} from "./post-classify-trace-instrumentation";
+import {
+  logPostRoutingTrace,
+  resetPostRoutingTraceClock,
+  type PostRoutingTraceContext,
+} from "./post-routing-trace-instrumentation";
+import {
+  isTaxeFonciereInstrumentedDoc,
+  logTaxeFonciereStage,
+  resetTaxeFonciereStageClock,
+} from "./taxe-fonciere-stage-instrumentation";
 
 const CHARGE_CATEGORY_UI_LABELS: Record<string, string> = {
   assurance_habitation: "Assurance habitation",
@@ -56,6 +75,21 @@ const DOCUMENT_TYPE_HINTS: Partial<Record<LmnpDocument["documentType"], string>>
   condo_charges: "charges copropriete appel de fonds syndic",
   works_invoice: "facture artisan travaux",
 };
+
+/** Resolved workspace charge document types — authoritative after OCR analysis. */
+const AUTHORITATIVE_ANALYZED_CHARGE_DOCUMENT_TYPES: Partial<
+  Record<LmnpDocument["documentType"], ChargeDocumentType>
+> = {
+  property_tax: "taxe_fonciere",
+  insurance_invoice: "insurance_habitation",
+  condo_charges: "charges_copropriete",
+  works_invoice: "facture_artisan",
+};
+
+function authoritativeChargeTypeFromDocument(doc: LmnpDocument): ChargeDocumentType | null {
+  if (doc.status !== "analyzed") return null;
+  return AUTHORITATIVE_ANALYZED_CHARGE_DOCUMENT_TYPES[doc.documentType] ?? null;
+}
 
 /** Aligns with isChargesDocument — linked ids OR charge category/type/filename heuristics. */
 function matchesChargeDocumentScope(
@@ -104,12 +138,32 @@ export function buildClassifierCorpusFromExtractions(
 }
 
 function classifyDocument(doc: LmnpDocument, docExtractions: Extraction[]): ChargeDocumentType {
+  resetClassifyTraceClock();
+  logClassifyTrace("classifyDocument_entry", {
+    extractionCount: docExtractions.length,
+    chargeParserCorpusLength: doc.chargeParserCorpus?.length ?? 0,
+    documentType: doc.documentType,
+  });
+
+  logClassifyTrace("before_buildClassifierCorpusFromExtractions");
   const corpus = buildClassifierCorpusFromExtractions(doc, docExtractions);
+  logClassifyTrace("after_buildClassifierCorpusFromExtractions", {
+    corpusLength: corpus.length,
+  });
+
+  logClassifyTrace("before_classifyChargeDocument", {
+    corpusLength: corpus.length,
+  });
   const result = classifyChargeDocument({
     rawText: corpus,
     fileName: doc.fileName,
     logTraces: false,
   });
+  logClassifyTrace("after_classifyChargeDocument", {
+    detectedType: result.type,
+    normalizedTextLength: result.normalizedTextLength,
+  });
+
   if (
     result.type === "taxe_fonciere" ||
     doc.documentType === "property_tax" ||
@@ -126,12 +180,38 @@ function classifyDocument(doc: LmnpDocument, docExtractions: Extraction[]): Char
       hasChargeParserCorpus: Boolean(doc.chargeParserCorpus?.trim()),
     });
   }
-  if (result.type !== "inconnu") return result.type;
-  if (doc.documentType === "unknown") return "inconnu";
-  if (doc.documentType === "insurance_invoice") return "insurance_habitation";
-  if (doc.documentType === "property_tax") return "taxe_fonciere";
-  if (doc.documentType === "condo_charges") return "charges_copropriete";
-  if (doc.documentType === "works_invoice") return "facture_artisan";
+
+  const authoritativeType = authoritativeChargeTypeFromDocument(doc);
+  if (authoritativeType) {
+    logClassifyTrace("classifyDocument_exit", { detectedType: authoritativeType });
+    return authoritativeType;
+  }
+
+  if (result.type !== "inconnu") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: result.type });
+    return result.type;
+  }
+  if (doc.documentType === "unknown") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: "inconnu" });
+    return "inconnu";
+  }
+  if (doc.documentType === "insurance_invoice") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: "insurance_habitation" });
+    return "insurance_habitation";
+  }
+  if (doc.documentType === "property_tax") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: "taxe_fonciere" });
+    return "taxe_fonciere";
+  }
+  if (doc.documentType === "condo_charges") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: "charges_copropriete" });
+    return "charges_copropriete";
+  }
+  if (doc.documentType === "works_invoice") {
+    logClassifyTrace("classifyDocument_exit", { detectedType: "facture_artisan" });
+    return "facture_artisan";
+  }
+  logClassifyTrace("classifyDocument_exit", { detectedType: "inconnu" });
   return "inconnu";
 }
 
@@ -182,48 +262,144 @@ function parseDocumentToRawTransactions(
   doc: LmnpDocument,
   docExtractions: Extraction[],
 ): RawChargeTransaction[] {
-  const chargeType = classifyDocument(doc, docExtractions);
-  const corpus = buildClassifierCorpusFromExtractions(doc, docExtractions);
+  const instrumentTaxe = isTaxeFonciereInstrumentedDoc(doc);
+  if (instrumentTaxe) {
+    resetTaxeFonciereStageClock();
+    logTaxeFonciereStage("parseDocumentToRawTransactions_entry", {
+      documentId: doc.id,
+      documentType: doc.documentType,
+    });
+  }
 
+  const chargeType = classifyDocument(doc, docExtractions);
+  resetPostClassifyTraceClock();
+  logPostClassifyTrace("post_classify_routing", {
+    detectedType: chargeType,
+    selectedParser: selectedParserForChargeType(chargeType),
+    documentType: doc.documentType,
+    workspaceDocumentType: doc.documentType,
+  });
+  resetPostRoutingTraceClock();
+  const routingTrace = (corpusLength: number | null): PostRoutingTraceContext => ({
+    documentId: doc.id,
+    chargeType,
+    corpusLength,
+  });
+  logPostRoutingTrace("after_post_classify_routing", routingTrace(null));
+
+  if (chargeType === "taxe_fonciere") {
+    logTaxeFonciereStage("after_classifyDocument", { chargeType });
+    logPostRoutingTrace("after_taxe_fonciere_stage_hook", routingTrace(null));
+  }
+
+  logPostRoutingTrace("before_buildClassifierCorpusFromExtractions", routingTrace(null));
+  const corpus = buildClassifierCorpusFromExtractions(doc, docExtractions);
+  logPostRoutingTrace("after_buildClassifierCorpusFromExtractions", routingTrace(corpus.length));
+
+  logPostRoutingTrace("before_buildChargeReadingOrchestrationContext", routingTrace(corpus.length));
   const readingCtx = buildChargeReadingOrchestrationContext({
     document: doc,
     corpus,
     chargeDocumentType: chargeType,
     extractions: docExtractions,
   });
-  const dispatchConfig = buildParserDispatchConfig(readingCtx.readingMode);
-  logChargeReadingOrchestration(readingCtx, dispatchConfig, "before_parser_dispatch");
+  logPostRoutingTrace("after_buildChargeReadingOrchestrationContext", routingTrace(corpus.length), {
+    readingMode: readingCtx.readingMode.detectedReadingMode,
+  });
+  if (chargeType === "taxe_fonciere") {
+    logTaxeFonciereStage("after_buildChargeReadingOrchestrationContext", {
+      readingMode: readingCtx.readingMode.detectedReadingMode,
+      corpusLength: corpus.length,
+    });
+  }
 
+  logPostRoutingTrace("before_buildParserDispatchConfig", routingTrace(corpus.length));
+  const dispatchConfig = buildParserDispatchConfig(readingCtx.readingMode);
+  logPostRoutingTrace("after_buildParserDispatchConfig", routingTrace(corpus.length), {
+    arbitrationMode: dispatchConfig.arbitrationMode,
+    allowOcrFallback: dispatchConfig.allowOcrFallback,
+  });
+
+  logPostRoutingTrace("before_logChargeReadingOrchestration", routingTrace(corpus.length));
+  logChargeReadingOrchestration(readingCtx, dispatchConfig, "before_parser_dispatch");
+  logPostRoutingTrace("after_logChargeReadingOrchestration", routingTrace(corpus.length));
+
+  logPostRoutingTrace("before_insurance_branch_check", routingTrace(corpus.length), {
+    branchMatches: chargeType === "insurance_habitation",
+  });
   if (chargeType === "insurance_habitation") {
+    logPostRoutingTrace("inside_insurance_branch_entry", routingTrace(corpus.length));
+    logPostClassifyTrace("before_parseInsuranceDocument", {
+      corpusLength: corpus.length,
+      documentType: doc.documentType,
+    });
     const parsed = parseInsuranceDocument(corpus, {
       logTraces: false,
       arbitrationMode: dispatchConfig.arbitrationMode,
     });
+    logPostClassifyTrace("after_parseInsuranceDocument", {
+      hasParsedData: Boolean(parsed.data),
+    });
     if (parsed.data) {
-      return rawTransactionsFromInsurance(parsed.data, doc.fileName, parsed.data.montantTTC);
+      logPostClassifyTrace("before_rawTransactionsConversion", {
+        parser: "insurance_habitation",
+      });
+      const raw = rawTransactionsFromInsurance(parsed.data, doc.fileName, parsed.data.montantTTC);
+      logPostClassifyTrace("after_rawTransactionsConversion", {
+        parser: "insurance_habitation",
+        rawCount: raw.length,
+      });
+      return raw;
     }
+    logPostRoutingTrace("after_insurance_branch_no_data", routingTrace(corpus.length));
+  } else {
+    logPostRoutingTrace("after_insurance_branch_skipped", routingTrace(corpus.length));
   }
 
+  logPostRoutingTrace("before_copro_branch_check", routingTrace(corpus.length), {
+    branchMatches:
+      chargeType === "charges_copropriete" ||
+      chargeType === "fonds_travaux" ||
+      chargeType === "avance_tresorerie",
+  });
   if (
     chargeType === "charges_copropriete" ||
     chargeType === "fonds_travaux" ||
     chargeType === "avance_tresorerie"
   ) {
+    logPostRoutingTrace("inside_copro_branch_entry", routingTrace(corpus.length));
     const parsed = parseCoproprieteDocument(corpus, {
       sourceDocument: doc.fileName,
       logTraces: false,
     });
     if (parsed.transactions.length > 0) {
+      logPostRoutingTrace("inside_copro_branch_return", routingTrace(corpus.length));
       return rawTransactionsFromCopro(parsed.transactions);
     }
+    logPostRoutingTrace("after_copro_branch_no_transactions", routingTrace(corpus.length));
+  } else {
+    logPostRoutingTrace("after_copro_branch_skipped", routingTrace(corpus.length));
   }
 
+  logPostRoutingTrace("before_inconnu_branch_check", routingTrace(corpus.length), {
+    branchMatches: chargeType === "inconnu",
+  });
   if (chargeType === "inconnu") {
-    if (!dispatchConfig.allowOcrFallback) return [];
+    logPostRoutingTrace("inside_inconnu_branch_entry", routingTrace(corpus.length));
+    if (!dispatchConfig.allowOcrFallback) {
+      logPostRoutingTrace("inside_inconnu_branch_return_empty", routingTrace(corpus.length));
+      return [];
+    }
+    logPostRoutingTrace("inside_inconnu_branch_fallback", routingTrace(corpus.length));
     return fallbackRawTransactions(doc, docExtractions, "facture_energie");
   }
+  logPostRoutingTrace("after_inconnu_branch_skipped", routingTrace(corpus.length));
 
+  logPostRoutingTrace("before_taxe_branch", routingTrace(corpus.length), {
+    branchMatches: chargeType === "taxe_fonciere",
+  });
   if (chargeType === "taxe_fonciere") {
+    logPostRoutingTrace("inside_taxe_branch_entry", routingTrace(corpus.length));
     logTaxeFonciereRuntime("parseTaxeFonciereDocument_entry", {
       documentId: doc.id,
       fileName: doc.fileName,
@@ -232,16 +408,34 @@ function parseDocumentToRawTransactions(
       readingMode: dispatchConfig.readingMode,
       tableContainsTargetData: readingCtx.readingMode.tableContainsTargetData,
     });
+    logPostRoutingTrace("before_parseTaxeFonciereDocument", routingTrace(corpus.length));
+    logPostClassifyTrace("before_parseTaxeFonciereDocument", {
+      corpusLength: corpus.length,
+      documentType: doc.documentType,
+    });
     const parsed = parseTaxeFonciereDocument(corpus, {
       logTraces: false,
       arbitrationMode: dispatchConfig.arbitrationMode,
     });
+    logPostClassifyTrace("after_parseTaxeFonciereDocument", {
+      hasParsedData: Boolean(parsed.data),
+    });
+    logTaxeFonciereStage("before_rawTransactionsFromTaxeFonciere", {
+      hasParsedData: Boolean(parsed.data),
+    });
     if (parsed.data) {
+      logPostClassifyTrace("before_rawTransactionsConversion", {
+        parser: "taxe_fonciere",
+      });
       const raw = rawTransactionsFromTaxeFonciere(
         parsed.data,
         doc.fileName,
         parsed.data.montantPayable,
       );
+      logPostClassifyTrace("after_rawTransactionsConversion", {
+        parser: "taxe_fonciere",
+        rawCount: raw.length,
+      });
       logTaxeFonciereRuntime("parseDocumentToRawTransactions", {
         documentId: doc.id,
         fileName: doc.fileName,
@@ -249,8 +443,15 @@ function parseDocumentToRawTransactions(
         montantPayable: parsed.data.montantPayable,
         rawAmount: raw[0]?.amount ?? raw[0]?.montantTTC ?? null,
       });
+      logTaxeFonciereStage("parseDocumentToRawTransactions_exit", {
+        rawCount: raw.length,
+      });
       return raw;
     }
+    logTaxeFonciereStage("parseDocumentToRawTransactions_exit", {
+      rawCount: 0,
+      reason: "parse_incomplete",
+    });
     logTaxeFonciereRuntime("fallback_ocr_amount", {
       documentId: doc.id,
       fileName: doc.fileName,

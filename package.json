@@ -99,7 +99,8 @@
     "test:declaration-generation-gate": "./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/declaration-generation-gate.test.ts",
     "test:declaration-run-generation": "./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/run-declaration-generation.test.ts",
     "test:validation-profile": "./node_modules/.bin/tsx src/lib/lmnp/services/validation-profile.test.ts",
-    "test:declaration": "npm run test:declaration-generation-gate && npm run test:declaration-run-generation && npm run test:validation-profile && ./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/build-client-summary-document.test.ts"
+    "test:declaration": "npm run test:declaration-generation-gate && npm run test:declaration-run-generation && npm run test:validation-profile && ./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/build-client-summary-document.test.ts",
+    "test:charges-taxe-fonciere": "./node_modules/.bin/tsx src/lib/lmnp/services/charges/parse-taxe-fonciere-document.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/document-reading-mode-resolver.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/taxe-fonciere-field-orchestration.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/classify-charge-document.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

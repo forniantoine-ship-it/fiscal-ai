@@ -18,6 +18,10 @@ import type {
   DocumentReadingMode,
   DocumentReadingModeDecision,
 } from "./document-reading-mode-types";
+import {
+  logReadingModeTrace,
+  resetReadingModeTraceClock,
+} from "./reading-mode-trace-instrumentation";
 
 export type ChargeReadingOrchestrationContext = {
   document: LmnpDocument;
@@ -46,20 +50,50 @@ export function buildChargeReadingOrchestrationContext(params: {
   chargeDocumentType: ChargeDocumentType;
   extractions: Extraction[];
 }): ChargeReadingOrchestrationContext {
+  resetReadingModeTraceClock();
+  const corpusLines = params.corpus.split(/\n+/);
+  let maxLineLength = 0;
+  let maxLineIndex = 0;
+  for (let i = 0; i < corpusLines.length; i++) {
+    const len = corpusLines[i]!.trim().length;
+    if (len > maxLineLength) {
+      maxLineLength = len;
+      maxLineIndex = i;
+    }
+  }
+  logReadingModeTrace("buildChargeReadingOrchestrationContext_entry", params.corpus.length, {
+    documentId: params.document.id,
+    chargeDocumentType: params.chargeDocumentType,
+    lineCount: corpusLines.length,
+    maxLineLength,
+    maxLineIndex,
+    singleDominantLine: maxLineLength >= params.corpus.length * 0.9,
+  });
+  logReadingModeTrace(
+    "buildChargeReadingOrchestrationContext_before_resolveDocumentReadingMode",
+    params.corpus.length,
+  );
   const readingMode = resolveDocumentReadingMode({
     corpus: params.corpus,
     fileName: params.document.fileName,
     chargeDocumentType: params.chargeDocumentType,
     workspaceDocumentType: params.document.documentType,
   });
+  logReadingModeTrace(
+    "buildChargeReadingOrchestrationContext_after_resolveDocumentReadingMode",
+    params.corpus.length,
+    { detectedReadingMode: readingMode.detectedReadingMode },
+  );
 
-  return {
+  const ctx: ChargeReadingOrchestrationContext = {
     document: params.document,
     corpus: params.corpus,
     chargeDocumentType: params.chargeDocumentType,
     extractions: params.extractions,
     readingMode,
   };
+  logReadingModeTrace("buildChargeReadingOrchestrationContext_exit", params.corpus.length);
+  return ctx;
 }
 
 /**

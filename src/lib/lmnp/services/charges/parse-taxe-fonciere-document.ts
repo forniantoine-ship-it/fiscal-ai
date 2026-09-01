@@ -16,6 +16,7 @@ import {
 } from "./taxe-fonciere-amount-selection";
 import type { TaxeFonciereAmountFieldRanking } from "./taxe-fonciere-field-orchestration";
 import { logTaxeFonciereRuntime } from "./taxe-fonciere-runtime-debug";
+import { logTaxeFonciereStage } from "./taxe-fonciere-stage-instrumentation";
 
 export type TaxeFonciereChargeDocument = {
   type: "taxe_fonciere";
@@ -221,6 +222,10 @@ function extractPayableAmount(
 ): { amount: number | null; ranking: TaxeFonciereAmountFieldRanking | null } {
   const candidates = collectTaxeFonciereAmountCandidates(normalized, rawText, traces);
 
+  logTaxeFonciereStage("after_collectTaxeFonciereAmountCandidates", {
+    candidateCount: candidates.length,
+  });
+
   logTaxeFonciereRuntime("extractPayableAmount_candidates", {
     candidateCount: candidates.length,
     candidates: candidates.map((candidate) => ({
@@ -301,6 +306,9 @@ export function parseTaxeFonciereDocument(
   rawOcrText: string,
   options?: ParseTaxeFonciereDocumentOptions,
 ): TaxeFonciereParseResult {
+  logTaxeFonciereStage("parseTaxeFonciereDocument_entry", {
+    corpusLength: rawOcrText.length,
+  });
   logTaxeFonciereRuntime("parseTaxeFonciereDocument_entry", {
     rawOcrTextLength: rawOcrText.length,
     rawOcrPreview: rawOcrText.slice(0, 280),

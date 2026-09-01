@@ -15,6 +15,7 @@ import type {
   DominantSource,
   ResolveDocumentReadingModeInput,
 } from "./document-reading-mode-types";
+import { logReadingModeTrace } from "./reading-mode-trace-instrumentation";
 
 const COPRO_TYPES: ChargeDocumentType[] = [
   "charges_copropriete",
@@ -170,11 +171,45 @@ function resolveModeFromChargeType(
 export function resolveDocumentReadingMode(
   input: ResolveDocumentReadingModeInput,
 ): DocumentReadingModeDecision {
+  logReadingModeTrace("resolveDocumentReadingMode_entry", input.corpus.length, {
+    chargeDocumentType: input.chargeDocumentType,
+    fileName: input.fileName ?? null,
+  });
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_before_detectDocumentStructureHints",
+    input.corpus.length,
+  );
   const hints = detectDocumentStructureHints(input.corpus);
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_after_detectDocumentStructureHints",
+    input.corpus.length,
+    { tableLineCount: hints.tableLineCount },
+  );
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_before_resolveModeFromChargeType",
+    input.corpus.length,
+  );
   const { mode, reason } = resolveModeFromChargeType(input.chargeDocumentType, hints);
+  logReadingModeTrace("resolveDocumentReadingMode_after_resolveModeFromChargeType", input.corpus.length, {
+    mode,
+    reason,
+  });
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_before_inferTableContainsTargetData",
+    input.corpus.length,
+  );
   const tableContainsTargetData = inferTableContainsTargetData(mode, hints);
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_after_inferTableContainsTargetData",
+    input.corpus.length,
+    { tableContainsTargetData },
+  );
   const dominantSource = dominantSourceForMode(mode);
   const candidatePoolsSelected = poolsForMode(mode, tableContainsTargetData);
+  logReadingModeTrace("resolveDocumentReadingMode_after_poolsForMode", input.corpus.length, {
+    dominantSource,
+    candidatePoolCount: candidatePoolsSelected.length,
+  });
 
   const decision: DocumentReadingModeDecision = {
     detectedReadingMode: mode,
@@ -191,11 +226,18 @@ export function resolveDocumentReadingMode(
     structuralHints: hints,
   };
 
+  logReadingModeTrace(
+    "resolveDocumentReadingMode_before_logDocumentReadingModeDebug",
+    input.corpus.length,
+  );
   logDocumentReadingModeDebug("resolve", decision, {
     fileName: input.fileName ?? null,
     workspaceDocumentType: input.workspaceDocumentType ?? null,
     corpusLength: input.corpus.length,
     tableLineCount: hints.tableLineCount,
+  });
+  logReadingModeTrace("resolveDocumentReadingMode_exit", input.corpus.length, {
+    detectedReadingMode: decision.detectedReadingMode,
   });
 
   return decision;

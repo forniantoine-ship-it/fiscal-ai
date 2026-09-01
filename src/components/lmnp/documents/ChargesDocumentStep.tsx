@@ -90,6 +90,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   const analyzingRef = useRef(false);
   const pendingUploadRef = useRef(false);
   const executionPendingRef = useRef(false);
+  const [analysisTrigger, setAnalysisTrigger] = useState(0);
   const [isExecutionRunning, setIsExecutionRunning] = useState(false);
   const syncedConfirmedAtRef = useRef<string | undefined>(undefined);
   const lastAmortizationRefreshKeyRef = useRef<string>("");
@@ -592,7 +593,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
 
     executionPendingRef.current = false;
     void runAnalysis(pendingDocIds);
-  }, [pendingDocIds.join(","), hasProcessing, runAnalysis, shouldRunExtraction]);
+  }, [analysisTrigger, pendingDocIds.join(","), hasProcessing, runAnalysis, shouldRunExtraction]);
 
   useEffect(() => {
     if (!animationRebuildKey) return;
@@ -671,6 +672,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     pendingUploadRef.current = true;
     executionPendingRef.current = true;
     markExecution("document_upload");
+    setAnalysisTrigger((n) => n + 1);
     resetChargesRebuildDiag();
     lastAmortizationRefreshKeyRef.current = "";
     lastAmortizationAppliedFingerprintRef.current = "";
@@ -701,6 +703,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     });
     executionPendingRef.current = true;
     markExecution("reanalyze");
+    setAnalysisTrigger((n) => n + 1);
     setAiAnimationDone(false);
   }
 

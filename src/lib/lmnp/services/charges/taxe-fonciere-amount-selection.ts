@@ -12,6 +12,7 @@ import {
   type RankedTaxeFonciereAmountCandidate,
 } from "./taxe-fonciere-field-orchestration";
 import { logTaxeFonciereRuntime } from "./taxe-fonciere-runtime-debug";
+import { logTaxeFonciereStage } from "./taxe-fonciere-stage-instrumentation";
 
 export type TaxeFonciereAmountCandidate = {
   amount: number;
@@ -292,6 +293,10 @@ export function rankTaxeFonciereAmountCandidates(
     targetField: TAXE_FONCIERE_AMOUNT_FIELD,
   });
 
+  logTaxeFonciereStage("before_rankTaxeFonciereAmountCandidates", {
+    candidateCount: candidates.length,
+  });
+
   const scored = candidates.map(scoreTaxeFonciereCandidate);
 
   const rankedRows: RankingSortRow[] = [...scored]
@@ -325,7 +330,16 @@ export function rankTaxeFonciereAmountCandidates(
         : createTaxeFonciereDeterministicOnlyArbitration(),
   };
 
+  logTaxeFonciereStage("before_logTaxeFonciereAmountRanking", {
+    candidateCount: ranking.candidates.length,
+  });
   logTaxeFonciereAmountRanking(ranking, { scored, sortedRows: rankedRows, eligibleWinner });
+  logTaxeFonciereStage("after_logTaxeFonciereAmountRanking", {
+    candidateCount: ranking.candidates.length,
+  });
+  logTaxeFonciereStage("after_rankTaxeFonciereAmountCandidates", {
+    rankedCandidateCount: ranking.candidates.length,
+  });
   return ranking;
 }
 
