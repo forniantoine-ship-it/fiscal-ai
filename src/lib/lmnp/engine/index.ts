@@ -94,6 +94,16 @@ export {
   CATEGORY_AMORTIZATION_YEARS,
   CATEGORY_LABELS_FR,
 } from "./business-asset-engine";
+// ---------------------------------------------------------------------------
+// Layer 3 → F-014 — PlanAmortissement adapter (Input Contract)
+// ---------------------------------------------------------------------------
+
+export {
+  buildPlanAmortissement,
+  type PlanAmortissement,
+  type ComposantAmortissement,
+  type LignePlan,
+} from "./plan-amortissement-adapter";
 
 // ---------------------------------------------------------------------------
 // Layer 4 — Fiscal decision engine
