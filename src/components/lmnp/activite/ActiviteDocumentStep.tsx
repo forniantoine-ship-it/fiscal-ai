@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
 import { ActiviteHero } from "@/components/lmnp/activite/ActiviteHero";
+import { ActiviteInterrupted } from "@/components/lmnp/activite/ActiviteInterrupted";
 import { ActiviteNoInpiGuide } from "@/components/lmnp/activite/ActiviteNoInpiGuide";
 import {
   ActiviteProfileFields,
@@ -42,6 +42,14 @@ import {
   shouldSkipGptPrefill,
   type ActiviteUserValidatedFields,
 } from "@/lib/lmnp/services/activite-form-state";
+import {
+  applyUserEditsToProvenance,
+  confirmProposedEstablishmentAddressGroup,
+  uncertainFieldsFromProvenance,
+  type ActiviteFieldProvenanceMap,
+} from "@/lib/lmnp/services/activite-field-provenance";
+import { resolveActiviteDocumentState } from "@/lib/lmnp/services/activite-document-state";
+import { deriveActiviteDocumentStepView } from "@/lib/lmnp/services/activite-document-step-view";
 import {
   runActiviteDocumentPipeline,
   type ActiviteGptPipelineResult,
@@ -146,6 +154,9 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
     return h.hasPersistedData || draft?.inpiGptPrefillAppliedAt ? 4 : 0;
   });
   const [uncertainFields, setUncertainFields] = useState<ActiviteFieldKey[]>([]);
+  const [fieldProvenance, setFieldProvenance] = useState<ActiviteFieldProvenanceMap>(
+    () => hydrateActiviteFormFromWorkspace(workspace).fieldProvenance,
+  );
   const [showUnrecognizedMessage, setShowUnrecognizedMessage] = useState(false);
   const [showOcrFailureMessage, setShowOcrFailureMessage] = useState(false);
   const [validatedSuccess, setValidatedSuccess] = useState(() => confirmed);
@@ -156,33 +167,89 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
   const [userValidatedFields, setUserValidatedFields] = useState<ActiviteUserValidatedFields>(
     () => hydrateActiviteFormFromWorkspace(workspace).userValidatedFields,
   );
+  const [stateClock, setStateClock] = useState(() => Date.now());
 
-  const isProcessing =
-    (hasUploaded && !confirmed && !manualMode && (!aiAnimationDone || pipelineRunning)) ||
-    pipelineRunning;
-  const isFailed =
-    (showOcrFailureMessage || inpiDoc?.status === "failed") && !manualMode && !pipelineRunning;
-  const showConfiguredCard = (validatedSuccess || confirmed) && !isEditing;
-  const showExtractionForm =
-    (aiAnimationDone || manualMode) &&
-    !isProcessing &&
-    !showConfiguredCard &&
-    !showOcrFailureMessage;
-  const showInitialExtras = !hasUploaded && !manualMode && !confirmed;
-  const showReanalyzeAction =
-    Boolean(inpiDoc) && hasUploaded && !isProcessing && !showInitialExtras;
+  const documentState = useMemo(
+    () => resolveActiviteDocumentState(draft, inpiDoc, stateClock),
+    [
+      draft,
+      inpiDoc,
+      stateClock,
+      draft?.inpiDocumentId,
+      draft?.inpiConfirmedAt,
+      draft?.inpiGptPrefillAppliedAt,
+      draft?.inpiExtractionStartedAt,
+      inpiDoc?.status,
+      inpiDoc?.uploadedAt,
+    ],
+  );
+
+  const {
+    showInitialExtras,
+    showReanalyzeAction,
+    showAiProcessing,
+    showInterrupted,
+    showExtractionForm,
+    showConfiguredCard,
+  } = useMemo(
+    () =>
+      deriveActiviteDocumentStepView({
+        documentState,
+        manualMode,
+        confirmed,
+        validatedSuccess,
+        isEditing,
+        hasUploaded,
+        hasPersistedData,
+        hasInpiDocumentId: Boolean(draft?.inpiDocumentId),
+        hasInpiDoc: Boolean(inpiDoc),
+        aiAnimationDone,
+        pipelineRunning,
+        showOcrFailureMessage,
+        inpiDocFailed: inpiDoc?.status === "failed",
+      }),
+    [
+      documentState,
+      manualMode,
+      confirmed,
+      validatedSuccess,
+      isEditing,
+      hasUploaded,
+      hasPersistedData,
+      draft?.inpiDocumentId,
+      inpiDoc,
+      aiAnimationDone,
+      pipelineRunning,
+      showOcrFailureMessage,
+    ],
+  );
+
+  useEffect(() => {
+    const needsClock =
+      documentState === "processing" ||
+      inpiDoc?.status === "uploaded" ||
+      inpiDoc?.status === "processing";
+    if (!needsClock) return;
+
+    const timer = window.setInterval(() => setStateClock(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, [documentState, inpiDoc?.status]);
 
   const persistFormDraft = useCallback(
-    (values: ActiviteFormValues, validated: ActiviteUserValidatedFields) => {
+    (
+      values: ActiviteFormValues,
+      validated: ActiviteUserValidatedFields,
+      provenance: ActiviteFieldProvenanceMap = fieldProvenance,
+    ) => {
       dispatch({
         type: "DECLARATION_PATCH_DRAFT",
         patch: {
-          ...activiteDraftPatchFromForm(values),
+          ...activiteDraftPatchFromForm(values, provenance),
           activiteUserValidatedFields: validated,
         },
       });
     },
-    [dispatch],
+    [dispatch, fieldProvenance],
   );
 
   const applyGptResult = useCallback(
@@ -210,6 +277,8 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       const ui = prefillActiviteFormFromGpt(result.extraction, workspace, {
         userValidatedFields,
         forceReanalyze: options?.forceReanalyze,
+        rawText: result.rawText,
+        documentId: result.documentId,
       });
 
       if (ui.skipped) {
@@ -223,14 +292,18 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
 
       setFormValues(ui.formValues);
       extractedFormRef.current = ui.formValues;
+      setFieldProvenance(ui.fieldProvenance);
       setUncertainFields(ui.uncertainFields);
       setShowUnrecognizedMessage(ui.showUnrecognizedMessage);
 
-      persistFormDraft(ui.formValues, userValidatedFields);
-
       dispatch({
         type: "DECLARATION_PATCH_DRAFT",
-        patch: { inpiGptPrefillAppliedAt: nowIso() },
+        patch: {
+          ...(ui.draftPatch ?? activiteDraftPatchFromForm(ui.formValues, ui.fieldProvenance)),
+          activiteUserValidatedFields: userValidatedFields,
+          inpiGptPrefillAppliedAt: nowIso(),
+          inpiDocumentId: result.documentId,
+        },
       });
 
       if (inpiDoc) {
@@ -254,6 +327,10 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       setShowOcrFailureMessage(false);
 
       dispatch({ type: "DOCUMENT_SET_STATUS", documentId: document.id, status: "processing" });
+      dispatch({
+        type: "DECLARATION_PATCH_DRAFT",
+        patch: { inpiExtractionStartedAt: nowIso() },
+      });
 
       try {
         const result = await runActiviteDocumentPipeline({
@@ -314,6 +391,8 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
     const hydrated = hydrateActiviteFormFromWorkspace(workspace);
     setFormValues(hydrated.formValues);
     setUserValidatedFields(hydrated.userValidatedFields);
+    setFieldProvenance(hydrated.fieldProvenance);
+    setUncertainFields(uncertainFieldsFromProvenance(hydrated.fieldProvenance));
 
     if (hydrated.hasPersistedData || draft?.inpiGptPrefillAppliedAt) {
       setHasUploaded(true);
@@ -330,6 +409,7 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       setIsEditing(false);
       setAiAnimationDone(true);
       setFormValues(profileToFormValues(profileFromDraft(workspace)));
+      setFieldProvenance(hydrateActiviteFormFromWorkspace(workspace).fieldProvenance);
       setVisibleSections(4);
       setUncertainFields([]);
       setShowUnrecognizedMessage(false);
@@ -426,7 +506,6 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       type: "DECLARATION_PATCH_DRAFT",
       patch: {
         inpiGptPrefillAppliedAt: undefined,
-        activiteUserValidatedFields: {},
       },
     });
 
@@ -447,20 +526,19 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       editedKeys.length > 0
         ? mergeUserValidatedFields(userValidatedFields, editedKeys)
         : userValidatedFields;
+    const nextProvenance =
+      editedKeys.length > 0
+        ? applyUserEditsToProvenance(fieldProvenance, editedKeys, next, formValues)
+        : fieldProvenance;
 
     if (editedKeys.length > 0) {
       setUserValidatedFields(nextValidated);
+      setFieldProvenance(nextProvenance);
+      setUncertainFields(uncertainFieldsFromProvenance(nextProvenance));
     }
 
     setFormValues(next);
-    persistFormDraft(next, nextValidated);
-
-    setUncertainFields((prev) =>
-      prev.filter((key) => {
-        const value = next[key as keyof ActiviteFormValues];
-        return typeof value === "string" ? !value.trim() : true;
-      }),
-    );
+    persistFormDraft(next, nextValidated, nextProvenance);
 
     const session = gptSessionRef.current;
     const baseline = extractedFormRef.current;
@@ -518,6 +596,20 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
     void runPipeline(inpiDoc, { forceReanalyze: true });
   }
 
+  function handleConfirmEstablishmentProposal() {
+    const { provenance: nextProvenance, validatedKeys } = confirmProposedEstablishmentAddressGroup(
+      fieldProvenance,
+      formValues,
+    );
+    if (validatedKeys.length === 0) return;
+
+    const nextValidated = mergeUserValidatedFields(userValidatedFields, validatedKeys);
+    setFieldProvenance(nextProvenance);
+    setUserValidatedFields(nextValidated);
+    setUncertainFields(uncertainFieldsFromProvenance(nextProvenance));
+    persistFormDraft(formValues, nextValidated, nextProvenance);
+  }
+
   function handleConfirm() {
     const profile = formValuesToProfile(formValues);
     dispatch({
@@ -538,12 +630,37 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
     setShowNoInpiGuide(false);
     setAiAnimationDone(true);
     const restored = profileToFormValues(profileFromDraft(workspace));
+    const hydrated = hydrateActiviteFormFromWorkspace(workspace);
     setFormValues(restored);
-    persistFormDraft(restored, userValidatedFields);
-    setUncertainFields([]);
+    setFieldProvenance(hydrated.fieldProvenance);
+    persistFormDraft(restored, userValidatedFields, hydrated.fieldProvenance);
+    setUncertainFields(uncertainFieldsFromProvenance(hydrated.fieldProvenance));
     setShowUnrecognizedMessage(false);
     setShowOcrFailureMessage(false);
     setVisibleSections(4);
+  }
+
+  function handleReplaceDocument() {
+    setAiAnimationDone(false);
+    setVisibleSections(0);
+    setShowOcrFailureMessage(false);
+    setShowUnrecognizedMessage(false);
+    setShowNoInpiGuide(false);
+    learningFromEditRef.current = false;
+    gptSessionRef.current = null;
+    extractedFormRef.current = null;
+    setHasUploaded(false);
+    pendingUploadRef.current = false;
+    executionPendingRef.current = false;
+
+    dispatch({
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: {
+        inpiDocumentId: undefined,
+        inpiGptPrefillAppliedAt: undefined,
+        inpiExtractionStartedAt: undefined,
+      },
+    });
   }
 
   const incomplete = isProfileIncomplete(formValues);
@@ -606,7 +723,7 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
         </div>
       ) : null}
 
-      {isProcessing ? <ActiviteAiProcessing onComplete={handleAiAnimationComplete} /> : null}
+      {showAiProcessing ? <ActiviteAiProcessing onComplete={handleAiAnimationComplete} /> : null}
 
       {showUnrecognizedMessage && showExtractionForm ? (
         <div
@@ -626,11 +743,12 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
         <ActiviteProfileFields
           values={formValues}
           onChange={handleFormChange}
+          fieldProvenance={fieldProvenance}
           showIncompleteWarning={incomplete}
           onConfirm={handleConfirm}
+          onConfirmEstablishmentProposal={handleConfirmEstablishmentProposal}
           cardStyle={EXTRACTED_CARD_STYLE}
           visibleSections={visibleSections}
-          uncertainFields={uncertainFields}
           showConfirm={visibleSections >= 4}
         />
       ) : null}
@@ -643,47 +761,21 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
             onEdit={() => {
               setIsEditing(true);
               setVisibleSections(4);
-              setFormValues(profileToFormValues(profileFromDraft(workspace)));
+              const hydrated = hydrateActiviteFormFromWorkspace(workspace);
+              setFormValues(hydrated.formValues);
+              setFieldProvenance(hydrated.fieldProvenance);
             }}
           />
           <WorkflowProgressionActions currentStepId="activite" />
         </>
       ) : null}
 
-      {isFailed ? (
-        <div
-          className="w-full text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
-          style={{
-            borderRadius: radius.lg,
-            border: `1px solid ${colors.border.subtle}`,
-            backgroundColor: colors.surface.primary,
-            boxShadow: shadows.card.default,
-            padding: spacing.card.md,
-          }}
-        >
-          <p
-            style={{
-              fontFamily: typography.fontFamily.display,
-              fontSize: typography.fontSize.xl,
-              color: colors.text.primary,
-            }}
-          >
-            {showOcrFailureMessage
-              ? "Lecture du document impossible"
-              : "Certaines informations n'ont pas pu être détectées automatiquement."}
-          </p>
-          <p className="mt-3" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            {showOcrFailureMessage
-              ? OCR_FAILURE_MESSAGE
-              : "Vous pouvez réessayer l'import ou compléter les champs manuellement."}
-          </p>
-          <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-            <Button onClick={handleRetry}>Réessayer l&apos;import</Button>
-            <Button variant="secondary" onClick={handleManualContinue}>
-              Compléter manuellement
-            </Button>
-          </div>
-        </div>
+      {showInterrupted ? (
+        <ActiviteInterrupted
+          onResumeAnalysis={handleReanalyzeDocument}
+          onReplaceDocument={handleReplaceDocument}
+          resumeDisabled={pipelineRunning || !inpiDoc}
+        />
       ) : null}
     </div>
   );

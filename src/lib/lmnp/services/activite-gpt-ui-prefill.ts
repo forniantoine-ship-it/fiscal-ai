@@ -3,117 +3,77 @@ import type {
   ActiviteFormValues,
 } from "@/components/lmnp/activite/ActiviteProfileFields";
 import { profileToFormValues } from "@/components/lmnp/activite/ActiviteProfileFields";
-import type { ActiviteGptExtractionResult, ActiviteInpiGptData } from "@/lib/documents/gpt";
+import { groundActiviteFactExtraction } from "@/lib/documents/facts/grounding-engine";
+import type { ActiviteGptExtractionResult } from "@/lib/documents/gpt";
 import {
-  canAutofillActiviteField,
-  isFirstImportForPrefill,
-  toUserValidatedSet,
+  ACTIVITE_GPT_PREFILLABLE_FIELDS,
+  resolveActiviteFieldProvenance,
+  uncertainFieldsFromProvenance,
+  type ActiviteFieldProvenanceMap,
+} from "@/lib/lmnp/services/activite-field-provenance";
+import {
+  createDocumentFactSnapshot,
+  mergeActiviteDocumentProjection,
+  type MergeDocumentIntoStoreResult,
+} from "@/lib/lmnp/services/activite-document-merge";
+import {
+  activiteFieldStoreDraftPatch,
+  storeToFormValues,
+  storeToProvenanceMap,
+  type ActiviteFieldStore,
+} from "@/lib/lmnp/services/activite-field-store";
+import {
+  isActiviteDocumentEnrichment,
+  readUserValidatedFields,
+  resolveExistingActiviteFieldProvenance,
+  shouldSkipGptPrefill,
   type ActiviteUserValidatedFields,
 } from "@/lib/lmnp/services/activite-form-state";
 import { profileFromDraft } from "@/lib/lmnp/services/inpi-profile";
-import { parseFrenchAddress } from "@/lib/lmnp/services/parse-french-address";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 export type ActiviteGptPrefillOptions = {
   userValidatedFields?: ActiviteUserValidatedFields;
   forceReanalyze?: boolean;
+  /** Normalized OCR text used for deterministic post-GPT grounding. */
+  rawText?: string;
   /** When true, skip GPT mapping (passive hydration). */
   passiveHydration?: boolean;
+  /** Source document id for inter-document merge + snapshot persistence. */
+  documentId?: string;
 };
 
 export type ActiviteGptPrefillResult = {
   formValues: ActiviteFormValues;
+  fieldProvenance: ActiviteFieldProvenanceMap;
   uncertainFields: ActiviteFieldKey[];
   showUnrecognizedMessage: boolean;
   showManualCompletionMessage: boolean;
   prefilledFieldCount: number;
   skipped: boolean;
+  fieldStore?: ActiviteFieldStore;
+  mergeResult?: MergeDocumentIntoStoreResult;
+  draftPatch?: ReturnType<typeof activiteFieldStoreDraftPatch>;
 };
 
-type GptFieldMapping = {
-  sourceField: keyof ActiviteInpiGptData;
-  targetField: keyof ActiviteFormValues;
-  uncertainKey: ActiviteFieldKey;
-  transform?: (value: string) => string;
-};
+function skippedPrefillResult(
+  formValues: ActiviteFormValues,
+  workspace: PersistedWorkspace,
+): ActiviteGptPrefillResult {
+  const fieldProvenance = resolveActiviteFieldProvenance(
+    formValues,
+    workspace.declarationDraft,
+  );
 
-const GPT_SCALAR_FIELD_MAPPINGS: GptFieldMapping[] = [
-  { sourceField: "nom", targetField: "lastName", uncertainKey: "lastName" },
-  { sourceField: "prenom", targetField: "firstName", uncertainKey: "firstName" },
-  {
-    sourceField: "siren",
-    targetField: "siren",
-    uncertainKey: "siren",
-    transform: (value) => value.replace(/\D/g, "").slice(0, 9),
-  },
-  { sourceField: "email", targetField: "email", uncertainKey: "email" },
-  { sourceField: "telephone", targetField: "telephone", uncertainKey: "telephone" },
-];
-
-function mapGptField(
-  values: ActiviteFormValues,
-  mapping: GptFieldMapping,
-  rawValue: string | undefined,
-  uncertainFields: ActiviteFieldKey[],
-  userValidated: ReadonlySet<ActiviteFieldKey>,
-): boolean {
-  if (!canAutofillActiviteField(values, mapping.uncertainKey, userValidated)) return false;
-
-  const trimmed = rawValue?.trim();
-  if (!trimmed) return false;
-
-  const value = mapping.transform ? mapping.transform(trimmed) : trimmed;
-  if (!value) return false;
-
-  (values as Record<string, string | undefined>)[mapping.targetField] = value;
-  uncertainFields.push(mapping.uncertainKey);
-  return true;
-}
-
-function mapParsedAddressToForm(
-  values: ActiviteFormValues,
-  prefix: "personal" | "establishment",
-  rawValue: string | undefined,
-  uncertainFields: ActiviteFieldKey[],
-  userValidated: ReadonlySet<ActiviteFieldKey>,
-): number {
-  const trimmed = rawValue?.trim();
-  if (!trimmed) return 0;
-
-  const addressKey = `${prefix}Address` as ActiviteFieldKey;
-  const cityKey = `${prefix}City` as ActiviteFieldKey;
-  const postalKey = `${prefix}PostalCode` as ActiviteFieldKey;
-
-  if (
-    !canAutofillActiviteField(values, addressKey, userValidated) &&
-    !canAutofillActiviteField(values, cityKey, userValidated) &&
-    !canAutofillActiviteField(values, postalKey, userValidated)
-  ) {
-    return 0;
-  }
-
-  const parsed = parseFrenchAddress(trimmed);
-  let mappedCount = 0;
-
-  if (canAutofillActiviteField(values, addressKey, userValidated)) {
-    (values as Record<string, string | undefined>)[addressKey] = parsed.address ?? trimmed;
-    uncertainFields.push(addressKey);
-    mappedCount++;
-  }
-
-  if (parsed.city && canAutofillActiviteField(values, cityKey, userValidated)) {
-    (values as Record<string, string | undefined>)[cityKey] = parsed.city;
-    uncertainFields.push(cityKey);
-    mappedCount++;
-  }
-
-  if (parsed.postalCode && canAutofillActiviteField(values, postalKey, userValidated)) {
-    (values as Record<string, string | undefined>)[postalKey] = parsed.postalCode;
-    uncertainFields.push(postalKey);
-    mappedCount++;
-  }
-
-  return mappedCount;
+  return {
+    formValues,
+    fieldProvenance,
+    uncertainFields: uncertainFieldsFromProvenance(fieldProvenance),
+    showUnrecognizedMessage: false,
+    showManualCompletionMessage: false,
+    prefilledFieldCount: 0,
+    skipped: true,
+  };
 }
 
 export function prefillActiviteFormFromGpt(
@@ -123,69 +83,137 @@ export function prefillActiviteFormFromGpt(
 ): ActiviteGptPrefillResult {
   const base = profileToFormValues(profileFromDraft(workspace));
   const draft = workspace.declarationDraft;
-  const userValidated = toUserValidatedSet(options?.userValidatedFields ?? {});
+  const userValidatedFields = {
+    ...readUserValidatedFields(draft),
+    ...options?.userValidatedFields,
+  };
+  const existingProvenance = resolveExistingActiviteFieldProvenance(base, draft);
 
   if (options?.passiveHydration) {
     console.log("[prefill-skipped-hydration]", { tunnel: "activite", action: "gpt_prefill" });
-    return {
-      formValues: base,
-      uncertainFields: [],
-      showUnrecognizedMessage: false,
-      showManualCompletionMessage: false,
-      prefilledFieldCount: 0,
-      skipped: true,
-    };
+    return skippedPrefillResult(base, workspace);
   }
 
-  if (!options?.forceReanalyze && !isFirstImportForPrefill(draft, base)) {
-    console.log("[gpt-prefill] skipped because persisted data exists");
-    return {
-      formValues: base,
-      uncertainFields: [],
-      showUnrecognizedMessage: false,
-      showManualCompletionMessage: false,
-      prefilledFieldCount: 0,
-      skipped: true,
-    };
+  if (shouldSkipGptPrefill(draft, options)) {
+    console.log("[gpt-prefill] skipped because Activité profile is confirmed");
+    return skippedPrefillResult(base, workspace);
   }
 
-  console.log("[gpt-prefill] first import detected", {
-    forceReanalyze: Boolean(options?.forceReanalyze),
+  console.log(
+    isActiviteDocumentEnrichment(base)
+      ? "[gpt-prefill] document enrichment"
+      : "[gpt-prefill] first import",
+    { forceReanalyze: Boolean(options?.forceReanalyze), documentId: options?.documentId ?? null },
+  );
+
+  const rawText = options?.rawText?.trim();
+  if (!rawText) {
+    return skippedPrefillResult(base, workspace);
+  }
+
+  const documentId = options?.documentId ?? "activite-document";
+  const grounded = groundActiviteFactExtraction(rawText, extraction.data, documentId);
+  const projection = grounded.activiteProjection?.projection;
+
+  if (!projection) {
+    return skippedPrefillResult(base, workspace);
+  }
+
+  console.log("[gpt-grounding]", {
+    accepted: grounded.activiteProjection?.acceptedFieldKeys ?? [],
+    rejected: grounded.activiteProjection?.rejectedFieldKeys ?? [],
+    proposed: grounded.activiteProjection?.proposedFieldKeys ?? [],
   });
 
-  const gptData = extraction.data;
-  const values: ActiviteFormValues = { ...base };
-  const uncertainFields: ActiviteFieldKey[] = [];
-  let prefilledFieldCount = 0;
+  const snapshot = createDocumentFactSnapshot({
+    documentId,
+    extractorId: grounded.extraction.extractorId,
+    facts: grounded.extraction.facts,
+  });
 
-  for (const mapping of GPT_SCALAR_FIELD_MAPPINGS) {
-    if (mapGptField(values, mapping, gptData[mapping.sourceField], uncertainFields, userValidated)) {
-      prefilledFieldCount++;
+  const mergeResult = mergeActiviteDocumentProjection(
+    draft,
+    base,
+    existingProvenance,
+    snapshot,
+    projection,
+    { userValidated: userValidatedFields },
+  );
+
+  const formValues = storeToFormValues(mergeResult.store);
+  const fieldProvenance = storeToProvenanceMap(mergeResult.store);
+
+  // Cycle 21 — le field store (ledger cross-documents) exclut délibérément
+  // toute valeur GPT rejetée (`isIncomingMergeable`, activite-document-merge.ts) :
+  // un ledger de valeurs confirmées n'a pas vocation à retenir un essai
+  // hallucinatoire. Mais la PROJECTION de cette extraction précise sait déjà
+  // quelle valeur a été proposée puis rejetée (grounding-decisions.ts →
+  // activite-fact-projection.ts) — cette information ne doit pas disparaître
+  // du retour immédiat à l'écran simplement parce que le ledger persistant,
+  // à raison, ne la conserve pas.
+  for (const fieldKey of ACTIVITE_GPT_PREFILLABLE_FIELDS) {
+    const rejectedValue = projection.fieldProvenance[fieldKey]?.rejectedValue;
+    const current = fieldProvenance[fieldKey];
+    if (rejectedValue && current?.status === "missing" && !current.rejectedValue) {
+      fieldProvenance[fieldKey] = { ...current, rejectedValue };
     }
   }
 
-  prefilledFieldCount += mapParsedAddressToForm(
-    values,
-    "personal",
-    gptData.adresseEntrepreneur,
-    uncertainFields,
-    userValidated,
-  );
+  const prefilledFieldCount = mergeResult.applied.length + mergeResult.refreshed.length;
 
-  prefilledFieldCount += mapParsedAddressToForm(
-    values,
-    "establishment",
-    gptData.adresseEtablissement,
-    uncertainFields,
-    userValidated,
-  );
+  console.log("[activite-document-merge]", {
+    documentId,
+    applied: mergeResult.applied,
+    preserved: mergeResult.preserved,
+    historized: mergeResult.historized,
+    refreshed: mergeResult.refreshed,
+  });
+
+  console.log("[gpt-prefill] provenance", {
+    extracted: ACTIVITE_GPT_PREFILLABLE_FIELDS.filter(
+      (key) => fieldProvenance[key]?.status === "extracted",
+    ),
+    proposed: ACTIVITE_GPT_PREFILLABLE_FIELDS.filter(
+      (key) => fieldProvenance[key]?.status === "proposed",
+    ),
+    missing: ACTIVITE_GPT_PREFILLABLE_FIELDS.filter(
+      (key) => fieldProvenance[key]?.status === "missing",
+    ),
+  });
+
+  const draftPatch = activiteFieldStoreDraftPatch(mergeResult.store, formValues, fieldProvenance);
 
   return {
-    formValues: values,
-    uncertainFields: [...new Set(uncertainFields)],
+    formValues,
+    fieldProvenance,
+    uncertainFields: uncertainFieldsFromProvenance(fieldProvenance),
     showUnrecognizedMessage: prefilledFieldCount === 0,
     showManualCompletionMessage: false,
     prefilledFieldCount,
     skipped: false,
+    fieldStore: mergeResult.store,
+    mergeResult,
+    draftPatch,
   };
 }
+
+// Legacy exports kept for tests referencing projection field groups.
+export const ACTIVITE_PROJECTION_PREFILL_FIELDS = [
+  "lastName",
+  "firstName",
+  "siren",
+  "email",
+  "telephone",
+] as const satisfies readonly ActiviteFieldKey[];
+
+export const ACTIVITE_PROJECTION_PERSONAL_ADDRESS_FIELDS = [
+  "personalAddress",
+  "personalCity",
+  "personalPostalCode",
+] as const satisfies readonly ActiviteFieldKey[];
+
+export const ACTIVITE_PROJECTION_ESTABLISHMENT_ADDRESS_FIELDS = [
+  "establishmentAddress",
+  "establishmentCity",
+  "establishmentPostalCode",
+] as const satisfies readonly ActiviteFieldKey[];

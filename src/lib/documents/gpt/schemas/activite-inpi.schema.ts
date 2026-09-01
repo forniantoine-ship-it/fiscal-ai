@@ -38,6 +38,10 @@ export type ActiviteGptExtractionResult = {
   reasoning?: string;
   missingFields?: string[];
   rawResponse?: unknown;
+  /**
+   * Per-field provenance is attached downstream in `activite-gpt-ui-prefill.ts`
+   * after optional OCR grounding (Phase 2).
+   */
 };
 
 export const ACTIVITE_INPI_GPT_FIELD_KEYS = ACTIVITE_INPI_GPT_OWNED_KEYS;

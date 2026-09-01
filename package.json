@@ -25,7 +25,9 @@
     "test:document-text-extraction": "npx tsx src/lib/documents/ocr/semantic-text-recovery.test.ts",
     "test:logement-semantic": "npx tsx src/lib/lmnp/services/logement/logement-semantic-vocabulary.test.ts",
     "test:vision-fallback-resolver": "npx tsx src/lib/lmnp/services/logement/vision-fallback-resolver.test.ts",
-    "test:logement-extraction-state": "npx tsx src/lib/lmnp/services/logement/logement-extraction-state.test.ts"
+    "test:logement-extraction-state": "npx tsx src/lib/lmnp/services/logement/logement-extraction-state.test.ts",
+    "test:activite-document-state": "npx tsx src/lib/lmnp/services/activite-document-state.test.ts",
+    "test:activite-document-step-view": "npx tsx src/lib/lmnp/services/activite-document-step-view.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

@@ -622,10 +622,18 @@ export interface DeclarationDraft {
   indivision?: boolean;
   coOwners?: CoOwner[];
   inpiDocumentId?: string;
+  /** Set when the INPI document's status transitions to "processing" — staleness anchor for resolveActiviteDocumentState. */
+  inpiExtractionStartedAt?: string;
   /** Set after first GPT prefill — blocks automatic re-extraction on hydration. */
   inpiGptPrefillAppliedAt?: string;
   /** Per-field locks: user edits always win over GPT re-prefill. */
   activiteUserValidatedFields?: Partial<Record<string, boolean>>;
+  /** Per-field INPI provenance — EXTRACTED / MISSING / PROPOSED + origin. */
+  activiteFieldProvenance?: Partial<
+    Record<string, import("@/lib/lmnp/services/activite-field-provenance").ActiviteFieldProvenance>
+  >;
+  /** Inter-document merge store — snapshots, ledgers, history. */
+  activiteFieldStore?: import("@/lib/lmnp/services/activite-field-store").ActiviteFieldStore;
   /**
    * Cross-tunnel governed field store — canonical metadata per extracted field.
    * @see GovernedFieldMetadata in @/lib/documents/types/governed-field
