@@ -69,6 +69,10 @@ export function markAutosaveSaved() {
   notifyAutosaveStatus("saved");
 }
 
+export function resetAutosaveStatus() {
+  notifyAutosaveStatus("idle");
+}
+
 function isValidWorkspace(data: unknown): data is PersistedWorkspace {
   if (!data || typeof data !== "object") return false;
   const w = data as PersistedWorkspace;

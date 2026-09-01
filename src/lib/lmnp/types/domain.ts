@@ -645,6 +645,11 @@ export interface DeclarationDraft {
    * data (siret/dates above remain authoritative once the assistant completes).
    */
   activiteAssistantState?: import("@/runtime/assistants/f009-activite/types").F009PersistedState;
+  /**
+   * F010 session/resume state — step, collected values, review, pending extraction.
+   * NOT authoritative for business data once the assistant completes (logementAmortissement).
+   */
+  logementAssistantState?: import("@/runtime/assistants/f010-logement/types").F010PersistedState;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;

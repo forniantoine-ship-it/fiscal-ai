@@ -19,12 +19,14 @@ import {
   loadDocumentFile,
   markAutosaveSaved,
   removePersistedDocument,
+  resetAutosaveStatus,
   scheduleSaveWorkspace,
   subscribeAutosaveStatus,
   syncDocumentBlobs,
   type AutosaveStatus,
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
+import type { DeclarationDraft } from "../types";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 import {
@@ -43,6 +45,10 @@ interface LmnpContextValue {
   getFile: (documentId: string) => File | undefined;
   isReady: boolean;
   autosaveStatus: AutosaveStatus;
+  /** Bound auth user id — null means IndexedDB workspace writes are disabled. */
+  persistenceUserId: string | null;
+  /** Flush pending debounced save; optional draft patch for not-yet-committed dispatches. */
+  flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -65,6 +71,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const [isHydratingWorkspace, setIsHydratingWorkspace] = useState(true);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
+  const [persistenceUserId, setPersistenceUserId] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -85,6 +92,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         }
 
         authUserIdRef.current = userId;
+        setPersistenceUserId(userId);
         setIsReady(false);
         setIsHydratingWorkspace(true);
         logWorkspaceHydrationStart();
@@ -92,7 +100,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
         if (!userId) {
           dispatch({ type: "AUTH_SESSION_RESET" });
-          markAutosaveSaved();
+          resetAutosaveStatus();
           return;
         }
 
@@ -200,7 +208,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || !authUserIdRef.current) return;
     scheduleSaveWorkspace(toPersisted(state), authUserIdRef.current);
   }, [
     isReady,
@@ -270,6 +278,25 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     [state.fileRegistry, state.documents],
   );
 
+  const flushWorkspace = useCallback(
+    async (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => {
+      const userId = authUserIdRef.current;
+      if (!userId) return;
+      const base = toPersisted(stateRef.current);
+      const data = patch?.declarationDraft
+        ? {
+            ...base,
+            declarationDraft: {
+              ...base.declarationDraft,
+              ...patch.declarationDraft,
+            },
+          }
+        : base;
+      await flushWorkspaceSave(userId, data);
+    },
+    [],
+  );
+
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {
     dispatch(action);
     if (action.type === "REMOVE_DOCUMENT") {
@@ -284,8 +311,10 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       getFile,
       isReady,
       autosaveStatus,
+      persistenceUserId,
+      flushWorkspace,
     }),
-    [workspace, dispatchWithPersistence, getFile, isReady, autosaveStatus],
+    [workspace, dispatchWithPersistence, getFile, isReady, autosaveStatus, persistenceUserId, flushWorkspace],
   );
 
   if (!isReady) {

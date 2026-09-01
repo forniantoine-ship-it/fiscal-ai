@@ -25,7 +25,7 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
       typeBien: "appartement",
       natureBien: "ancien",
       dateAcquisition: "2024-03-01",
-      source: "manual",
+      fieldSources: { prixAcquisition: "manual", typeBien: "manual", dateAcquisition: "manual" },
     });
     assert.equal(turn.state.step, "collect_frais");
 
@@ -106,10 +106,29 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
       typeBien: "appartement",
       natureBien: "ancien",
       dateAcquisition: "2024-03-01",
-      source: "extracted",
+      fieldSources: { prixAcquisition: "extracted", typeBien: "extracted", dateAcquisition: "manual" },
     });
     const state: F010State = turn.state;
     assert.equal(state.fieldSources.prixAcquisition, "extracted");
     assert.equal(state.fieldSources.typeBien, "extracted");
+  });
+
+  it("provenance par champ (Cycle 3) : jamais un flag global — un champ peut être extrait pendant qu'un autre reste manuel", async () => {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    const start = assistant.start();
+    let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
+    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_bien",
+      prixAcquisition: 280000,
+      typeBien: "appartement",
+      natureBien: "ancien",
+      dateAcquisition: "2024-03-01",
+      fieldSources: { prixAcquisition: "extracted", dateAcquisition: "manual" },
+    });
+    assert.equal(turn.state.fieldSources.prixAcquisition, "extracted");
+    assert.equal(turn.state.fieldSources.dateAcquisition, "manual");
+    // typeBien omis du fieldSources fourni → retombe sur "manual", jamais sur la valeur d'un autre champ.
+    assert.equal(turn.state.fieldSources.typeBien, "manual");
   });
 });

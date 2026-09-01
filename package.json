@@ -28,7 +28,16 @@
     "test:logement-extraction-state": "npx tsx src/lib/lmnp/services/logement/logement-extraction-state.test.ts",
     "test:activite-document-state": "npx tsx src/lib/lmnp/services/activite-document-state.test.ts",
     "test:activite-document-step-view": "npx tsx src/lib/lmnp/services/activite-document-step-view.test.ts",
-    "test:f009-assistant": "npx tsx src/runtime/assistants/f009-activite/assistant.test.ts"
+    "test:f009-assistant": "npx tsx src/runtime/assistants/f009-activite/assistant.test.ts",
+    "test:f010-document-prefill": "npx tsx --test src/lib/lmnp/services/f010/f010-document-prefill.test.ts",
+    "test:f010-missing-field": "npx tsx --test src/lib/lmnp/services/f010/f010-missing-field.test.ts",
+    "test:f010-persistence": "npx tsx --test src/lib/lmnp/services/f010/f010-persistence.test.ts",
+    "test:f010-assistant": "npx tsx --test src/runtime/assistants/f010-logement/assistant.test.ts",
+    "test:f010-assistant-cycle3": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle3.test.ts",
+    "test:f010-assistant-cycle4b": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4b.test.ts",
+    "test:f010-assistant-cycle4c1": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4c1.test.ts",
+    "test:f010-assistant-cycle4e2": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4e2.test.ts",
+    "test:f010-panel": "npx tsx --test \"src/components/lmnp/assistants/F010LogementAssistantPanel-cycle*.test.ts\" \"src/components/lmnp/assistants/F010LogementAssistantPanel-review-back-fix.test.ts\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

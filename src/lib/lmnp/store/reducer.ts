@@ -186,6 +186,17 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Merges a partial background-extraction patch onto the existing one — never drops a key the patch omits or leaves `undefined`. */
+function mergePropertyBackgroundExtraction(
+  existing: PropertyBackgroundExtraction | undefined,
+  patch: PropertyBackgroundExtraction | undefined,
+): PropertyBackgroundExtraction | undefined {
+  if (!patch) return existing;
+  const definedEntries = Object.entries(patch).filter(([, value]) => value !== undefined);
+  if (definedEntries.length === 0) return existing;
+  return { ...existing, ...Object.fromEntries(definedEntries) };
+}
+
 function findChargesAmortizationSuggestion(
   draft: DeclarationDraft,
   suggestionId: string,
@@ -930,8 +941,10 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           ...draft,
           logementDocumentId: action.documentId ?? draft.logementDocumentId,
           logementConfirmedAt: nowIso(),
-          propertyBackgroundExtraction:
-            action.backgroundExtraction ?? draft.propertyBackgroundExtraction,
+          propertyBackgroundExtraction: mergePropertyBackgroundExtraction(
+            draft.propertyBackgroundExtraction,
+            action.backgroundExtraction,
+          ),
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "logement"])],
         },
