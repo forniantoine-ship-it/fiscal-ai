@@ -43,7 +43,14 @@ export function normalizeRevenusLinesExtraction(
   for (const row of raw.lines ?? []) {
     const amount = normalizeNumber(row.amount);
     const direction = row.direction === "debit" ? "debit" : row.direction === "credit" ? "credit" : undefined;
-    if (amount === undefined || amount <= 0 || !direction) continue;
+    // Cycle 20 — le prompt demande à GPT un montant toujours positif (le signe
+    // porté par `direction`), mais rien ne garantit qu'un modèle de langage
+    // respecte cette consigne à 100% : si GPT renvoie malgré tout un montant
+    // négatif pour une régularisation, le rejeter ici (`amount <= 0`) le
+    // ferait disparaître silencieusement — même défaut que celui déjà corrigé
+    // côté pont (revenus-upload-to-assistant-bridge.ts). Seul un montant
+    // réellement nul ou absent est désormais écarté.
+    if (amount === undefined || amount === 0 || !direction) continue;
 
     lines.push({
       date: normalizeDate(row.date) ?? undefined,

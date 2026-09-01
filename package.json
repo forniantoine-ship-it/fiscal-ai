@@ -70,7 +70,22 @@
     "test:f012-capabilities": "npx tsx --test src/runtime/capabilities/f012/charge.test.ts",
     "test:f012-runtime": "npx tsx --test src/runtime/f012.test.ts",
     "test:reducer-f012-persist": "npx tsx --test src/lib/lmnp/store/reducer-f012-persist.test.ts",
-    "test:f012": "npm run test:f012-critical-persist && npm run test:f012-resume && npm run test:f012-divers-form-state && npm run test:f012-assistant && npm run test:f012-assistant-cycles && npm run test:f012-capabilities && npm run test:f012-runtime && npm run test:reducer-f012-persist"
+    "test:f012": "npm run test:f012-critical-persist && npm run test:f012-resume && npm run test:f012-divers-form-state && npm run test:f012-assistant && npm run test:f012-assistant-cycles && npm run test:f012-capabilities && npm run test:f012-runtime && npm run test:reducer-f012-persist",
+    "test:revenue-aggregation": "npx tsx --test src/lib/lmnp/services/revenue-aggregation.test.ts",
+    "test:revenue-transaction-pipeline": "npx tsx --test src/lib/lmnp/services/revenue-transaction-pipeline.test.ts",
+    "test:revenue-gpt-ui-prefill-multi-upload": "npx tsx --test src/lib/lmnp/services/revenue-gpt-ui-prefill-multi-upload.test.ts",
+    "test:revenus-upload-bridge": "npx tsx --test src/lib/lmnp/services/revenus-upload-to-assistant-bridge.test.ts",
+    "test:revenus-grid-edit": "npx tsx --test src/lib/lmnp/services/revenus-grid-edit-to-f006.test.ts",
+    "test:revenus-fiscal-trace": "npx tsx --test src/lib/lmnp/services/revenus-fiscal-trace.test.ts",
+    "test:revenus-header-classification": "npx tsx --test src/lib/lmnp/services/revenus-header-classification.test.ts",
+    "test:revenus-column-semantics": "npx tsx --test src/lib/lmnp/services/revenus-column-semantics.test.ts",
+    "test:revenus-ocr-lines-adapter": "npx tsx --test src/lib/lmnp/services/revenus-ocr-lines-adapter.test.ts",
+    "test:revenus-pipeline-cycles": "npx tsx --test src/lib/lmnp/services/pipelines/revenus/cycle17-p7-adversarial.test.ts src/lib/lmnp/services/pipelines/revenus/cycle19-pipeline-parity.test.ts src/lib/lmnp/services/pipelines/revenus/cycle20-gpt-path.test.ts",
+    "test:revenus-spreadsheet": "npx tsx --test src/lib/lmnp/services/pipelines/revenus/spreadsheet-classification.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-duplicates.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-multi-sheet.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-negative-amounts.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-realistic-workbook.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-revenue-extract.test.ts src/lib/lmnp/services/pipelines/revenus/spreadsheet-year-contamination.test.ts",
+    "test:reducer-revenus-removal": "npx tsx --test src/lib/lmnp/store/reducer-revenus-removal.test.ts",
+    "test:f013-assistant": "npx tsx --test src/runtime/assistants/f013-revenus/assistant.test.ts",
+    "test:f013-runtime": "npx tsx --test src/runtime/f013.test.ts",
+    "test:f013": "npm run test:revenus-parser && npm run test:spreadsheet-headers && npm run test:revenue-monetary && npm run test:revenue-aggregation && npm run test:revenue-transaction-pipeline && npm run test:revenue-gpt-ui-prefill-multi-upload && npm run test:revenus-upload-bridge && npm run test:revenus-grid-edit && npm run test:revenus-fiscal-trace && npm run test:revenus-header-classification && npm run test:revenus-column-semantics && npm run test:revenus-ocr-lines-adapter && npm run test:revenus-pipeline-cycles && npm run test:revenus-spreadsheet && npm run test:reducer-revenus-removal && npm run test:f013-assistant && npm run test:f013-runtime"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

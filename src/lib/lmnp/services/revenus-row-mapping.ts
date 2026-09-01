@@ -29,6 +29,7 @@ export function gridColumnForCategory(category: RevenueTransactionCategory): Rev
       return "loyers";
     case "additional_income":
     case "platform_payout":
+    case "insurance_indemnity":
     case "caf_subsidy":
     case "reimbursement":
       return "autresRevenus";

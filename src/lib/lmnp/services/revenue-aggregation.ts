@@ -22,7 +22,7 @@ export const FRENCH_MONTHS = [
   "Décembre",
 ] as const;
 
-const INCOME_CATEGORIES = new Set<RevenueEventCategory>(["rent", "platform_payout"]);
+const INCOME_CATEGORIES = new Set<RevenueEventCategory>(["rent", "platform_payout", "insurance_indemnity"]);
 const FEE_CATEGORIES = new Set<RevenueEventCategory>(["fee", "charges"]);
 
 export function revenueCategoryLabel(category: RevenueEventCategory): string {
@@ -31,6 +31,8 @@ export function revenueCategoryLabel(category: RevenueEventCategory): string {
       return "Loyer";
     case "platform_payout":
       return "Versement plateforme";
+    case "insurance_indemnity":
+      return "Indemnité assurance";
     case "charges":
       return "Charges";
     case "fee":
@@ -42,11 +44,40 @@ export function revenueCategoryLabel(category: RevenueEventCategory): string {
   }
 }
 
-function parseEventDate(date: string | null): Date | null {
+/**
+ * Cycle 20 — construction locale explicite plutôt que `new Date(string)` :
+ * un "YYYY-MM-DD" nu (ISO sans heure, ex. renvoyé tel quel par GPT) est
+ * interprété par le constructeur-chaîne de `Date` comme minuit UTC ; un
+ * "DD/MM/YYYY" (Excel/CSV/ODS) converti en "YYYY-MM-DD" via split/reverse
+ * produit EXACTEMENT la même forme ambiguë. Dans les deux cas, le relire
+ * ensuite via `getFullYear()`/`getMonth()` (accesseurs LOCAUX, utilisés
+ * partout en aval pour l'attribution d'exercice) pouvait faire changer le
+ * jour — et donc l'exercice fiscal — selon le fuseau horaire du SERVEUR :
+ * démontré Cycle 20 par un appel GPT réel puis reproduit sur Excel, "01/01/2026"
+ * devenant "31/12/2025" sous TZ=America/New_York (double comptage sur
+ * l'exercice précédent, disparition totale de l'exercice suivant).
+ * `new Date(year, month-1, day)` est TOUJOURS interprété en heure locale :
+ * construire puis relire en local est un aller-retour invariant au fuseau,
+ * quel que soit le fuseau du serveur.
+ */
+export function parseEventDate(date: string | null): Date | null {
   if (!date?.trim()) return null;
-  const normalized = date.includes("/")
-    ? date.split("/").reverse().join("-")
-    : date;
+  const trimmed = date.trim();
+
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const parsed = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const frMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (frMatch) {
+    const parsed = new Date(Number(frMatch[3]), Number(frMatch[2]) - 1, Number(frMatch[1]));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  // Repli pour tout format non couvert par les deux motifs ci-dessus (rare).
+  const normalized = trimmed.includes("/") ? trimmed.split("/").reverse().join("-") : trimmed;
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
@@ -100,8 +131,13 @@ export function monthKeyForTransaction(
   transaction: Pick<RevenueTransaction, "date" | "monthLabel" | "structuredMapping">,
   fiscalYear: number,
 ): string | null {
-  const fromDate = monthKeyFromDate(transaction.date, fiscalYear);
-  if (fromDate) return fromDate;
+  if (parseEventDate(transaction.date)) {
+    // Une date réelle et exploitable est toujours prioritaire (SAV-028 — encaissement).
+    // Si elle tombe hors de l'exercice demandé, monthKeyFromDate renvoie null et c'est
+    // définitif : jamais de repli sur monthLabel pour réinjecter la ligne dans l'exercice
+    // demandé (cause de la contamination inter-années corrigée au Cycle 15A).
+    return monthKeyFromDate(transaction.date, fiscalYear);
+  }
   if (transaction.monthLabel) {
     return monthKeyFromMonthLabel(transaction.monthLabel, fiscalYear);
   }
@@ -254,14 +290,28 @@ function resolveAnnualRevenue(
   return monthlyIncomeTotal;
 }
 
+/**
+ * Un événement dont la date réelle est connue et tombe hors de l'exercice demandé
+ * ne doit jamais contribuer aux totaux de cet exercice (SAV-028). Un événement sans
+ * date exploitable n'est pas exclu ici — comportement permissif conservé pour les
+ * entrées manuelles sans date, distinct de la logique de repli monthLabel utilisée
+ * côté import (voir monthKeyForTransaction).
+ */
+function isExcludedByOtherYearDate(date: string | null, fiscalYear: number): boolean {
+  const parsed = parseEventDate(date);
+  if (!parsed) return false;
+  return parsed.getFullYear() !== fiscalYear;
+}
+
 export function rebuildPropertyAggregation(
   property: RevenusPropertyData,
   fiscalYear: number,
 ): RevenusPropertyData {
   const { events, deduplicatedCount } = deduplicateRevenueEvents(property.events);
   const months = buildMonthlyEntries(events, fiscalYear);
-  const monthlyIncomeTotal = sumCategory(events, INCOME_CATEGORIES);
-  const detectedFees = sumCategory(events, FEE_CATEGORIES);
+  const eventsForTotals = events.filter((event) => !isExcludedByOtherYearDate(event.date, fiscalYear));
+  const monthlyIncomeTotal = sumCategory(eventsForTotals, INCOME_CATEGORIES);
+  const detectedFees = sumCategory(eventsForTotals, FEE_CATEGORIES);
   const missingMonths = detectMissingMonths(months, fiscalYear);
   const annualRevenue = resolveAnnualRevenue(events, monthlyIncomeTotal, property.annualTotalHint);
 

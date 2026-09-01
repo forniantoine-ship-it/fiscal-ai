@@ -119,8 +119,19 @@ export function logRevenueColumnSemantic(params: {
   });
 }
 
+/**
+ * Une vraie date a TOUJOURS au moins deux séparateurs entre trois groupes de
+ * chiffres (JJ/MM/AAAA, AAAA-MM-JJ...) — jamais un seul. Un simple signe "-"
+ * en tête d'un nombre négatif ("-1200") n'est jamais un séparateur de date
+ * (Cycle 15A). Un point décimal isolé ("1000.5", forme que prend TOUT montant
+ * non entier une fois passé par `String(nombre)` en JavaScript, quelle que
+ * soit sa saisie d'origine — virgule ou point) n'en est pas un non plus : le
+ * correctif Cycle 15A, en n'exigeant qu'un seul séparateur, confondait les
+ * deux et faisait disparaître silencieusement tout montant décimal non entier
+ * du pipeline structuré — régression trouvée et corrigée au Cycle 17.
+ */
 export function hadDateSeparators(raw: string): boolean {
-  return /[/.-]/.test(raw.trim());
+  return /\d[/.-]\d+[/.-]\d/.test(raw.trim());
 }
 
 function digitsOnly(raw: string): string {
@@ -211,10 +222,17 @@ export function normalizeDateValue(raw: string): string | null {
   const trimmed = raw.trim();
   if (!isDateLikeValue(trimmed)) return null;
 
+  // Cycle 18 — un suffixe heure optionnel ("15/06/2025 08:30", cellule
+  // datetime native LibreOffice/Excel) est toléré puis ignoré : la fiscalité
+  // s'attache au jour calendaire, jamais à l'heure. Sans ce suffixe optionnel,
+  // ces 3 motifs (ancrés en fin de chaîne) échouaient tous et la date entière,
+  // heure comprise, retombait inchangée jusqu'à parseEventDate() en aval — où
+  // `date.split("/").reverse().join("-")` la corrompait en une chaîne non-ISO
+  // que `new Date()` acceptait quand même, silencieusement, en un mois erroné.
   for (const pattern of [
-    /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/,
-    /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})$/,
-    /^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/,
+    /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/,
+    /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/,
+    /^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/,
   ]) {
     const match = trimmed.match(pattern);
     if (!match) continue;
@@ -259,6 +277,47 @@ export function normalizeDateValue(raw: string): string | null {
       if (isValidCalendarParts(day, month, year)) {
         return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
       }
+    }
+  }
+
+  // Cycle 17/18 — ODS (SheetJS) : une cellule date native peut restituer une
+  // chaîne ISO 8601 complète ("2025-04-04T22:00:00.000Z") au lieu d'un format
+  // reconnu ci-dessus — l'aller-retour d'écriture/lecture ODS ne préserve pas
+  // le format personnalisé de la cellule et retombe sur .w au format ISO.
+  //
+  // Un vrai fichier .ods produit par LibreOffice encode une date native SANS
+  // désignateur de fuseau ("2025-01-01T00:00:21", vérifié Cycle 18 sur un
+  // fichier généré par un vrai `soffice --headless`) : une chaîne sans "Z" ni
+  // offset est interprétée par `new Date()` comme une heure LOCALE, et la
+  // relire ensuite via les composantes LOCALES (`getDate`/`getMonth`/
+  // `getFullYear`) restitue donc le même jour calendaire quel que soit le
+  // fuseau du serveur (parse-local + lecture-local = aller-retour invariant
+  // au fuseau — vérifié Cycle 18 sous TZ=UTC/Europe/Paris/America/New_York/
+  // Pacific/Auckland, toujours identique).
+  //
+  // À l'inverse, une chaîne portant un désignateur explicite ("Z" ou un
+  // offset +HH:MM/-HH:MM — jamais observée sur un vrai fichier ODS, mais
+  // produite par le seul aller-retour SheetJS-vers-SheetJS d'un objet Date JS
+  // construit en heure locale) DOIT être relue avec les composantes UTC : la
+  // relire en composantes locales ferait dépendre le jour calendaire — et
+  // donc potentiellement l'exercice fiscal d'une écriture au 31/12 ou au
+  // 01/01 — du fuseau horaire du serveur, ce qui est explicitement interdit
+  // par la règle métier (Cycle 18) : une date d'encaissement reste attachée
+  // au jour indiqué par le document, jamais au fuseau du serveur.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(trimmed)) {
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      const hasExplicitZoneDesignator = /(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed);
+      const day = hasExplicitZoneDesignator
+        ? String(parsed.getUTCDate()).padStart(2, "0")
+        : String(parsed.getDate()).padStart(2, "0");
+      const month = hasExplicitZoneDesignator
+        ? String(parsed.getUTCMonth() + 1).padStart(2, "0")
+        : String(parsed.getMonth() + 1).padStart(2, "0");
+      const year = hasExplicitZoneDesignator
+        ? String(parsed.getUTCFullYear())
+        : String(parsed.getFullYear());
+      return `${day}/${month}/${year}`;
     }
   }
 
@@ -451,20 +510,60 @@ export function isDateDerivedAmount(amount: number, rawValue: string): boolean {
   return false;
 }
 
+/**
+ * Convertit un serial Excel natif (époque 1899-12-30) en "JJ/MM/AAAA".
+ * Plage plausible ~1900-2100. N'est utilisé que dans une colonne déjà
+ * identifiée comme colonne date par l'en-tête — jamais pour interpréter un
+ * nombre ordinaire dans une colonne de montant.
+ */
+function excelSerialToDateString(serial: number): string | null {
+  if (!Number.isFinite(serial) || serial < 1 || serial > 73050) return null;
+  const utcMs = (serial - 25569) * 86_400_000;
+  const date = new Date(utcMs);
+  if (Number.isNaN(date.getTime())) return null;
+  const year = date.getUTCFullYear();
+  if (year < 1900 || year > 2100) return null;
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${year}`;
+}
+
 export function parseDateCell(rawValue: string, column: LockedColumn): string | null {
   if (column.lockedType !== "date") return null;
-  if (!isDateLikeValue(rawValue)) return null;
+  const trimmed = rawValue.trim();
 
-  const normalized = normalizeDateValue(rawValue);
-  logRevenueColumnSemantic({
-    header: column.header,
-    rawValue,
-    parsedType: "date",
-    targetField: "transactionDate",
-    accepted: true,
-    reason: "date_column_metadata",
-  });
-  return normalized;
+  if (isDateLikeValue(trimmed)) {
+    const normalized = normalizeDateValue(trimmed);
+    logRevenueColumnSemantic({
+      header: column.header,
+      rawValue,
+      parsedType: "date",
+      targetField: "transactionDate",
+      accepted: true,
+      reason: "date_column_metadata",
+    });
+    return normalized;
+  }
+
+  // Cycle 15A — cellule numérique brute dans une colonne déjà identifiée comme date :
+  // probable serial Excel natif sans format explicite (copier-coller, "General").
+  // Auparavant silencieusement ignoré (repli sur une date fabriquée à partir du mois).
+  if (/^\d+$/.test(trimmed)) {
+    const asDate = excelSerialToDateString(Number.parseInt(trimmed, 10));
+    if (asDate) {
+      logRevenueColumnSemantic({
+        header: column.header,
+        rawValue,
+        parsedType: "date",
+        targetField: "transactionDate",
+        accepted: true,
+        reason: "excel_serial_without_format",
+      });
+      return asDate;
+    }
+  }
+
+  return null;
 }
 
 export function parseMonetaryCell(

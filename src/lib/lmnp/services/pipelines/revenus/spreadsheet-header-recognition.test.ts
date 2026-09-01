@@ -40,4 +40,39 @@ assert(auditB!.selectedMapping.rent?.rawHeader === "Montant loyer", "montant loy
 const debugBlock = formatSpreadsheetMappingDebugBlock(auditB!.selectedMapping);
 assert(debugBlock.includes("rent ->"), "debug block lists rent");
 
+// Cycle 17 — P7 (découvert via le classeur adversarial) : une colonne
+// "Remboursement" ne matchait aucun champ ici (absente de FIELD_ALIASES.complement,
+// alors que revenus-header-classification.ts la reconnaît déjà comme "autres
+// revenus" côté PDF/OCR) — le montant disparaissait de l'extraction Excel/CSV
+// sans aucune trace ni anomalie.
+const gridC = [
+  ["Mois", "Loyer", "Remboursement"],
+  ["Février", "1000", "50"],
+];
+const auditC = recognizeSpreadsheetHeaders(gridC);
+assert(auditC !== null, "grid C (avec colonne Remboursement) should match");
+assert(auditC!.selectedMapping.complement?.rawHeader === "Remboursement", "remboursement column mapped to complement field");
+
+// Cycle 18 — audit adversarial : "Garantie loyers impayés" (synonyme
+// développé de GLI, sans le sigle) ne matchait aucun alias "indemnity" et se
+// faisait absorber par le champ "rent" via includes("loyer") à 85 — un
+// versement d'assurance classé comme loyer. Vérifie aussi qu'une colonne
+// "Loyer" séparée, présente en même temps, ne fait JAMAIS gagner "Garantie
+// loyers impayés" sur les deux champs simultanément (double-comptage).
+const gridD = [
+  ["Mois", "Loyer", "Garantie loyers impayés"],
+  ["Janvier", "1000", "500"],
+];
+const auditD = recognizeSpreadsheetHeaders(gridD);
+assert(auditD !== null, "grid D should match");
+assert(auditD!.selectedMapping.rent?.rawHeader === "Loyer", "Loyer reste la colonne loyer");
+assert(
+  auditD!.selectedMapping.indemnityColumns?.some((c) => c.rawHeader === "Garantie loyers impayés") === true,
+  "Garantie loyers impayés est reconnue comme indemnité",
+);
+assert(
+  auditD!.selectedMapping.rent?.rawHeader !== "Garantie loyers impayés",
+  "Garantie loyers impayés ne doit jamais être ÉGALEMENT sélectionnée comme colonne loyer (double-comptage)",
+);
+
 console.log("[spreadsheet-header-recognition.test] all assertions passed");

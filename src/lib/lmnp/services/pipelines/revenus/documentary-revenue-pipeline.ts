@@ -71,15 +71,18 @@ export async function runDocumentaryRevenuePipeline(
   );
 
   if (structured.lines.length > 0) {
+    // Cycle 17 — sourceFileName manquant sur ce chemin (voir pdf-structured-revenue-pipeline.ts).
+    const structuredLines = structured.lines.map((line) => ({ ...line, sourceFileName: ctx.fileName }));
+
     logRevenueSourceOfTruth("structured_table_parser", {
       fn: "runDocumentaryRevenuePipeline",
       documentId: ctx.documentId,
-      lineCount: structured.lines.length,
+      lineCount: structuredLines.length,
     });
 
     const supervision = buildRevenueSupervision({
       pipelineId: "documentary",
-      lines: structured.lines,
+      lines: structuredLines,
     });
 
     return {
@@ -91,7 +94,7 @@ export async function runDocumentaryRevenuePipeline(
       ocrProvider: ocrResult.provider,
       ocrStrategy: ocrResult.strategy,
       ocrQualityScore: ocrResult.quality.score,
-      lines: structured.lines,
+      lines: structuredLines,
       success: true,
       supervision,
       skippedPipelines,

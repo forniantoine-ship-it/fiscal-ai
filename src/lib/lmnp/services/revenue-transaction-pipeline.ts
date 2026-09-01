@@ -1,4 +1,4 @@
-import { monthKeyForTransaction, monthKeyFromDate } from "./revenue-aggregation";
+import { monthKeyForTransaction, monthKeyFromDate, parseEventDate } from "./revenue-aggregation";
 import { logRevenueRuntimeStage } from "./revenus-runtime-trace";
 import {
   categoryForStructuredLine,
@@ -60,13 +60,6 @@ function tokenizeLabel(label: string): string {
   return tokens.slice(0, 4).join(" ");
 }
 
-function parseEventDate(date: string | null): Date | null {
-  if (!date?.trim()) return null;
-  const normalized = date.includes("/") ? date.split("/").reverse().join("-") : date;
-  const parsed = new Date(normalized);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 function inferLineKind(line: RevenueRawLine): RevenueRawLine["lineKind"] {
   if (line.lineKind && line.lineKind !== "atomic") return line.lineKind;
   const label = normalizeText(line.label ?? "");
@@ -107,12 +100,17 @@ function heuristicCategory(line: RevenueRawLine): RevenueTransactionCategory {
 }
 
 export function rawLinesToTransactions(lines: RevenueRawLine[]): RevenueTransaction[] {
+  // Cycle 17 — le signe est désormais préservé, comme pour le chemin Excel/CSV
+  // structuré (Cycle 15B) : un montant négatif (régularisation, avoir) dans une
+  // colonne de revenu ne doit jamais devenir une recette positive par un
+  // Math.abs() aveugle. `direction` reste le signal fiscal principal (credit/
+  // debit) ; `amount` porte désormais son signe réel tel qu'extrait/déclaré.
   return lines.map((line) => ({
     id: line.id ?? crypto.randomUUID(),
     date: line.date ?? null,
     description: line.label ?? "Flux détecté",
     label: line.label,
-    amount: Math.abs(line.amount),
+    amount: line.amount,
     direction: line.direction,
     category: heuristicCategory(line),
     accountContext: line.accountContext,
@@ -312,13 +310,16 @@ export function structuredLinesToTransactions(
   return lines.filter(isStructuredRawLine).flatMap((line) => {
     const category = categoryForStructuredLine(line) ?? "unknown";
     const sourceHeader = line.sourceColumnHeader ?? line.label ?? "unknown";
-    const amount = Math.abs(line.amount);
+    // Cycle 15A : le garde-fou anti-date raisonne en valeur absolue, mais le
+    // signe du montant est préservé sur la transaction elle-même — un montant
+    // négatif dans une colonne revenu ne doit jamais devenir une recette positive.
+    const absAmountForGuard = Math.abs(line.amount);
     const rawToken = String(line.amount);
 
     if (
       rejectDateAsGridMoney({
         rawValue: rawToken,
-        amount,
+        amount: absAmountForGuard,
         header: sourceHeader,
       }) ||
       isDateLikeValue(rawToken) ||
@@ -332,7 +333,7 @@ export function structuredLinesToTransactions(
       date: line.date ?? null,
       description: sourceHeader,
       label: line.label,
-      amount: Math.abs(line.amount),
+      amount: line.amount,
       direction: line.direction,
       category,
       accountContext: line.accountContext,

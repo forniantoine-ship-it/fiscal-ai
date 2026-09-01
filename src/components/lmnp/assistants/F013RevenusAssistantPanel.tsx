@@ -336,6 +336,28 @@ export function F013RevenusAssistantPanel() {
     [assistant, persistCompletion, state],
   );
 
+  // Cycle 18 — l'état "complete" n'offrait auparavant aucune sortie : ni
+  // reprise du questionnaire, ni remise à zéro. Un utilisateur voulant
+  // corriger une réponse (ou revenir ici après avoir été redirigé depuis la
+  // carte upload verrouillée) restait bloqué en lecture seule — un vrai
+  // dead-end fonctionnel, pas seulement une confusion de navigation.
+  //
+  // Correctif minimal : réutilise le mécanisme déjà validé (Cycle 15B/17)
+  // pour la suppression de document — effacer `revenusAssistant` et
+  // `revenusConfirmedAt` lève le verrou réciproque des deux canaux — puis
+  // redémarre le questionnaire depuis le début plutôt que de tenter une
+  // reprise partielle avec les anciennes réponses (plus risqué : la machine
+  // à états de l'assistant n'a jamais été conçue pour un "resume").
+  const handleModifier = useCallback(() => {
+    dispatch({
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { revenusAssistant: undefined, revenusConfirmedAt: undefined },
+    });
+    const fresh = assistant.start();
+    setState(fresh.state);
+    setMessages(fresh.messages);
+  }, [assistant, dispatch]);
+
   const handleSuggestion = useCallback(
     (suggestionId: string) => {
       if (suggestionId === "confirm_all") void runAction({ type: "confirm_all" });
@@ -454,7 +476,13 @@ export function F013RevenusAssistantPanel() {
           {state.result ? <ResultSummary result={state.result} /> : null}
 
           {state.step === "complete" ? (
-            <div style={{ marginTop: spacing.scale[4] }}>
+            <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
+              <Link href={LMNP_ROUTES.chargesAssistant} className="flex-1">
+                <Button className="w-full">Continuer vers Charges</Button>
+              </Link>
+              <Button variant="secondary" onClick={handleModifier}>
+                Modifier mes revenus
+              </Button>
               <Link href={LMNP_ROUTES.dashboard}>
                 <Button variant="secondary">Retour au tableau de bord</Button>
               </Link>

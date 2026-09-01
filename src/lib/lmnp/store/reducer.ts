@@ -33,6 +33,7 @@ import {
   suggestionToFromChargesItem,
 } from "../services/charges-amortization-intelligence";
 import { processGovernedExtraction } from "../services/governed-field-prefill";
+import { removeDocumentFromRevenueSession } from "../services/revenue-gpt-ui-prefill";
 import type { FiscalTunnel } from "@/lib/documents/tunnel-field-ownership";
 import type { GovernedFieldExtractedBy } from "@/lib/documents/types/governed-field";
 import { recalculateVentilationSummary } from "../services/amortissement-profile";
@@ -557,12 +558,38 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "REMOVE_DOCUMENT": {
       const fileRegistry = new Map(state.fileRegistry);
       fileRegistry.delete(action.documentId);
+
+      const removedDocument = state.documents.find((d) => d.id === action.documentId);
+      let declarationDraft = state.declarationDraft;
+
+      // Cycle 15B — Test G : la suppression explicite d'un document revenus retire
+      // sa contribution du calcul. Jamais déduit d'un montant/date qui se ressemble
+      // — uniquement de cette action utilisateur identifiable (bouton "supprimer").
+      if (removedDocument?.category === "revenus" && declarationDraft?.revenueGptSession) {
+        const nextSession = removeDocumentFromRevenueSession(
+          declarationDraft.revenueGptSession,
+          action.documentId,
+          state.fiscalYear.year,
+        );
+        declarationDraft = {
+          ...declarationDraft,
+          revenueGptSession: nextSession,
+          // Un total déjà confirmé reflétait ce document — désormais faux : on
+          // l'invalide pour rouvrir l'upload/l'assistant plutôt que de laisser
+          // l'utilisateur bloqué par le verrouillage réciproque du Cycle 15A sur
+          // un chiffre qui n'est plus le bon.
+          revenusAssistant: undefined,
+          revenusConfirmedAt: undefined,
+        };
+      }
+
       return finalizeState({
         ...state,
         fileRegistry,
         documents: state.documents.filter((d) => d.id !== action.documentId),
         extractions: state.extractions.filter((e) => e.documentId !== action.documentId),
         validationItems: state.validationItems.filter((v) => v.documentId !== action.documentId),
+        declarationDraft,
       });
     }
 

@@ -219,6 +219,49 @@ function runTests(): { passed: number; total: number } {
     }
   });
 
+  // Cycle 19 — extractColumnAmounts (repli texte libre, atteint quand aucun
+  // tableau structuré n'est détecté) avait son propre jeu de mots-clés,
+  // indépendant du reste du système : "Airbnb"/"GLI"/"Visale"/"Remboursement"/
+  // "CAF" etc. n'y étaient jamais reconnus — invisibles, sans anomalie, alors
+  // que "Loyer" seul fonctionnait déjà. Reproduit avec un texte narratif
+  // réaliste (un montant par ligne, aucun tableau à colonnes détecté).
+  const FREE_TEXT_ALL_NATURES = `Janvier
+Loyer: 1000
+Airbnb: 350
+Booking: 250
+Abritel: 150
+Vrbo: 100
+GLI: 500
+Visale: 300
+Indemnité: 200
+Remboursement: 150
+CAF: 100`;
+
+  test("Cycle 19 — le repli texte libre reconnaît désormais toutes les natures de revenu, pas seulement Loyer", () => {
+    const parsed = parseStructuredRevenueTable(FREE_TEXT_ALL_NATURES, 2025, "narratif-1", "documentary_pdf");
+    const total = parsed.lines.reduce((sum, line) => sum + line.amount, 0);
+    assertEqual(total, 3100, "total des 10 natures de revenu");
+    const headers = parsed.lines.map((l) => l.sourceColumnHeader).sort();
+    assertDeepEqual(
+      headers,
+      ["Abritel", "Airbnb", "Booking", "GLI", "Indemnité", "Loyer", "Remboursement", "Visale", "Vrbo", "Complément"].sort(),
+      "chaque nature doit produire sa propre ligne, aucune ne doit être absente",
+    );
+  });
+
+  test("Cycle 19 — deux valeurs sur une même ligne texte libre restent correctement délimitées (non-régression)", () => {
+    const parsed = parseStructuredRevenueTable(
+      `Janvier\nLoyer: 1000 Airbnb: 350`,
+      2025,
+      "narratif-2",
+      "documentary_pdf",
+    );
+    const loyer = parsed.lines.find((l) => l.sourceColumnHeader === "Loyer");
+    const airbnb = parsed.lines.find((l) => l.sourceColumnHeader === "Airbnb");
+    assertEqual(loyer?.amount, 1000, "loyer isolé, pas '1000 Airbnb'");
+    assertEqual(airbnb?.amount, 350, "airbnb correctement délimité");
+  });
+
   return { passed, total };
 }
 

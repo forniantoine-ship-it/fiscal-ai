@@ -8,10 +8,12 @@ import type {
   RevenusExtractionData,
 } from "../types";
 import {
+  aggregateTransactionsToGrid,
   createEmptyGridRows,
   processPropertyTransactions,
   validatePropertyTransaction,
 } from "./revenue-transactions";
+import { hashDocumentContent } from "./revenue-batch-hash";
 import type { RevenueGridSource } from "./revenus-runtime-trace";
 import {
   detectRawLineSource,
@@ -110,6 +112,157 @@ export function applyTransactionsToPropertySession(
   };
 }
 
+/**
+ * Cycle 15B — fusionne un NOUVEAU lot de lignes brutes (un document upload)
+ * dans l'historique déjà accumulé sur cette propriété, au lieu de le
+ * remplacer. `applyTransactionsToPropertySession` reste inchangée pour son
+ * autre usage (`validateLowConfidenceTransaction`, où `input` est déjà la
+ * liste complète et doit REMPLACER, pas s'accumuler).
+ *
+ * Avant ce correctif : deux uploads successifs (actions séparées, chacune ne
+ * repassant que ses propres documents "uploaded" non encore "analyzed")
+ * remplaçaient `property.transactions` par le seul dernier lot. La grille
+ * (`rows`) restait correcte grâce à un mécanisme incrémental séparé
+ * (`aggregateTransactionsToGrid` réutilise `existingRows`), mais la liste de
+ * transactions — lue par `buildRevenusAssistantFromSession` (Cycle 15A) pour
+ * construire ce qui part réellement vers F-006 — ne l'était pas : l'écran
+ * pouvait afficher un total correct pendant que F-006 recevait un total
+ * tronqué au dernier document. Ce correctif garantit que `transactions` et
+ * `rows` restent toujours reconstruits depuis la même source complète.
+ */
+export function mergeIncomingLinesIntoProperty(
+  property: RevenuePropertySession,
+  rawLines: RevenueRawLine[],
+  fiscalYear: number,
+): RevenuePropertySession & { deduplicatedCount: number; skippedAsDuplicateBatch: boolean } {
+  if (rawLines.length === 0) {
+    // Aucune nouvelle ligne pour cette propriété dans ce lot — historique inchangé.
+    return { ...property, deduplicatedCount: 0, skippedAsDuplicateBatch: false };
+  }
+
+  const knownRecords = property.mergedBatches ?? [];
+  const knownHashes = new Set(knownRecords.map((record) => record.hash));
+
+  // Cycle 17 — l'empreinte est calculée PAR DOCUMENT (regroupement par
+  // sourceDocumentId), jamais sur le lot entier : un même appel peut
+  // contenir plusieurs documents (sélection multiple en une seule action),
+  // et associer l'empreinte au bon documentId est ce qui permet de la
+  // libérer précisément quand CE document est supprimé (REMOVE_DOCUMENT),
+  // sans affecter les empreintes des autres documents encore présents.
+  const linesByDocument = new Map<string, RevenueRawLine[]>();
+  for (const line of rawLines) {
+    const bucket = linesByDocument.get(line.sourceDocumentId) ?? [];
+    bucket.push(line);
+    linesByDocument.set(line.sourceDocumentId, bucket);
+  }
+
+  const newRecords: Array<{ documentId: string; hash: string }> = [];
+  const linesToMerge: RevenueRawLine[] = [];
+  for (const [documentId, docLines] of linesByDocument) {
+    const hash = hashDocumentContent(docLines);
+    if (knownHashes.has(hash)) {
+      // Contenu déjà fusionné précédemment ET toujours présent (un document
+      // supprimé aurait déjà libéré son empreinte via removeDocumentFromRevenueSession)
+      // — ré-import du même document, jamais additionné une seconde fois.
+      continue;
+    }
+    newRecords.push({ documentId, hash });
+    linesToMerge.push(...docLines);
+  }
+
+  if (linesToMerge.length === 0) {
+    return { ...property, deduplicatedCount: 0, skippedAsDuplicateBatch: true };
+  }
+
+  // Traite UNIQUEMENT les documents réellement nouveaux de ce lot —
+  // classification, dédup intra-lot et partition basse-confiance/isolée
+  // inchangées, réutilisées telles quelles.
+  const newBatch = processPropertyTransactions(linesToMerge, fiscalYear, undefined, false);
+
+  const transactions = [...(property.transactions ?? []), ...newBatch.transactions];
+  const lowConfidenceTransactions = [
+    ...(property.lowConfidenceTransactions ?? []),
+    ...newBatch.lowConfidenceTransactions,
+  ];
+  const isolatedTransactions = [
+    ...(property.isolatedTransactions ?? []),
+    ...newBatch.isolatedTransactions,
+  ];
+
+  // Reconstruction complète de la grille depuis l'historique fusionné (jamais
+  // seulement le nouveau lot) — garantit rows/transactions toujours cohérents.
+  // aggregateTransactionsToGrid ignore déjà nativement les catégories non-revenu
+  // (dépôt, virement interne...), donc inclure les transactions isolées ici est
+  // sans risque.
+  const rows = aggregateTransactionsToGrid(transactions, fiscalYear, property.rows);
+
+  return {
+    ...property,
+    transactions,
+    lowConfidenceTransactions,
+    isolatedTransactions,
+    rows,
+    mergedBatches: [...knownRecords, ...newRecords],
+    deduplicatedCount: newBatch.deduplicatedCount,
+    skippedAsDuplicateBatch: false,
+  };
+}
+
+/**
+ * Cycle 15B — Test G : retire la contribution d'un document supprimé
+ * explicitement par l'utilisateur (action REMOVE_DOCUMENT déjà existante).
+ * Ne déduit jamais un remplacement à partir d'un montant/date qui se
+ * ressemble — uniquement à partir d'un sourceDocumentId retiré sur action
+ * utilisateur identifiable.
+ */
+export function removeDocumentFromRevenueSession(
+  session: RevenueGptSession,
+  documentId: string,
+  fiscalYear: number,
+): RevenueGptSession {
+  const properties = session.properties.map((property) => {
+    // Cycle 17 — mergedBatches est le signal le plus fiable : un document
+    // dont TOUTES les lignes étaient isolées (ex. uniquement un dépôt de
+    // garantie) n'apparaît dans aucune des trois listes de transactions,
+    // mais a bien une empreinte enregistrée.
+    const hadDocument =
+      (property.mergedBatches ?? []).some((record) => record.documentId === documentId) ||
+      (property.transactions ?? []).some((t) => t.sourceDocumentId === documentId) ||
+      (property.lowConfidenceTransactions ?? []).some((t) => t.sourceDocumentId === documentId) ||
+      (property.isolatedTransactions ?? []).some((t) => t.sourceDocumentId === documentId);
+    if (!hadDocument) return property;
+
+    const transactions = (property.transactions ?? []).filter(
+      (t) => t.sourceDocumentId !== documentId,
+    );
+    const lowConfidenceTransactions = (property.lowConfidenceTransactions ?? []).filter(
+      (t) => t.sourceDocumentId !== documentId,
+    );
+    const isolatedTransactions = (property.isolatedTransactions ?? []).filter(
+      (t) => t.sourceDocumentId !== documentId,
+    );
+    // Libère l'empreinte de CE document précis — jamais celles des autres
+    // documents encore présents, qui doivent continuer à bloquer un vrai
+    // doublon (Cycle 17, correctif de mergedBatchHashes append-only).
+    const mergedBatches = (property.mergedBatches ?? []).filter(
+      (record) => record.documentId !== documentId,
+    );
+    const rows = aggregateTransactionsToGrid(transactions, fiscalYear, createEmptyGridRows(fiscalYear));
+
+    return {
+      ...property,
+      transactions,
+      lowConfidenceTransactions,
+      isolatedTransactions,
+      mergedBatches,
+      rows,
+      hasSecurityDeposit: isolatedTransactions.some((t) => t.category === "deposit"),
+    };
+  });
+
+  return summarizeSession({ ...session, properties });
+}
+
 export function sessionFromTransactions(
   properties: Property[],
   fiscalYear: number,
@@ -144,8 +297,14 @@ export function sessionFromTransactions(
       propertyId: propertySession.id,
     });
 
-    const { deduplicatedCount: _deduplicatedCount, ...propertySessionResult } =
-      applyTransactionsToPropertySession(propertySession, rawLines, fiscalYear);
+    const { deduplicatedCount: _deduplicatedCount, skippedAsDuplicateBatch, ...propertySessionResult } =
+      mergeIncomingLinesIntoProperty(propertySession, rawLines, fiscalYear);
+    if (skippedAsDuplicateBatch) {
+      logRevenueRuntimeStage("duplicate_batch_skipped", {
+        fn: "sessionFromTransactions",
+        propertyId: propertySession.id,
+      });
+    }
 
     return { propertySessionResult, deduplicatedCount: _deduplicatedCount };
   });

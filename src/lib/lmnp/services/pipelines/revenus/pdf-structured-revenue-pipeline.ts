@@ -63,29 +63,34 @@ export async function runPdfStructuredRevenuePipeline(
     ctx.documentId,
     ctx.sourceType,
   );
+  // Cycle 17 — sourceFileName manquant sur ce chemin (contrairement à Excel/CSV
+  // depuis Cycle 15B) : deux PDF différents aux transactions coïncidentellement
+  // identiques pouvaient être confondus par hashDocumentContent (identité de
+  // contenu seul, jamais de nom de fichier). Stampé ici, comme pour Excel/CSV.
+  const lines = structured.lines.map((line) => ({ ...line, sourceFileName: ctx.fileName }));
 
   logPdfStructuredRevenueDebug({
     stage: "structured_parse",
     detected: structured.detected,
-    lineCount: structured.lines.length,
+    lineCount: lines.length,
     strategy: ocrResult.strategy,
     provider: ocrResult.provider,
   });
 
-  if (structured.lines.length > 0) {
+  if (lines.length > 0) {
     logRevenueSourceOfTruth("structured_table_parser", {
       fn: "runPdfStructuredRevenuePipeline",
       documentId: ctx.documentId,
-      lineCount: structured.lines.length,
+      lineCount: lines.length,
       skipGpt: true,
     });
   }
 
   const supervision = buildRevenueSupervision({
     pipelineId: "pdf_structured",
-    lines: structured.lines,
+    lines,
     structuralError:
-      structured.lines.length === 0
+      lines.length === 0
         ? "Le PDF ne contient pas de tableau de loyers mensuel lisible en texte natif."
         : undefined,
   });
@@ -99,11 +104,10 @@ export async function runPdfStructuredRevenuePipeline(
     ocrProvider: ocrResult.provider,
     ocrStrategy: ocrResult.strategy,
     ocrQualityScore: ocrResult.quality.score,
-    lines: structured.lines,
-    success: structured.lines.length > 0,
+    lines,
+    success: lines.length > 0,
     supervision,
     skippedPipelines,
-    error:
-      structured.lines.length > 0 ? undefined : (supervision.message ?? REVENUE_OCR_READ_FAILURE_MESSAGE),
+    error: lines.length > 0 ? undefined : (supervision.message ?? REVENUE_OCR_READ_FAILURE_MESSAGE),
   };
 }

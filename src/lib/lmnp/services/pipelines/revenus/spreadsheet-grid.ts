@@ -98,10 +98,19 @@ export function gridToTabularText(grid: string[][]): string {
   return grid.map((row) => row.join("\t")).join("\n");
 }
 
+export type SpreadsheetSheetGrid = {
+  sheetName: string;
+  grid: string[][];
+};
+
 /**
- * Reads spreadsheet files into a normalized string grid (no OCR, no vision).
+ * Reads spreadsheet files into normalized string grids, one per feuille.
+ * CSV n'a jamais qu'une seule feuille virtuelle ("csv"). Un classeur Excel peut
+ * en avoir plusieurs — Cycle 15A : toutes sont désormais lues, pas seulement la
+ * première (SheetNames[0]), pour éviter d'ignorer silencieusement des données
+ * pertinentes réparties sur plusieurs feuilles (ex. une feuille par exercice).
  */
-export async function readSpreadsheetGrid(file: File): Promise<string[][]> {
+export async function readSpreadsheetGrid(file: File): Promise<SpreadsheetSheetGrid[]> {
   const ext = extensionFromFileName(file.name);
 
   logSpreadsheetRevenueDebug({
@@ -130,7 +139,7 @@ export async function readSpreadsheetGrid(file: File): Promise<string[][]> {
       rowCount: grid.length,
       columnCount: grid[0]?.length ?? 0,
     });
-    return grid;
+    return [{ sheetName: "csv", grid }];
   }
 
   const buffer = await file.arrayBuffer();
@@ -140,8 +149,7 @@ export async function readSpreadsheetGrid(file: File): Promise<string[][]> {
     raw: false,
   });
 
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) {
+  if (workbook.SheetNames.length === 0) {
     traceWorkbookLoaded({
       fileName: file.name,
       mimeType: file.type,
@@ -154,27 +162,34 @@ export async function readSpreadsheetGrid(file: File): Promise<string[][]> {
     return [];
   }
 
-  const sheet = workbook.Sheets[firstSheetName] ?? {};
-  const grid = sheetToGrid(sheet);
-  traceWorkbookLoaded({
-    fileName: file.name,
-    mimeType: file.type,
-    extension: ext,
-    sheetNames: workbook.SheetNames,
-    activeSheetName: firstSheetName,
-    worksheetDimensions: {
-      rowCount: grid.length,
-      columnCount: grid.reduce((max, row) => Math.max(max, row.length), 0),
-      usedRange: typeof sheet["!ref"] === "string" ? sheet["!ref"] : undefined,
-    },
-  });
-  logSpreadsheetRevenueDebug({
-    stage: "workbook_parsed",
-    sheetName: firstSheetName,
-    sheetCount: workbook.SheetNames.length,
-    rowCount: grid.length,
-    columnCount: grid[0]?.length ?? 0,
-  });
+  const sheets: SpreadsheetSheetGrid[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName] ?? {};
+    const grid = sheetToGrid(sheet);
+    if (grid.length === 0) continue;
 
-  return grid;
+    traceWorkbookLoaded({
+      fileName: file.name,
+      mimeType: file.type,
+      extension: ext,
+      sheetNames: workbook.SheetNames,
+      activeSheetName: sheetName,
+      worksheetDimensions: {
+        rowCount: grid.length,
+        columnCount: grid.reduce((max, row) => Math.max(max, row.length), 0),
+        usedRange: typeof sheet["!ref"] === "string" ? sheet["!ref"] : undefined,
+      },
+    });
+    logSpreadsheetRevenueDebug({
+      stage: "workbook_parsed",
+      sheetName,
+      sheetCount: workbook.SheetNames.length,
+      rowCount: grid.length,
+      columnCount: grid[0]?.length ?? 0,
+    });
+
+    sheets.push({ sheetName, grid });
+  }
+
+  return sheets;
 }

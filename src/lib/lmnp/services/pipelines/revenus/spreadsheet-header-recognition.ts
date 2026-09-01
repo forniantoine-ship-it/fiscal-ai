@@ -3,7 +3,24 @@
  * No GPT — inspectable alias matching only.
  */
 
-export type SpreadsheetBusinessField = "month" | "rent" | "complement" | "paymentDate";
+export type SpreadsheetBusinessField =
+  | "month"
+  | "rent"
+  | "complement"
+  | "paymentDate"
+  | "platform"
+  | "indemnity";
+
+/**
+ * Champs pour lesquels plusieurs colonnes peuvent légitimement coexister (ex.
+ * Airbnb + Booking + Abritel). "complement" y a été ajouté au Cycle 18 : un
+ * classeur avec à la fois une colonne "CAF" et une colonne "Remboursement
+ * charges" ne faisait gagner QU'UNE seule des deux (la mieux notée) le champ
+ * "complement" — l'autre était rejetée ("lower_score_same_field") et son
+ * montant disparaissait entièrement de l'extraction, sans aucune trace.
+ */
+const MULTI_COLUMN_FIELDS: SpreadsheetBusinessField[] = ["platform", "indemnity", "complement"];
+const SINGLE_COLUMN_FIELDS: SpreadsheetBusinessField[] = ["month", "rent", "paymentDate"];
 
 export type SpreadsheetMatchStrategy = "exact" | "startsWith" | "includes" | "tokenSimilarity";
 
@@ -19,7 +36,18 @@ export type SpreadsheetHeaderMatchResult = {
 
 export type SpreadsheetColumnMapping = Partial<
   Record<SpreadsheetBusinessField, SpreadsheetHeaderMatchResult>
->;
+> & {
+  /**
+   * Toutes les colonnes plateforme/indemnité au-dessus du seuil de confiance — pas
+   * seulement la meilleure. Un export bancaire peut avoir Airbnb + Booking + Abritel
+   * simultanément ; contrairement à `rent`/`complement`, ces montants doivent être
+   * sommés, jamais réduits à une seule colonne gagnante.
+   */
+  platformColumns?: SpreadsheetHeaderMatchResult[];
+  indemnityColumns?: SpreadsheetHeaderMatchResult[];
+  /** Cycle 18 — même logique que platformColumns/indemnityColumns : ex. CAF + Remboursement charges simultanés. */
+  complementColumns?: SpreadsheetHeaderMatchResult[];
+};
 
 export type SpreadsheetHeaderRecognitionAudit = {
   headerRowIndex: number;
@@ -64,6 +92,12 @@ const FIELD_ALIASES: Record<SpreadsheetBusinessField, readonly string[]> = {
     "charges locatives",
     "allocation",
     "caf",
+    // Cycle 17 — absente de cette liste alors que `revenus-header-classification.ts`
+    // (OTHER_INCOME_HEADER_PATTERNS, chemin PDF/OCR) la reconnaît déjà comme un
+    // revenu "autres" : une colonne Excel/CSV nommée "Remboursement" ne matchait
+    // aucun champ ici et disparaissait donc entièrement de l'extraction, sans
+    // trace ni anomalie — bug reproduit et corrigé au Cycle 17.
+    "remboursement",
   ],
   paymentDate: [
     "date",
@@ -73,6 +107,29 @@ const FIELD_ALIASES: Record<SpreadsheetBusinessField, readonly string[]> = {
     "date perception",
     "date versement",
     "date virement",
+  ],
+  platform: [
+    "airbnb",
+    "booking",
+    "abritel",
+    "vrbo",
+    "plateforme",
+    "virement plateforme",
+    "location touristique",
+    "location saisonniere",
+  ],
+  indemnity: [
+    "gli",
+    "visale",
+    "indemnite",
+    "indemnite assurance",
+    "assurance loyers impayes",
+    // Cycle 18 — synonyme courant de GLI, absent jusqu'ici : sans cet alias,
+    // "Garantie loyers impayés" ne matchait AUCUN champ indemnity (score <70)
+    // et se faisait accidentellement absorber par le champ "rent" via
+    // includes("loyer") à 85 — un versement d'assurance classé comme loyer.
+    "garantie loyers impayes",
+    "sinistre",
   ],
 };
 
@@ -176,7 +233,7 @@ function allCandidatesForHeader(
   columnIndex: number,
 ): SpreadsheetHeaderMatchResult[] {
   const candidates: SpreadsheetHeaderMatchResult[] = [];
-  const fields: SpreadsheetBusinessField[] = ["month", "rent", "complement", "paymentDate"];
+  const fields: SpreadsheetBusinessField[] = [...SINGLE_COLUMN_FIELDS, ...MULTI_COLUMN_FIELDS];
 
   for (const field of fields) {
     const match = matchHeaderToField(rawHeader, columnIndex, field);
@@ -195,11 +252,30 @@ function pickBestPerField(
   const selected: SpreadsheetColumnMapping = {};
   const rejected: SpreadsheetHeaderRecognitionAudit["rejectedMatches"] = [];
 
-  const fields: SpreadsheetBusinessField[] = ["month", "rent", "complement", "paymentDate"];
+  // Cycle 18 — un même en-tête peut être un candidat simultané pour un champ
+  // mono-colonne (ex. "rent") ET un champ multi-colonnes (ex. "indemnity") :
+  // les deux boucles étaient jusqu'ici totalement indépendantes, chacune
+  // pouvant "gagner" sur la MÊME colonne. Conséquence démontrée : un en-tête
+  // "Garantie loyers impayés" (candidat "rent" à 85 via includes("loyer"),
+  // Cycle 18) pouvait être sélectionné comme colonne de loyer ; en ajoutant
+  // séparément un alias "indemnity" pour cette même expression, la colonne
+  // aurait alors été extraite DEUX FOIS (une fois comme loyer, une fois comme
+  // indemnité) — un même euro compté deux fois. Les champs multi-colonnes
+  // (plateforme, indemnité) sont donc résolus EN PREMIER et priment toujours
+  // sur les champs mono-colonnes pour une même colonne : ce sont les
+  // classifications les plus spécifiques, jamais un simple repli générique.
+  const multiColumnClaimedIndices = new Set(
+    candidates
+      .filter((candidate) => MULTI_COLUMN_FIELDS.includes(candidate.matchedField))
+      .map((candidate) => candidate.columnIndex),
+  );
 
-  for (const field of fields) {
+  for (const field of SINGLE_COLUMN_FIELDS) {
     const fieldCandidates = candidates
-      .filter((candidate) => candidate.matchedField === field)
+      .filter(
+        (candidate) =>
+          candidate.matchedField === field && !multiColumnClaimedIndices.has(candidate.columnIndex),
+      )
       .sort((a, b) => b.confidenceScore - a.confidenceScore);
 
     if (fieldCandidates.length === 0) continue;
@@ -232,6 +308,32 @@ function pickBestPerField(
     }
   }
 
+  // Champs multi-colonnes : toutes les colonnes candidates sont conservées et
+  // seront sommées à l'extraction — aucune n'est "rejetée" (voir doc du type).
+  const platformColumns = candidates
+    .filter((candidate) => candidate.matchedField === "platform")
+    .sort((a, b) => b.confidenceScore - a.confidenceScore);
+  if (platformColumns.length > 0) {
+    selected.platform = platformColumns[0];
+    selected.platformColumns = platformColumns;
+  }
+
+  const indemnityColumns = candidates
+    .filter((candidate) => candidate.matchedField === "indemnity")
+    .sort((a, b) => b.confidenceScore - a.confidenceScore);
+  if (indemnityColumns.length > 0) {
+    selected.indemnity = indemnityColumns[0];
+    selected.indemnityColumns = indemnityColumns;
+  }
+
+  const complementColumns = candidates
+    .filter((candidate) => candidate.matchedField === "complement")
+    .sort((a, b) => b.confidenceScore - a.confidenceScore);
+  if (complementColumns.length > 0) {
+    selected.complement = complementColumns[0];
+    selected.complementColumns = complementColumns;
+  }
+
   return { selected, rejected };
 }
 
@@ -239,14 +341,18 @@ function rowMappingScore(mapping: SpreadsheetColumnMapping): number {
   let score = 0;
   if (mapping.month) score += mapping.month.confidenceScore;
   if (mapping.rent) score += mapping.rent.confidenceScore;
-  if (mapping.complement) score += mapping.complement.confidenceScore;
   if (mapping.paymentDate) score += mapping.paymentDate.confidenceScore * 0.5;
+  for (const column of mapping.platformColumns ?? []) score += column.confidenceScore;
+  for (const column of mapping.indemnityColumns ?? []) score += column.confidenceScore;
+  for (const column of mapping.complementColumns ?? []) score += column.confidenceScore;
   return score;
 }
 
 function mappingIsViable(mapping: SpreadsheetColumnMapping): boolean {
   const hasMonth = Boolean(mapping.month);
-  const hasMoney = Boolean(mapping.rent || mapping.complement);
+  const hasMoney = Boolean(
+    mapping.rent || mapping.complement || mapping.platform || mapping.indemnity,
+  );
   return hasMoney && (hasMonth || Boolean(mapping.paymentDate));
 }
 
@@ -305,14 +411,26 @@ export function recognizeSpreadsheetHeaders(
 
 export function formatSpreadsheetMappingDebugBlock(mapping: SpreadsheetColumnMapping): string {
   const lines: string[] = ["Detected spreadsheet mapping:"];
-  const fields: SpreadsheetBusinessField[] = ["month", "rent", "complement", "paymentDate"];
 
-  for (const field of fields) {
+  for (const field of [...SINGLE_COLUMN_FIELDS, "platform", "indemnity", "complement"] as SpreadsheetBusinessField[]) {
     const match = mapping[field];
     if (!match) continue;
     lines.push(
       `${field} -> "${match.rawHeader}" (alias: ${match.matchedAlias}, score: ${match.confidenceScore}, ${match.matchStrategy})`,
     );
+  }
+
+  for (const column of mapping.platformColumns ?? []) {
+    if (column === mapping.platform) continue;
+    lines.push(`platform (+) -> "${column.rawHeader}" (alias: ${column.matchedAlias}, score: ${column.confidenceScore})`);
+  }
+  for (const column of mapping.indemnityColumns ?? []) {
+    if (column === mapping.indemnity) continue;
+    lines.push(`indemnity (+) -> "${column.rawHeader}" (alias: ${column.matchedAlias}, score: ${column.confidenceScore})`);
+  }
+  for (const column of mapping.complementColumns ?? []) {
+    if (column === mapping.complement) continue;
+    lines.push(`complement (+) -> "${column.rawHeader}" (alias: ${column.matchedAlias}, score: ${column.confidenceScore})`);
   }
 
   if (lines.length === 1) {

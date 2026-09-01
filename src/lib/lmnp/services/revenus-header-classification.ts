@@ -11,6 +11,8 @@ export type HeaderTargetGridField =
 
 export type HeaderSemanticCategory =
   | "rent"
+  | "platform"
+  | "insurance_indemnity"
   | "other_income"
   | "charges"
   | "fee"
@@ -58,6 +60,51 @@ const RENT_HEADER_PATTERNS: RegExp[] = [
   /^loyers?$/,
   /^loyer hc$/,
   /loyer hc/,
+  // Cycle 18 — "loyer" en tête suivi d'un qualificatif ("Loyer encaissé",
+  // "Loyers perçus"...) : le motif strictement ancré `/^loyers?$/` rejetait
+  // ces variantes réalistes, alors que le système d'en-têtes Excel/CSV
+  // (spreadsheet-header-recognition.ts, matchStrategy "startsWith") les
+  // reconnaissait déjà — la ligne disparaissait silencieusement sur le
+  // chemin PDF/OCR/tableau structuré (makeStructuredLine rejette toute ligne
+  // sans catégorie résolue). N'ajoute aucun chevauchement avec GLI/indemnité
+  // ci-dessous : "garantie loyers impayés" ne COMMENCE jamais par "loyer".
+  /^loyers?\b/,
+];
+
+/**
+ * Cycle 15A — SAV-REV-01/SAV-REV-03 : plateformes de location (Airbnb, Booking,
+ * Abritel/Vrbo). Le montant retenu est celui de la colonne telle quelle (net versé
+ * par la plateforme, décision par défaut du KS) — jamais un calcul brut - commission.
+ */
+const PLATFORM_HEADER_PATTERNS: RegExp[] = [
+  /airbnb/,
+  /booking/,
+  /abritel/,
+  /vrbo/,
+  /^plateforme$/,
+  /plateforme/,
+  /virement plateforme/,
+  /location touristique/,
+  /location saisonniere/,
+];
+
+/**
+ * Cycle 15A — SAV-REV-04 : indemnité d'assurance loyers impayés (GLI/VISALE) ou
+ * règlement de sinistre — recette à l'encaissement, par extension de SAV-028.
+ */
+const INSURANCE_INDEMNITY_HEADER_PATTERNS: RegExp[] = [
+  /^gli$/,
+  /\bgli\b/,
+  /visale/,
+  /indemnite/,
+  /assurance loyers? impayes?/,
+  // Cycle 18 — synonyme courant de GLI ("Garantie loyers impayés", forme
+  // développée, sans le sigle). Sans ce motif, aucun des motifs ci-dessus ne
+  // matchait, et DEPOSIT_HEADER_PATTERNS (`/garantie/`, plus bas dans la
+  // chaîne if/else) absorbait la colonne comme un dépôt de garantie —
+  // excluant à tort une vraie indemnité d'assurance de la recette.
+  /garantie loyers? impayes?/,
+  /sinistre/,
 ];
 
 const CHARGE_HEADER_PATTERNS: RegExp[] = [/charges?/, /charge loc/];
@@ -114,6 +161,18 @@ export function classifyRevenueHeader(rawHeader: string): RevenueHeaderClassific
     targetGridField = "loyers";
     targetGridColumn = "loyers";
     isMonetary = true;
+  } else if (matchesAny(normalizedHeader, PLATFORM_HEADER_PATTERNS)) {
+    semanticCategory = "platform";
+    transactionCategory = "platform_payout";
+    targetGridField = "autresRevenus";
+    targetGridColumn = "autresRevenus";
+    isMonetary = true;
+  } else if (matchesAny(normalizedHeader, INSURANCE_INDEMNITY_HEADER_PATTERNS)) {
+    semanticCategory = "insurance_indemnity";
+    transactionCategory = "insurance_indemnity";
+    targetGridField = "autresRevenus";
+    targetGridColumn = "autresRevenus";
+    isMonetary = true;
   } else if (matchesAny(normalizedHeader, OTHER_INCOME_HEADER_PATTERNS)) {
     semanticCategory = "other_income";
     transactionCategory = "additional_income";
@@ -159,7 +218,10 @@ export function isProtectedMonetaryHeader(rawHeader: string): boolean {
   const classification = classifyRevenueHeader(rawHeader);
   return (
     classification.isMonetary &&
-    (classification.semanticCategory === "rent" || classification.semanticCategory === "other_income")
+    (classification.semanticCategory === "rent" ||
+      classification.semanticCategory === "other_income" ||
+      classification.semanticCategory === "platform" ||
+      classification.semanticCategory === "insurance_indemnity")
   );
 }
 
@@ -174,6 +236,8 @@ export function isRentHeader(rawHeader: string): boolean {
 export function canonicalMonetaryHeaderLabel(rawHeader: string): string {
   const classification = classifyRevenueHeader(rawHeader);
   if (classification.semanticCategory === "rent") return "Loyer";
+  if (classification.semanticCategory === "platform") return "Revenus plateforme";
+  if (classification.semanticCategory === "insurance_indemnity") return "Indemnité assurance";
   if (classification.semanticCategory === "other_income") return "Complément";
   if (classification.semanticCategory === "charges") return "Charges";
   if (classification.semanticCategory === "fee") return "Frais";

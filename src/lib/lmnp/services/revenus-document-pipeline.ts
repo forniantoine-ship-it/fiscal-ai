@@ -8,6 +8,7 @@ import type { RevenueSupervisionStatus } from "@/lib/lmnp/services/revenue-super
 import { runRoutedRevenuePipeline } from "./pipelines/revenus/run-routed-revenue-pipeline";
 import type { RevenuePipelineId } from "./pipelines/revenus/revenue-pipeline-types";
 import { buildMockLinesByProperty, isRevenusMockEnabled } from "./revenus-mock";
+import { hashDocumentContent } from "./revenue-batch-hash";
 import {
   logRevenueGridSource,
   logRevenueRuntimeStage,
@@ -94,6 +95,8 @@ export type RevenusDocumentPipelineResult = {
   processedDocumentIds: string[];
   failedDocumentIds: string[];
   ocrFailedDocumentIds: string[];
+  /** Documents lus avec succès mais dont le contenu est identique à un document déjà traité dans ce même lot — Cycle 15A. */
+  duplicateDocumentIds: string[];
   gridSource: "ocr_lines" | "mock_lines";
   success: boolean;
   ocrFailure?: boolean;
@@ -122,6 +125,7 @@ export async function runRevenusDocumentPipeline(
       processedDocumentIds: documentIds,
       failedDocumentIds: [],
       ocrFailedDocumentIds: [],
+      duplicateDocumentIds: [],
       gridSource: "mock_lines",
       success: true,
     };
@@ -135,6 +139,8 @@ export async function runRevenusDocumentPipeline(
   const processedDocumentIds: string[] = [];
   const failedDocumentIds: string[] = [];
   const ocrFailedDocumentIds: string[] = [];
+  const duplicateDocumentIds: string[] = [];
+  const seenContentHashes = new Set<string>();
   const primaryId = properties[0]?.id;
   let lastSupervision: RevenueSupervisionStatus | undefined;
 
@@ -162,6 +168,16 @@ export async function runRevenusDocumentPipeline(
         failedDocumentIds.push(documentId);
         continue;
       }
+
+      const contentHash = hashDocumentContent(result.lines);
+      if (seenContentHashes.has(contentHash)) {
+        // Document lu avec succès mais dont le contenu est identique à un document
+        // déjà intégré dans ce même lot — ni un échec, ni une ligne supplémentaire.
+        duplicateDocumentIds.push(documentId);
+        processedDocumentIds.push(documentId);
+        continue;
+      }
+      seenContentHashes.add(contentHash);
 
       if (primaryId) {
         const bucket = linesByPropertyId.get(primaryId) ?? [];
@@ -198,6 +214,7 @@ export async function runRevenusDocumentPipeline(
     processedDocumentIds,
     failedDocumentIds,
     ocrFailedDocumentIds,
+    duplicateDocumentIds,
     gridSource: "ocr_lines",
     success,
     ocrFailure,

@@ -25,7 +25,8 @@ export type RevenueRuntimeStage =
   | "aggregation"
   | "persist"
   | "confirm"
-  | "ui_render";
+  | "ui_render"
+  | "duplicate_batch_skipped";
 
 export type RevenueSourceOfTruth =
   | "ocr_extraction"

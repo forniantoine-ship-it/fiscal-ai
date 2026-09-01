@@ -175,6 +175,7 @@ export interface RevenusMonthlyEntry {
 export type RevenueEventCategory =
   | "rent"
   | "platform_payout"
+  | "insurance_indemnity"
   | "charges"
   | "fee"
   | "refund"
@@ -257,6 +258,7 @@ export type RevenueTransactionCategory =
   | "owner_contribution"
   | "owner_transfer"
   | "platform_payout"
+  | "insurance_indemnity"
   | "charges"
   | "fee"
   | "unknown";
@@ -270,6 +272,8 @@ export interface RevenueRawLine {
   direction: RevenueTransactionDirection;
   sourceDocumentId: string;
   sourceType: RevenueRawLineSourceType | string;
+  /** Original upload filename — part of batch identity for deduplication (Cycle 15B/17). */
+  sourceFileName?: string;
   confidence: number;
   accountContext?: string;
   counterparty?: string;
@@ -317,6 +321,8 @@ export type RevenuePropertySession = {
   isolatedTransactions?: RevenueTransaction[];
   /** When true, AI aggregation must not overwrite user-edited grid rows. */
   gridUserEdited?: boolean;
+  /** Per-document content fingerprints for cross-upload deduplication (Cycle 15B/17). */
+  mergedBatches?: Array<{ documentId: string; hash: string }>;
 };
 
 export type RevenueGptSession = {

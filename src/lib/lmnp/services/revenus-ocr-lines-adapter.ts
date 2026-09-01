@@ -56,6 +56,11 @@ export function adaptGptLinesToRevenueRawLines(
       direction: line.direction,
       sourceDocumentId: document.id,
       sourceType,
+      // Cycle 17 — comme pour Excel/CSV (Cycle 15B) : sans nom de fichier,
+      // hashDocumentContent ne peut distinguer "même document réimporté" de
+      // "deux documents différents aux transactions coïncidentellement
+      // identiques", et confondrait les deux.
+      sourceFileName: document.fileName,
       confidence: mappedHeader ? Math.max(line.confidence, 95) : line.confidence,
       sourceColumnHeader: mappedHeader,
       structuredTable: Boolean(mappedHeader),

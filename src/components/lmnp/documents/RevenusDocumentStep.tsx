@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
 import { DOCUMENT_WORKFLOW_CARD_STYLE } from "@/components/lmnp/documents/document-workflow-shared";
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { RevenusHero } from "@/components/lmnp/revenus/RevenusHero";
 import { RevenusPropertyGridCards } from "@/components/lmnp/revenus/RevenusPropertyGridCards";
 import { RevenueSupervisionCard } from "@/components/lmnp/revenus/RevenueSupervisionCard";
@@ -40,6 +42,7 @@ import {
   REVENUE_OCR_READ_FAILURE_MESSAGE,
   runRevenusDocumentPipeline,
 } from "@/lib/lmnp/services/revenus-document-pipeline";
+import { buildRevenusAssistantFromSession } from "@/lib/lmnp/services/revenus-upload-to-assistant-bridge";
 import { isRevenusMockEnabled } from "@/lib/lmnp/services/revenus-mock";
 import {
   inferSessionRenderOrigin,
@@ -85,6 +88,7 @@ function shouldDisplayRevenueGrid(session: RevenueGptSession, ocrReadFailure: bo
 export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showInfo } = useFeedback();
+  const router = useRouter();
   const {
     markExecution,
     clearExecution,
@@ -102,6 +106,12 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
   const draft = workspace.declarationDraft;
   const confirmed = Boolean(draft?.revenusConfirmedAt);
   const fiscalYear = workspace.fiscalYear.year;
+
+  // Cycle 15A — anti double-comptage : si les revenus ont déjà été validés via
+  // l'assistant conversationnel (draft.revenusAssistant posé sans être jamais
+  // passé par ce tunnel d'upload), ce canal se verrouille en lecture seule au
+  // lieu de permettre un second calcul en parallèle.
+  const lockedByOtherChannel = Boolean(draft?.revenusAssistant) && !draft?.revenusExtraction;
 
   const revenusDocs = useMemo(
     () => resolveRevenusDocuments(workspace.documents, draft?.revenusDocumentIds),
@@ -277,6 +287,15 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
 
         setOcrReadFailure(false);
         setPipelineError(null);
+
+        if (pipelineResult.duplicateDocumentIds.length > 0) {
+          // Cycle 15A — jamais un silence : un document au contenu identique à un
+          // autre déjà intégré dans ce lot n'est pas ajouté une seconde fois.
+          showInfo(
+            `${pipelineResult.duplicateDocumentIds.length} document(s) ignoré(s)`,
+            "Contenu identique à un document déjà importé dans ce lot — non comptabilisé deux fois.",
+          );
+        }
 
         // Emit enrichment event for each successfully processed property
         const lineCount = [...pipelineResult.linesByPropertyId.values()].reduce(
@@ -490,6 +509,15 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       documentIds,
     });
 
+    // Cycle 15A — pont vers le moteur fiscal : le même calcul que l'assistant
+    // conversationnel (computeRecettesExercice), pas une nouvelle logique.
+    // draft.revenusAssistant devient la source canonique lue par F-006.
+    const bridged = buildRevenusAssistantFromSession(session, fiscalYear, draft?.dateMiseEnService);
+    dispatch({
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { revenusAssistant: bridged.revenusAssistant },
+    });
+
     const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";
     dispatch({
       type: "ADD_AI_ACTIVITY_EVENT",
@@ -506,6 +534,23 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
     showSuccess(
       "Revenus locatifs préparés",
       "Les revenus détectés seront automatiquement utilisés pour préparer votre déclaration.",
+    );
+  }
+
+  if (lockedByOtherChannel) {
+    return (
+      <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
+        <WorkflowPageBackLink />
+        <ConfiguredDossierCard
+          title="✓ Revenus déjà configurés"
+          rows={[
+            { label: "Total recettes", value: `${(draft?.revenusAssistant?.totalRecettes ?? 0).toLocaleString("fr-FR")} €` },
+            { label: "Exercice", value: String(draft?.revenusAssistant?.exerciceFiscal ?? fiscalYear) },
+          ]}
+          footnote="Configurés via l'assistant Revenus (questions/réponses) — modifiez-les depuis cet assistant, pas depuis l'import de document, pour éviter tout double calcul."
+          onEdit={() => router.push(LMNP_ROUTES.revenusAssistant)}
+        />
+      </div>
     );
   }
 

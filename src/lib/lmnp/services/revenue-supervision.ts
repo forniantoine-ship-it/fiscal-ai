@@ -42,8 +42,10 @@ export function buildRevenueSupervision(params: {
   structuralError?: string;
   gptUsed?: boolean;
   partialRead?: boolean;
+  /** Avertissements additionnels (ex. feuilles Excel non intégrées) — jamais un silence. */
+  extraWarnings?: string[];
 }): RevenueSupervisionStatus {
-  const { pipelineId, lines, ocrFailure, structuralError, gptUsed, partialRead } = params;
+  const { pipelineId, lines, ocrFailure, structuralError, gptUsed, partialRead, extraWarnings } = params;
 
   if (ocrFailure) {
     return {
@@ -98,7 +100,7 @@ export function buildRevenueSupervision(params: {
     };
   }
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...(extraWarnings ?? [])];
   const recoveryHints: string[] = [];
   const uncertain = lowConfidenceLineCount(lines);
 

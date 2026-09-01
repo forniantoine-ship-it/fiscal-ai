@@ -18,7 +18,21 @@ export type ComputeMoisLocationOutput = {
   anomalies: Anomaly[];
 };
 
+/**
+ * Cycle 20 (audit de clôture) — `new Date("YYYY-MM-DD")` (forme ISO sans heure)
+ * est interprété comme minuit UTC, puis relu en aval via `getMonth()`/
+ * `getFullYear()` (accesseurs LOCAUX) : sous un fuseau serveur à décalage
+ * négatif, un mois/jour pouvait basculer en arrière (reproduit : "2024-07-01"
+ * → 7 mois de location au lieu de 6 sous TZ=America/New_York). Construction
+ * locale explicite : `new Date(year, month-1, day)` est toujours interprété
+ * en heure locale — invariant au fuseau du serveur.
+ */
 function parseDate(value: string): Date | null {
+  const isoMatch = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const date = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }

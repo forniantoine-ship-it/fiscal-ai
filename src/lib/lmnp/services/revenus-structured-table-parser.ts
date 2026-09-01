@@ -1,4 +1,4 @@
-import { monthKeyFromDate } from "./revenue-aggregation";
+import { monthKeyFromDate, parseEventDate } from "./revenue-aggregation";
 import type {
   RevenueRawLine,
   RevenueRawLineSourceType,
@@ -208,18 +208,65 @@ function parseTabularRows(
   return parsed;
 }
 
+/**
+ * Cycle 19 — ce repli texte libre (utilisé uniquement quand aucun tableau
+ * structuré n'a été détecté, cf. `parseTabularRows`) avait son PROPRE jeu de
+ * mots-clés, indépendant de `revenus-header-classification.ts` : seuls
+ * "Loyer"/"Complément"/"Charges" étaient reconnus. Une ligne texte libre
+ * "Airbnb : 350" ou "GLI : 500" ne matchait AUCUN motif — invisible, sans
+ * trace ni anomalie, alors que ces natures sont déjà comprises PARTOUT
+ * ailleurs (Excel, tableau structuré, colonnes OCR). Chaque terme déclencheur
+ * ci-dessous vient des motifs déjà établis dans revenus-header-classification.ts
+ * (PLATFORM/INSURANCE_INDEMNITY/OTHER_INCOME) — aucune nouvelle catégorie
+ * inventée, seulement la parité avec ce qui est déjà reconnu ailleurs.
+ */
+const FALLBACK_LINE_TRIGGER_WORDS: Array<{ header: string; words: string[] }> = [
+  { header: "Loyer", words: ["loyers?"] },
+  {
+    header: "Complément",
+    words: [
+      "compl[eé]?\\.?",
+      "compl[eé]ment(?: de loyer)?",
+      "annexe",
+      "autres revenus",
+      "revenu annexe",
+      "revenu complementaire",
+      "caf",
+      "allocation",
+    ],
+  },
+  { header: "Airbnb", words: ["airbnb"] },
+  { header: "Booking", words: ["booking"] },
+  { header: "Abritel", words: ["abritel"] },
+  { header: "Vrbo", words: ["vrbo"] },
+  { header: "GLI", words: ["gli", "garantie loyers? impayes?"] },
+  { header: "Visale", words: ["visale"] },
+  { header: "Indemnité", words: ["indemnit[eé]"] },
+  { header: "Remboursement", words: ["remboursement"] },
+  { header: "Charges", words: ["charges?"] },
+];
+
+function buildFallbackLinePatterns(): Array<{ header: string; regex: RegExp }> {
+  // Le lookahead qui délimite la fin d'un montant doit s'arrêter avant N'IMPORTE
+  // QUEL AUTRE déclencheur connu — sinon "Loyer: 1000 Airbnb: 350" sur une même
+  // ligne capturerait "1000 Airbnb" en entier comme montant du loyer.
+  const allWords = FALLBACK_LINE_TRIGGER_WORDS.flatMap((c) => c.words);
+  const stopAlternation = [...allWords, "date"].join("|");
+
+  return FALLBACK_LINE_TRIGGER_WORDS.map(({ header, words }) => ({
+    header,
+    regex: new RegExp(
+      `(?:${words.join("|")})\\s*[:=]?\\s*([^\\n\\r|]+?)(?=\\s*(?:${stopAlternation}|$))`,
+      "gi",
+    ),
+  }));
+}
+
 function extractColumnAmounts(
   line: string,
 ): Array<{ header: string; amount: number; date?: string }> {
   const found: Array<{ header: string; amount: number; date?: string }> = [];
-  const patterns: Array<{ header: string; regex: RegExp }> = [
-    { header: "Loyer", regex: /loyer\s*[:=]?\s*([^\n\r|]+?)(?=\s*(?:compl|annexe|autres revenus|date|charges?|$))/gi },
-    {
-      header: "Complément",
-      regex: /(?:compl[eé]?\.?|compl[eé]ment(?: de loyer)?|annexe|autres revenus|revenu annexe|revenu complementaire)\s*[:=]?\s*([^\n\r|]+?)(?=\s*(?:date|loyer|charges?|$))/gi,
-    },
-    { header: "Charges", regex: /charges?\s*[:=]?\s*([^\n\r|]+?)(?=\s*(?:date|loyer|compl|annexe|$))/gi },
-  ];
+  const patterns = buildFallbackLinePatterns();
 
   for (const { header, regex } of patterns) {
     for (const match of line.matchAll(regex)) {
@@ -308,9 +355,7 @@ function dedupeStructuredLines(lines: RevenueRawLine[], fiscalYear: number): Rev
   const kept: RevenueRawLine[] = [];
 
   for (const line of lines) {
-    const monthKey = line.monthLabel
-      ? monthKeyFromMonthName(line.monthLabel, fiscalYear)
-      : monthKeyFromDate(line.date ?? null, fiscalYear);
+    const monthKey = monthKeyForStructuredLine(line, fiscalYear);
     const key = `${line.sourceColumnHeader}|${line.amount}|${monthKey}|${line.direction}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -325,8 +370,12 @@ export function isStructuredRawLine(line: RevenueRawLine): boolean {
 }
 
 export function monthKeyForStructuredLine(line: RevenueRawLine, fiscalYear: number): string | null {
-  const fromDate = monthKeyFromDate(line.date ?? null, fiscalYear);
-  if (fromDate) return fromDate;
+  // Une date réelle et exploitable est toujours prioritaire (SAV-028). Si elle tombe
+  // hors de l'exercice demandé, monthKeyFromDate renvoie null et c'est définitif :
+  // jamais de repli sur monthLabel pour réinjecter la ligne dans l'exercice demandé.
+  if (parseEventDate(line.date ?? null)) {
+    return monthKeyFromDate(line.date ?? null, fiscalYear);
+  }
   if (line.monthLabel) return monthKeyFromMonthName(line.monthLabel, fiscalYear);
   return null;
 }

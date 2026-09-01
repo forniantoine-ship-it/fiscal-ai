@@ -1,4 +1,4 @@
-import { monthKeyForTransaction, monthLabelFromKey } from "./revenue-aggregation";
+import { monthKeyForTransaction, monthLabelFromKey, parseEventDate } from "./revenue-aggregation";
 import {
   enrichTransactionsWithClusters,
   LOW_CONFIDENCE_THRESHOLD,
@@ -37,6 +37,7 @@ const LOYER_CATEGORIES = new Set<RevenueTransactionCategory>(["rent"]);
 const AUTRES_CATEGORIES = new Set<RevenueTransactionCategory>([
   "additional_income",
   "platform_payout",
+  "insurance_indemnity",
   "caf_subsidy",
   "reimbursement",
 ]);
@@ -87,6 +88,8 @@ export function transactionCategoryLabel(category: RevenueTransactionCategory): 
       return "Apport propriétaire";
     case "platform_payout":
       return "Versement plateforme";
+    case "insurance_indemnity":
+      return "Indemnité assurance";
     case "charges":
       return "Charges";
     case "fee":
@@ -110,13 +113,6 @@ export function createEmptyGridRows(fiscalYear: number): RevenueMonthlyGridRow[]
     autresRevenus: 0,
     charges: 0,
   }));
-}
-
-function parseEventDate(date: string | null): Date | null {
-  if (!date?.trim()) return null;
-  const normalized = date.includes("/") ? date.split("/").reverse().join("-") : date;
-  const parsed = new Date(normalized);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function daysApart(a: string | null, b: string | null): number | null {
@@ -212,12 +208,16 @@ export function aggregateTransactionsToGrid(
 
     const bucket = monthBuckets.get(monthKey) ?? { loyers: 0, autresRevenus: 0, charges: 0 };
     const rawValue = String(transaction.amount);
-    const parsedAmount = Math.abs(transaction.amount);
+    const absAmount = Math.abs(transaction.amount);
+    // Cycle 15A : le signe est désormais préservé dans les seaux (un montant négatif
+    // dans une colonne revenu vient réduire la recette, jamais l'augmenter) — seul le
+    // garde-fou anti-date ci-dessous continue de raisonner en valeur absolue.
+    const signedAmount = transaction.amount;
 
     if (
       isDateLikeValue(rawValue) ||
       looksLikeCalendarInteger(rawValue) ||
-      isDateDerivedAmount(parsedAmount, rawValue)
+      isDateDerivedAmount(absAmount, rawValue)
     ) {
       logComplementGridMapping("aggregate_skip", transaction, {
         reason: "date_guard_rejected_amount",
@@ -227,17 +227,30 @@ export function aggregateTransactionsToGrid(
       continue;
     }
 
-    if (transaction.direction === "credit") {
-      if (LOYER_CATEGORIES.has(transaction.category)) bucket.loyers += parsedAmount;
+    const isRevenueCategory =
+      LOYER_CATEGORIES.has(transaction.category) ||
+      AUTRES_CATEGORIES.has(transaction.category) ||
+      (transaction.category === "unknown" && Boolean(transaction.userValidated));
+
+    // Cycle 20 — même correctif que revenus-upload-to-assistant-bridge.ts, ici
+    // côté grille (écran) : un débit dans une catégorie de revenu (chemin
+    // GPT/OCR, régularisation représentée en direction=debit + montant positif
+    // — le prompt impose "amount toujours positif") doit RÉDUIRE la grille,
+    // jamais être simplement ignoré. Avant ce correctif, la grille l'ignorait
+    // purement (contribuant 0) alors que revenusAssistant le soustrayait déjà
+    // — divergence écran/F-006 démontrée par un appel GPT réel (Cycle 20).
+    if (transaction.direction === "credit" || (transaction.direction === "debit" && isRevenueCategory)) {
+      const bucketAmount = transaction.direction === "debit" ? -absAmount : signedAmount;
+      if (LOYER_CATEGORIES.has(transaction.category)) bucket.loyers += bucketAmount;
       else if (AUTRES_CATEGORIES.has(transaction.category)) {
-        bucket.autresRevenus += parsedAmount;
+        bucket.autresRevenus += bucketAmount;
         logComplementGridMapping("aggregate_bucket", transaction, {
           monthKey,
           column: "autresRevenus",
           bucketValue: bucket.autresRevenus,
         });
       } else if (transaction.category === "unknown" && transaction.userValidated) {
-        bucket.autresRevenus += parsedAmount;
+        bucket.autresRevenus += bucketAmount;
         logComplementGridMapping("aggregate_bucket", transaction, {
           monthKey,
           column: "autresRevenus",
@@ -252,7 +265,7 @@ export function aggregateTransactionsToGrid(
         });
       }
     } else if (CHARGE_CATEGORIES.has(transaction.category)) {
-      bucket.charges += parsedAmount;
+      bucket.charges += absAmount;
     } else {
       logComplementGridMapping("aggregate_skip", transaction, {
         reason: "non_credit_non_charge",

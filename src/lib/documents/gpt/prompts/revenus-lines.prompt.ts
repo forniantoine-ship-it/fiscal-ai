@@ -36,6 +36,7 @@ RÈGLES STRICTES:
 - Marque isSummaryRow=true pour toute ligne de total/solde/cumul (elle sera ignorée).
 - direction=credit pour un encaissement, direction=debit pour un décaissement.
 - amount toujours positif (valeur absolue).
+- Une régularisation, un remboursement ou un trop-perçu QUI RÉDUIT un encaissement déjà comptabilisé (ex. "Régularisation GLI -120€") est une ligne à part entière : NE JAMAIS l'omettre. Retourne-la avec amount en valeur absolue et direction=debit — ne la fusionne jamais avec une autre ligne et ne la remplace jamais par un montant net.
 - confidence basse (≤ 60) si la ligne est ambiguë ou partiellement illisible — ne force pas une valeur incertaine.
 - Si le tableau est incomplet, retourne uniquement les lignes lisibles plutôt qu'une grille fictive.`;
 

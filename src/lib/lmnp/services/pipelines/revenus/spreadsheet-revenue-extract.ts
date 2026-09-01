@@ -47,6 +47,42 @@ function logSpreadsheetRevenueDebug(detail: Record<string, unknown>): void {
   console.log("[spreadsheet-revenue-debug]", detail);
 }
 
+const CANONICAL_MONTH_NAMES = [
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
+  "Octobre",
+  "Novembre",
+  "Décembre",
+];
+
+/**
+ * Cycle 18 — une ligne avec une date de paiement réelle et valide n'a besoin
+ * d'aucun texte de mois pour être rattachée à un mois : le mois se déduit
+ * directement de la date. Avant ce correctif, une ligne sans aucun texte de
+ * mois reconnaissable QUELQUE PART dans la feuille (ex. relevé bancaire brut
+ * avec seulement une colonne Date, sans colonne Mois ni libellé français)
+ * était rejetée en bloc ("invalid_month") même avec une date et un montant
+ * parfaitement valides — perte silencieuse (seule trace : un console.log de
+ * développement, jamais une anomalie visible par l'utilisateur).
+ */
+function monthNameFromPaymentDate(paymentDate: string | null): string | null {
+  // Non ancrée en fin de chaîne : une cellule datetime native (ex. LibreOffice
+  // "dd/mm/yyyy hh:mm") produit "15/06/2025 08:30" — l'heure est ignorée ici,
+  // seul le jour calendaire compte pour l'attribution du mois.
+  const match = paymentDate?.match(/^\d{2}\/(\d{2})\/\d{4}/);
+  if (!match) return null;
+  const monthNumber = Number.parseInt(match[1]!, 10);
+  if (monthNumber < 1 || monthNumber > 12) return null;
+  return CANONICAL_MONTH_NAMES[monthNumber - 1] ?? null;
+}
+
 function monthNameFromCell(value: string): string | null {
   const trimmed = value.trim();
   for (const month of FRENCH_MONTHS) {
@@ -72,7 +108,9 @@ function defaultDateForMonth(monthName: string, fiscalYear: number): string | nu
 
 function monetaryLabel(field: SpreadsheetBusinessField, rawHeader: string): string {
   if (field === "rent") return "Loyer";
-  if (field === "complement") return canonicalMonetaryHeaderLabel(rawHeader);
+  if (field === "complement" || field === "platform" || field === "indemnity") {
+    return canonicalMonetaryHeaderLabel(rawHeader);
+  }
   return rawHeader.trim();
 }
 
@@ -155,10 +193,10 @@ function buildRowProbes(
   };
 }
 
-function appendMonetaryLine(params: {
+function appendLineForColumn(params: {
   lines: RevenueRawLine[];
   field: SpreadsheetBusinessField;
-  mapping: SpreadsheetColumnMapping;
+  columnMatch: { rawHeader: string; columnIndex: number; confidenceScore: number } | undefined;
   cells: string[];
   monthName: string;
   fiscalYear: number;
@@ -166,7 +204,7 @@ function appendMonetaryLine(params: {
   sourceType: RevenueRawLineSourceType | string;
   paymentDate: string | null;
 }): void {
-  const columnMatch = params.mapping[params.field];
+  const columnMatch = params.columnMatch;
   if (!columnMatch) return;
 
   const raw = params.cells[columnMatch.columnIndex] ?? "";
@@ -190,6 +228,48 @@ function appendMonetaryLine(params: {
     structuredTable: true,
     monthLabel: params.monthName,
   });
+}
+
+function appendMonetaryLine(params: {
+  lines: RevenueRawLine[];
+  field: SpreadsheetBusinessField;
+  mapping: SpreadsheetColumnMapping;
+  cells: string[];
+  monthName: string;
+  fiscalYear: number;
+  sourceDocumentId: string;
+  sourceType: RevenueRawLineSourceType | string;
+  paymentDate: string | null;
+}): void {
+  appendLineForColumn({ ...params, columnMatch: params.mapping[params.field] });
+}
+
+/**
+ * Airbnb + Booking + Abritel (ou GLI + VISALE) peuvent coexister dans le même
+ * fichier — chaque colonne devient sa propre ligne (jamais fusionnées en une
+ * seule valeur pré-sommée), et c'est l'agrégation mensuelle qui les additionne
+ * naturellement dans le même poste (recettesPlateforme / indemnitesAssurance).
+ */
+function appendMultiColumnLines(params: {
+  lines: RevenueRawLine[];
+  field: "platform" | "indemnity" | "complement";
+  mapping: SpreadsheetColumnMapping;
+  cells: string[];
+  monthName: string;
+  fiscalYear: number;
+  sourceDocumentId: string;
+  sourceType: RevenueRawLineSourceType | string;
+  paymentDate: string | null;
+}): void {
+  const columns =
+    params.field === "platform"
+      ? params.mapping.platformColumns
+      : params.field === "indemnity"
+        ? params.mapping.indemnityColumns
+        : params.mapping.complementColumns;
+  for (const columnMatch of columns ?? []) {
+    appendLineForColumn({ ...params, columnMatch });
+  }
 }
 
 export type SpreadsheetRevenueExtractResult = {
@@ -271,8 +351,12 @@ export function extractRevenueLinesFromSpreadsheetGrid(
       continue;
     }
 
-    const monthName = probes.parsedMonth;
-    if (!monthName || !monthNumberFromName(monthName)) {
+    const paymentDate = probes.parsedPaymentDate;
+    const monthName =
+      probes.parsedMonth && monthNumberFromName(probes.parsedMonth)
+        ? probes.parsedMonth
+        : monthNameFromPaymentDate(paymentDate);
+    if (!monthName) {
       recordRejection(traceSummary, "invalid_month");
       traceRowRejection({
         ...candidate,
@@ -281,7 +365,6 @@ export function extractRevenueLinesFromSpreadsheetGrid(
       continue;
     }
 
-    const paymentDate = probes.parsedPaymentDate;
     const linesBefore = lines.length;
 
     appendMonetaryLine({
@@ -296,9 +379,37 @@ export function extractRevenueLinesFromSpreadsheetGrid(
       paymentDate,
     });
 
-    appendMonetaryLine({
+    // Cycle 18 — "complement" (autres revenus : CAF, remboursement, allocation...)
+    // promu en champ multi-colonnes comme platform/indemnity : un classeur
+    // avec à la fois "CAF" et "Remboursement charges" perdait auparavant l'un
+    // des deux (appendMonetaryLine ne lit qu'une seule colonne gagnante).
+    appendMultiColumnLines({
       lines,
       field: "complement",
+      mapping,
+      cells,
+      monthName,
+      fiscalYear: params.fiscalYear,
+      sourceDocumentId: params.sourceDocumentId,
+      sourceType: params.sourceType,
+      paymentDate,
+    });
+
+    appendMultiColumnLines({
+      lines,
+      field: "platform",
+      mapping,
+      cells,
+      monthName,
+      fiscalYear: params.fiscalYear,
+      sourceDocumentId: params.sourceDocumentId,
+      sourceType: params.sourceType,
+      paymentDate,
+    });
+
+    appendMultiColumnLines({
+      lines,
+      field: "indemnity",
       mapping,
       cells,
       monthName,
@@ -316,6 +427,9 @@ export function extractRevenueLinesFromSpreadsheetGrid(
       const rentEmpty = mapping.rent && !(cells[mapping.rent.columnIndex] ?? "").trim();
       const complementEmpty =
         mapping.complement && !(cells[mapping.complement.columnIndex] ?? "").trim();
+      const hasOtherMonetaryColumns = Boolean(
+        (mapping.platformColumns?.length ?? 0) > 0 || (mapping.indemnityColumns?.length ?? 0) > 0,
+      );
 
       let rejectionReason = "no_monetary_lines_extracted";
       if (rentFailed && complementFailed) rejectionReason = "rent_and_complement_parse_failed";
@@ -325,7 +439,7 @@ export function extractRevenueLinesFromSpreadsheetGrid(
         rejectionReason = "complement_parse_failed";
       } else if (rentEmpty && complementEmpty) {
         rejectionReason = "rent_and_complement_empty";
-      } else if (!mapping.rent && !mapping.complement) {
+      } else if (!mapping.rent && !mapping.complement && !hasOtherMonetaryColumns) {
         rejectionReason = "no_monetary_columns_mapped";
       }
 
