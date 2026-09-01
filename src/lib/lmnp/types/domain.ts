@@ -639,6 +639,12 @@ export interface DeclarationDraft {
    * @see GovernedFieldMetadata in @/lib/documents/types/governed-field
    */
   governedFields?: Record<string, import("@/lib/documents/types/governed-field").GovernedFieldMetadata>;
+  /**
+   * F009 session/resume state only — step, path, collected values, confirmations,
+   * documentId of an in-flight analysis. NOT a second source of truth for business
+   * data (siret/dates above remain authoritative once the assistant completes).
+   */
+  activiteAssistantState?: import("@/runtime/assistants/f009-activite/types").F009PersistedState;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;
