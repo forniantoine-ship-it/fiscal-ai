@@ -19,8 +19,22 @@ export type ExtractInterestsExerciceOutput = {
   anomalies: Anomaly[];
 };
 
+/**
+ * Cycle 20 (audit de clôture) — `new Date("YYYY-MM-DD").getFullYear()` mélange
+ * une interprétation UTC (parse) et locale (lecture) : sous un fuseau serveur
+ * à décalage négatif, une échéance pouvait basculer dans l'exercice
+ * précédent. Extraction directe de l'année depuis la chaîne, sans passer par
+ * `Date` — invariante au fuseau du serveur.
+ */
+function yearOf(dateIso: string): number | null {
+  const isoMatch = dateIso.trim().match(/^(\d{4})-\d{2}-\d{2}/);
+  if (isoMatch) return Number(isoMatch[1]);
+  const date = new Date(dateIso);
+  return Number.isNaN(date.getTime()) ? null : date.getFullYear();
+}
+
 function isInFiscalYear(dateIso: string, exerciceFiscal: number): boolean {
-  return new Date(dateIso).getFullYear() === exerciceFiscal;
+  return yearOf(dateIso) === exerciceFiscal;
 }
 
 export function extractInterestsExercice(
@@ -40,7 +54,7 @@ export function extractInterestsExercice(
   }
 
   const lastInYear = [...input.echeances]
-    .filter((e) => new Date(e.date).getFullYear() <= input.exerciceFiscal)
+    .filter((e) => (yearOf(e.date) ?? Number.POSITIVE_INFINITY) <= input.exerciceFiscal)
     .at(-1);
 
   const capitalRestantDu31_12 = lastInYear?.capitalRestantDu ?? 0;

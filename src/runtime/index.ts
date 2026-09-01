@@ -177,15 +177,21 @@ export { explainFinancement } from "./presentation/explain-financement";
 export {
   F011FinancementAssistant,
   createInitialF011State,
+  toF011PersistedState,
+  shouldResumeF011,
   type F011Action,
   type F011AssistantTurn,
   type F011Deps,
+  type F011HistorySnapshot,
   type F011LoanDraft,
   type F011Message,
+  type F011PendingExtraction,
+  type F011PersistedState,
   type F011Result,
   type F011State,
   type F011Step,
   type F011Suggestion,
+  type TypeGarantie,
 } from "./assistants/f011-financement/assistant";
 
 // F-012 — domain types

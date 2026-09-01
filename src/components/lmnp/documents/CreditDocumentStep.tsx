@@ -57,6 +57,7 @@ import {
 } from "@/lib/lmnp/services/credit-gpt-ui-prefill";
 import type { CreditLoanOfferExtraction } from "@/lib/documents/gpt/schemas/credit-loan-offer.schema";
 import type { CreditAmortizationExtraction } from "@/lib/documents/gpt/schemas/credit-amortization.schema";
+import { mapCreditFinancingToFinancementCharges } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import {
   runCreditDocumentPipeline,
   type CreditGptPipelineResult,
@@ -1699,6 +1700,20 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       financing,
       documentId: creditDoc?.id,
     });
+
+    // Cycle 4 (F-011) §11 — F-006 ne lit que `financementCharges`, jamais
+    // `creditFinancing` : sans ce calcul, un crédit confirmé ici contribuait
+    // 0 € au résultat fiscal. Jamais sans `dateMiseEnService` connue (précondition
+    // Cycle 1) — sinon `financementCharges` reste absent, comme avant ce correctif.
+    if (draft?.dateMiseEnService) {
+      const { financementCharges } = mapCreditFinancingToFinancementCharges({
+        financing,
+        exerciceFiscal: workspace.fiscalYear.year,
+        dateMiseEnService: draft.dateMiseEnService,
+        prixRevient: draft.logementAmortissement?.prixRevient,
+      });
+      dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { financementCharges } });
+    }
 
     dispatch({
       type: "ADD_AI_ACTIVITY_EVENT",

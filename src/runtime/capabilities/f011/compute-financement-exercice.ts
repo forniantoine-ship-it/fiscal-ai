@@ -40,7 +40,28 @@ export type ComputeFinancementExerciceOutput = {
   anomalies: Anomaly[];
 };
 
-function applyExternalInsurance(
+/**
+ * Correctif assurance bancaire — répartit un montant annuel connu sur les
+ * échéances de l'exercice, que l'assurance soit bancaire (montant extrait
+ * d'un document) ou externe (montant saisi) : seule la présence du montant
+ * conditionne le calcul, jamais `assuranceType` (KS F-011 §"Type d'assurance"
+ * — bancaire = extrait automatiquement, externe = saisi, même traitement
+ * fiscal une fois le montant connu).
+ */
+/**
+ * Cycle 20 (audit de clôture) — `new Date("YYYY-MM-DD").getFullYear()` mélange
+ * UTC (parse) et local (lecture) : sous un fuseau serveur à décalage négatif,
+ * une échéance pouvait être exclue à tort de son propre exercice. Extraction
+ * directe de l'année depuis la chaîne, invariante au fuseau.
+ */
+function yearOf(dateIso: string): number | null {
+  const isoMatch = dateIso.trim().match(/^(\d{4})-\d{2}-\d{2}/);
+  if (isoMatch) return Number(isoMatch[1]);
+  const date = new Date(dateIso);
+  return Number.isNaN(date.getTime()) ? null : date.getFullYear();
+}
+
+function applyLoanInsurance(
   echeances: EcheanceMensuelle[],
   assuranceAnnuelle: number,
   exerciceFiscal: number,
@@ -48,7 +69,7 @@ function applyExternalInsurance(
   if (!assuranceAnnuelle) return echeances;
   const monthly = round2(assuranceAnnuelle / 12);
   return echeances.map((row) => {
-    if (new Date(row.date).getFullYear() !== exerciceFiscal) return row;
+    if (yearOf(row.date) !== exerciceFiscal) return row;
     return {
       ...row,
       assurance: row.assurance + monthly,
@@ -69,7 +90,7 @@ function resolveEcheances(pret: PretInput, exerciceFiscal: number): EcheanceMens
       exerciceFiscal,
       datePremiereMensualite: pret.datePremiereMensualite,
       dureeMois: pret.dureeMois,
-      assuranceAnnuelle: pret.assuranceType === "externe" ? pret.assuranceAnnuelle : 0,
+      assuranceAnnuelle: pret.assuranceAnnuelle ?? 0,
     }).echeances;
   }
 
@@ -80,8 +101,8 @@ function resolveEcheances(pret: PretInput, exerciceFiscal: number): EcheanceMens
     datePremiereMensualite: pret.datePremiereMensualite,
   }).echeances;
 
-  if (pret.assuranceType === "externe" && pret.assuranceAnnuelle) {
-    return applyExternalInsurance(generated, pret.assuranceAnnuelle, exerciceFiscal);
+  if (pret.assuranceAnnuelle) {
+    return applyLoanInsurance(generated, pret.assuranceAnnuelle, exerciceFiscal);
   }
 
   return generated;

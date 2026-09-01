@@ -17,6 +17,28 @@ export type GenerateLoanScheduleOutput = {
   echeances: EcheanceMensuelle[];
 };
 
+/**
+ * Cycle 20 (audit de clôture) — `new Date("YYYY-MM-DD")` + `.toISOString()`
+ * formaient un aller-retour UTC/local incohérent, décalant chaque échéance
+ * (potentiellement de plusieurs jours après `setMonth` répétés) selon le
+ * fuseau du serveur. Parse et formatage entièrement locaux — jamais de
+ * passage par UTC.
+ */
+function parseLocalDate(value: string): Date {
+  const isoMatch = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+  }
+  return new Date(value);
+}
+
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function generateLoanSchedule(
   input: GenerateLoanScheduleInput,
 ): GenerateLoanScheduleOutput {
@@ -33,7 +55,7 @@ export function generateLoanSchedule(
       ? round2(capitalInitial / dureeMois)
       : round2((capitalInitial * monthlyRate * factor) / (factor - 1));
 
-  const start = new Date(datePremiereMensualite);
+  const start = parseLocalDate(datePremiereMensualite);
   const echeances: EcheanceMensuelle[] = [];
   let crd = capitalInitial;
 
@@ -49,7 +71,7 @@ export function generateLoanSchedule(
     crd = round2(crd - capital);
 
     echeances.push({
-      date: paymentDate.toISOString().slice(0, 10),
+      date: formatLocalDate(paymentDate),
       mensualite: round2(interets + capital),
       interets,
       capital,

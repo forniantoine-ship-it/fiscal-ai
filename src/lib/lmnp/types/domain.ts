@@ -650,6 +650,11 @@ export interface DeclarationDraft {
    * NOT authoritative for business data once the assistant completes (logementAmortissement).
    */
   logementAssistantState?: import("@/runtime/assistants/f010-logement/types").F010PersistedState;
+  /**
+   * F011 session/resume state — step, loans, pending extraction, GO_BACK history.
+   * NOT authoritative for business data once the assistant completes (financementCharges).
+   */
+  financementAssistantState?: import("@/runtime/assistants/f011-financement/types").F011PersistedState;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;
