@@ -27,6 +27,7 @@ export function isDocumentJourneyStarted(ws: PersistedWorkspace): boolean {
   const draft = getDraft(ws);
   return Boolean(
     draft.journeyStartedAt ||
+    draft.inpiConfirmedAt ||
     draft.inpiDocumentId ||
     (draft.documentStepsCompleted?.length ?? 0) > 0 ||
     ws.documents.length > 0,
