@@ -7,12 +7,22 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
-const HERO_BADGE = "Dossier prêt";
-const HERO_TITLE = "Votre déclaration est prête à être générée";
-const HERO_EXPLANATION =
-  "Votre dossier a été automatiquement analysé et structuré par l'IA.\nVérifiez les derniers éléments avant génération officielle de votre déclaration LMNP.";
+const HERO_READY = {
+  badge: "Dossier prêt",
+  title: "Votre déclaration est prête à être générée",
+  explanation:
+    "Votre dossier a été automatiquement analysé et structuré par l'IA.\nVérifiez les derniers éléments avant génération officielle de votre déclaration LMNP.",
+};
 
-export function ValidationHero() {
+const HERO_INCOMPLETE = {
+  badge: "Dossier incomplet",
+  title: "Votre déclaration n'est pas encore complète",
+  explanation:
+    "Quelques informations manquent encore. Complétez-les ci-dessous — la génération officielle s'ouvrira ensuite.",
+};
+
+export function ValidationHero({ ready = false }: { ready?: boolean }) {
+  const copy = ready ? HERO_READY : HERO_INCOMPLETE;
   return (
     <section
       className="relative mx-auto max-w-3xl overflow-hidden text-center"
@@ -38,7 +48,7 @@ export function ValidationHero() {
           backgroundColor: colors.surface.selected,
         }}
       >
-        {HERO_BADGE}
+        {copy.badge}
       </span>
 
       <h1
@@ -51,7 +61,7 @@ export function ValidationHero() {
           color: colors.text.primary,
         }}
       >
-        {HERO_TITLE}
+        {copy.title}
       </h1>
       <p
         className="relative mx-auto mt-2.5 max-w-lg whitespace-pre-line"
@@ -62,7 +72,7 @@ export function ValidationHero() {
           lineHeight: typography.lineHeight.ui,
         }}
       >
-        {HERO_EXPLANATION}
+        {copy.explanation}
       </p>
     </section>
   );

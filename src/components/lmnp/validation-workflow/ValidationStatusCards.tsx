@@ -50,7 +50,7 @@ export function ValidationStatusCards({ steps, cardStyle }: ValidationStatusCard
                 }}
               />
               <span style={{ ...typography.body.desktop, color: colors.text.primary, fontSize: typography.fontSize.sm }}>
-                {step.completeLabel}
+                {step.status === "complete" ? step.completeLabel : step.incompleteLabel}
               </span>
             </span>
           </li>

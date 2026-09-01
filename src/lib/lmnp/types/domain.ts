@@ -555,6 +555,7 @@ export interface LiasseEngineOutput {
   exercice: number;
   form2031Generated: boolean;
   caseCount: number;
+  cases: import("@/runtime/capabilities/f007/types").CerfaCase[];
   formulairesManquants: string[];
   trace: {
     ksArtifacts: string[];
@@ -688,6 +689,8 @@ export interface DeclarationDraft {
   /** Représentation liasse produite par le Liasse Engine (F-007). */
   liasseResult?: LiasseEngineOutput;
   liasseGeneratedAt?: string;
+  /** Représentation fiscale structurée (RFS) — alimente exports liasse et synthèse client. */
+  rfs?: import("@/runtime/capabilities/rfs/types").FiscalRepresentation;
   creditDocumentId?: string;
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;

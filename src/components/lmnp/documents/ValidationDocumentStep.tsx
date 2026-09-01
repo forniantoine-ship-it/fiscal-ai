@@ -26,14 +26,22 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { buildValidationDossierSnapshot } from "@/lib/lmnp/services/validation-profile";
+import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
+import {
+  declarationCompletude,
+  runDeclarationGeneration,
+} from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 
+// La télétransmission EDI n'est pas encore raccordée à un partenaire (cf. audit
+// F-015) : cette liste n'affiche que des étapes réellement exécutées par
+// runDeclarationGeneration() (calcul fiscal F-006 puis liasse F-007). Ne jamais
+// y remettre "Télétransmission EDI" tant qu'un retour réel de partenaire
+// n'existe pas — un ✓ ici confirmerait visuellement une transmission fictive.
 const GENERATION_AI_STEPS = [
   "Validation",
-  "Préparation génération",
-  "Télétransmission EDI",
+  "Calcul fiscal consolidé",
   "Génération documents officiels",
 ] as const;
 
@@ -49,23 +57,37 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const paid = Boolean(fiscalYear.paidAt);
   const generated = Boolean(fiscalYear.declarationGeneratedAt);
 
-  const snapshot = useMemo(
-    () => buildValidationDossierSnapshot(draft, workspace.properties, fiscalYear.year),
-    [draft, workspace.properties, fiscalYear.year],
+  const gate = useMemo(
+    () =>
+      resolveDeclarationGenerationGate({
+        draft,
+        properties: workspace.properties,
+        fiscalYear: fiscalYear.year,
+        paid,
+        generated,
+      }),
+    [draft, fiscalYear.year, generated, paid, workspace.properties],
   );
+  const snapshot = gate.snapshot;
 
   const [phase, setPhase] = useState<FlowPhase>("idle");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
-  const canGenerate =
-    snapshot.isComplete && !snapshot.isMultiProperty && !paid && phase === "idle";
-  const showMainContent = phase === "idle" && !generated;
+  const canGenerate = gate.canGenerate && phase === "idle";
+  const showMainContent = phase === "idle" && (!generated || gate.canGenerate);
+  const blockingAnomalies = gate.blockingAnomalies;
+  const missingItems = gate.recoveryItems.length > 0 ? gate.recoveryItems : snapshot.missing;
 
   const handleGenerateClick = useCallback(() => {
-    if (!snapshot.isComplete || snapshot.isMultiProperty) return;
+    if (!gate.canGenerate) return;
+    if (gate.canRetryAfterPayment) {
+      setCheckoutOpen(false);
+      setPhase("generating");
+      return;
+    }
     setCheckoutOpen(true);
     setPhase("checkout");
-  }, [snapshot.isComplete, snapshot.isMultiProperty]);
+  }, [gate.canGenerate, gate.canRetryAfterPayment]);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
@@ -73,12 +95,36 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   }, []);
 
   const handlePaymentConfirmed = useCallback(() => {
-    dispatch({ type: "JOURNEY_MARK_PAID" });
     setCheckoutOpen(false);
     setPhase("generating");
-  }, [dispatch]);
+  }, []);
 
   const handleGenerationComplete = useCallback(() => {
+    const outcome = runDeclarationGeneration(draft, fiscalYear.year);
+
+    if (outcome.status === "blocked") {
+      setPhase("idle");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    dispatch({
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: {
+        fiscalResult: outcome.fiscalResult,
+        fiscalResultConfirmedAt: now,
+        liasseResult: outcome.liasseResult,
+        liasseGeneratedAt: now,
+        // Même RFS que celle utilisée pour fiscalResult/liasseResult ci-dessus
+        // (un seul appel à runDeclarationGeneration()) — persistée pour que
+        // DeclarationReadyView puisse construire le document client sans
+        // reconstruire ni recalculer quoi que ce soit.
+        rfs: outcome.rfs,
+      },
+    });
+    if (!paid) {
+      dispatch({ type: "JOURNEY_MARK_PAID" });
+    }
     dispatch({ type: "JOURNEY_MARK_DECLARATION_GENERATED" });
     showSuccess(
       "Déclaration générée",
@@ -86,9 +132,24 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear.year, paid, router, showSuccess]);
 
-  if (generated && paid) {
+  if (generated && paid && !gate.canGenerate) {
+    // Cycle 25 — le statut affiché ne doit jamais dépasser ce qui est réellement
+    // produit : `formulairesManquants` (F-007) fait foi, jamais un wording figé.
+    // Ne jamais mentionner un "reçu EDI" : la télétransmission n'est pas raccordée
+    // à ce jour (cf. commentaire GENERATION_AI_STEPS ci-dessus).
+    const completude = draft?.liasseResult ? declarationCompletude(draft.liasseResult) : "partielle";
+    const heading = completude === "complete" ? "✓ Déclaration générée" : "✓ Calcul fiscal généré";
+    const body =
+      completude === "complete"
+        ? "Vos documents officiels sont disponibles."
+        : `Votre résultat fiscal et votre formulaire 2031-SD sont disponibles. ${
+            draft?.liasseResult?.formulairesManquants.length
+              ? `Formulaires restant à générer : ${draft.liasseResult.formulairesManquants.join(", ")}.`
+              : ""
+          }`;
+
     return (
       <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
         <WorkflowPageBackLink />
@@ -109,10 +170,10 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
               color: colors.success.DEFAULT,
             }}
           >
-            ✓ Déclaration générée
+            {heading}
           </p>
           <p className="mt-4" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            Vos documents officiels et le reçu EDI sont disponibles.
+            {body}
           </p>
           <div className="mt-8 flex justify-center">
             <Button href={LMNP_ROUTES.declarations}>Voir ma déclaration</Button>
@@ -137,16 +198,50 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
 
       {showMainContent ? (
         <>
+          {blockingAnomalies.length > 0 ? (
+            <div
+              className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both] text-center"
+              style={{
+                borderRadius: radius.lg,
+                border: `1px solid ${colors.error.border}`,
+                backgroundColor: colors.error.surface,
+                boxShadow: shadows.card.default,
+                padding: spacing.card.md,
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: typography.fontFamily.display,
+                  fontSize: typography.fontSize.lg,
+                  color: colors.error.DEFAULT,
+                }}
+              >
+                Le calcul fiscal n&apos;a pas pu être finalisé
+              </p>
+              <ul className="mx-auto mt-4 max-w-md space-y-1 text-left">
+                {blockingAnomalies.map((anomaly, index) => (
+                  <li
+                    key={`${anomaly.field ?? "anomaly"}-${index}`}
+                    style={{ ...typography.body.desktop, color: colors.text.secondary }}
+                  >
+                    • {anomaly.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
-            <ValidationHero />
+            <ValidationHero ready={snapshot.isComplete && !snapshot.isMultiProperty && gate.canGenerate} />
           </div>
 
           <ValidationStatusCards steps={snapshot.steps} cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
 
-          <ValidationIncompleteCard missing={snapshot.missing} cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
+          <ValidationIncompleteCard missing={missingItems} cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
 
           <ValidationFiscalSummary
             summary={snapshot.fiscalSummary}
+            fiscalResult={gate.fiscalResult}
             cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
           />
 

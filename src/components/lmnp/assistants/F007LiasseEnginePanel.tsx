@@ -169,6 +169,7 @@ export function F007LiasseEnginePanel() {
             exercice: result.liasse.exercice,
             form2031Generated: true,
             caseCount: form?.cases.length ?? 0,
+            cases: form?.cases ?? [],
             formulairesManquants: [...result.liasse.formulairesManquants],
             trace: result.liasse.trace,
             generatedAt: result.liasse.trace.generatedAt,
@@ -250,8 +251,8 @@ export function F007LiasseEnginePanel() {
         ) : null}
 
         {state.step === "complete" ? (
-          <Link href={LMNP_ROUTES.declarations} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
-            Consulter la déclaration
+          <Link href={LMNP_ROUTES.validation} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
+            Préparer la déclaration
           </Link>
         ) : null}
       </Card>

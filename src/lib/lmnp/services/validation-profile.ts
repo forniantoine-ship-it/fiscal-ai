@@ -1,5 +1,5 @@
-import { documentJourneyRoute } from "../routes";
-import type { DeclarationDraft, Property } from "../types";
+import { LMNP_ROUTES } from "../routes";
+import type { DeclarationDraft, FiscalEngineOutput, Property } from "../types";
 import { buildChargesExtraction, chargesFromDraft } from "./charges-profile";
 import { ventilationFromDraft } from "./amortissement-profile";
 import { revenusFromDraft } from "./revenus-profile";
@@ -20,6 +20,7 @@ export type DossierStepStatus = "complete" | "incomplete";
 export interface DossierStepItem {
   id: DossierStepId;
   completeLabel: string;
+  incompleteLabel: string;
   status: DossierStepStatus;
 }
 
@@ -83,29 +84,65 @@ function isChargesComplete(draft?: DeclarationDraft): boolean {
 }
 
 export function buildDossierSteps(draft?: DeclarationDraft): DossierStepItem[] {
-  const checks: { id: DossierStepId; completeLabel: string; complete: boolean }[] = [
-    { id: "activite", completeLabel: "Activité validée", complete: isActiviteComplete(draft) },
-    { id: "logement", completeLabel: "Logement analysé", complete: isLogementComplete(draft) },
-    { id: "credit", completeLabel: "Crédit analysé", complete: isCreditComplete(draft) },
-    { id: "amortissement", completeLabel: "Amortissements calculés", complete: isAmortissementComplete(draft) },
-    { id: "revenus", completeLabel: "Revenus détectés", complete: isRevenusComplete(draft) },
-    { id: "charges", completeLabel: "Charges classées", complete: isChargesComplete(draft) },
+  const checks: {
+    id: DossierStepId;
+    completeLabel: string;
+    incompleteLabel: string;
+    complete: boolean;
+  }[] = [
+    {
+      id: "activite",
+      completeLabel: "Activité validée",
+      incompleteLabel: "Activité à compléter",
+      complete: isActiviteComplete(draft),
+    },
+    {
+      id: "logement",
+      completeLabel: "Logement analysé",
+      incompleteLabel: "Logement à compléter",
+      complete: isLogementComplete(draft),
+    },
+    {
+      id: "credit",
+      completeLabel: "Crédit analysé",
+      incompleteLabel: "Crédit à compléter",
+      complete: isCreditComplete(draft),
+    },
+    {
+      id: "amortissement",
+      completeLabel: "Amortissements calculés",
+      incompleteLabel: "Amortissements à compléter",
+      complete: isAmortissementComplete(draft),
+    },
+    {
+      id: "revenus",
+      completeLabel: "Revenus détectés",
+      incompleteLabel: "Revenus à compléter",
+      complete: isRevenusComplete(draft),
+    },
+    {
+      id: "charges",
+      completeLabel: "Charges classées",
+      incompleteLabel: "Charges à compléter",
+      complete: isChargesComplete(draft),
+    },
   ];
 
   return checks.map((item) => ({
     id: item.id,
     completeLabel: item.completeLabel,
+    incompleteLabel: item.incompleteLabel,
     status: item.complete ? "complete" : "incomplete",
   }));
 }
 
 const MISSING_STEP_COPY: Record<DossierStepId, { label: string; href: string }> = {
-  activite: { label: "Activité incomplète", href: documentJourneyRoute("inpi") },
-  logement: { label: "Logement incomplet", href: documentJourneyRoute("logement") },
-  credit: { label: "Crédit incomplet", href: documentJourneyRoute("credit") },
-  amortissement: { label: "Amortissements incomplets", href: documentJourneyRoute("amortissements") },
-  revenus: { label: "Revenus manquants", href: documentJourneyRoute("revenus") },
-  charges: { label: "Charges incomplètes", href: documentJourneyRoute("charges") },
+  activite: { label: "Activité incomplète", href: LMNP_ROUTES.activite },
+  logement: { label: "Logement incomplet", href: LMNP_ROUTES.logement },
+  credit: { label: "Crédit incomplet", href: LMNP_ROUTES.financement },
+  amortissement: { label: "Amortissements incomplets", href: LMNP_ROUTES.amortissementsAssistant },
+  revenus: { label: "Revenus manquants", href: LMNP_ROUTES.revenusAssistant },
+  charges: { label: "Charges incomplètes", href: LMNP_ROUTES.chargesAssistant },
 };
 
 export function buildMissingItems(steps: DossierStepItem[]): MissingDossierItem[] {
@@ -119,9 +156,44 @@ export function buildMissingItems(steps: DossierStepItem[]): MissingDossierItem[
 }
 
 function totalAnnualAmortization(draft?: DeclarationDraft): number {
+  const fromF014 = draft?.amortissementAssistant?.totalDotations;
+  if (typeof fromF014 === "number" && Number.isFinite(fromF014)) {
+    return fromF014;
+  }
   const ventilation = ventilationFromDraft(draft);
-  if (!ventilation?.components.length) return 8_120;
+  if (!ventilation?.components.length) return 0;
   return ventilation.components.reduce((sum, component) => sum + (component.annualAmortization ?? 0), 0);
+}
+
+/**
+ * Revenus réellement transmis à F-006 (`revenusAssistant.totalRecettes`) en priorité —
+ * même patron que `totalAnnualAmortization`. Repli sur l'extraction legacy
+ * uniquement si l'assistant n'a pas encore tourné (dossier pas encore complété).
+ */
+function totalRentalIncome(draft: DeclarationDraft | undefined, fiscalYear: number): number {
+  const fromF013 = draft?.revenusAssistant?.totalRecettes;
+  if (typeof fromF013 === "number" && Number.isFinite(fromF013)) {
+    return fromF013;
+  }
+  const revenus =
+    (draft?.revenueGptSession
+      ? sessionToExtractionData(draft.revenueGptSession, fiscalYear)
+      : undefined) ?? revenusFromDraft(draft);
+  return revenus?.summary.totalRevenue ?? 0;
+}
+
+/**
+ * Charges réellement transmises à F-006 (`chargesAssistant.totalDeductible`) en
+ * priorité — même patron que `totalAnnualAmortization`. Repli sur l'extraction
+ * legacy uniquement si l'assistant n'a pas encore tourné.
+ */
+function totalDetectedCharges(draft: DeclarationDraft | undefined, properties: Property[]): number {
+  const fromF012 = draft?.chargesAssistant?.totalDeductible;
+  if (typeof fromF012 === "number" && Number.isFinite(fromF012)) {
+    return fromF012;
+  }
+  const charges = chargesFromDraft(draft) ?? buildChargesExtraction(properties, draft);
+  return charges.summary.totalCharges;
 }
 
 export function buildFiscalSummary(
@@ -129,25 +201,99 @@ export function buildFiscalSummary(
   properties: Property[],
   fiscalYear = new Date().getFullYear() - 1,
 ): FiscalSummary {
-  const revenus =
-    (draft?.revenueGptSession
-      ? sessionToExtractionData(draft.revenueGptSession, fiscalYear)
-      : undefined) ??
-    revenusFromDraft(draft) ?? {
-      properties: [],
-      summary: { totalRevenue: 0, rentCount: 0, totalFees: 0, hasSecurityDeposit: false },
-    };
-  const charges = chargesFromDraft(draft) ?? buildChargesExtraction(properties, draft);
-  const rentalIncome = revenus.summary.totalRevenue;
-  const detectedCharges = charges.summary.totalCharges;
+  const rentalIncome = totalRentalIncome(draft, fiscalYear);
+  const detectedCharges = totalDetectedCharges(draft, properties);
   const calculatedAmortization = totalAnnualAmortization(draft);
-  const estimatedFiscalResult = rentalIncome - detectedCharges - calculatedAmortization;
+  const resultatAvantAmort = rentalIncome - detectedCharges;
+  const amortInPreview = Math.min(calculatedAmortization, Math.max(0, resultatAvantAmort));
+  const estimatedFiscalResult = resultatAvantAmort - amortInPreview;
 
   return {
     rentalIncome,
     detectedCharges,
     calculatedAmortization,
     estimatedFiscalResult,
+  };
+}
+
+export type FiscalDisplayRow = {
+  key: string;
+  label: string;
+  value: number;
+  format: (value: number) => string;
+};
+
+export type ValidationFiscalDisplay = {
+  /** true dès que les lignes proviennent du FiscalResult (F-006) réellement recalculé
+   *  par la porte de génération — jamais d'une seconde formule. false uniquement en
+   *  fallback, tant que le dossier est incomplet et qu'aucun FiscalResult n'existe. */
+  exact: boolean;
+  rows: FiscalDisplayRow[];
+};
+
+/**
+ * Cycle 24 — Unifie l'affichage pré-paiement avec le FiscalResult (F-006).
+ * Ne recalcule rien : si `fiscalResult` est fourni (le même objet que celui utilisé
+ * pour générer la liasse), ses champs sont affichés tels quels. Le déficit et le
+ * bénéfice ne sont jamais confondus dans un même nombre signé — resultatFiscal vaut
+ * 0 en cas de déficit (cf. apply-amortissement-stocks.ts), donc la ligne "résultat"
+ * bascule explicitement sur deficitNouveau dans ce cas.
+ * `summary` (buildFiscalSummary) ne sert que de repli tant que le dossier est
+ * incomplet et qu'aucun FiscalResult n'a encore pu être calculé.
+ */
+export function buildValidationFiscalDisplay(
+  fiscalResult: FiscalEngineOutput | undefined,
+  summary: FiscalSummary,
+): ValidationFiscalDisplay {
+  if (fiscalResult) {
+    const isDeficit = fiscalResult.deficitNouveau > 0;
+    return {
+      exact: true,
+      rows: [
+        { key: "recettes", label: "Revenus locatifs", value: fiscalResult.totalRecettes, format: formatCurrency },
+        { key: "charges", label: "Charges déductibles", value: fiscalResult.totalCharges, format: formatCurrency },
+        {
+          key: "amortDeduct",
+          label: "Amortissement déduit",
+          value: fiscalResult.amortDeduct,
+          format: formatCurrency,
+        },
+        {
+          key: "amortReporte",
+          label: "Amortissement reporté (art. 39C)",
+          value: fiscalResult.amortReporte,
+          format: formatCurrency,
+        },
+        isDeficit
+          ? { key: "resultat", label: "Déficit fiscal", value: fiscalResult.deficitNouveau, format: formatCurrency }
+          : {
+              key: "resultat",
+              label: "Résultat fiscal",
+              value: fiscalResult.resultatFiscal,
+              format: formatCurrency,
+            },
+      ],
+    };
+  }
+
+  return {
+    exact: false,
+    rows: [
+      { key: "recettes", label: "Revenus locatifs", value: summary.rentalIncome, format: formatCurrency },
+      { key: "charges", label: "Charges détectées", value: summary.detectedCharges, format: formatCurrency },
+      {
+        key: "amortissement",
+        label: "Amortissements calculés",
+        value: summary.calculatedAmortization,
+        format: formatCurrency,
+      },
+      {
+        key: "resultat",
+        label: "Résultat fiscal estimé",
+        value: summary.estimatedFiscalResult,
+        format: formatEstimatedResult,
+      },
+    ],
   };
 }
 

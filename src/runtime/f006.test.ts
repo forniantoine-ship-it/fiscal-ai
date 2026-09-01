@@ -6,6 +6,7 @@ import { computeResultatAvantAmort } from "./capabilities/f006/compute-resultat-
 import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
 import { explainFiscalResult } from "./presentation/explain-fiscal-result";
 import { F006FiscalEngineAssistant } from "./assistants/f006-fiscal-engine/assistant";
+import { computeChargesExercice } from "./capabilities/f012/compute-charges-exercice";
 
 const BASE_INPUT = {
   exerciceFiscal: 2024,
@@ -57,6 +58,42 @@ describe("F-006 — TRF-0030 résultat avant amortissement", () => {
       perteExceptionnelle: 0,
     });
     assert.equal(result.resultatAvantAmort, -2287);
+  });
+});
+
+describe("F-006 — non-régression doublon pré-exploitation F-012 (taxe foncière)", () => {
+  it("C. l'écart de résultat entre comptage simple et double égale exactement l'ancien doublon", () => {
+    const { charges } = computeChargesExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-08-01",
+      taxeFonciere: 1200,
+    });
+    const preExploitationCorrigee = charges.totalPreExploitation; // 700, corrigé (comptage unique)
+    const preExploitationAncienBug = preExploitationCorrigee * 2; // simule l'ancien doublon (700 × 2 = 1400)
+
+    const base = {
+      exerciceFiscal: 2024,
+      totalRecettes: 9000,
+      chargesExploitation: charges.totalDeductible,
+      chargesFinancement: 0,
+      totalChargesDeductibles: charges.totalDeductible,
+      amortCalcule: 0,
+      perteExceptionnelle: 0,
+    };
+
+    const resultatCorrige = computeResultatAvantAmort({
+      ...base,
+      chargesPreExploitation: preExploitationCorrigee,
+    });
+    const resultatAncienBug = computeResultatAvantAmort({
+      ...base,
+      chargesPreExploitation: preExploitationAncienBug,
+    });
+
+    assert.equal(
+      resultatAncienBug.resultatAvantAmort - resultatCorrige.resultatAvantAmort,
+      -preExploitationCorrigee,
+    );
   });
 });
 
@@ -247,6 +284,7 @@ describe("Cycle 16 — indemnitesAssurance ventilée dans FiscalResult.recettes"
     assert.equal(result?.recettes.total, 13000);
   });
 });
+
 /**
  * Cycle 32 — audit 2033-B (264/270/310/312/314) : totalNonDeductible est un
  * TRANSPORT pur depuis F-012 (ChargesAssistantOutput.totalNonDeductible),

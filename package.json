@@ -95,10 +95,15 @@
     "test:dashboard-workflow-progression": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-progression.test.ts",
     "test:dashboard-workflow-progression-routing": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-progression-routing.test.ts",
     "test:dashboard-sign-out": "./node_modules/.bin/tsx src/lib/lmnp/auth/sign-out.test.ts",
-    "test:dashboard": "npm run test:dashboard-chapter-axis-lock && npm run test:dashboard-chapter-vertical-scroll-lock && npm run test:dashboard-chapter-scroll-lock && npm run test:dashboard-workflow-card-activate && npm run test:dashboard-workflow-carousel-engine && npm run test:dashboard-workflow-carousel-pointer-capture && npm run test:dashboard-workflow-progression && npm run test:dashboard-workflow-progression-routing && npm run test:dashboard-sign-out"
+    "test:dashboard": "npm run test:dashboard-chapter-axis-lock && npm run test:dashboard-chapter-vertical-scroll-lock && npm run test:dashboard-chapter-scroll-lock && npm run test:dashboard-workflow-card-activate && npm run test:dashboard-workflow-carousel-engine && npm run test:dashboard-workflow-carousel-pointer-capture && npm run test:dashboard-workflow-progression && npm run test:dashboard-workflow-progression-routing && npm run test:dashboard-sign-out",
+    "test:declaration-generation-gate": "./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/declaration-generation-gate.test.ts",
+    "test:declaration-run-generation": "./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/run-declaration-generation.test.ts",
+    "test:validation-profile": "./node_modules/.bin/tsx src/lib/lmnp/services/validation-profile.test.ts",
+    "test:declaration": "npm run test:declaration-generation-gate && npm run test:declaration-run-generation && npm run test:validation-profile && ./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/build-client-summary-document.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
+    "jspdf": "^4.2.1",
     "next": "16.2.6",
     "openai": "^6.39.1",
     "pdf-parse": "^2.4.5",

@@ -10,17 +10,36 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
+import { downloadLiasseDocument } from "@/lib/lmnp/services/declaration/export-liasse-document";
+import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
+import { declarationCompletude } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 
-const DOCUMENT_ITEMS = [
-  { label: "Liasse fiscale PDF", status: "Disponible" },
-  { label: "Formulaires CERFA", status: "Disponible" },
-  { label: "Accusé télétransmission EDI", status: "Disponible" },
-] as const;
+function fmtEur(value: number): string {
+  return `${Math.round(value).toLocaleString("fr-FR")} €`;
+}
 
 export function DeclarationReadyView() {
   const { workspace } = useLmnp();
   const { fiscalYear } = workspace;
+  const { fiscalResult, liasseResult, rfs } = workspace.declarationDraft ?? {};
+  const completude = liasseResult ? declarationCompletude(liasseResult) : undefined;
+
+  if (!fiscalResult || !liasseResult) {
+    return (
+      <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16 text-center">
+        <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+          Le résultat de votre déclaration n&apos;est pas encore disponible.
+        </p>
+        <div className="flex justify-center">
+          <Link href={documentJourneyRoute("validation")} style={{ color: colors.text.muted }}>
+            Revenir à la synthèse du dossier
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
@@ -48,7 +67,8 @@ export function DeclarationReadyView() {
             letterSpacing: typography.letterSpacing.label,
           }}
         >
-          Déclaration LMNP {fiscalYear.year}
+          Déclaration LMNP {fiscalYear.year} —{" "}
+          {completude === "complete" ? "génération complète" : "génération partielle"}
         </p>
         <h1
           className="mx-auto mt-4 max-w-xl text-[1.375rem] sm:text-[1.625rem]"
@@ -58,34 +78,71 @@ export function DeclarationReadyView() {
             color: colors.text.primary,
           }}
         >
-          Votre déclaration officielle
+          {fiscalResult.deficitNouveau > 0
+            ? `${fmtEur(fiscalResult.deficitNouveau)} de déficit`
+            : `${fmtEur(fiscalResult.resultatFiscal)} de résultat fiscal`}
         </h1>
         <p className="mx-auto mt-3 max-w-lg" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Documents générés et télétransmission EDI effectuée. Consultez vos pièces et l&apos;historique de votre
-          dossier.
+          Ce document récapitule votre résultat fiscal et vous indique les informations à vérifier ou à
+          reporter dans votre déclaration personnelle.
         </p>
+        <div className="mt-6 flex justify-center">
+          {rfs ? (
+            <Button onClick={() => downloadClientSummaryPdf(buildClientSummaryDocument(rfs))}>
+              Télécharger ma synthèse fiscale et mon aide à la déclaration (PDF)
+            </Button>
+          ) : null}
+        </div>
       </section>
 
-      <ul className="space-y-3">
-        {DOCUMENT_ITEMS.map((item) => (
-          <li
-            key={item.label}
-            style={{
-              borderRadius: radius.md,
-              border: `1px solid ${colors.border.subtle}`,
-              backgroundColor: colors.surface.primary,
-              padding: `${spacing.scale[4]} ${spacing.scale[5]}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: spacing.scale[4],
-            }}
+      <section
+        className="w-full"
+        style={{
+          borderRadius: radius.lg,
+          border: `1px solid ${colors.border.subtle}`,
+          padding: spacing.card.md,
+        }}
+      >
+        <p
+          className="text-center"
+          style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            letterSpacing: typography.letterSpacing.label,
+          }}
+        >
+          Documents techniques
+        </p>
+        <p
+          className="mx-auto mt-2 max-w-lg text-center"
+          style={{ ...typography.caption.desktop, color: colors.text.muted }}
+        >
+          Ce document n&apos;est ni un accusé de télétransmission EDI ni une preuve d&apos;acceptation par
+          l&apos;administration.{" "}
+          {completude === "complete"
+            ? "La liasse fiscale est complète."
+            : "Seul le formulaire 2031-SD est disponible à ce stade — les autres formulaires de la liasse ne sont pas encore générés."}
+        </p>
+        <div className="mt-4 flex justify-center">
+          <Button
+            variant="ghost"
+            onClick={() => downloadLiasseDocument(fiscalYear.year, fiscalResult, liasseResult)}
           >
-            <span style={{ ...typography.body.desktop, color: colors.text.primary }}>{item.label}</span>
-            <span style={{ ...typography.caption.desktop, color: colors.success.DEFAULT }}>{item.status}</span>
-          </li>
-        ))}
-      </ul>
+            Télécharger la liasse
+          </Button>
+        </div>
+        {liasseResult.formulairesManquants.length > 0 ? (
+          <p className="mt-3 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+            Formulaires non encore générés : {liasseResult.formulairesManquants.join(", ")}
+          </p>
+        ) : null}
+      </section>
+
+      <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+        {fiscalYear.transmittedAt
+          ? "Télétransmission EDI effectuée."
+          : "Télétransmission EDI : en attente de l'activation de notre partenaire. Votre dossier est prêt à être transmis dès sa mise en service."}
+      </p>
 
       <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
         <Link href={documentJourneyRoute("validation")} style={{ color: colors.text.muted }}>

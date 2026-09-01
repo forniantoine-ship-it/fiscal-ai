@@ -5,24 +5,22 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import {
-  formatCurrency,
-  formatEstimatedResult,
+  buildValidationFiscalDisplay,
   type FiscalSummary,
 } from "@/lib/lmnp/services/validation-profile";
+import type { FiscalEngineOutput } from "@/lib/lmnp/types";
 
 type ValidationFiscalSummaryProps = {
   summary: FiscalSummary;
+  /** FiscalResult (F-006) réellement recalculé par la porte de génération — quand
+   *  présent, remplace intégralement `summary` (jamais un mélange des deux). */
+  fiscalResult?: FiscalEngineOutput;
   cardStyle: React.CSSProperties;
 };
 
-const ROWS: { key: keyof FiscalSummary; label: string; format: (v: number) => string }[] = [
-  { key: "rentalIncome", label: "Revenus locatifs", format: formatCurrency },
-  { key: "detectedCharges", label: "Charges détectées", format: formatCurrency },
-  { key: "calculatedAmortization", label: "Amortissements calculés", format: formatCurrency },
-  { key: "estimatedFiscalResult", label: "Résultat fiscal estimé", format: formatEstimatedResult },
-];
+export function ValidationFiscalSummary({ summary, fiscalResult, cardStyle }: ValidationFiscalSummaryProps) {
+  const display = buildValidationFiscalDisplay(fiscalResult, summary);
 
-export function ValidationFiscalSummary({ summary, cardStyle }: ValidationFiscalSummaryProps) {
   return (
     <section
       className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
@@ -35,10 +33,10 @@ export function ValidationFiscalSummary({ summary, cardStyle }: ValidationFiscal
           letterSpacing: typography.letterSpacing.label,
         }}
       >
-        Synthèse fiscale intelligente
+        {display.exact ? "Résultat fiscal calculé" : "Synthèse fiscale intelligente"}
       </p>
       <ul className="mx-auto mt-6 grid max-w-md gap-4">
-        {ROWS.map((row, index) => (
+        {display.rows.map((row, index) => (
           <li
             key={row.key}
             className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
@@ -59,11 +57,16 @@ export function ValidationFiscalSummary({ summary, cardStyle }: ValidationFiscal
                 color: colors.text.primary,
               }}
             >
-              {row.format(summary[row.key])}
+              {row.format(row.value)}
             </p>
           </li>
         ))}
       </ul>
+      {display.exact ? (
+        <p className="mx-auto mt-4 max-w-md" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+          Ce résultat est celui qui sera utilisé pour générer votre déclaration.
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -230,9 +230,14 @@ export function F006FiscalEnginePanel() {
         ) : null}
 
         {state.step === "complete" ? (
-          <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
-            Retour au tableau de bord
-          </Link>
+          <div className="flex gap-4 items-center">
+            <Link href={LMNP_ROUTES.liasseEngine}>
+              <Button className="w-full">Continuer vers la Liasse</Button>
+            </Link>
+            <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
+              Retour au tableau de bord
+            </Link>
+          </div>
         ) : null}
       </Card>
     </div>
