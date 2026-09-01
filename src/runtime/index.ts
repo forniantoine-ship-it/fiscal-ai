@@ -263,7 +263,6 @@ export {
   toF012PersistedStateWithRegistry,
   type F012Action,
   type F012AssistantTurn,
-  type F012CategoryId,
   type F012Deps,
   type F012DocumentReview,
   type F012FamilyPhase,
