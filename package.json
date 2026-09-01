@@ -37,7 +37,14 @@
     "test:f010-assistant-cycle4b": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4b.test.ts",
     "test:f010-assistant-cycle4c1": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4c1.test.ts",
     "test:f010-assistant-cycle4e2": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4e2.test.ts",
-    "test:f010-panel": "npx tsx --test \"src/components/lmnp/assistants/F010LogementAssistantPanel-cycle*.test.ts\" \"src/components/lmnp/assistants/F010LogementAssistantPanel-review-back-fix.test.ts\""
+    "test:f010-panel": "npx tsx --test \"src/components/lmnp/assistants/F010LogementAssistantPanel-cycle*.test.ts\" \"src/components/lmnp/assistants/F010LogementAssistantPanel-review-back-fix.test.ts\"",
+    "test:workspace-save-serializer": "npx tsx --test src/lib/lmnp/store/workspace-save-serializer.test.ts",
+    "test:workspace-flush-guard": "npx tsx --test src/lib/lmnp/store/workspace-flush-guard.test.ts",
+    "test:workspace-autosave-b1": "npx tsx --test src/lib/lmnp/store/workspace-autosave-b1.test.ts",
+    "test:f010-b1-persistence-race": "npx tsx --test src/lib/lmnp/services/f010/f010-b1-persistence-race.test.ts",
+    "test:f010-b1-resume-matrix": "npx tsx --test src/lib/lmnp/services/f010/f010-b1-resume-matrix.test.ts",
+    "test:reducer-logement-background": "npx tsx src/lib/lmnp/store/reducer-logement-background.test.ts",
+    "test:f010-b1": "npm run test:workspace-save-serializer && npm run test:workspace-flush-guard && npm run test:workspace-autosave-b1 && npm run test:f010-b1-persistence-race && npm run test:f010-b1-resume-matrix && npm run test:reducer-logement-background"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

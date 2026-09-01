@@ -25,6 +25,18 @@ import {
   putWorkspaceRecord,
   type DocumentBlobRecord,
 } from "./db";
+import {
+  isRegressiveWorkspaceWrite,
+  resolveFlushSnapshot,
+} from "./workspace-flush-guard";
+import {
+  __testResetSerializedWorkspaceWrites,
+  isStaleWorkspaceWrite,
+  runSerializedWorkspaceWrite,
+} from "./workspace-save-serializer";
+import type { AutosaveStatus } from "./workspace-autosave-display";
+export type { AutosaveDisplay, AutosaveStatus } from "./workspace-autosave-display";
+export { resolveAutosaveDisplay } from "./workspace-autosave-display";
 
 /** @deprecated Legacy localStorage key — migrated once to IndexedDB. */
 const LEGACY_STORAGE_KEY = "fiscal-ai-lmnp-workspace-v1";
@@ -49,8 +61,6 @@ export interface HydratedLmnpStore {
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingWorkspace: { userId: string; data: PersistedWorkspace } | null = null;
 
-export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
-
 let autosaveStatus: AutosaveStatus = "idle";
 const autosaveListeners = new Set<(status: AutosaveStatus) => void>();
 
@@ -71,6 +81,16 @@ export function markAutosaveSaved() {
 
 export function resetAutosaveStatus() {
   notifyAutosaveStatus("idle");
+}
+
+/** Resets in-memory save queue state (tests only). */
+export function __testResetWorkspaceSaveChain(): void {
+  __testResetSerializedWorkspaceWrites();
+  if (saveWorkspaceTimer) {
+    clearTimeout(saveWorkspaceTimer);
+    saveWorkspaceTimer = null;
+  }
+  pendingWorkspace = null;
 }
 
 function isValidWorkspace(data: unknown): data is PersistedWorkspace {
@@ -240,19 +260,43 @@ export async function hydrateLmnpStore(userId: string | null): Promise<HydratedL
   }
 }
 
-export async function saveWorkspace(userId: string, data: PersistedWorkspace): Promise<void> {
+async function writeWorkspaceToDisk(
+  userId: string,
+  data: PersistedWorkspace,
+  generation: number,
+): Promise<void> {
   if (typeof window === "undefined") return;
+  if (isStaleWorkspaceWrite(generation)) return;
   try {
+    const existing = await getWorkspaceRecord(userId);
+    if (isStaleWorkspaceWrite(generation)) return;
+    const existingData =
+      existing?.data && isValidWorkspace(existing.data) ? existing.data : null;
+    if (existingData && isRegressiveWorkspaceWrite(data, existingData)) {
+      console.warn("[lmnp] skipped regressive workspace write", { userId });
+      return;
+    }
+    if (isStaleWorkspaceWrite(generation)) return;
     await putWorkspaceRecord(userId, data);
+    if (isStaleWorkspaceWrite(generation)) return;
     console.log("[ai-event-persisted]", {
       feedSize: data.aiActivityFeed?.length ?? 0,
       eventIds: data.aiActivityFeed?.map((e) => e.id) ?? [],
     });
     notifyAutosaveStatus("saved");
   } catch (error) {
+    if (isStaleWorkspaceWrite(generation)) return;
     console.error("[lmnp] Failed to persist workspace", { userId, error });
     notifyAutosaveStatus("error");
   }
+}
+
+/** Serialized workspace write — newer snapshots cannot be overwritten by slower older writes. */
+export async function saveWorkspace(userId: string, data: PersistedWorkspace): Promise<void> {
+  if (typeof window === "undefined") return;
+  await runSerializedWorkspaceWrite(async (generation) => {
+    await writeWorkspaceToDisk(userId, data, generation);
+  });
 }
 
 /** Debounced workspace write — keeps UI instant while batching disk I/O. */
@@ -302,15 +346,10 @@ export async function flushWorkspaceSave(
     saveWorkspaceTimer = null;
   }
 
-  if (pendingWorkspace) {
-    const snapshot = pendingWorkspace;
-    pendingWorkspace = null;
+  const snapshot = resolveFlushSnapshot(pendingWorkspace, userId, data);
+  pendingWorkspace = null;
+  if (snapshot) {
     await saveWorkspace(snapshot.userId, snapshot.data);
-    return;
-  }
-
-  if (userId && data) {
-    await saveWorkspace(userId, data);
   }
 }
 
