@@ -11,6 +11,7 @@ import { LMNP_ROUTES } from "../routes";
 import {
   isDocumentJourneyComplete,
   isDocumentJourneyStarted,
+  isDocumentStepComplete,
   resolveCurrentDocumentStep,
   resolveCurrentDocumentStepHref,
 } from "./document-journey-progress";
@@ -52,7 +53,10 @@ function isStepComplete(id: DeclarationStepId, ws: PersistedWorkspace): boolean 
     case "exploitant":
       return Boolean(draft.exploitantFirstName?.trim() && draft.exploitantLastName?.trim());
     case "logement":
-      return properties.some((p) => p.address.trim() && p.city.trim());
+      // Source de vérité canonique = logementConfirmedAt (partagée avec dashboard-workflow-model,
+      // document-journey-progress et dossier-status). Le repli adresse/ville est conservé pour ne
+      // pas régresser un dossier hérité dont l'état ne serait pas visible dans ce dépôt.
+      return isDocumentStepComplete("logement", ws) || properties.some((p) => p.address.trim() && p.city.trim());
     case "amortissement":
       return (
         draft.completedSteps.includes("amortissement") ||
