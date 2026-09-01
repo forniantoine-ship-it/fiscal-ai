@@ -13,6 +13,9 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import {
   F014AmortissementsAssistant,
+  fiscalResultMatchesAmortissementTotal,
+  hasAmortissementDrifted,
+  expF014UsageFiscal,
   type F014Action,
   type F014Message,
   type F014Result,
@@ -73,7 +76,7 @@ function SuggestionButton({
   );
 }
 
-function PlanSummaryCard({ result }: { result: F014Result }) {
+function PlanSummaryCard({ result, usageNote }: { result: F014Result; usageNote?: string }) {
   return (
     <div
       style={{
@@ -88,6 +91,10 @@ function PlanSummaryCard({ result }: { result: F014Result }) {
         {fmtEur(result.plan.total_dotations_exercice)}
       </p>
       <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>{result.subtitle}</p>
+      <p style={{ ...typography.caption.desktop, color: colors.text.muted, marginTop: spacing.scale[2] }}>
+        {usageNote ??
+          "Ce montant calculé sera déduit de votre résultat imposable dans la limite de celui-ci ; l'éventuel surplus sera reporté sans limite de durée. Le détail sera connu après le calcul fiscal."}
+      </p>
     </div>
   );
 }
@@ -141,37 +148,65 @@ export function F014AmortissementsAssistantPanel() {
   const [state, setState] = useState<F014State>(() => {
     if (draft?.amortissementAssistant && draft.logementAmortissement) {
       const start = assistant.start();
-      return {
-        ...start.state,
-        step: "complete",
-        result: {
-          plan: start.state.plan!,
-          profil: start.state.profil!,
-          validation: {
-            status: "validated",
-            exercice: draft.amortissementAssistant.exerciceFiscal,
-            total_dotations: draft.amortissementAssistant.totalDotations,
-            validated_at: draft.amortissementAssistant.validatedAt,
-            plan_version: draft.amortissementAssistant.planVersion,
+      const drifted =
+        !start.state.plan ||
+        hasAmortissementDrifted(draft.amortissementAssistant.totalDotations, start.state.plan.total_dotations_exercice);
+      if (!drifted) {
+        return {
+          ...start.state,
+          step: "complete",
+          result: {
+            plan: start.state.plan!,
+            profil: start.state.profil!,
+            validation: {
+              status: "validated",
+              exercice: draft.amortissementAssistant.exerciceFiscal,
+              total_dotations: draft.amortissementAssistant.totalDotations,
+              validated_at: draft.amortissementAssistant.validatedAt,
+              plan_version: draft.amortissementAssistant.planVersion,
+            },
+            explanation: "",
+            headline: `Amortissements ${draft.amortissementAssistant.exerciceFiscal}`,
+            subtitle: "Plan validé.",
+            anomalies: [],
           },
-          explanation: "",
-          headline: `Amortissements ${draft.amortissementAssistant.exerciceFiscal}`,
-          subtitle: "Plan validé.",
-          anomalies: [],
-        },
-      };
+        };
+      }
+      // Logement/travaux modifiés depuis la dernière validation : on revient sur
+      // le plan frais et on laisse l'utilisateur revalider (cf. runAction "confirm").
+      return start.state;
     }
     return assistant.start().state;
   });
 
   const [messages, setMessages] = useState<F014Message[]>(() => {
-    if (draft?.amortissementAssistant) {
-      return [
-        {
-          role: "assistant",
-          content: `Vos amortissements sont déjà validés pour ${draft.amortissementAssistant.exerciceFiscal}.`,
-        },
-      ];
+    if (draft?.amortissementAssistant && draft.logementAmortissement) {
+      const start = assistant.start();
+      if (start.state.plan) {
+        const drifted = hasAmortissementDrifted(
+          draft.amortissementAssistant.totalDotations,
+          start.state.plan.total_dotations_exercice,
+        );
+        if (!drifted) {
+          return [
+            {
+              role: "assistant",
+              content: `Vos amortissements sont déjà validés pour ${draft.amortissementAssistant.exerciceFiscal}.`,
+            },
+          ];
+        }
+        return [
+          {
+            role: "assistant",
+            content:
+              `Votre logement ou vos travaux ont changé depuis la validation de vos amortissements ` +
+              `(${fmtEur(draft.amortissementAssistant.totalDotations)} validés pour ${draft.amortissementAssistant.exerciceFiscal}).\n\n` +
+              `Nouveau total calculé : ${fmtEur(start.state.plan.total_dotations_exercice)}. ` +
+              `Vérifiez le détail ci-dessous et revalidez ce plan.`,
+          },
+          ...start.messages,
+        ];
+      }
     }
     return assistant.start().messages;
   });
@@ -242,6 +277,16 @@ export function F014AmortissementsAssistantPanel() {
   const step = state.step;
   const lastMessage = messages[messages.length - 1];
 
+  const usageNote = useMemo(() => {
+    const plan = state.result?.plan;
+    const fiscalResult = draft?.fiscalResult;
+    if (!plan || !fiscalResult || fiscalResult.exercice !== plan.exercice) return undefined;
+    if (!fiscalResultMatchesAmortissementTotal(fiscalResult.trace.journal, plan.total_dotations_exercice)) {
+      return undefined;
+    }
+    return expF014UsageFiscal({ amortDeduct: fiscalResult.amortDeduct, amortReporte: fiscalResult.amortReporte });
+  }, [state.result, draft?.fiscalResult]);
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
@@ -259,7 +304,7 @@ export function F014AmortissementsAssistantPanel() {
       </div>
 
       <Card>
-        {state.result ? <PlanSummaryCard result={state.result} /> : null}
+        {state.result ? <PlanSummaryCard result={state.result} usageNote={usageNote} /> : null}
 
         <div style={{ marginBottom: spacing.scale[4] }}>
           {messages.map((message, index) => (
@@ -305,6 +350,17 @@ export function F014AmortissementsAssistantPanel() {
             <Button disabled={busy} onClick={() => void runAction({ type: "confirm" })}>
               {state.profil === "PROF-002" ? "Confirmer" : "Je valide ce plan"}
             </Button>
+          </div>
+        ) : null}
+
+        {step === "complete" ? (
+          <div className="flex gap-2 border-t pt-4" style={{ borderColor: colors.border.subtle }}>
+            <Link href={LMNP_ROUTES.validation} className="flex-1">
+              <Button className="w-full">Préparer la déclaration</Button>
+            </Link>
+            <Link href={LMNP_ROUTES.dashboard}>
+              <Button variant="ghost">Retour au tableau de bord</Button>
+            </Link>
           </div>
         ) : null}
       </Card>
