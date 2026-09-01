@@ -192,6 +192,7 @@ import { recomputeAlerts } from "./alerts";
 import { computeUserConfidence } from "./confidence";
 import { resolveJourney, pickJourneyAction, computeJourneyFlags } from "./journey";
 import { computeDossierProgress, type DossierProgressSnapshot } from "./workspace-progress";
+import { logDossierStatusShadowIfDivergent } from "./dossier-status-shadow";
 
 export interface WorkspaceDerivatives extends DossierProgressSnapshot {
   alerts: Alert[];
@@ -244,6 +245,10 @@ export function deriveWorkspace(
     declarationDraft,
   };
   const declaration = resolveDeclarationProgress(persisted);
+
+  // Phase 2 (migration STATE-001) — vérification en parallèle, dev-only, sans effet sur
+  // le résultat retourné ci-dessous. Voir dossier-status-shadow.ts.
+  logDossierStatusShadowIfDivergent(persisted);
 
   return {
     alerts,
