@@ -21,6 +21,7 @@
     "test:dossier-status-shadow": "npx tsx src/lib/lmnp/engine/dossier-status-shadow.test.ts",
     "test:dossier-completeness-shadow": "npx tsx src/lib/lmnp/engine/dossier-completeness-shadow.test.ts",
     "test:f010-completeness": "npx tsx src/lib/lmnp/engine/f010-completeness.test.ts",
+    "test:f009-completeness": "./node_modules/.bin/tsx src/lib/lmnp/engine/f009-completeness.test.ts",
     "test:document-reading-mode": "npx tsx src/lib/lmnp/services/charges/document-reading-mode-resolver.test.ts",
     "test:document-text-extraction": "npx tsx src/lib/documents/ocr/semantic-text-recovery.test.ts",
     "test:logement-semantic": "npx tsx src/lib/lmnp/services/logement/logement-semantic-vocabulary.test.ts",
