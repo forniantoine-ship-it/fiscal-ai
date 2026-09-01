@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "./ui/Button";
+import { Button } from "@/design-system/components/Button";
 
 const navLinks = [
   { href: "#fonctionnement", label: "Comment ça marche" },
@@ -14,7 +14,7 @@ export function Header() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/5 bg-background/80 backdrop-blur-xl">
+    <header className="surface-frost fixed inset-x-0 top-0 z-50 border-b border-stone-200/40">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
         <a href="#" className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/20 text-sm font-bold text-accent">
@@ -38,15 +38,15 @@ export function Header() {
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
-          <Button variant="ghost" href="#contact">
+          <Button variant="ghost" href="/connexion">
             Connexion
           </Button>
-          <Button href="#contact">Diagnostic gratuit</Button>
+          <Button href="/dashboard">Commencer</Button>
         </div>
 
         <button
           type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 md:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-lg border border-stone-200 md:hidden"
           onClick={() => setOpen(!open)}
           aria-label={open ? "Fermer le menu" : "Ouvrir le menu"}
           aria-expanded={open}
@@ -62,13 +62,13 @@ export function Header() {
       </div>
 
       {open && (
-        <nav className="border-t border-white/5 bg-card px-4 py-4 md:hidden">
+        <nav className="border-t border-stone-200 bg-card px-4 py-4 md:hidden">
           <div className="flex flex-col gap-3">
             {navLinks.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
-                className="rounded-lg px-3 py-2 text-sm text-muted hover:bg-white/5 hover:text-foreground"
+                className="rounded-lg px-3 py-2 text-sm text-muted hover:bg-stone-100 hover:text-foreground"
                 onClick={() => setOpen(false)}
               >
                 {link.label}

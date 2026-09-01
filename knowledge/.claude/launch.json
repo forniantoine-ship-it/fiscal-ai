@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "fiscal-ai-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/forniantoine/Developer/fiscal-ai && npm run dev"],
+      "port": 3000
+    }
+  ]
+}

@@ -1,31 +1,52 @@
-import { Button } from "./ui/Button";
+import { Button } from "@/design-system/components/Button";
+import { Card } from "@/design-system/components/Card";
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
 
 export function CTABanner() {
   return (
-    <section className="py-12 sm:py-16">
+    <section style={{ paddingBlock: spacing.scale[12] }}>
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-3xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-zinc-900 to-amber-500/5 px-8 py-12 text-center sm:px-16 sm:py-16">
-          <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full bg-emerald-500/10 blur-3xl" />
-          <div className="absolute -bottom-20 -left-20 h-60 w-60 rounded-full bg-amber-500/10 blur-3xl" />
-          <div className="relative">
+        <Card
+          className="relative overflow-hidden text-center !p-0"
+          style={{
+            borderRadius: radius.xl,
+            border: `1px solid ${colors.border.selected}`,
+            backgroundImage: [
+              `radial-gradient(ellipse 60% 50% at 100% 0%, ${colors.orange[100]} 0%, transparent 70%)`,
+              `radial-gradient(ellipse 50% 45% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 68%)`,
+              `linear-gradient(135deg, ${colors.surface.primary} 0%, ${colors.orange[50]} 100%)`,
+            ].join(", "),
+          }}
+        >
+          <div style={{ padding: `${spacing.scale[12]} ${spacing.scale[8]}` }}>
             <h2
-              className="text-3xl font-normal sm:text-4xl"
-              style={{ fontFamily: "var(--font-display), Georgia, serif" }}
+              className="text-3xl sm:text-4xl"
+              style={{
+                fontFamily: typography.fontFamily.display,
+                fontWeight: typography.fontWeight.regular,
+                color: colors.text.primary,
+              }}
             >
-              Prêt à payer moins d&apos;impôts, légalement ?
+              Prêt à préparer votre déclaration LMNP ?
             </h2>
-            <p className="mx-auto mt-4 max-w-xl text-zinc-400">
-              Rejoignez plus de 2 400 contribuables qui ont déjà optimisé leur fiscalité avec
-              Fiscal AI. Diagnostic gratuit, sans engagement.
+            <p
+              className="mx-auto mt-4 max-w-xl"
+              style={{ ...typography.body.desktop, color: colors.text.secondary }}
+            >
+              Déposez vos documents, laissez l&apos;IA préparer votre liasse et validez
+              simplement avant télétransmission.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Button href="#contact">Commencer maintenant</Button>
+              <Button href="/dashboard">Commencer maintenant</Button>
               <Button variant="secondary" href="#faq">
                 En savoir plus
               </Button>
             </div>
           </div>
-        </div>
+        </Card>
       </div>
     </section>
   );

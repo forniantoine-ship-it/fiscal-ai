@@ -1,0 +1,474 @@
+Product Philosophy
+
+The dashboard is not:
+
+an accounting dashboard,
+a reporting tool,
+a fiscal administration interface.
+
+The dashboard is:
+
+a guided workflow experience,
+a reassurance layer,
+a progress orchestration system.
+
+The user must immediately feel:
+
+"This is simple. The software is guiding me."
+
+The experience should feel closer to:
+
+Linear,
+Stripe,
+Notion AI,
+than to accounting software.
+Primary UX Objectives
+
+The dashboard must:
+
+reduce cognitive load,
+reduce fiscal anxiety,
+create clarity,
+guide progression,
+maintain user confidence.
+
+The interface must communicate:
+
+progress,
+simplicity,
+AI assistance,
+calmness,
+without exposing technical complexity.
+Layout Architecture
+Global Layout
+
+Desktop layout structure:
+
+Top navigation
+Hero section
+Workflow progress navigation
+Main dashboard content
+Documents analyzed section
+Footer utility states
+
+The page should use:
+
+generous whitespace,
+strong vertical rhythm,
+clear section separation,
+lightweight cards,
+soft visual hierarchy.
+
+Maximum content width:
+
+1280px
+
+Recommended padding:
+
+desktop: 32px to 48px
+tablet: 24px
+mobile: 16px
+Visual Hierarchy
+
+Priority order:
+
+Reassurance
+Current progress
+Recommended next action
+Workflow navigation
+Documents analyzed
+
+Avoid visual competition.
+
+The page must never feel:
+
+dense,
+dashboard-heavy,
+enterprise-like,
+data-driven.
+Hero Section
+Purpose
+
+Immediately reassure the user.
+
+The hero should communicate:
+
+simplicity,
+progress,
+guidance,
+automation.
+Hero Content
+Badge
+
+Example:
+"2025 LMNP Declaration"
+
+Style:
+
+subtle pill badge,
+muted background,
+small typography.
+Headline
+
+Recommended:
+
+"Prepare your LMNP declaration simply."
+
+Alternative:
+"Your declaration is being prepared automatically."
+
+Typography:
+
+large,
+premium,
+calm,
+highly readable.
+
+Avoid:
+
+aggressive marketing tone,
+fintech style headlines.
+Supporting Text
+
+Example:
+
+"Upload your documents. The AI prepares your declaration automatically. Simply review and validate before generation."
+
+Maximum:
+
+2 lines desktop,
+3 lines mobile.
+Primary CTA
+
+Examples:
+
+Continue my file
+Resume declaration
+Continue preparation
+
+CTA must:
+
+feel reassuring,
+not sales-oriented,
+not administrative.
+Progress System
+Overall Progress
+
+Display:
+
+single overall completion percentage.
+
+Recommended:
+
+progress ring,
+or
+lightweight horizontal progress bar.
+
+Avoid:
+
+KPI blocks,
+charts,
+analytics cards,
+accounting summaries.
+Progress Messaging
+
+Examples:
+
+"Your declaration is progressing well."
+"Only a few steps remain."
+"Documents are currently being analyzed."
+
+Tone:
+
+calm,
+supportive,
+lightweight.
+Workflow Navigation
+Structure
+
+Horizontal workflow navigation.
+
+Steps:
+
+My Activity
+Property
+Loan
+Amortization & Works
+Income
+Expenses
+Validation
+Navigation Behavior
+
+Users can:
+
+freely navigate,
+skip steps,
+return later.
+
+No forced wizard behavior.
+
+Step States
+
+Possible states:
+
+completed,
+active,
+incomplete,
+missing information.
+
+State visibility must remain:
+
+subtle,
+elegant,
+non-stressful.
+
+Avoid:
+
+red warning patterns,
+error-heavy interfaces.
+Dashboard Main Content
+Purpose
+
+The main area should dynamically guide the next best action.
+
+The dashboard must intelligently encourage:
+
+progression,
+completion,
+validation,
+without pressure.
+Recommended Content Blocks
+
+Possible blocks:
+
+next recommended action,
+incomplete information reminder,
+pending validation,
+uploaded documents summary,
+declaration preparation status.
+
+All blocks must remain:
+
+lightweight,
+visually calm,
+easy to scan.
+Documents Analyzed Section
+Purpose
+
+Create reassurance and trust.
+
+This section proves:
+
+uploaded files were received,
+analysis is progressing,
+the system is working.
+
+The section should NOT become:
+
+a document management system,
+a backoffice,
+a storage explorer.
+Document Item Structure
+
+Each item can contain:
+
+document name,
+detected category,
+upload date,
+analysis state.
+
+Possible states:
+
+analyzed,
+processing,
+incomplete,
+missing pages,
+unreadable.
+Actions
+
+Available actions:
+
+view,
+replace,
+delete.
+
+Actions should remain:
+
+secondary,
+discreet,
+low visual emphasis.
+Save System
+
+Display subtle auto-save feedback.
+
+Example:
+"Automatically saved"
+
+Display location:
+
+top right,
+or
+below hero section.
+
+Avoid:
+
+technical sync indicators,
+loading-heavy states.
+AI Integration Philosophy
+
+The AI must feel:
+
+active,
+invisible,
+useful,
+calm.
+
+The UI should communicate:
+
+automation,
+intelligent assistance,
+preparation progress.
+
+Avoid:
+
+OCR terminology,
+AI jargon,
+technical processing language,
+extraction complexity.
+Important States
+
+The dashboard must support:
+
+first login,
+empty state,
+partially completed file,
+fully completed declaration,
+processing documents,
+missing documents,
+validation ready,
+blocked progression.
+
+All states must remain:
+
+premium,
+calm,
+supportive.
+
+Never create stressful interfaces.
+
+Component System
+
+Recommended V2 components:
+
+DashboardHero
+DashboardProgress
+WorkflowStepper
+WorkflowStep
+RecommendedActionCard
+DocumentAnalysisList
+DocumentAnalysisItem
+AutoSaveIndicator
+DashboardSection
+EmptyStateCard
+ValidationStatusCard
+Animation Philosophy
+
+Animations must remain:
+
+soft,
+subtle,
+premium,
+lightweight.
+
+Recommended:
+
+fade transitions,
+soft hover elevation,
+smooth loading skeletons,
+progressive appearance.
+
+Avoid:
+
+flashy animations,
+fintech glow effects,
+heavy motion,
+excessive parallax.
+Responsive Rules
+Mobile
+
+Workflow navigation:
+
+horizontal scroll,
+or
+compact step pills.
+
+Cards:
+
+stacked vertically.
+
+Hero:
+
+simplified spacing.
+
+CTA:
+
+always visible without feeling sticky/aggressive.
+Tablet
+
+Maintain:
+
+strong spacing,
+simplified grid,
+lightweight hierarchy.
+Desktop
+
+Use:
+
+generous whitespace,
+centered layout,
+visual breathing room.
+
+Avoid:
+
+ultra-wide stretched dashboards.
+Technical Constraints
+
+IMPORTANT:
+
+Preserve:
+
+existing stores,
+hooks,
+routing,
+API calls,
+business logic,
+workflow logic,
+validation logic,
+fiscal calculation systems.
+
+Rebuild ONLY:
+
+UI architecture,
+visual hierarchy,
+component composition,
+spacing,
+interaction design,
+responsive system.
+
+Do NOT:
+
+rewrite business logic,
+redesign workflow logic,
+change data structures,
+rebuild APIs.
+Cursor Build Instruction
+
+Build this dashboard from scratch using the lmnp-v2 architecture while preserving all existing business logic, stores, hooks, workflow systems, validations, and API integrations.
+
+Focus exclusively on:
+
+premium UX,
+calm visual hierarchy,
+lightweight workflow guidance,
+responsive composition,
+reusable V2 component architecture.

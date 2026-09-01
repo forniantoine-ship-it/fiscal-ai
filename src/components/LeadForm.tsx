@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { SectionHeading } from "./ui/SectionHeading";
-import { Button } from "./ui/Button";
+import { SectionHeading } from "@/design-system/components/Section";
+import { Button } from "@/design-system/components/Button";
 
 const profiles = [
   "Salarié / Cadre",
@@ -27,7 +27,7 @@ export function LeadForm() {
   }
 
   return (
-    <section id="contact" className="border-t border-white/5 py-20 sm:py-28">
+    <section id="contact" className="border-t border-stone-200 py-20 sm:py-28">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
           <div>
@@ -43,8 +43,8 @@ export function LeadForm() {
                 "Estimation chiffrée de vos économies",
                 "Sans engagement, 100 % confidentiel",
               ].map((item) => (
-                <li key={item} className="flex items-center gap-3 text-sm text-zinc-400">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                <li key={item} className="flex items-center gap-3 text-sm text-stone-600">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20 text-accent">
                     ✓
                   </span>
                   {item}
@@ -53,14 +53,14 @@ export function LeadForm() {
             </ul>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/80 p-6 sm:p-8">
+          <div className="rounded-2xl border border-stone-200 bg-zinc-900/80 p-6 sm:p-8">
             {submitted ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 text-3xl text-emerald-400">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/20 text-3xl text-accent">
                   ✓
                 </div>
                 <h3 className="text-xl font-semibold">Demande envoyée !</h3>
-                <p className="mt-2 max-w-sm text-sm text-zinc-400">
+                <p className="mt-2 max-w-sm text-sm text-stone-600">
                   Merci pour votre confiance. Un conseiller Fiscal AI vous contactera sous 24 h
                   ouvrées avec votre diagnostic personnalisé.
                 </p>
@@ -69,7 +69,7 @@ export function LeadForm() {
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <div>
-                    <label htmlFor="prenom" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                    <label htmlFor="prenom" className="mb-1.5 block text-sm font-medium text-stone-700">
                       Prénom *
                     </label>
                     <input
@@ -77,12 +77,12 @@ export function LeadForm() {
                       name="prenom"
                       type="text"
                       required
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                      className="w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                       placeholder="Jean"
                     />
                   </div>
                   <div>
-                    <label htmlFor="nom" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                    <label htmlFor="nom" className="mb-1.5 block text-sm font-medium text-stone-700">
                       Nom *
                     </label>
                     <input
@@ -90,14 +90,14 @@ export function LeadForm() {
                       name="nom"
                       type="text"
                       required
-                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                      className="w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                       placeholder="Dupont"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                  <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-stone-700">
                     Email professionnel *
                   </label>
                   <input
@@ -105,26 +105,26 @@ export function LeadForm() {
                     name="email"
                     type="email"
                     required
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                     placeholder="jean.dupont@email.com"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="telephone" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                  <label htmlFor="telephone" className="mb-1.5 block text-sm font-medium text-stone-700">
                     Téléphone
                   </label>
                   <input
                     id="telephone"
                     name="telephone"
                     type="tel"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                    className="w-full rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                     placeholder="06 12 34 56 78"
                   />
                 </div>
 
                 <div>
-                  <label htmlFor="profil" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                  <label htmlFor="profil" className="mb-1.5 block text-sm font-medium text-stone-700">
                     Votre profil *
                   </label>
                   <select
@@ -132,7 +132,7 @@ export function LeadForm() {
                     name="profil"
                     required
                     defaultValue=""
-                    className="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                    className="w-full rounded-xl border border-stone-200 bg-zinc-900 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                   >
                     <option value="" disabled>
                       Sélectionnez votre profil
@@ -146,13 +146,13 @@ export function LeadForm() {
                 </div>
 
                 <div>
-                  <label htmlFor="revenus" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                  <label htmlFor="revenus" className="mb-1.5 block text-sm font-medium text-stone-700">
                     Revenus annuels estimés
                   </label>
                   <select
                     id="revenus"
                     name="revenus"
-                    className="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                    className="w-full rounded-xl border border-stone-200 bg-zinc-900 px-4 py-3 text-sm outline-none transition-colors focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                   >
                     <option value="">Préfère ne pas préciser</option>
                     <option value="<50k">Moins de 50 000 €</option>
@@ -163,19 +163,19 @@ export function LeadForm() {
                 </div>
 
                 <div>
-                  <label htmlFor="message" className="mb-1.5 block text-sm font-medium text-zinc-300">
+                  <label htmlFor="message" className="mb-1.5 block text-sm font-medium text-stone-700">
                     Message (optionnel)
                   </label>
                   <textarea
                     id="message"
                     name="message"
                     rows={3}
-                    className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
+                    className="w-full resize-none rounded-xl border border-stone-200 bg-stone-100 px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-500 focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30"
                     placeholder="Décrivez brièvement votre situation fiscale..."
                   />
                 </div>
 
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-stone-500">
                   En soumettant ce formulaire, vous acceptez notre politique de confidentialité.
                   Vos données ne seront jamais partagées avec des tiers.
                 </p>

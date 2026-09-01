@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mv '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/02 - Produit/04 - Règles Métier/R-0002 Mobilier.md' '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/01 - Business/Rules/RULE-0002 – Mobilier.md')",
+      "Bash(mv '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/02 - Produit/04 - Règles Métier/R-0003 Travaux.md' '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/01 - Business/Rules/RULE-0003 – Travaux.md')",
+      "Bash(mv '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/02 - Produit/04 - Règles Métier/R-0004 Emprunt.md' '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/01 - Business/Rules/RULE-0004 – Emprunt.md')",
+      "Bash(mv '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/02 - Produit/04 - Règles Métier/R-0005 Charges déductibles.md' '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/01 - Business/Rules/RULE-0005 – Charges déductibles.md')",
+      "Bash(mv '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/02 - Produit/04 - Règles Métier/R-0006 Amortissements.md' '/Users/forniantoine/Documents/Obsidian Vault/Sans titre 1/FISCAL AI - COPIE MIGRATION/01 - Business/Rules/RULE-0006 – Amortissements.md')",
+      "Bash(ls /Users/forniantoine/Documents/fiscal-ai 2>/dev/null && echo \"ACCESSIBLE\" || echo \"NOT_FOUND\")",
+      "Bash(npm install *)",
+      "Bash(node dist/index.js)",
+      "Bash(npm run *)",
+      "Bash(node dist/test-provider.js)",
+      "Bash(node dist/test-engine.js)",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__add_repo",
+      "Bash(ls ~/Documents/fiscal-ai 2>&1 | head -20)",
+      "Bash(find ~ -maxdepth 5 -name \".git\" -type d 2>/dev/null | grep -i fiscal | sed 's|/.git||')",
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -E \"\\\\.\\(config|json|env|md\\)$\")",
+      "Bash(find /Users/forniantoine/Documents/fiscal-ai -maxdepth 3 -type f | grep -v node_modules | grep -v .git | grep -v .next | sort)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}, indent=2\\)\\)\")",
+      "mcp__visualize__read_me",
+      "Bash(ls -la \"/Users/forniantoine/Documents/fiscal-ai\" 2>&1 | head -30)",
+      "Bash(kill 94019)",
+      "Bash(cd /Users/forniantoine/Developer/fiscal-ai && grep -n \"href=\\\\|Link\" \"src/app/\\(dashboard\\)/DashboardShell.tsx\" | head -30)",
+      "Bash(cd /Users/forniantoine/Developer/fiscal-ai/src/components/lmnp *)",
+      "Bash(cd \"/Users/forniantoine/Developer/fiscal-ai\" && grep -n \"fiscalResult\\\\|liasseResult\\\\|declarationDraft\\\\|DeclarationDraft\" src/lib/lmnp/types/domain.ts | head -60)"
+    ]
+  }
+}
