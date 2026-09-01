@@ -149,7 +149,7 @@ function hasPendingChargeSuggestions(workspace: DashboardWorkspace): boolean {
   return suggestions.some((item) => item.status === "pending");
 }
 
-function businessStepsComplete(workspace: DashboardWorkspace): boolean {
+export function businessStepsComplete(workspace: DashboardWorkspace): boolean {
   const steps = resolveDashboardWorkflow(workspace);
   return WORKFLOW_STEP_SEQUENCE.filter((id) => id !== "validation").every((id) => {
     const step = steps.find((item) => item.id === id);

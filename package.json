@@ -19,6 +19,7 @@
     "test:charges-profile": "npx tsx src/lib/lmnp/services/charges-profile.test.ts",
     "test:dossier-status": "npx tsx src/lib/lmnp/engine/dossier-status.test.ts",
     "test:dossier-status-shadow": "npx tsx src/lib/lmnp/engine/dossier-status-shadow.test.ts",
+    "test:dossier-completeness-shadow": "npx tsx src/lib/lmnp/engine/dossier-completeness-shadow.test.ts",
     "test:document-reading-mode": "npx tsx src/lib/lmnp/services/charges/document-reading-mode-resolver.test.ts",
     "test:document-text-extraction": "npx tsx src/lib/documents/ocr/semantic-text-recovery.test.ts",
     "test:logement-semantic": "npx tsx src/lib/lmnp/services/logement/logement-semantic-vocabulary.test.ts",
