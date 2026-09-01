@@ -83,7 +83,7 @@ export function qualifyTravail(input: QualifyTravailInput): QualifyTravailOutput
   }
 }
 
-export function mapChoixToNature(choix: TravauxQualificationChoix): NatureIntervention | "mixte" {
+export function mapChoixToNature(choix: TravauxQualificationChoix): NatureIntervention | "mixte" | null {
   switch (choix) {
     case "reparation_identique":
       return "entretien";
@@ -92,9 +92,9 @@ export function mapChoixToNature(choix: TravauxQualificationChoix): NatureInterv
     case "mixte":
       return "mixte";
     case "incertain":
-      return "entretien";
+      return null;
     default:
-      return "entretien";
+      return null;
   }
 }
 

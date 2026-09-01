@@ -38,7 +38,7 @@ export type ComputeChargesExerciceInput = {
   fraisEtatDesLieux?: number;
   honorairesComptable?: number;
   fraisBancaires?: number;
-  divers?: { id: string; description: string; montant: number }[];
+  divers?: { id: string; description: string; montant: number; financementOverlap?: "assurance_emprunteur" }[];
   travaux?: TravauxInput[];
   fieldSources?: Partial<Record<string, FieldSource>>;
 };
@@ -112,7 +112,6 @@ export function computeChargesExercice(
         categorie: "taxe_fonciere",
         deductibilite: "deductible",
         montantDeductible: tf.taxeFonciereDeductible,
-        montantPreExploitation: tf.montantPreExploitation,
         source: src("taxe_fonciere"),
         regleAppliquee: "TRF-0018",
       }),
@@ -260,6 +259,22 @@ export function computeChargesExercice(
   }
 
   for (const item of input.divers ?? []) {
+    if (item.financementOverlap === "assurance_emprunteur") {
+      // Cycle 3 (RAI-000, AX-009) — déjà comptée par F-011 : reste visible
+      // (jamais supprimée), mais jamais recomptée dans le total déductible.
+      lignes.push(
+        ligne({
+          id: item.id,
+          description: item.description,
+          montant: item.montant,
+          categorie: "divers",
+          deductibilite: "non_deductible",
+          source: src(item.id),
+          regleAppliquee: "F-012 — déjà comptée par l'Assistant Financement (F-011), non recomptée ici",
+        }),
+      );
+      continue;
+    }
     lignes.push(
       simpleDeductibleCharge(
         item.id,

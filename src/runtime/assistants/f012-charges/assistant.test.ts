@@ -14,7 +14,7 @@ describe("F-012 — Assistant Charges", () => {
     const assistant = new F012ChargesAssistant(ctx);
     const start = assistant.start();
     assert.equal(start.state.step, "profilage");
-    assert.match(start.messages[0]?.content ?? "", /copropriété/i);
+    assert.match(start.messages[0]?.content ?? "", /syndic/i);
   });
 
   it("qualifie un travaux en amélioration", async () => {

@@ -61,7 +61,16 @@
     "test:f011-assistant-cycle10": "npx tsx --test src/runtime/assistants/f011-financement/assistant-cycle10.test.ts",
     "test:f011-assistant-cycle11": "npx tsx --test src/runtime/assistants/f011-financement/assistant-cycle11.test.ts",
     "test:f011-runtime": "npx tsx --test src/runtime/f011.test.ts",
-    "test:f011": "npm run test:f011-document-bridge && npm run test:f011-financing-charges && npm run test:f011-critical-persist && npm run test:f011-field-sources && npm run test:f011-loan-form-state && npm run test:f011-resume && npm run test:f011-assistant && npm run test:f011-assistant-cycle2 && npm run test:f011-assistant-cycle3 && npm run test:f011-assistant-cycle5 && npm run test:f011-assistant-cycle6 && npm run test:f011-assistant-cycle7 && npm run test:f011-assistant-cycle9 && npm run test:f011-assistant-cycle10 && npm run test:f011-assistant-cycle11 && npm run test:f011-runtime"
+    "test:f011": "npm run test:f011-document-bridge && npm run test:f011-financing-charges && npm run test:f011-critical-persist && npm run test:f011-field-sources && npm run test:f011-loan-form-state && npm run test:f011-resume && npm run test:f011-assistant && npm run test:f011-assistant-cycle2 && npm run test:f011-assistant-cycle3 && npm run test:f011-assistant-cycle5 && npm run test:f011-assistant-cycle6 && npm run test:f011-assistant-cycle7 && npm run test:f011-assistant-cycle9 && npm run test:f011-assistant-cycle10 && npm run test:f011-assistant-cycle11 && npm run test:f011-runtime",
+    "test:f012-critical-persist": "npx tsx --test src/lib/lmnp/services/f012/f012-critical-persist.test.ts",
+    "test:f012-resume": "npx tsx --test src/lib/lmnp/services/f012/f012-resume.test.ts",
+    "test:f012-divers-form-state": "npx tsx --test src/lib/lmnp/services/f012/f012-divers-form-state.test.ts",
+    "test:f012-assistant": "npx tsx --test src/runtime/assistants/f012-charges/assistant.test.ts",
+    "test:f012-assistant-cycles": "npx tsx --test src/runtime/assistants/f012-charges/assistant-cycle*.test.ts src/runtime/assistants/f012-charges/collected-to-registry.test.ts src/runtime/assistants/f012-charges/document-review-decisions.test.ts src/runtime/assistants/f012-charges/family-expense-parse.test.ts",
+    "test:f012-capabilities": "npx tsx --test src/runtime/capabilities/f012/charge.test.ts",
+    "test:f012-runtime": "npx tsx --test src/runtime/f012.test.ts",
+    "test:reducer-f012-persist": "npx tsx --test src/lib/lmnp/store/reducer-f012-persist.test.ts",
+    "test:f012": "npm run test:f012-critical-persist && npm run test:f012-resume && npm run test:f012-divers-form-state && npm run test:f012-assistant && npm run test:f012-assistant-cycles && npm run test:f012-capabilities && npm run test:f012-runtime && npm run test:reducer-f012-persist"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

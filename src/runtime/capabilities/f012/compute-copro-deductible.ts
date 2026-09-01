@@ -49,10 +49,10 @@ export function computeCoproDeductible(
         fondsTravauxNonDeductible += ligne.montant;
         break;
       case "appel_gros_travaux":
-        if (ligne.grosTravauxDeductible === false) {
-          grosTravauxImmobilisation += ligne.montant;
-        } else {
+        if (ligne.grosTravauxDeductible === true) {
           grosTravauxCharge += ligne.montant;
+        } else if (ligne.grosTravauxDeductible === false) {
+          grosTravauxImmobilisation += ligne.montant;
         }
         break;
       default:

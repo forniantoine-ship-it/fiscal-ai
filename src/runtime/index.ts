@@ -253,16 +253,31 @@ export { explainCharges } from "./presentation/explain-charges";
 
 export {
   F012ChargesAssistant,
+  collectedToChargeRegistry,
   createInitialF012State,
+  isDocumentaryFamily,
+  missingDocumentFieldMessage,
+  paperInviteMessage,
+  shouldResumeF012,
+  toF012PersistedState,
+  toF012PersistedStateWithRegistry,
   type F012Action,
   type F012AssistantTurn,
+  type F012CategoryId,
   type F012Deps,
+  type F012DocumentReview,
+  type F012FamilyPhase,
+  type F012HistorySnapshot,
   type F012Message,
+  type F012PersistedState,
   type F012Result,
   type F012State,
   type F012Step,
   type F012Suggestion,
+  type ChargeProposal,
+  type DocumentaryFamilyId,
 } from "./assistants/f012-charges/assistant";
+export type { ChargeFamilyId, FamilyCoverage } from "./capabilities/f012/charge";
 
 // F-013 — domain types
 export type {

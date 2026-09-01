@@ -655,6 +655,11 @@ export interface DeclarationDraft {
    * NOT authoritative for business data once the assistant completes (financementCharges).
    */
   financementAssistantState?: import("@/runtime/assistants/f011-financement/types").F011PersistedState;
+  /**
+   * F012 session/resume state — step, category progress, collected charges, document review.
+   * NOT authoritative for business data once the assistant completes (chargesAssistant).
+   */
+  chargesAssistantState?: import("@/runtime/assistants/f012-charges/types").F012PersistedState;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;
