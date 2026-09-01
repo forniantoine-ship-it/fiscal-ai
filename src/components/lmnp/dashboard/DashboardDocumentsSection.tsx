@@ -92,7 +92,7 @@ export function DashboardDocumentsSection() {
                   const fields = resolveDocumentFieldLabels(doc.id, workspace);
                   const aiStatus = resolveDocumentAiStatus(doc);
                   const validation = resolveDocumentValidationState(validations);
-                  const corrections = resolveDocumentCorrectionState(validations);
+                  const corrections = resolveDocumentCorrectionState(doc.id, workspace);
 
                   return (
                     <tr

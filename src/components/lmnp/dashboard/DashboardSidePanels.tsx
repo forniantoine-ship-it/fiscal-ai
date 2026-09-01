@@ -12,6 +12,7 @@ import { typography } from "@/design-system/theme/typography";
 import type { AssistantBrief, LmnpDocument } from "@/lib/lmnp/types";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
+import { resolveAutosaveDisplay } from "@/lib/lmnp/store/workspace-autosave-display";
 import type { AutosaveStatus } from "@/design-system/layouts/DashboardLayout";
 
 const DOC_STATUS: Record<LmnpDocument["status"], string> = {
@@ -37,16 +38,21 @@ function PanelTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function autosaveCopy(status: AutosaveStatus) {
-  if (status === "saved") return { label: "Dossier enregistré", color: colors.success.DEFAULT };
-  if (status === "saving") return { label: "Enregistrement en cours…", color: colors.orange[500] };
-  if (status === "error") return { label: "Erreur de sauvegarde", color: colors.error.DEFAULT };
-  return null;
+function autosaveCopy(status: AutosaveStatus, persistenceUserId: string | null) {
+  const display = resolveAutosaveDisplay(status, persistenceUserId);
+  if (!display) return null;
+  const color =
+    display.tone === "saved"
+      ? colors.success.DEFAULT
+      : display.tone === "saving"
+        ? colors.orange[500]
+        : colors.error.DEFAULT;
+  return { label: display.label, color };
 }
 
 export function DashboardAutosavePanel() {
-  const { autosaveStatus } = useLmnp();
-  const copy = autosaveCopy(autosaveStatus);
+  const { autosaveStatus, persistenceUserId } = useLmnp();
+  const copy = autosaveCopy(autosaveStatus, persistenceUserId);
   if (!copy) return null;
 
   return (

@@ -61,15 +61,15 @@ type StepDefinition = {
   aiExtracts: string[];
   matchDocument: (doc: LmnpDocument) => boolean;
   isComplete: (workspace: DashboardWorkspace) => boolean;
-  matchValidation: (item: ValidationItem) => boolean;
+  matchValidation: (item: Pick<ValidationItem, "fieldKey">) => boolean;
 };
 
 const STEP_DEFINITIONS: StepDefinition[] = [
   {
     id: "activite",
     label: "Activité LMNP",
-    href: documentJourneyRoute("inpi"),
-    uploadHref: documentJourneyRoute("inpi"),
+    href: LMNP_ROUTES.activite,
+    uploadHref: LMNP_ROUTES.activite,
     requestedDocument: "Extrait INPI / Kbis",
     documentPrompt: "Ajoutez votre extrait INPI ou Kbis.",
     aiExtracts: ["SIREN", "Raison sociale", "Régime"],
@@ -206,10 +206,7 @@ function validationState(badge: WorkflowStepView["validationBadge"], status: Wor
 function resolveFocusStepId(workspace: DashboardWorkspace): DashboardWorkflowStepId {
   for (const def of STEP_DEFINITIONS) {
     if (def.id === "validation") continue;
-    const pending = workspace.validationItems.filter(
-      (item) => def.matchValidation(item) && item.status === "pending",
-    ).length;
-    if (pending > 0) return def.id;
+    if (stepHasOpenAlert(def.id, workspace)) return def.id;
   }
 
   for (const def of STEP_DEFINITIONS) {
@@ -254,13 +251,15 @@ function resolveStepDossierSummary(
 
 export function resolveDashboardWorkflow(workspace: DashboardWorkspace): WorkflowStepView[] {
   const focusStepId = resolveFocusStepId(workspace);
-  const journeyStarted = workspace.documents.length > 0 || Boolean(workspace.declarationDraft?.journeyStartedAt);
+  const journeyStarted =
+    workspace.documents.length > 0 ||
+    Boolean(workspace.declarationDraft?.journeyStartedAt || workspace.declarationDraft?.inpiConfirmedAt);
 
   return STEP_DEFINITIONS.map((def) => {
     const matchedDocs = workspace.documents.filter(def.matchDocument);
     const primaryDoc = matchedDocs.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
     const stepValidations = workspace.validationItems.filter(def.matchValidation);
-    const pending = stepValidations.filter((item) => item.status === "pending").length;
+    const pending = stepOpenAlertCount(def.id, workspace);
     const badge = validationBadge(stepValidations);
 
     let status: WorkflowStepStatus = "upcoming";
@@ -290,6 +289,45 @@ export function resolveDashboardWorkflow(workspace: DashboardWorkspace): Workflo
       dossierSummary: status === "completed" ? resolveStepDossierSummary(def.id, workspace) : null,
     };
   });
+}
+
+/** Open, non-informational alerts scoped to a step (source of truth: alerts.ts / ENG-005). */
+function stepOpenAlerts(stepId: DashboardWorkflowStepId, workspace: DashboardWorkspace) {
+  const def = STEP_DEFINITIONS.find((d) => d.id === stepId);
+  if (!def) return [];
+  return workspace.alerts.filter(
+    (alert) =>
+      alert.status === "open" &&
+      alert.severity !== "info" &&
+      alert.fieldKey !== undefined &&
+      def.matchValidation({ fieldKey: alert.fieldKey }),
+  );
+}
+
+export function stepHasOpenAlert(stepId: DashboardWorkflowStepId, workspace: DashboardWorkspace): boolean {
+  return stepOpenAlerts(stepId, workspace).length > 0;
+}
+
+export function stepOpenAlertCount(stepId: DashboardWorkflowStepId, workspace: DashboardWorkspace): number {
+  return stepOpenAlerts(stepId, workspace).length;
+}
+
+/** Open, non-informational alerts scoped to a document (linked via validationItemId — Alert has no documentId). */
+function documentOpenAlerts(documentId: string, workspace: DashboardWorkspace) {
+  const itemIds = new Set(
+    workspace.validationItems.filter((item) => item.documentId === documentId).map((item) => item.id),
+  );
+  return workspace.alerts.filter(
+    (alert) =>
+      alert.status === "open" &&
+      alert.severity !== "info" &&
+      alert.validationItemId !== undefined &&
+      itemIds.has(alert.validationItemId),
+  );
+}
+
+export function documentOpenAlertCount(documentId: string, workspace: DashboardWorkspace): number {
+  return documentOpenAlerts(documentId, workspace).length;
 }
 
 export function resolveActiveWorkflowStep(workspace: DashboardWorkspace): WorkflowStepView {
@@ -337,8 +375,8 @@ export function resolveDocumentValidationState(items: ValidationItem[]): string 
   return "En attente";
 }
 
-export function resolveDocumentCorrectionState(items: ValidationItem[]): string {
-  const pending = items.filter((item) => item.status === "pending").length;
+export function resolveDocumentCorrectionState(documentId: string, workspace: DashboardWorkspace): string {
+  const pending = documentOpenAlertCount(documentId, workspace);
   if (pending > 0) return `${pending} à corriger`;
   return "Aucune";
 }

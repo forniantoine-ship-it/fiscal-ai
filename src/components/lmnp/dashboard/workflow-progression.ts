@@ -2,6 +2,7 @@ import type { DashboardWorkspace, DashboardWorkflowStepId } from "@/components/l
 import {
   resolveActiveWorkflowStep,
   resolveDashboardWorkflow,
+  stepHasOpenAlert,
 } from "@/components/lmnp/dashboard/dashboard-workflow-model";
 import { isDocumentJourneyStarted } from "@/lib/lmnp/engine/document-journey-progress";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
@@ -72,12 +73,22 @@ export type WorkflowProgressionCta = {
   nextStepLabel: string | null;
 };
 
+export type DashboardHeroKind =
+  | "not-started"
+  | "correction"
+  | "suggestions"
+  | "ready"
+  | "next-step";
+
 export type DashboardHeroState = {
+  kind: DashboardHeroKind;
   title: string;
   explanation: string;
+  conseillerObservation: string;
   primaryLabel: string;
   primaryHref?: string;
   startJourney?: boolean;
+  highlightStepId: DashboardWorkflowStepId;
 };
 
 export function stepShortLabel(stepId: DashboardWorkflowStepId): string {
@@ -92,48 +103,59 @@ export function resolveNextWorkflowStep(
   return WORKFLOW_STEP_SEQUENCE[index + 1] ?? null;
 }
 
-export function resolveWorkflowProgressionCta(
-  currentStepId: DashboardWorkflowStepId,
-): WorkflowProgressionCta | null {
+export function resolveNextAssistantHref(currentStepId: DashboardWorkflowStepId): string {
   const nextStepId = resolveNextWorkflowStep(currentStepId);
-  if (!nextStepId) {
-    if (currentStepId === "validation") {
-      return {
-        continueLabel: "Préparer la déclaration",
-        continueHref: LMNP_ROUTES.declarations,
-        nextStepLabel: null,
-      };
-    }
-    return null;
-  }
-
-  const nextLabel = stepShortLabel(nextStepId);
-  return {
-    continueLabel: `Continuer vers ${nextLabel}`,
-    continueHref: resolveStepHref(nextStepId),
-    nextStepLabel: nextLabel,
-  };
+  if (!nextStepId) return LMNP_ROUTES.dashboard;
+  return resolveAssistantHref(nextStepId);
 }
 
-function resolveStepHref(stepId: DashboardWorkflowStepId): string {
+export function resolveNextContinueLabel(currentStepId: DashboardWorkflowStepId): string {
+  const nextStepId = resolveNextWorkflowStep(currentStepId);
+  if (!nextStepId) return "Retour au tableau de bord";
+  if (nextStepId === "validation") return "Préparer la déclaration";
+  return `Continuer vers ${stepShortLabel(nextStepId)}`;
+}
+
+export function resolveAssistantHref(stepId: DashboardWorkflowStepId): string {
   switch (stepId) {
     case "activite":
-      return documentJourneyRoute("inpi");
+      return LMNP_ROUTES.activite;
     case "logement":
-      return documentJourneyRoute("logement");
+      return LMNP_ROUTES.logement;
     case "credit":
-      return documentJourneyRoute("credit");
+      return LMNP_ROUTES.financement;
     case "revenus":
-      return documentJourneyRoute("revenus");
+      return LMNP_ROUTES.revenusAssistant;
     case "charges":
-      return documentJourneyRoute("charges");
+      return LMNP_ROUTES.chargesAssistant;
     case "amortissement":
-      return documentJourneyRoute("amortissements");
+      return LMNP_ROUTES.amortissementsAssistant;
     case "validation":
       return documentJourneyRoute("validation");
     default:
       return LMNP_ROUTES.dashboard;
   }
+}
+
+export function resolveWorkflowProgressionCta(
+  currentStepId: DashboardWorkflowStepId,
+): WorkflowProgressionCta | null {
+  if (currentStepId === "validation") {
+    return {
+      continueLabel: "Préparer la déclaration",
+      continueHref: LMNP_ROUTES.declarations,
+      nextStepLabel: null,
+    };
+  }
+
+  const nextStepId = resolveNextWorkflowStep(currentStepId);
+  if (!nextStepId) return null;
+
+  return {
+    continueLabel: "Continuer",
+    continueHref: resolveAssistantHref(currentStepId),
+    nextStepLabel: stepShortLabel(nextStepId),
+  };
 }
 
 function stepBefore(stepId: DashboardWorkflowStepId): DashboardWorkflowStepId | null {
@@ -170,9 +192,13 @@ export function resolveDashboardHeroState(workspace: DashboardWorkspace): Dashbo
 
   if (!started) {
     return {
+      kind: "not-started",
       ...DEFAULT_HERO,
+      conseillerObservation:
+        "Pour l'instant, votre dossier est vide. Dès que vous déposerez votre premier justificatif, je pourrai commencer à structurer votre déclaration.",
       primaryLabel: "Commencer votre déclaration",
       startJourney: true,
+      highlightStepId: "activite",
     };
   }
 
@@ -180,35 +206,47 @@ export function resolveDashboardHeroState(workspace: DashboardWorkspace): Dashbo
   const activeStep = resolveActiveWorkflowStep(workspace);
 
   const stepWithCorrections = steps.find(
-    (step) => step.id !== "validation" && step.correctionsRemaining > 0,
+    (step) => step.id !== "validation" && stepHasOpenAlert(step.id, workspace),
   );
   if (stepWithCorrections) {
     const label = stepShortLabel(stepWithCorrections.id);
     return {
+      kind: "correction",
       title: "Informations à confirmer",
       explanation: `Certaines données ${label === "Activité" ? "de l'activité" : `du ${label.toLowerCase()}`} nécessitent votre validation avant de poursuivre.`,
+      conseillerObservation:
+        "Un contrôle rapide sur les données extraites permettra d'éviter tout écart avec votre situation réelle.",
       primaryLabel: `Corriger ${label === "Activité" ? "l'Activité" : `le ${label}`}`,
       primaryHref: stepWithCorrections.uploadHref,
+      highlightStepId: stepWithCorrections.id,
     };
   }
 
   if (hasPendingChargeSuggestions(workspace)) {
     return {
+      kind: "suggestions",
       title: "Analyse terminée",
       explanation:
         "L'IA a identifié plusieurs charges pouvant être amorties. Examinez les suggestions avant de poursuivre.",
+      conseillerObservation:
+        "Plusieurs postes de charges méritent votre attention — certains pourraient réduire votre imposition si vous les amortissez.",
       primaryLabel: "Voir les suggestions",
       primaryHref: documentJourneyRoute("charges"),
+      highlightStepId: "charges",
     };
   }
 
   if (businessStepsComplete(workspace)) {
     return {
+      kind: "ready",
       title: "Votre dossier LMNP est prêt",
       explanation:
         "Votre déclaration est désormais prête pour la génération finale.",
+      conseillerObservation:
+        "Les sept étapes de collecte sont bouclées. La préparation de la liasse n'engage encore rien : vous gardez la main jusqu'à la transmission.",
       primaryLabel: "Préparer la déclaration",
       primaryHref: documentJourneyRoute("validation"),
+      highlightStepId: "validation",
     };
   }
 
@@ -225,17 +263,25 @@ export function resolveDashboardHeroState(workspace: DashboardWorkspace): Dashbo
       `Votre ${stepShortLabel(previousStep.id).toLowerCase()} a bien été enregistré.`;
 
     return {
+      kind: "next-step",
       title: completedTitle,
       explanation: `${completedMessage}\nPassez maintenant à l'étape ${nextLabel}.`,
+      conseillerObservation:
+        "Vous avancez régulièrement — chaque étape complétée verrouille une partie de votre déclaration avant la suivante.",
       primaryLabel: STEP_CONFIGURE_LABELS[activeStep.id],
       primaryHref: activeStep.uploadHref,
+      highlightStepId: activeStep.id,
     };
   }
 
   return {
+    kind: "next-step",
     title: "Poursuivre votre déclaration",
     explanation: activeStep.documentPrompt,
+    conseillerObservation:
+      "Vous avez déjà posé les bases du dossier. Reprenons là où vous vous êtes arrêté pour enchaîner sereinement.",
     primaryLabel: "Poursuivre votre déclaration",
     primaryHref: activeStep.uploadHref,
+    highlightStepId: activeStep.id,
   };
 }

@@ -12,6 +12,7 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import { signOutWithSession } from "@/lib/lmnp/auth/auth-session";
 
 const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.desktop})`;
 
@@ -222,13 +223,20 @@ function ProfileMenu({
           {[
             { label: "Mon compte", href: "/app/compte" },
             { label: "Paramètres", href: "/app/parametres" },
-            { label: "Déconnexion", href: "/connexion" },
+            { label: "Déconnexion", href: "/login" },
           ].map((item) => (
             <Link
               key={item.href}
               href={item.href}
               role="menuitem"
-              onClick={() => setOpen(false)}
+              onClick={(event) => {
+                setOpen(false);
+                if (item.label !== "Déconnexion") return;
+                event.preventDefault();
+                void signOutWithSession().then(() => {
+                  window.location.assign("/login");
+                });
+              }}
               className="block"
               style={{
                 ...typography.navigation.desktop,

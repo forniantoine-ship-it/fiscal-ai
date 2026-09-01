@@ -12,7 +12,18 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
-const GUTTER = `clamp(${spacing.gutter.mobile}, 4vw, ${spacing.gutter.desktop})`;
+import {
+  createDashboardLayoutCssVariables,
+  DASHBOARD_GUTTER,
+} from "@/design-system/layouts/dashboard-layout-variables";
+import { signOutWithSession } from "@/lib/lmnp/auth/auth-session";
+import { resolveAutosaveDisplay } from "@/lib/lmnp/store/workspace-autosave-display";
+
+export {
+  createDashboardLayoutCssVariables,
+  DASHBOARD_GUTTER,
+  getDashboardHeaderHeightExpression,
+} from "@/design-system/layouts/dashboard-layout-variables";
 
 export type AutosaveStatus = "saved" | "saving" | "error" | "idle";
 
@@ -20,8 +31,14 @@ export type DashboardLayoutProps = {
   children: ReactNode;
   declarationYear?: number | string;
   autosaveStatus?: AutosaveStatus;
+  persistenceUserId?: string | null;
   userName?: string;
   userInitials?: string;
+  /**
+   * Parcours chapitres plein écran (/dashboard) : le footer est rendu
+   * à la fin du scroll chapitres, pas dans le shell global.
+   */
+  chapterJourney?: boolean;
 };
 
 function FiscalMark({ compact = false }: { compact?: boolean }) {
@@ -62,28 +79,30 @@ function FiscalMark({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function AutosaveIndicator({ status }: { status: AutosaveStatus }) {
-  const copy =
-    status === "saved"
-      ? "Dossier enregistré"
-      : status === "saving"
-        ? "Enregistrement…"
-        : status === "error"
-          ? "Erreur de sauvegarde"
-          : "";
-
-  if (status === "idle") return null;
+function AutosaveIndicator({
+  status,
+  persistenceUserId = null,
+}: {
+  status: AutosaveStatus;
+  persistenceUserId?: string | null;
+}) {
+  const display = resolveAutosaveDisplay(status, persistenceUserId ?? null);
+  if (!display) return null;
 
   const dotColor =
-    status === "saved"
+    display.tone === "saved"
       ? colors.success.DEFAULT
-      : status === "saving"
+      : display.tone === "saving"
         ? colors.orange[500]
         : colors.error.DEFAULT;
 
   return (
     <div
-      className="hidden items-center sm:flex"
+      className={
+        display.tone === "error" && !persistenceUserId
+          ? "flex items-center"
+          : "hidden items-center sm:flex"
+      }
       style={{ gap: spacing.scale[2], ...typography.caption.desktop, color: colors.text.muted }}
       aria-live="polite"
     >
@@ -92,10 +111,10 @@ function AutosaveIndicator({ status }: { status: AutosaveStatus }) {
         className="inline-block h-1.5 w-1.5 rounded-full"
         style={{
           backgroundColor: dotColor,
-          animation: status === "saving" ? motions.analyzing.pulse : undefined,
+          animation: display.tone === "saving" ? motions.analyzing.pulse : undefined,
         }}
       />
-      {copy}
+      {display.label}
     </div>
   );
 }
@@ -188,13 +207,20 @@ function ProfileMenu({
           {[
             { label: "Mon compte", href: "/dashboard" },
             { label: "Paramètres", href: "/dashboard" },
-            { label: "Déconnexion", href: "/connexion" },
+            { label: "Déconnexion", href: "/login" },
           ].map((item) => (
             <Link
               key={item.label}
               href={item.href}
               role="menuitem"
-              onClick={() => setOpen(false)}
+              onClick={(event) => {
+                setOpen(false);
+                if (item.label !== "Déconnexion") return;
+                event.preventDefault();
+                void signOutWithSession().then(() => {
+                  window.location.assign("/login");
+                });
+              }}
               className="block"
               style={{
                 ...typography.navigation.desktop,
@@ -224,11 +250,13 @@ function ProfileMenu({
 function DashboardTopBar({
   declarationYear,
   autosaveStatus,
+  persistenceUserId,
   userName,
   userInitials,
 }: {
   declarationYear: number | string;
   autosaveStatus: AutosaveStatus;
+  persistenceUserId?: string | null;
   userName?: string;
   userInitials?: string;
 }) {
@@ -236,7 +264,7 @@ function DashboardTopBar({
     <div
       className="flex w-full items-center justify-between"
       style={{
-        paddingInline: GUTTER,
+        paddingInline: DASHBOARD_GUTTER,
         paddingBlock: spacing.scale[5],
       }}
     >
@@ -255,19 +283,19 @@ function DashboardTopBar({
         >
           Exercice {declarationYear}
         </span>
-        <AutosaveIndicator status={autosaveStatus} />
+        <AutosaveIndicator status={autosaveStatus} persistenceUserId={persistenceUserId} />
         <ProfileMenu userName={userName} userInitials={userInitials} />
       </div>
     </div>
   );
 }
 
-function DashboardFooter() {
+export function DashboardFooter() {
   return (
     <footer
       className="w-full"
       style={{
-        paddingInline: GUTTER,
+        paddingInline: DASHBOARD_GUTTER,
         paddingTop: spacing.scale[8],
         paddingBottom: spacing.scale[6],
       }}
@@ -305,8 +333,10 @@ export function DashboardLayout({
   children,
   declarationYear = new Date().getFullYear() - 1,
   autosaveStatus = "idle",
+  persistenceUserId = null,
   userName,
   userInitials,
+  chapterJourney = false,
 }: DashboardLayoutProps) {
   return (
     <div
@@ -322,7 +352,15 @@ export function DashboardLayout({
         <div key={layer.id} aria-hidden className={layer.className} style={layer.style} />
       ))}
 
-      <div className="relative flex min-h-screen flex-col">
+      <div
+        className="relative flex flex-col"
+        style={{
+          ...createDashboardLayoutCssVariables(),
+          ...(chapterJourney
+            ? { height: "100dvh", overflow: "hidden" }
+            : { minHeight: "100vh" }),
+        }}
+      >
         <header
           style={{
             borderBottom: `1px solid ${colors.border.subtle}`,
@@ -334,25 +372,29 @@ export function DashboardLayout({
           <DashboardTopBar
             declarationYear={declarationYear}
             autosaveStatus={autosaveStatus}
+            persistenceUserId={persistenceUserId}
             userName={userName}
             userInitials={userInitials}
           />
         </header>
 
         <main
-          className="mx-auto w-full flex-1"
+          className="mx-auto flex w-full min-h-0 flex-1 flex-col"
           style={{
             maxWidth: spacing.container.default,
-            paddingInline: GUTTER,
+            paddingInline: DASHBOARD_GUTTER,
             paddingTop: spacing.responsive.headerToMain.desktop,
-            paddingBottom: spacing.section.gap,
+            paddingBottom: chapterJourney ? 0 : spacing.section.gap,
             transition: motions.page.enter,
+            overflow: chapterJourney ? "hidden" : undefined,
           }}
         >
-          <div style={{ transition: motions.workflow.content }}>{children}</div>
+          <div className="min-h-0 flex-1" style={{ transition: motions.workflow.content }}>
+            {children}
+          </div>
         </main>
 
-        <DashboardFooter />
+        {!chapterJourney ? <DashboardFooter /> : null}
       </div>
     </div>
   );

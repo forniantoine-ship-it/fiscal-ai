@@ -111,3 +111,12 @@ export async function signInWithSession(
 export function logAuthRedirectDashboard() {
   console.log("[auth] redirect dashboard");
 }
+
+export async function signOutWithSession(): Promise<void> {
+  const { error } = await supabase.auth.signOut();
+  if (error) {
+    console.error("[auth] signOut failed", error.message);
+    throw error;
+  }
+  console.log("[auth] signOut success");
+}

@@ -15,7 +15,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "onAccent";
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -92,8 +92,31 @@ export function Button({
     pointerEvents: disabled ? ("none" as const) : undefined,
   };
 
+  const onAccentStyle = {
+    ...typography.button.desktop,
+    color: colors.text.primary,
+    backgroundColor: pressed
+      ? colors.surface.interactive
+      : hovered
+        ? colors.surface.primary
+        : colors.surface.primary,
+    border: `1px solid ${hovered ? colors.border.strong : colors.border.subtle}`,
+    borderRadius: radius.full,
+    padding: `${spacing.scale[3]} ${spacing.scale[6]}`,
+    boxShadow: hovered ? shadows.card.hover : shadows.card.default,
+    transition: motions.hover.button,
+    opacity: disabled ? 0.5 : 1,
+    pointerEvents: disabled ? ("none" as const) : undefined,
+  };
+
   const style =
-    variant === "primary" ? primaryStyle : variant === "secondary" ? secondaryStyle : ghostStyle;
+    variant === "primary"
+      ? primaryStyle
+      : variant === "secondary"
+        ? secondaryStyle
+        : variant === "onAccent"
+          ? onAccentStyle
+          : ghostStyle;
 
   if (href && !disabled) {
     if (isInternalPath(href)) {

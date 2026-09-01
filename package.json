@@ -85,7 +85,17 @@
     "test:reducer-revenus-removal": "npx tsx --test src/lib/lmnp/store/reducer-revenus-removal.test.ts",
     "test:f013-assistant": "npx tsx --test src/runtime/assistants/f013-revenus/assistant.test.ts",
     "test:f013-runtime": "npx tsx --test src/runtime/f013.test.ts",
-    "test:f013": "npm run test:revenus-parser && npm run test:spreadsheet-headers && npm run test:revenue-monetary && npm run test:revenue-aggregation && npm run test:revenue-transaction-pipeline && npm run test:revenue-gpt-ui-prefill-multi-upload && npm run test:revenus-upload-bridge && npm run test:revenus-grid-edit && npm run test:revenus-fiscal-trace && npm run test:revenus-header-classification && npm run test:revenus-column-semantics && npm run test:revenus-ocr-lines-adapter && npm run test:revenus-pipeline-cycles && npm run test:revenus-spreadsheet && npm run test:reducer-revenus-removal && npm run test:f013-assistant && npm run test:f013-runtime"
+    "test:f013": "npm run test:revenus-parser && npm run test:spreadsheet-headers && npm run test:revenue-monetary && npm run test:revenue-aggregation && npm run test:revenue-transaction-pipeline && npm run test:revenue-gpt-ui-prefill-multi-upload && npm run test:revenus-upload-bridge && npm run test:revenus-grid-edit && npm run test:revenus-fiscal-trace && npm run test:revenus-header-classification && npm run test:revenus-column-semantics && npm run test:revenus-ocr-lines-adapter && npm run test:revenus-pipeline-cycles && npm run test:revenus-spreadsheet && npm run test:reducer-revenus-removal && npm run test:f013-assistant && npm run test:f013-runtime",
+    "test:dashboard-chapter-axis-lock": "./node_modules/.bin/tsx src/design-system/layouts/chapter-axis-lock.test.ts",
+    "test:dashboard-chapter-vertical-scroll-lock": "./node_modules/.bin/tsx src/components/lmnp/dashboard/chapter-vertical-scroll-lock.test.ts",
+    "test:dashboard-chapter-scroll-lock": "./node_modules/.bin/tsx src/components/lmnp/dashboard/dashboard-chapter-scroll-lock.test.ts",
+    "test:dashboard-workflow-card-activate": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-card-activate.test.ts",
+    "test:dashboard-workflow-carousel-engine": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-carousel-engine.test.ts",
+    "test:dashboard-workflow-carousel-pointer-capture": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-carousel-pointer-capture.test.ts",
+    "test:dashboard-workflow-progression": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-progression.test.ts",
+    "test:dashboard-workflow-progression-routing": "./node_modules/.bin/tsx src/components/lmnp/dashboard/workflow-progression-routing.test.ts",
+    "test:dashboard-sign-out": "./node_modules/.bin/tsx src/lib/lmnp/auth/sign-out.test.ts",
+    "test:dashboard": "npm run test:dashboard-chapter-axis-lock && npm run test:dashboard-chapter-vertical-scroll-lock && npm run test:dashboard-chapter-scroll-lock && npm run test:dashboard-workflow-card-activate && npm run test:dashboard-workflow-carousel-engine && npm run test:dashboard-workflow-carousel-pointer-capture && npm run test:dashboard-workflow-progression && npm run test:dashboard-workflow-progression-routing && npm run test:dashboard-sign-out"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
