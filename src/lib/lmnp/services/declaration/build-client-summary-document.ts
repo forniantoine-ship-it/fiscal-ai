@@ -4,14 +4,19 @@ import type { FiscalResult, StockDeficit } from "@/runtime/capabilities/f006/typ
 /**
  * Document client 149 € — synthèse fiscale + aide à la déclaration 2042-C-PRO.
  *
- * Construit UNIQUEMENT depuis la RFS (`rfs.identite` / `rfs.fiscalResult`) :
- * aucune lecture d'assistant (F-012/F-013/F-014/…), aucun recalcul fiscal.
- * Chaque montant fiscal de ce document est une restitution directe d'un champ
- * déjà calculé par F-006 — voir `build-client-summary-document.test.ts` pour
- * la preuve. Les seules opérations arithmétiques de ce fichier sont des
+ * Construit depuis la RFS (`rfs.identite` / `rfs.fiscalResult`) : aucune
+ * lecture d'assistant (F-012/F-013/F-014/…), aucun recalcul fiscal. Chaque
+ * montant fiscal de ce document est une restitution directe d'un champ déjà
+ * calculé par F-006 — voir `build-client-summary-document.test.ts` pour la
+ * preuve. Les seules opérations arithmétiques de ce fichier sont des
  * agrégations d'affichage pures (somme d'une liste déjà calculée, tri par
  * montant) — jamais une règle fiscale nouvelle. Chacune est commentée à
  * l'endroit où elle apparaît.
+ *
+ * Exception d'affichage P1-4B : `activityStartDate` (F-009, début d'activité)
+ * est lue en option hors RFS, uniquement pour décider si la case 5CD doit
+ * inviter à un report. Ce n'est pas un calcul fiscal, et ce n'est jamais
+ * `dateMiseEnService`.
  *
  * Séparation volontaire : cette fonction produit une représentation
  * structurée et testable ; `render-client-summary-pdf.ts` transforme
@@ -32,6 +37,20 @@ export type ClientSummaryCase2042 = {
   montant: number | string;
   /** Ambiguïté ou point à vérifier avant de reporter cette case — jamais masqué. */
   note?: string;
+};
+
+/**
+ * Options hors RFS — données d'affichage 2042 qui n'appartiennent pas au
+ * FiscalResult et que l'on ne transporte pas via l'identité 2031 (dates
+ * d'exercice hardcodées 01/01–31/12, chantier distinct).
+ */
+export type ClientSummaryOptions = {
+  /**
+   * F-009 — date de début d'activité (`DeclarationDraft.activityStartDate`).
+   * Sert uniquement à classer 5CD : exercice de 12 mois vs première année.
+   * Jamais un nombre de mois. Distinct de `dateMiseEnService`.
+   */
+  activityStartDate?: string;
 };
 
 export type ClientSummaryChargeCategorie = {
@@ -138,6 +157,79 @@ function deficitsVraimentAnterieurs(fr: FiscalResult): StockDeficit[] {
 }
 
 /**
+ * P1-4A — correspondance Cerfa 2042-C-PRO, cases 5GA à 5GJ.
+ *
+ * Fenêtre glissante de 10 ans : N-10 → 5GA … N-1 → 5GJ. Les codes de case
+ * sont stables ; les millésimes imprimés sur le formulaire avancent d'un an
+ * à chaque campagne. Jamais une table d'années figée.
+ *
+ * Sources (audit P1-4) : Cerfa 2042-C-PRO n° 11222*28 (revenus 2025) et
+ * n° 11222*27 (revenus 2024) ; brochure IR DGFiP ; CGI art. 156, I, 1° ter.
+ * Aucun calcul fiscal : projection d'affichage d'un millésime déjà porté
+ * par F-006. `undefined` hors fenêtre (exercice courant, expiré, ou millésime
+ * non reportable) — jamais une case inventée.
+ */
+const DEFICIT_2042_CASE_LETTERS = "ABCDEFGHIJ";
+
+export function get2042DeficitCase(exercice: number, millesime: number): string | undefined {
+  const offset = millesime - (exercice - 10);
+  if (offset < 0 || offset > 9) return undefined;
+  return `5G${DEFICIT_2042_CASE_LETTERS[offset]}`;
+}
+
+/**
+ * P1-4B — 5CD se remplit seulement si l'exercice dure moins de 12 mois
+ * (Cerfa : « nombre de mois si inférieur à 12 »). Un départ au 1er janvier
+ * de l'exercice est un exercice complet : on n'invite pas à renseigner.
+ * Aucun comptage de mois (UNKNOWN pour un départ en cours de mois).
+ * Exception saisonnière : non détectée (donnée absente du dossier).
+ */
+function classifyExerciceDuration(
+  activityStartDate: string | undefined,
+  exercice: number,
+): "full" | "partial" | "unknown" {
+  if (!activityStartDate) return "unknown";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(activityStartDate.trim());
+  if (!match) return "unknown";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < exercice) return "full";
+  if (year === exercice && month === 1 && day === 1) return "full";
+  if (year === exercice) return "partial";
+  return "unknown";
+}
+
+function buildCase5CD(activityStartDate: string | undefined, exercice: number): ClientSummaryCase2042 {
+  const classification = classifyExerciceDuration(activityStartDate, exercice);
+  const label = "Durée de l'exercice (nombre de mois si inférieur à 12)";
+
+  if (classification === "full") {
+    return {
+      case: "5CD",
+      label,
+      montant: "Ne pas renseigner (exercice de 12 mois)",
+    };
+  }
+
+  if (classification === "partial") {
+    return {
+      case: "5CD",
+      label,
+      montant: "À vérifier",
+      note: "À vérifier : la durée de l'exercice est inférieure à 12 mois ; renseignez la case 5CD selon votre situation.",
+    };
+  }
+
+  return {
+    case: "5CD",
+    label,
+    montant: "À vérifier",
+    note: "La date de début d'activité n'est pas connue. Ne renseignez la case 5CD que si votre exercice a duré moins de 12 mois.",
+  };
+}
+
+/**
  * P1-3 — restitution pure de `fr.stocks.deficitsExpires` (F-006,
  * `expireDeficits()`) sous forme d'un avertissement lisible. Aucun recalcul :
  * la liste des déficits expirés et leur montant sont déjà déterminés par
@@ -199,15 +291,14 @@ function buildChargesParCategorie(fr: FiscalResult): ClientSummaryChargeCategori
     .sort((a, b) => b.montant - a.montant);
 }
 
-function buildCases2042(fr: FiscalResult, isDeficit: boolean): ClientSummaryCase2042[] {
+function buildCases2042(
+  fr: FiscalResult,
+  isDeficit: boolean,
+  activityStartDate?: string,
+): ClientSummaryCase2042[] {
   const cases: ClientSummaryCase2042[] = [];
 
-  cases.push({
-    case: "5CD",
-    label: "Durée de l'exercice (nombre de mois)",
-    montant: "À déterminer à partir de votre date de début d'activité",
-    note: "La durée exacte de l'exercice en mois n'est pas encore portée par la représentation fiscale structurée (RFS) — à vérifier avant de reporter cette case.",
-  });
+  cases.push(buildCase5CD(activityStartDate, fr.exercice));
 
   if (isDeficit) {
     cases.push({
@@ -224,11 +315,12 @@ function buildCases2042(fr: FiscalResult, isDeficit: boolean): ClientSummaryCase
   }
 
   for (const deficit of deficitsVraimentAnterieurs(fr)) {
+    const caseId = get2042DeficitCase(fr.exercice, deficit.millesime);
+    if (!caseId) continue;
     cases.push({
-      case: "5GA à 5GJ",
+      case: caseId,
       label: `Déficit antérieur restant à reporter (exercice ${deficit.millesime})`,
       montant: deficit.montant,
-      note: "La correspondance exacte entre ce déficit et sa case (5GA à 5GJ) dépend de l'ordre demandé par le formulaire officiel ou le service en ligne au moment de la déclaration — à vérifier, ces cases sont d'ailleurs signalées par l'administration comme communiquées à titre indicatif.",
     });
   }
 
@@ -305,7 +397,10 @@ function buildTravailEffectue(fr: FiscalResult, isDeficit: boolean): string[] {
   return lignes;
 }
 
-export function buildClientSummaryDocument(rfs: FiscalRepresentation): ClientSummaryDocument {
+export function buildClientSummaryDocument(
+  rfs: FiscalRepresentation,
+  options?: ClientSummaryOptions,
+): ClientSummaryDocument {
   const fr = rfs.fiscalResult;
   const isDeficit = fr.deficitNouveau > 0;
 
@@ -313,7 +408,7 @@ export function buildClientSummaryDocument(rfs: FiscalRepresentation): ClientSum
     ? { nature: "deficit", montant: fr.deficitNouveau }
     : { nature: "benefice", montant: fr.resultatFiscal };
 
-  const cases = buildCases2042(fr, isDeficit);
+  const cases = buildCases2042(fr, isDeficit, options?.activityStartDate);
   const deficitsAnterieursRestants = deficitsVraimentAnterieurs(fr);
 
   return {

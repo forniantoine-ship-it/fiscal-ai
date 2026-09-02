@@ -9,7 +9,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildClientSummaryDocument } from "./build-client-summary-document";
+import { buildClientSummaryDocument, get2042DeficitCase } from "./build-client-summary-document";
 import type { FiscalResult } from "@/runtime/capabilities/f006/types";
 import type { IdentiteDeclarante } from "@/runtime/capabilities/f007/types";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
@@ -118,7 +118,7 @@ describe("Cycle 27 — TEST 3 : déficit", () => {
 });
 
 describe("Cycle 27 — TEST 4 : déficits antérieurs → cases 5GA à 5GJ", () => {
-  it("chaque déficit antérieur du FiscalResult produit une ligne de case, avec le montant exact et une note d'ambiguïté", () => {
+  it("chaque déficit antérieur du FiscalResult produit une ligne de case, avec le montant exact et la case individuelle", () => {
     const document = buildClientSummaryDocument(
       rfs(
         fiscalResult({
@@ -133,26 +133,22 @@ describe("Cycle 27 — TEST 4 : déficits antérieurs → cases 5GA à 5GJ", () 
         }),
       ),
     );
-    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => c.case === "5GA à 5GJ");
+    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
     assert.equal(lignesDeficitsAnterieurs.length, 2, "une ligne par déficit antérieur restant");
+    assert.equal(lignesDeficitsAnterieurs[0].case, "5GI", "exercice 2025, millésime 2023 → 5GI");
     assert.equal(lignesDeficitsAnterieurs[0].montant, 1200);
+    assert.equal(lignesDeficitsAnterieurs[1].case, "5GJ", "exercice 2025, millésime 2024 → 5GJ");
     assert.equal(lignesDeficitsAnterieurs[1].montant, 800);
-    assert.ok(
-      lignesDeficitsAnterieurs.every((c) => Boolean(c.note)),
-      "la correspondance exacte case/millésime n'est jamais affirmée sans réserve",
+    assert.equal(
+      lignesDeficitsAnterieurs.every((c) => c.note === undefined),
+      true,
+      "la correspondance Cerfa millésime → case est déterminée, plus d'ambiguïté affichée",
     );
-    assert.ok(
-      document.aide2042.ambiguites.length >= 2,
-      "les notes des déficits antérieurs remontent dans la liste des ambiguïtés du document (au moins une par déficit, plus la note 5CD toujours présente)",
-    );
-    for (const note of lignesDeficitsAnterieurs.map((c) => c.note)) {
-      assert.ok(document.aide2042.ambiguites.includes(note as string));
-    }
   });
 
   it("aucun déficit antérieur → aucune ligne 5GA à 5GJ, aucune ambiguïté inventée", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult()));
-    assert.equal(document.aide2042.cases.some((c) => c.case === "5GA à 5GJ"), false);
+    assert.equal(document.aide2042.cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
   });
 });
 
@@ -190,7 +186,7 @@ describe("Cycle 28 — le déficit de l'exercice courant n'est jamais dupliqué 
     const case5NY = document.aide2042.cases.find((c) => c.case === "5NY");
     assert.equal(case5NY?.montant, 9862, "5NY porte bien le déficit de l'exercice");
 
-    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => c.case === "5GA à 5GJ");
+    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
     assert.equal(lignesDeficitsAnterieurs.length, 1, "une seule ligne 5GA-5GJ : uniquement le vrai déficit antérieur (2023)");
     assert.equal(
       lignesDeficitsAnterieurs.some((c) => c.label.includes("2025")),
@@ -219,7 +215,7 @@ describe("Cycle 28 — le déficit de l'exercice courant n'est jamais dupliqué 
         }),
       ),
     );
-    assert.equal(document.aide2042.cases.some((c) => c.case === "5GA à 5GJ"), false);
+    assert.equal(document.aide2042.cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
     assert.equal(document.syntheseFiscale.deficitsAnterieursRestants.length, 0);
   });
 
@@ -236,7 +232,7 @@ describe("Cycle 28 — le déficit de l'exercice courant n'est jamais dupliqué 
     );
     const case5NA = document.aide2042.cases.find((c) => c.case === "5NA");
     assert.equal(case5NA?.montant, 3000);
-    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => c.case === "5GA à 5GJ");
+    const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
     assert.equal(lignesDeficitsAnterieurs.length, 1);
     assert.equal(lignesDeficitsAnterieurs[0].montant, 1200);
     assert.deepEqual(document.syntheseFiscale.deficitsAnterieursRestants, [{ millesime: 2023, montant: 1200 }]);
@@ -547,5 +543,171 @@ describe("P1-3 — avertissement 'déficits arrivés à expiration'", () => {
       "le déficit expiré (2015) ne doit jamais apparaître dans les déficits restants",
     );
     assert.ok(document.avertissements.deficitsExpires?.includes("2015"));
+  });
+});
+
+/**
+ * P1-4A (audit 2026-09-02) — mapping dynamique Cerfa 2042-C-PRO :
+ * N-10 → 5GA … N-1 → 5GJ. Projection d'affichage, aucun recalcul F-006.
+ */
+describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
+  it("get2042DeficitCase : fenêtre glissante, jamais une table d'années figée", () => {
+    assert.equal(get2042DeficitCase(2025, 2015), "5GA");
+    assert.equal(get2042DeficitCase(2025, 2023), "5GI");
+    assert.equal(get2042DeficitCase(2025, 2024), "5GJ");
+    assert.equal(get2042DeficitCase(2024, 2014), "5GA");
+    assert.equal(get2042DeficitCase(2024, 2023), "5GJ");
+    assert.equal(get2042DeficitCase(2025, 2025), undefined, "l'exercice courant n'a pas de case 5G*");
+    assert.equal(get2042DeficitCase(2025, 2014), undefined, "hors fenêtre (expiré) → pas de case");
+  });
+
+  it("1. exercice 2025 + déficit 2023 → 5GI, montant et millésime conservés", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          stocks: { deficits: [{ millesime: 2023, montant: 1200 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    const ligne = document.aide2042.cases.find((c) => c.case === "5GI");
+    assert.ok(ligne, "la case 5GI doit être présente");
+    assert.equal(ligne?.montant, 1200);
+    assert.match(ligne?.label ?? "", /2023/);
+  });
+
+  it("2. exercice 2025 + déficit 2024 → 5GJ", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          stocks: { deficits: [{ millesime: 2024, montant: 800 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.find((c) => c.case === "5GJ")?.montant, 800);
+  });
+
+  it("3. exercice 2025 + déficit 2015 → 5GA", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          stocks: { deficits: [{ millesime: 2015, montant: 500 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.find((c) => c.case === "5GA")?.montant, 500);
+  });
+
+  it("4. exercice 2024 + déficit 2023 → 5GJ (le mapping glisse avec l'exercice)", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2024,
+          stocks: { deficits: [{ millesime: 2023, montant: 900 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.find((c) => c.case === "5GJ")?.montant, 900);
+    assert.equal(document.aide2042.cases.some((c) => c.case === "5GI"), false, "2023 n'est plus 5GI quand N=2024");
+  });
+
+  it("5. exercice 2024 + déficit 2014 → 5GA", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2024,
+          stocks: { deficits: [{ millesime: 2014, montant: 300 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.find((c) => c.case === "5GA")?.montant, 300);
+  });
+
+  it("6. exercice courant 2025 + déficit 2025 → aucune ligne 5GA–5GJ", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          resultatFiscal: 0,
+          deficitNouveau: 9862,
+          stocks: { deficits: [{ millesime: 2025, montant: 9862 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
+  });
+
+  it("7. déficit hors fenêtre / expiré → aucune ligne 5GA–5GJ", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          stocks: {
+            deficits: [{ millesime: 2014, montant: 700 }],
+            amortissementsReportes: 0,
+            deficitsExpires: [{ millesime: 2014, montant: 700 }],
+          },
+        }),
+      ),
+    );
+    assert.equal(document.aide2042.cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
+  });
+});
+
+/**
+ * P1-4B (audit 2026-09-02) — 5CD ne s'invite que si l'exercice est < 12 mois.
+ * Aucun nombre de mois calculé. Source : activityStartDate, jamais dateMiseEnService.
+ */
+describe("P1-4B — exposition 5CD selon la date de début d'activité", () => {
+  it("1. activityStartDate antérieure au 01/01/2025 → 5CD n'invite pas à renseigner une durée", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {
+      activityStartDate: "2020-03-05",
+    });
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.ok(case5CD, "la case 5CD reste visible pour documenter la décision");
+    assert.match(String(case5CD?.montant), /Ne pas renseigner/i);
+    assert.doesNotMatch(String(case5CD?.montant), /À vérifier|renseignez/i);
+    assert.equal(case5CD?.note, undefined, "pas d'ambiguïté : l'exercice est complet");
+  });
+
+  it("2. première activité pendant 2025 → à vérifier, aucun nombre de mois calculé", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {
+      activityStartDate: "2025-04-15",
+    });
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.equal(case5CD?.montant, "À vérifier");
+    assert.match(case5CD?.note ?? "", /inférieure à 12 mois/i);
+    assert.doesNotMatch(String(case5CD?.montant), /^\d+$/);
+    assert.ok(document.aide2042.ambiguites.includes(case5CD?.note as string));
+  });
+
+  it("3. 5CD s'appuie sur activityStartDate, jamais sur une date de mise en service", () => {
+    // Mise en service fictive en juin 2025 : si elle était lue, 5CD passerait
+    // en « première année ». activityStartDate 2020 → exercice complet.
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {
+      activityStartDate: "2020-01-01",
+      // @ts-expect-error — dateMiseEnService n'est pas une option du document client
+      dateMiseEnService: "2025-06-15",
+    });
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.match(String(case5CD?.montant), /Ne pas renseigner/i);
+  });
+
+  it("4. date manquante → à vérifier, aucun calcul inventé", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })));
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.equal(case5CD?.montant, "À vérifier");
+    assert.match(case5CD?.note ?? "", /n'est pas connue|moins de 12 mois/i);
+    assert.doesNotMatch(String(case5CD?.montant), /^\d+$/);
+  });
+
+  it("départ au 1er janvier de l'exercice → exercice de 12 mois, ne pas renseigner", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {
+      activityStartDate: "2025-01-01",
+    });
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.match(String(case5CD?.montant), /Ne pas renseigner/i);
   });
 });

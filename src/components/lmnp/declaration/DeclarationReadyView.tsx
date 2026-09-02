@@ -29,7 +29,7 @@ function fmtEur(value: number): string {
 export function DeclarationReadyView() {
   const { workspace } = useLmnp();
   const { fiscalYear } = workspace;
-  const { fiscalResult, liasseResult, rfs, liasseRfs } = workspace.declarationDraft ?? {};
+  const { fiscalResult, liasseResult, rfs, liasseRfs, activityStartDate } = workspace.declarationDraft ?? {};
   // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
   // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
   const formulairesManquants = resolveFormulairesManquants(liasseResult, liasseRfs);
@@ -97,7 +97,13 @@ export function DeclarationReadyView() {
         </p>
         <div className="mt-6 flex justify-center">
           {rfs ? (
-            <Button onClick={() => downloadClientSummaryPdf(buildClientSummaryDocument(rfs))}>
+            <Button
+              onClick={() =>
+                downloadClientSummaryPdf(
+                  buildClientSummaryDocument(rfs, { activityStartDate }),
+                )
+              }
+            >
               Télécharger ma synthèse fiscale et mon aide à la déclaration (PDF)
             </Button>
           ) : null}
