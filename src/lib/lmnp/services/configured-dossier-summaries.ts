@@ -307,10 +307,18 @@ export function resolveRevenusDashboardSummary(draft: DeclarationDraft | undefin
 }
 
 export function resolveChargesDashboardSummary(draft: DeclarationDraft | undefined): string | null {
-  if (!draft?.chargesConfirmedAt || !draft.chargesExtraction) return null;
-  const docs = countChargeDocuments(draft.chargesExtraction);
-  const total = formatChargesCurrency(draft.chargesExtraction.summary.totalCharges);
-  return `${docs} documents · ${total}`;
+  if (draft?.chargesConfirmedAt && draft.chargesExtraction) {
+    const docs = countChargeDocuments(draft.chargesExtraction);
+    const total = formatChargesCurrency(draft.chargesExtraction.summary.totalCharges);
+    return `${docs} documents · ${total}`;
+  }
+  // P0-3A (audit 2026-09-02) — parcours officiel : chargesAssistant (F-012) est
+  // la source de vérité fiscale, chargesExtraction (legacy) peut être absente.
+  if (draft?.chargesAssistant) {
+    const total = formatChargesCurrency(draft.chargesAssistant.totalDeductible);
+    return `${total} de charges déductibles`;
+  }
+  return null;
 }
 
 export function resolveAmortissementDashboardSummary(draft: DeclarationDraft | undefined): string | null {
