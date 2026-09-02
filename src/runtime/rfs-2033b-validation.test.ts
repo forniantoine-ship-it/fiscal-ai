@@ -362,7 +362,7 @@ describe("Cycle 33 — STEP 6 : matrice de combinaisons", () => {
     assert.ok(findCase(deficit, "372"));
   });
 
-  it("J. déficits antérieurs imputés SANS limitation d'amortissement la même année → 360 alimentée normalement, aucun blocage supplémentaire", () => {
+  it("J. déficits antérieurs imputés SANS limitation d'amortissement la même année → 360 reste non alimentée (audit fiscal ciblé, IS uniquement), aucun blocage supplémentaire", () => {
     const fr = fiscalResult({
       resultatAvantAmort: 5000,
       amortCalcule: 1000,
@@ -372,7 +372,7 @@ describe("Cycle 33 — STEP 6 : matrice de combinaisons", () => {
       resultatFiscal: 2000,
     });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "360")?.value, 2000);
+    assert.equal(findCase(form, "360"), undefined, "360 réservée à l'IS — jamais alimentée pour un LMNP à l'IR");
     assert.equal(findCase(form, "318")?.value, 0, "pas de limitation, rien à reporter");
     // 352/354 restent bloquées par construction (toujours, indépendamment du cas) —
     // mais ici il n'y a même pas de conflit réel : la limitation citée dans le
@@ -395,11 +395,13 @@ describe("Cycle 33 — STEP 6 : matrice de combinaisons", () => {
     assert.equal(findCase(form, "354"), undefined);
     assert.ok(findBlocked(form, "352"), "352 doit rester tracée comme non alimentée");
     assert.ok(findBlocked(form, "354"), "354 doit rester tracée comme non alimentée");
-    // 318 et 360 restent projetées telles quelles (pass-through), avec leur
-    // limitation déjà documentée au Cycle 32 — le mapper ne les bloque pas,
-    // il transporte fidèlement ce que F-006 a produit.
+    // 318 reste projetée telle quelle (pass-through), avec sa limitation déjà
+    // documentée au Cycle 32 — le mapper ne la bloque pas, il transporte
+    // fidèlement ce que F-006 a produit. 360 reste non alimentée (audit
+    // fiscal ciblé, IS uniquement) indépendamment de la valeur de deficitsImputes.
     assert.equal(findCase(form, "318")?.value, 2000);
-    assert.equal(findCase(form, "360")?.value, 4000);
+    assert.equal(findCase(form, "360"), undefined);
+    assert.ok(findBlocked(form, "360"), "360 doit rester tracée comme non alimentée");
   });
 });
 

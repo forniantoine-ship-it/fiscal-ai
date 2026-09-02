@@ -126,7 +126,7 @@ describe("Cycle 31 — TEST 3 et 4 : valeurs exactes des cases pass-through", ()
     assert.equal(case232?.value, representation.fiscalResult.recettes.total);
   });
 
-  it("294 / 318 / 360 correspondent exactement aux champs RFS correspondants", () => {
+  it("294 / 318 correspondent exactement aux champs RFS correspondants", () => {
     const representation = rfs(
       fiscalResult({
         charges: { totalDeductible: 6602, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 },
@@ -138,7 +138,9 @@ describe("Cycle 31 — TEST 3 et 4 : valeurs exactes des cases pass-through", ()
     const byId = (id: string) => liasse.form2033B.cases.find((c) => c.caseId === id)?.value;
     assert.equal(byId("294"), representation.fiscalResult.charges.chargesFinancement);
     assert.equal(byId("318"), representation.fiscalResult.amortReporte);
-    assert.equal(byId("360"), representation.fiscalResult.deficitsImputes);
+    // Audit fiscal ciblé (déficits LMNP) — 360 est réservée aux entreprises à
+    // l'IS (Notice 2033-NOT-SD) : jamais alimentée ici, même avec deficitsImputes > 0.
+    assert.equal(byId("360"), undefined);
   });
 });
 

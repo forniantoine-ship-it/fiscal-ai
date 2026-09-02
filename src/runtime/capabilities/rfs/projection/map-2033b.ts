@@ -43,6 +43,13 @@ import { round2 } from "../../f007/types";
  * suffisamment certaine entre les catégories F-012 (`detailParCategorie`) et
  * les postes du compte de résultat Cerfa (voir Cycle 46) — non ajoutées à
  * `casesNonAlimentees` ce cycle, périmètre strictement limité à 218/254.
+ *
+ * Audit fiscal ciblé (déficits LMNP) — 360 est reclassée en `non_applicable`,
+ * pour la même raison que 356 : la notice 2033-NOT-SD réserve explicitement
+ * cette ligne aux entreprises relevant de l'IS. `fiscalResult.deficitsImputes`
+ * reste une donnée F-006 valide, mais n'est projetée sur aucune case du
+ * 2033-B — elle est déjà reflétée dans `resultatFiscal` (case 370) et
+ * documentée séparément sur le 2042-C-PRO (cases 5GA-5GJ).
  */
 
 /** Pourquoi une case Cerfa n'est volontairement pas alimentée. */
@@ -159,12 +166,6 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: round2(fr.amortReporte),
       trace: { ...baseTrace, path: "fiscalResult.amortReporte", ksArtifacts: ["TRF-0031", "TRF-0032"] },
     },
-    {
-      caseId: "360",
-      label: "Déficits antérieurs reportables, dont imputés sur le résultat",
-      value: round2(fr.deficitsImputes),
-      trace: { ...baseTrace, path: "fiscalResult.deficitsImputes", ksArtifacts: ["TRF-0031", "TRF-0032"] },
-    },
   ];
 
   if (resultatComptable > 0) {
@@ -230,6 +231,20 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       label: "Déficit de l'exercice reporté en arrière",
       raison:
         "Le report en arrière (carry-back, article 220 quinquies du CGI, formalisé sur le formulaire n° 2039-SD) est un mécanisme réservé aux entreprises soumises à l'impôt sur les sociétés (confirmé par la notice officielle 2033-NOT-SD). Un LMNP au réel simplifié relève de l'impôt sur le revenu : cette case ne concerne pas notre régime par construction légale, indépendamment de ce que F-006 implémente ou non.",
+      categorie: "non_applicable",
+    },
+    {
+      // Audit fiscal ciblé (déficits LMNP) — la notice 2033-NOT-SD réserve
+      // explicitement cette ligne aux "entreprises relevant de l'impôt sur les
+      // sociétés". Pour un LMNP à l'IR, l'imputation des déficits antérieurs
+      // (fiscalResult.deficitsImputes) n'a pas sa place ici : elle est déjà
+      // absorbée dans fiscalResult.resultatFiscal (report vers 370) et
+      // documentée séparément au niveau du 2042-C-PRO (cases 5GA-5GJ), jamais
+      // sur le 2033-B.
+      caseId: "360",
+      label: "Déficits antérieurs reportables",
+      raison:
+        "La notice officielle 2033-NOT-SD précise que le montant porté à cette ligne correspond à la fraction des déficits imputés sur le bénéfice de l'exercice par les entreprises relevant de l'impôt sur les sociétés. Un LMNP au réel simplifié relève de l'impôt sur le revenu : cette case ne concerne pas notre régime par construction légale. L'imputation des déficits antérieurs LMNP (fiscalResult.deficitsImputes) reste une donnée valide de F-006, déjà reflétée dans fiscalResult.resultatFiscal (case 370) et dans le 2042-C-PRO (cases 5GA-5GJ) — jamais projetée ici.",
       categorie: "non_applicable",
     },
   ];

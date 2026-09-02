@@ -89,10 +89,15 @@ describe("Cycle 30 — TEST 1 à 4 : cases pass-through", () => {
     assert.equal(findCase(form, "318")?.value, 3720);
   });
 
-  it("360 reprend exactement fiscalResult.deficitsImputes", () => {
-    const fr = fiscalResult({ deficitsImputes: 1500 });
+  it("audit fiscal ciblé (déficits LMNP) — 360 n'est jamais alimentée, même avec deficitsImputes > 0", () => {
+    const fr = fiscalResult({ deficitsImputes: 6000 });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "360")?.value, 1500);
+    assert.equal(
+      findCase(form, "360"),
+      undefined,
+      "360 est réservée aux entreprises à l'IS (Notice 2033-NOT-SD) — jamais alimentée pour un LMNP à l'IR",
+    );
+    assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
   });
 });
 
@@ -249,13 +254,13 @@ describe("Cycle 30 — TEST 7 : le FiscalResult source n'est jamais reconstruit"
 describe("Cycle 30/32 — TEST 8 : cases bloquées — jamais une valeur inventée", () => {
   const form = map2033BFromRfs(rfs(fiscalResult()));
 
-  it("352, 354, 356 restent dans casesNonAlimentees, pas dans cases — après le déblocage 264/270/310/312/314", () => {
-    const blockedIds = ["352", "354", "356"];
+  it("352, 354, 356, 360 restent dans casesNonAlimentees, pas dans cases — après le déblocage 264/270/310/312/314", () => {
+    const blockedIds = ["352", "354", "356", "360"];
     for (const id of blockedIds) {
       assert.equal(findCase(form, id), undefined, `${id} ne doit jamais recevoir de valeur`);
       assert.ok(findBlocked(form, id), `${id} doit être tracé dans casesNonAlimentees`);
     }
-    assert.equal(form.casesNonAlimentees.length, 3, "seules 352/354/356 restent bloquées");
+    assert.equal(form.casesNonAlimentees.length, 4, "352/354/356/360 restent bloquées (audit fiscal ciblé : 360 rejoint 356, IS uniquement)");
   });
 
   it("chaque case bloquée porte une raison non vide et une catégorie explicite, y compris la nouvelle catégorie non_applicable", () => {
@@ -386,7 +391,7 @@ describe("Cycle 47 — case 254 : Dotations aux amortissements", () => {
 });
 
 describe("Cycle 47 — non-régression des cases déjà livrées", () => {
-  it("232/264/270/294/310/312/314/318/360/370/372 restent strictement identiques à l'ajout de 218/254", () => {
+  it("232/264/270/294/310/312/314/318/370/372 restent strictement identiques à l'ajout de 218/254", () => {
     const fr = fiscalResult({
       recettes: { total: 9000 },
       charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 500, chargesPreExploitation: 0, totalNonDeductible: 100 },
@@ -406,18 +411,19 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     assert.equal(findCase(form, "310")?.value, resultatComptable);
     assert.equal(findCase(form, "312")?.value, resultatComptable > 0 ? resultatComptable : undefined);
     assert.equal(findCase(form, "318")?.value, 300);
-    assert.equal(findCase(form, "360")?.value, 200);
     assert.equal(findCase(form, "370")?.value, 5400);
   });
 
-  it("352/354/356 restent bloquées, casesNonAlimentees.length toujours 3", () => {
+  it("352/354/356/360 restent bloquées, casesNonAlimentees.length toujours 4", () => {
     const form = map2033BFromRfs(rfs(fiscalResult()));
-    assert.equal(form.casesNonAlimentees.length, 3, "218/254 sont dans cases, pas casesNonAlimentees — aucun changement de blocage");
+    assert.equal(form.casesNonAlimentees.length, 4, "218/254 sont dans cases, pas casesNonAlimentees — 360 rejoint 352/354/356 (audit fiscal ciblé, IS uniquement)");
     assert.ok(findBlocked(form, "352"));
     assert.ok(findBlocked(form, "354"));
     assert.ok(findBlocked(form, "356"));
+    assert.ok(findBlocked(form, "360"));
     assert.equal(findBlocked(form, "352")?.categorie, "incoherence_modele");
     assert.equal(findBlocked(form, "356")?.categorie, "non_applicable");
+    assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
   });
 
   it("aucune autre case du groupe 209-350 n'est nouvellement alimentée", () => {
