@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { declarationCompletude, runDeclarationGeneration } from "./run-declaration-generation";
+import {
+  declarationCompletude,
+  resolveFormulairesManquants,
+  runDeclarationGeneration,
+} from "./run-declaration-generation";
 import { buildRevenusAssistantFromSession } from "@/lib/lmnp/services/revenus-upload-to-assistant-bridge";
 import { removeDocumentFromRevenueSession } from "@/lib/lmnp/services/revenue-gpt-ui-prefill";
 import {
@@ -153,32 +157,18 @@ describe("Cycle 19 — séquence multi-upload complète, jusqu'à F-007 à chaqu
  */
 describe("Cycle 25 — completude reflète réellement formulairesManquants", () => {
   it("declarationCompletude() === 'partielle' tant qu'il reste des formulaires attendus non générés", () => {
-    const completude = declarationCompletude({
-      exercice: 2025,
-      form2031Generated: true,
-      caseCount: 4,
-      cases: [],
-      formulairesManquants: ["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"],
-      trace: { ksArtifacts: [], generatedAt: "2026-08-31T00:00:00.000Z", sourceFiscalResultAt: "2026-08-31T00:00:00.000Z" },
-      generatedAt: "2026-08-31T00:00:00.000Z",
-    });
+    // P0-2 — declarationCompletude() est désormais une fonction pure sur un
+    // tableau de caseId, découplée du type LiasseEngineOutput (F-007).
+    const completude = declarationCompletude(["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
     assert.equal(completude, "partielle");
   });
 
   it("declarationCompletude() === 'complete' seulement quand formulairesManquants est vide", () => {
-    const completude = declarationCompletude({
-      exercice: 2025,
-      form2031Generated: true,
-      caseCount: 4,
-      cases: [],
-      formulairesManquants: [],
-      trace: { ksArtifacts: [], generatedAt: "2026-08-31T00:00:00.000Z", sourceFiscalResultAt: "2026-08-31T00:00:00.000Z" },
-      generatedAt: "2026-08-31T00:00:00.000Z",
-    });
+    const completude = declarationCompletude([]);
     assert.equal(completude, "complete");
   });
 
-  it("runDeclarationGeneration() sur un dossier réel expose completude: 'partielle' (F-007 ne produit que le 2031-SD aujourd'hui)", async () => {
+  it("runDeclarationGeneration() sur un dossier réel expose completude: 'partielle' (2033-D-SD reste manquant, source RFS désormais utilisée)", async () => {
     const draft: DeclarationDraft = {
       completedSteps: [],
       siret: "12345678901234",
@@ -197,8 +187,76 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
     assert.equal(
       generation.completude,
       "partielle",
-      "tant que 2033-A/B/C/D ne sont pas générés, aucun wording ne doit dire la déclaration complète",
+      "tant que 2033-D-SD n'est pas généré, aucun wording ne doit dire la déclaration complète",
     );
+  });
+});
+
+/**
+ * P0-2 (audit 2026-09-02) — resolveFormulairesManquants() est la source de
+ * vérité unique consommée par DeclarationReadyView/ValidationDocumentStep :
+ * préfère liasseRfs à liasseResult, jamais de fusion, jamais de recalcul.
+ */
+describe("P0-2 — resolveFormulairesManquants() préfère liasseRfs à liasseResult (jamais de fusion)", () => {
+  function liasseResultFixture(formulairesManquants: string[]) {
+    return {
+      exercice: 2025,
+      form2031Generated: true,
+      caseCount: 4,
+      cases: [],
+      formulairesManquants,
+      trace: { ksArtifacts: [], generatedAt: "2026-08-31T00:00:00.000Z", sourceFiscalResultAt: "2026-08-31T00:00:00.000Z" },
+      generatedAt: "2026-08-31T00:00:00.000Z",
+    } as unknown as DeclarationDraft["liasseResult"];
+  }
+
+  function liasseRfsFixture(formulairesManquants: string[]) {
+    return {
+      exercice: 2025,
+      form2031: { formId: "2031-SD", millésime: 2025, cases: [] },
+      form2031Bis: { formId: "2031-Bis-SD", millésime: 2025, cases: [], casesNonAlimentees: [] },
+      form2033A: { formId: "2033-A-SD", millésime: 2025, cases: [], casesNonAlimentees: [] },
+      form2033B: { formId: "2033-B-SD", millésime: 2025, cases: [], casesNonAlimentees: [] },
+      form2033C: { formId: "2033-C-SD", millésime: 2025, cases: [], casesNonAlimentees: [] },
+      formulairesAttendus: ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"],
+      formulairesGeneres: ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"],
+      formulairesManquants,
+      trace: { ksArtifacts: [], assembledAt: "2026-08-31T00:00:00.000Z", sourceFiscalResultAt: "2026-08-31T00:00:00.000Z" },
+    } as unknown as DeclarationDraft["liasseRfs"];
+  }
+
+  it("quand liasseRfs est présent, utilise liasseRfs.formulairesManquants — jamais les 4 valeurs F-007", () => {
+    // Valeurs réelles observées en production (cf. audit P0-2) : F-007 liste
+    // toujours les 4 formulaires hors 2031-SD, la RFS ne liste plus que 2033-D-SD.
+    const liasseResult = liasseResultFixture(["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+    const liasseRfs = liasseRfsFixture(["2033-D-SD"]);
+
+    const result = resolveFormulairesManquants(liasseResult, liasseRfs);
+
+    assert.deepEqual(result, ["2033-D-SD"]);
+    assert.notDeepEqual(result, liasseResult!.formulairesManquants, "ne doit jamais retomber sur la liste F-007 quand liasseRfs existe");
+  });
+
+  it("n'effectue jamais de fusion des deux tableaux", () => {
+    const liasseResult = liasseResultFixture(["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+    const liasseRfs = liasseRfsFixture(["2033-D-SD"]);
+
+    const result = resolveFormulairesManquants(liasseResult, liasseRfs);
+
+    assert.equal(result.length, 1, "pas de concaténation des deux sources — seule la RFS doit apparaître");
+  });
+
+  it("fallback : quand liasseRfs est absent, conserve le comportement historique (liasseResult, F-007)", () => {
+    const liasseResult = liasseResultFixture(["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+
+    const result = resolveFormulairesManquants(liasseResult, undefined);
+
+    assert.deepEqual(result, ["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+  });
+
+  it("liasseResult et liasseRfs tous deux absents → tableau vide, jamais une valeur inventée", () => {
+    const result = resolveFormulairesManquants(undefined, undefined);
+    assert.deepEqual(result, []);
   });
 });
 

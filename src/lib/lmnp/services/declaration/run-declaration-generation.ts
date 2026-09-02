@@ -16,15 +16,35 @@ import type {
 
 /**
  * Cycle 25 — un dossier "generated" n'est pas forcément une liasse complète :
- * F-007 ne produit aujourd'hui que le 2031-SD, `formulairesManquants` en fait foi.
- * `status: "generated"` reste vrai (F-006/F-007 ont réellement tourné, sans erreur),
- * mais `completude` est ce qui doit gouverner tout wording utilisateur du type
- * "déclaration prête" — jamais `status` seul.
+ * `formulairesManquants` en fait foi. `status: "generated"` reste vrai
+ * (F-006/F-007 ont réellement tourné, sans erreur), mais `completude` est ce
+ * qui doit gouverner tout wording utilisateur du type "déclaration prête" —
+ * jamais `status` seul.
+ *
+ * P0-2 (audit 2026-09-02) — fonction pure, découplée du type F-007
+ * (`LiasseEngineOutput`) : reçoit directement la liste effective de
+ * formulaires manquants, quelle que soit sa source (cf. resolveFormulairesManquants
+ * ci-dessous, qui préfère `liasseRfs` à `liasseResult` quand disponible).
  */
 export type DeclarationCompletude = "partielle" | "complete";
 
-export function declarationCompletude(liasseResult: LiasseEngineOutput): DeclarationCompletude {
-  return liasseResult.formulairesManquants.length === 0 ? "complete" : "partielle";
+export function declarationCompletude(formulairesManquants: readonly string[]): DeclarationCompletude {
+  return formulairesManquants.length === 0 ? "complete" : "partielle";
+}
+
+/**
+ * P0-2 — source de vérité unique pour "formulaires manquants" côté utilisateur.
+ * Préfère `liasseRfs` (2031-SD + 2031-bis + 2033-A/B/C, branché depuis P0-1)
+ * quand il est disponible ; recule sur `liasseResult` (F-007, 2031-SD seul)
+ * sinon — dossiers persistés avant P0-1, ou tout chemin qui ne pose jamais
+ * `liasseRfs`. Jamais de fusion des deux tableaux, jamais de recalcul.
+ */
+export function resolveFormulairesManquants(
+  liasseResult: LiasseEngineOutput | undefined,
+  liasseRfs: LiasseFromRfs | undefined,
+): readonly string[] {
+  if (liasseRfs) return liasseRfs.formulairesManquants;
+  return liasseResult?.formulairesManquants ?? [];
 }
 
 export type DeclarationGenerationResult =
@@ -129,13 +149,17 @@ export function runDeclarationGeneration(
     emprunts: draft?.financementCharges?.prets,
   });
 
+  // Assemblage additif — appelle uniquement les mappers déjà testés
+  // (map2031FromRfs/map2033BFromRfs/map2033AFromRfs/map2033CFromRfs), aucun
+  // second calcul fiscal. Calculé avant `completude` (P0-2) pour que la
+  // synthèse utilise la même source de vérité que celle persistée ci-dessous.
+  const liasseRfs = assembleLiasseFromRfs(rfs);
+
   return {
     status: "generated",
-    completude: declarationCompletude(liasseResult),
+    completude: declarationCompletude(resolveFormulairesManquants(liasseResult, liasseRfs)),
     rfs,
-    // Assemblage additif — appelle uniquement les mappers déjà testés
-    // (map2031FromRfs/map2033BFromRfs), aucun second calcul fiscal.
-    liasseRfs: assembleLiasseFromRfs(rfs),
+    liasseRfs,
     fiscalResult: {
       exercice: fiscalResult.exercice,
       resultatFiscal: fiscalResult.resultatFiscal,

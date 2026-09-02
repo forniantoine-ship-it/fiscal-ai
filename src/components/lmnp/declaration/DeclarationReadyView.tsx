@@ -16,7 +16,10 @@ import {
   downloadLiasseRfsDocument,
 } from "@/lib/lmnp/services/declaration/export-liasse-document";
 import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
-import { declarationCompletude } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import {
+  declarationCompletude,
+  resolveFormulairesManquants,
+} from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 
 function fmtEur(value: number): string {
@@ -27,7 +30,10 @@ export function DeclarationReadyView() {
   const { workspace } = useLmnp();
   const { fiscalYear } = workspace;
   const { fiscalResult, liasseResult, rfs, liasseRfs } = workspace.declarationDraft ?? {};
-  const completude = liasseResult ? declarationCompletude(liasseResult) : undefined;
+  // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
+  // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
+  const formulairesManquants = resolveFormulairesManquants(liasseResult, liasseRfs);
+  const completude = liasseResult ? declarationCompletude(formulairesManquants) : undefined;
 
   if (!fiscalResult || !liasseResult) {
     return (
@@ -124,7 +130,7 @@ export function DeclarationReadyView() {
           l&apos;administration.{" "}
           {completude === "complete"
             ? "La liasse fiscale est complète."
-            : "Seul le formulaire 2031-SD est disponible à ce stade — les autres formulaires de la liasse ne sont pas encore générés."}
+            : "Certains formulaires de la liasse restent à générer — le détail figure ci-dessous."}
         </p>
         <div className="mt-4 flex justify-center">
           <Button
@@ -134,9 +140,9 @@ export function DeclarationReadyView() {
             Télécharger la liasse
           </Button>
         </div>
-        {liasseResult.formulairesManquants.length > 0 ? (
+        {formulairesManquants.length > 0 ? (
           <p className="mt-3 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-            Formulaires non encore générés : {liasseResult.formulairesManquants.join(", ")}
+            Formulaires non encore générés : {formulairesManquants.join(", ")}
           </p>
         ) : null}
 

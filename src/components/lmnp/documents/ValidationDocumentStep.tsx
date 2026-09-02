@@ -29,6 +29,7 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import {
   declarationCompletude,
+  resolveFormulairesManquants,
   runDeclarationGeneration,
 } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -140,17 +141,20 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
 
   if (generated && paid && !gate.canGenerate) {
     // Cycle 25 — le statut affiché ne doit jamais dépasser ce qui est réellement
-    // produit : `formulairesManquants` (F-007) fait foi, jamais un wording figé.
+    // produit : `formulairesManquants` fait foi, jamais un wording figé.
     // Ne jamais mentionner un "reçu EDI" : la télétransmission n'est pas raccordée
     // à ce jour (cf. commentaire GENERATION_AI_STEPS ci-dessus).
-    const completude = draft?.liasseResult ? declarationCompletude(draft.liasseResult) : "partielle";
+    // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
+    // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
+    const formulairesManquants = resolveFormulairesManquants(draft?.liasseResult, draft?.liasseRfs);
+    const completude = draft?.liasseResult ? declarationCompletude(formulairesManquants) : "partielle";
     const heading = completude === "complete" ? "✓ Déclaration générée" : "✓ Calcul fiscal généré";
     const body =
       completude === "complete"
         ? "Vos documents officiels sont disponibles."
-        : `Votre résultat fiscal et votre formulaire 2031-SD sont disponibles. ${
-            draft?.liasseResult?.formulairesManquants.length
-              ? `Formulaires restant à générer : ${draft.liasseResult.formulairesManquants.join(", ")}.`
+        : `Votre résultat fiscal et les formulaires disponibles de la liasse sont accessibles dans votre espace déclaration. ${
+            formulairesManquants.length
+              ? `Formulaires restant à générer : ${formulairesManquants.join(", ")}.`
               : ""
           }`;
 
