@@ -89,6 +89,27 @@ describe("Cycle 30 — TEST 1 à 4 : cases pass-through", () => {
     assert.equal(findCase(form, "318")?.value, 3720);
   });
 
+  it("audit fiscal ciblé (case 350) — 350 reprend exactement fiscalResult.deficitsImputes", () => {
+    const fr = fiscalResult({ deficitsImputes: 1234.56 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "350")?.value, 1234.56);
+  });
+
+  it("audit fiscal ciblé (case 350) — deficitsImputes = 0 → 350 alimentée avec 0 (convention identique à 218/254), jamais absente", () => {
+    const fr = fiscalResult({ deficitsImputes: 0 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "350")?.value, 0);
+    assert.notEqual(findCase(form, "350"), undefined, "350 doit être présente même à 0, pas bloquée");
+  });
+
+  it("audit fiscal ciblé (case 350) — projection informative pure, sans effet sur 370/372", () => {
+    const fr = fiscalResult({ deficitsImputes: 4000, resultatFiscal: 2000, deficitNouveau: 0 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "350")?.value, 4000);
+    assert.equal(findCase(form, "370")?.value, 2000, "370 reste un report direct de resultatFiscal, non affecté par 350");
+    assert.equal(findCase(form, "372"), undefined);
+  });
+
   it("audit fiscal ciblé (déficits LMNP) — 360 n'est jamais alimentée, même avec deficitsImputes > 0", () => {
     const fr = fiscalResult({ deficitsImputes: 6000 });
     const form = map2033BFromRfs(rfs(fr));
@@ -426,13 +447,13 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
   });
 
-  it("aucune autre case du groupe 209-350 n'est nouvellement alimentée", () => {
+  it("aucune autre case du groupe 209-348 n'est nouvellement alimentée (350 exceptée — audit fiscal ciblé, déficits LMNP)", () => {
     const form = map2033BFromRfs(rfs(fiscalResult({ recettes: { total: 9000 }, amortCalcule: 1500 })));
     const untouched = [
       "209", "210", "214", "215", "217", "222", "224", "226", "230",
       "234", "236", "238", "240", "242", "243", "244", "250", "252",
       "255", "256", "259", "260", "262", "280", "290", "300", "306",
-      "316", "322", "324", "330", "350",
+      "316", "322", "324", "330",
     ];
     for (const caseId of untouched) {
       assert.equal(findCase(form, caseId), undefined, `${caseId} ne doit pas être alimentée par ce cycle`);

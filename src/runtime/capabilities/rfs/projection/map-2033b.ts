@@ -37,7 +37,7 @@ import { round2 } from "../../f007/types";
  * 254 (Dotations aux amortissements) reprend exactement `amortCalcule`, déjà
  * utilisée dans la formule des cases 264/310. Toutes les autres cases du
  * formulaire (209-230 hors 218, 234-262 hors 254, 280, 290, 300/306, 316,
- * 322, 324, 330-350) restent volontairement non traitées : soit
+ * 322, 324, 330-348) restent volontairement non traitées : soit
  * structurellement `non_applicable`/`donnee_absente` à un LMNP réel
  * simplifié, soit `incoherence_modele` faute d'une correspondance PCG
  * suffisamment certaine entre les catégories F-012 (`detailParCategorie`) et
@@ -47,9 +47,18 @@ import { round2 } from "../../f007/types";
  * Audit fiscal ciblé (déficits LMNP) — 360 est reclassée en `non_applicable`,
  * pour la même raison que 356 : la notice 2033-NOT-SD réserve explicitement
  * cette ligne aux entreprises relevant de l'IS. `fiscalResult.deficitsImputes`
- * reste une donnée F-006 valide, mais n'est projetée sur aucune case du
- * 2033-B — elle est déjà reflétée dans `resultatFiscal` (case 370) et
- * documentée séparément sur le 2042-C-PRO (cases 5GA-5GJ).
+ * n'y est jamais projetée — cette donnée reste déjà reflétée dans
+ * `resultatFiscal` (case 370) et documentée séparément sur le 2042-C-PRO
+ * (cases 5GA-5GJ).
+ *
+ * Audit fiscal ciblé (case 350) — pour les entreprises à l'IR, la notice
+ * 2033-NOT-SD indique explicitement qu'à la place du Cadre II du 2033-D-SD
+ * (réservé à l'IS), le montant de déficit imputé sur le bénéfice catégoriel
+ * doit être mentionné en case 350 « Divers à déduire ». 218/254 exceptées,
+ * 350 est la première case du groupe 209-350 sortie du statut « non
+ * traitée » : projection informative pure de `fiscalResult.deficitsImputes`
+ * — elle ne participe à aucun calcul de 352/354/370/372, qui restent des
+ * lectures indépendantes de `resultatFiscal`/`deficitNouveau`.
  */
 
 /** Pourquoi une case Cerfa n'est volontairement pas alimentée. */
@@ -149,6 +158,18 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       label: "Charges financières (V)",
       value: round2(fr.charges.chargesFinancement),
       trace: { ...baseTrace, path: "fiscalResult.charges.chargesFinancement" },
+    },
+    {
+      // Audit fiscal ciblé (déficits LMNP) — la notice 2033-NOT-SD indique
+      // explicitement que les entreprises à l'IR doivent mentionner sur cette
+      // ligne le montant de déficit imputé sur le bénéfice catégoriel (à la
+      // place du Cadre II du 2033-D-SD, réservé à l'IS). Projection
+      // informative pure de fiscalResult.deficitsImputes, déjà calculé par
+      // TRF-0031 — ne participe à aucun calcul de 352/354/370/372.
+      caseId: "350",
+      label: "Divers à déduire",
+      value: round2(fr.deficitsImputes),
+      trace: { ...baseTrace, path: "fiscalResult.deficitsImputes", ksArtifacts: ["TRF-0031", "TRF-0032"] },
     },
     {
       caseId: "310",
