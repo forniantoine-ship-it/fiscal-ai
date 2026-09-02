@@ -845,8 +845,8 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     setValidatedSuccess(true);
     setIsEditing(false);
     showSuccess(
-      "Charges préparées",
-      "Les charges détectées seront automatiquement utilisées pour préparer votre déclaration.",
+      "Charges enregistrées",
+      "Vos données de charges ont bien été enregistrées dans votre espace.",
     );
   }
 
