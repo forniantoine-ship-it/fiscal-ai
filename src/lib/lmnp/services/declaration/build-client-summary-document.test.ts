@@ -480,3 +480,72 @@ describe("Cycle 29 — différence résultat fiscal / trésorerie : pédagogique
     assert.doesNotMatch(document.avertissements.differenceResultatTresorerie, /[0-9]/, "texte générique, aucun montant chiffré");
   });
 });
+
+/**
+ * P1-3 (audit 2026-09-02) — restitution de fiscalResult.stocks.deficitsExpires
+ * (déjà calculé par F-006, règle des 10 ans) sous forme d'avertissement
+ * lisible. Aucun recalcul testé ici : chaque assertion compare le document au
+ * FiscalResult injecté, comme le reste de ce fichier.
+ */
+describe("P1-3 — avertissement 'déficits arrivés à expiration'", () => {
+  it("1. deficitsExpires = [] → aucune alerte d'expiration", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({
+      stocks: { deficits: [], amortissementsReportes: 0, deficitsExpires: [] },
+    })));
+    assert.equal(document.avertissements.deficitsExpires, undefined);
+  });
+
+  it("2. un déficit expiré → le millésime et le montant apparaissent dans l'avertissement", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({
+      stocks: {
+        deficits: [],
+        amortissementsReportes: 0,
+        deficitsExpires: [{ millesime: 2015, montant: 1200 }],
+      },
+    })));
+    assert.ok(document.avertissements.deficitsExpires, "l'avertissement doit être présent");
+    assert.match(document.avertissements.deficitsExpires!, /2015/);
+    assert.match(document.avertissements.deficitsExpires!, /1[\s ]?200/, "le montant (1 200 €) doit apparaître");
+    assert.match(document.avertissements.deficitsExpires!, /10 ans/);
+  });
+
+  it("3. plusieurs déficits expirés → tous les millésimes et montants sont restitués", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({
+      stocks: {
+        deficits: [],
+        amortissementsReportes: 0,
+        deficitsExpires: [
+          { millesime: 2014, montant: 800 },
+          { millesime: 2015, montant: 300 },
+        ],
+      },
+    })));
+    const texte = document.avertissements.deficitsExpires;
+    assert.ok(texte, "l'avertissement doit être présent");
+    assert.match(texte!, /2014/);
+    assert.match(texte!, /800/);
+    assert.match(texte!, /2015/);
+    assert.match(texte!, /300/);
+  });
+
+  it("4. un déficit expiré n'apparaît jamais dans deficitsAnterieursRestants (les deux notions restent distinctes)", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({
+      stocks: {
+        // Un vrai déficit antérieur encore actif (2023) coexiste avec un
+        // déficit expiré (2015) — les deux structures ne doivent jamais se
+        // mélanger : deficitsExpires n'est jamais un sous-ensemble de
+        // deficits, et deficitsAnterieursRestants ne doit contenir que 2023.
+        deficits: [{ millesime: 2023, montant: 400 }],
+        amortissementsReportes: 0,
+        deficitsExpires: [{ millesime: 2015, montant: 1200 }],
+      },
+    })));
+    assert.deepEqual(document.syntheseFiscale.deficitsAnterieursRestants, [{ millesime: 2023, montant: 400 }]);
+    assert.equal(
+      document.syntheseFiscale.deficitsAnterieursRestants.some((d) => d.millesime === 2015),
+      false,
+      "le déficit expiré (2015) ne doit jamais apparaître dans les déficits restants",
+    );
+    assert.ok(document.avertissements.deficitsExpires?.includes("2015"));
+  });
+});

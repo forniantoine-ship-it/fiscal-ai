@@ -106,6 +106,15 @@ export type ClientSummaryDocument = {
     statutEdi: string;
     /** Pédagogique et générique — n'affirme aucun montant, n'introduit aucun calcul. */
     differenceResultatTresorerie: string;
+    /**
+     * P1-3 — présent uniquement si `fr.stocks.deficitsExpires` (F-006) contient
+     * au moins une entrée : un ou plusieurs déficits ont dépassé la limite
+     * légale de report de 10 ans (art. 156 I 1° ter du CGI) et ne sont plus
+     * disponibles pour une imputation future. Restitution directe des
+     * millésimes/montants déjà calculés par F-006 — aucun recalcul, jamais
+     * une expiration inventée.
+     */
+    deficitsExpires?: string;
   };
 };
 
@@ -126,6 +135,30 @@ export type ClientSummaryDocument = {
  */
 function deficitsVraimentAnterieurs(fr: FiscalResult): StockDeficit[] {
   return fr.stocks.deficits.filter((deficit) => deficit.millesime !== fr.exercice);
+}
+
+/**
+ * P1-3 — restitution pure de `fr.stocks.deficitsExpires` (F-006,
+ * `expireDeficits()`) sous forme d'un avertissement lisible. Aucun recalcul :
+ * la liste des déficits expirés et leur montant sont déjà déterminés par
+ * F-006 selon la règle des 10 ans (art. 156, I, 1° ter du CGI, vérifiée en
+ * P1-3) ; cette fonction ne fait que les mettre en phrase. `undefined`
+ * lorsqu'aucun déficit n'a expiré cette année — jamais une alerte inventée.
+ */
+function buildDeficitsExpiresAvertissement(fr: FiscalResult): string | undefined {
+  const expires = fr.stocks.deficitsExpires;
+  if (!expires || expires.length === 0) return undefined;
+
+  const pluriel = expires.length > 1;
+  const detail = expires
+    .map((d) => `exercice ${d.millesime} (${fmtEur(d.montant)})`)
+    .join(", ");
+
+  return (
+    `${pluriel ? "Les déficits suivants ont" : "Le déficit suivant a"} dépassé la limite légale de ` +
+    `report de 10 ans (article 156, I, 1° ter du CGI) et ${pluriel ? "ne sont" : "n'est"} plus ` +
+    `disponible${pluriel ? "s" : ""} pour une imputation sur vos bénéfices futurs : ${detail}.`
+  );
 }
 
 /**
@@ -334,6 +367,7 @@ export function buildClientSummaryDocument(rfs: FiscalRepresentation): ClientSum
         "Transmission EDI : les éléments nécessaires à la transmission sont préparés. Le statut de transmission et le retour de l'administration seront disponibles séparément.",
       differenceResultatTresorerie:
         "Votre résultat fiscal n'est pas votre trésorerie disponible. L'amortissement, par exemple, réduit votre résultat fiscal sans correspondre à une dépense décaissée cette année ; à l'inverse, le remboursement du capital de votre emprunt représente une sortie de trésorerie qui n'est pas déductible fiscalement. Il est donc normal que ce résultat diffère de votre solde bancaire ou de votre résultat comptable.",
+      deficitsExpires: buildDeficitsExpiresAvertissement(fr),
     },
   };
 }

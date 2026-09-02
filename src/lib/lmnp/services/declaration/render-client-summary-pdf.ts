@@ -270,6 +270,11 @@ export function renderClientSummaryPdf(document: ClientSummaryDocument): jsPDF {
     cursor.spacer();
   }
 
+  if (document.avertissements.deficitsExpires) {
+    cursor.box("Déficits arrivés à expiration", [document.avertissements.deficitsExpires]);
+    cursor.spacer();
+  }
+
   cursor.box("Pourquoi ce résultat peut être différent de votre résultat comptable ou de votre trésorerie", [
     document.avertissements.differenceResultatTresorerie,
   ]);

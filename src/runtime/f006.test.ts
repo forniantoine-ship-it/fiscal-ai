@@ -145,7 +145,7 @@ describe("F-006 — TRF-0031 application amortissement et stocks", () => {
     assert.equal(result.resultatFiscal, 0);
   });
 
-  it("VER-051 — expiration déficit > 10 ans", () => {
+  it("VER-051 — expiration déficit > 10 ans (P1-3 : les deux millésimes de la fixture sont désormais vérifiés, plus d'assertion silencieuse)", () => {
     const result = applyAmortissementStocks({
       exercice: 2035,
       resultatAvantAmort: 1000,
@@ -155,8 +155,106 @@ describe("F-006 — TRF-0031 application amortissement et stocks", () => {
         { millesime: 2024, montant: 300 },
       ],
     });
-    assert.ok(result.deficitsExpires.some((d) => d.millesime === 2023));
+    // 2035 - 2023 = 12 > 10 → expiré. 2035 - 2024 = 11 > 10 → expiré aussi :
+    // les DEUX millésimes de cette fixture dépassent la limite de 10 ans.
+    assert.ok(result.deficitsExpires.some((d) => d.millesime === 2023 && d.montant === 500));
+    assert.ok(result.deficitsExpires.some((d) => d.millesime === 2024 && d.montant === 300));
+    assert.equal(result.deficitsExpires.length, 2, "les deux millésimes de la fixture expirent, aucun ne doit être omis");
     assert.ok(!result.stockDeficitsMisAJour.some((d) => d.millesime === 2023));
+    assert.ok(!result.stockDeficitsMisAJour.some((d) => d.millesime === 2024));
+  });
+});
+
+/**
+ * P1-3 (audit 2026-09-02) — renforcement de la couverture d'`expireDeficits()`
+ * (règle des 10 ans, art. 156 I 1° ter du CGI, vérifiée en P1-2B/P1-3). Aucun
+ * changement de calcul : ces tests exercent le comportement réel déjà
+ * implémenté dans `apply-amortissement-stocks.ts`, non modifié ici.
+ */
+describe("F-006 — TRF-0031 expireDeficits() : couverture de la frontière des 10 ans", () => {
+  it("A. aucun déficit expiré — deficitsExpires est vide", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 0,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: [{ millesime: 2020, montant: 1000 }],
+    });
+    assert.deepEqual(result.deficitsExpires, []);
+    assert.ok(result.stockDeficitsMisAJour.some((d) => d.millesime === 2020 && d.montant === 1000));
+  });
+
+  it("B. frontière M+10 — le déficit du millésime M reste disponible à l'exercice M+10", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 0,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: [{ millesime: 2015, montant: 1000 }],
+    });
+    // 2025 - 2015 = 10, pas > 10 : encore actif.
+    assert.deepEqual(result.deficitsExpires, [], "un déficit de 10 ans pile ne doit pas encore expirer");
+    assert.ok(
+      result.stockDeficitsMisAJour.some((d) => d.millesime === 2015 && d.montant === 1000),
+      "le déficit de 2015 doit rester disponible à l'exercice 2025",
+    );
+  });
+
+  it("C. frontière M+11 — le déficit du millésime M est expiré à l'exercice M+11", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2026,
+      resultatAvantAmort: 0,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: [{ millesime: 2015, montant: 1000 }],
+    });
+    // 2026 - 2015 = 11 > 10 : expiré.
+    assert.equal(result.deficitsExpires.length, 1);
+    assert.equal(result.deficitsExpires[0]?.millesime, 2015);
+    assert.equal(result.deficitsExpires[0]?.montant, 1000);
+    assert.ok(!result.stockDeficitsMisAJour.some((d) => d.millesime === 2015));
+  });
+
+  it("E. déficit partiellement consommé, puis expiration du reliquat exact (pas le montant initial)", () => {
+    // Étape 1 — le déficit d'origine (2015, 1000 €) est partiellement imputé
+    // en 2018 (résultat avant amort. 400 €) : il reste un reliquat de 600 €.
+    const etape1 = applyAmortissementStocks({
+      exercice: 2018,
+      resultatAvantAmort: 400,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: [{ millesime: 2015, montant: 1000 }],
+    });
+    assert.equal(etape1.deficitsImputes, 400);
+    const reliquat = etape1.stockDeficitsMisAJour.find((d) => d.millesime === 2015);
+    assert.equal(reliquat?.montant, 600, "reliquat après imputation partielle en 2018");
+
+    // Étape 2 — ce reliquat (persisté, réinjecté l'année suivante comme dans
+    // le pipeline réel) atteint la limite des 10 ans à l'exercice 2026
+    // (2026 - 2015 = 11 > 10).
+    const etape2 = applyAmortissementStocks({
+      exercice: 2026,
+      resultatAvantAmort: 0,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: etape1.stockDeficitsMisAJour,
+    });
+    assert.equal(etape2.deficitsExpires.length, 1);
+    assert.equal(etape2.deficitsExpires[0]?.millesime, 2015);
+    assert.equal(
+      etape2.deficitsExpires[0]?.montant,
+      600,
+      "le montant expiré doit être le reliquat réel (600), jamais le montant initial (1000)",
+    );
+  });
+
+  it("F. déficit déjà expiré depuis plusieurs années (bien au-delà de la limite, pas seulement à la frontière)", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 0,
+      amortCalcule: 0,
+      stockDeficitsAnterieurs: [{ millesime: 2010, montant: 750 }],
+    });
+    // 2025 - 2010 = 15 > 10 : expiré depuis longtemps.
+    assert.equal(result.deficitsExpires.length, 1);
+    assert.equal(result.deficitsExpires[0]?.millesime, 2010);
+    assert.equal(result.deficitsExpires[0]?.montant, 750);
+    assert.deepEqual(result.stockDeficitsMisAJour, []);
   });
 });
 
