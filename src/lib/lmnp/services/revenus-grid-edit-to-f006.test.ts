@@ -89,8 +89,6 @@ describe("Cycle 23 — grille corrigée prime sur les transactions doublées jus
 
     assert.equal(generation.status, "generated");
     if (generation.status !== "generated") return;
-    assert.equal(generation.fiscalResult.totalRecettes, 4780.9);
-    const caseAB = generation.liasseResult.cases.find((c) => c.caseId === "AB");
-    assert.equal(caseAB?.value, 4780.9, "case AB 2031-SD = grille confirmée");
+    assert.equal(generation.fiscalResult.totalRecettes, 4780.9, "F-007 : totalRecettes = grille confirmée");
   });
 });

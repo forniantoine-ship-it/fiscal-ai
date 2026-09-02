@@ -44,7 +44,7 @@ describe("F-007 — validation des entrées", () => {
 });
 
 describe("F-007 — TRF-0033 mapping 2031-SD", () => {
-  it("CASE-001 — reporte les recettes en case AB sans recalcul", () => {
+  it("audit fiscal 2031-SD 2026 — ne reporte plus AB (Production vendue appartient au 2033-B-SD, pas au 2031-SD)", () => {
     const { result } = produceFiscalResult({
       exerciceFiscal: 2025,
       activite: { dateMiseEnService: "2025-09-01" },
@@ -53,9 +53,11 @@ describe("F-007 — TRF-0033 mapping 2031-SD", () => {
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 2266.1, status: "validated" },
     });
     const cases = map2031RecapitulationCases(result!);
-    const ab = cases.find((c) => c.caseId === "AB");
-    assert.equal(ab?.value, 3000);
-    assert.equal(ab?.trace.path, "recettes.total");
+    assert.equal(
+      cases.find((c) => c.caseId === "AB"),
+      undefined,
+      "AB retiré — aucune rubrique « Production vendue » sur le 2031-SD 2026 (Notice DGFiP 2033-NOT-SD, Cerfa 50448#28, p.8/23)",
+    );
   });
 
   it("CASE-001 — reporte le déficit en col. 2 sans recalcul", () => {
@@ -67,7 +69,6 @@ describe("F-007 — TRF-0033 mapping 2031-SD", () => {
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 2266.1, status: "validated" },
     });
     const { form } = assembleForm2031SD(result!, IDENTITE);
-    assert.equal(caseValue(form, "AB"), 3000);
     assert.equal(caseValue(form, "C_L1_COL2"), 2287);
     assert.equal(caseValue(form, "I_7B"), 2287);
     assert.equal(caseValue(form, "C_L1_COL1"), undefined);
@@ -97,7 +98,6 @@ describe("F-007 — TRF-0033 mapping 2031-SD", () => {
       logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
     });
     const { form } = assembleForm2031SD(result!, { ...IDENTITE, exerciceDebut: "01/01/2024", exerciceFin: "31/12/2024" });
-    assert.equal(caseValue(form, "AB"), 9000);
     assert.equal(caseValue(form, "C_L1_COL1"), undefined);
     assert.equal(caseValue(form, "C_L1_COL2"), undefined);
   });

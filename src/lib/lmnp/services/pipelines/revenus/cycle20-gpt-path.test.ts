@@ -81,11 +81,8 @@ function fullTrace(lines: ReturnType<typeof adaptGptLinesToRevenueRawLines>, fis
     } as any,
     fiscalYear,
   );
-  const caseAB =
-    generation.status === "generated"
-      ? (generation.liasseResult.cases.find((c) => c.caseId === "AB")?.value as number)
-      : "BLOQUE";
-  return { session, grid, revenusAssistant: bridge.revenusAssistant, anomalies: bridge.anomalies, f006: f006.result?.recettes.total, caseAB };
+  const f007 = generation.status === "generated" ? generation.fiscalResult.totalRecettes : "BLOQUE";
+  return { session, grid, revenusAssistant: bridge.revenusAssistant, anomalies: bridge.anomalies, f006: f006.result?.recettes.total, f007 };
 }
 
 describe("Cycle 20 — chemin GPT/OCR réel : trace complète jusqu'à F-007", () => {
@@ -101,7 +98,7 @@ describe("Cycle 20 — chemin GPT/OCR réel : trace complète jusqu'à F-007", (
     assert.equal(trace.grid, 4530, "grille (écran)");
     assert.equal(trace.revenusAssistant.totalRecettes, 4530, "revenusAssistant");
     assert.equal(trace.f006, 4530, "F-006");
-    assert.equal(trace.caseAB, 4530, "F-007, case AB du 2031-SD");
+    assert.equal(trace.f007, 4530, "F-007, fiscalResult.totalRecettes");
     assert.ok(
       trace.anomalies.some((a) => a.message.includes("-120")),
       "la régularisation négative doit produire une anomalie explicite, jamais un silence",

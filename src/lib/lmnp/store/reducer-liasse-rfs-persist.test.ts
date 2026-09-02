@@ -75,6 +75,6 @@ describe("reducer.ts — P0-1 : DECLARATION_PATCH_DRAFT persiste liasseRfs", () 
     assert.equal(next.declarationDraft?.liasseRfs?.form2033B.formId, "2033-B-SD");
     assert.equal(next.declarationDraft?.liasseRfs?.form2033C.formId, "2033-C-SD");
     // Champs historiques non affectés par l'ajout de liasseRfs au patch.
-    assert.equal(next.declarationDraft?.liasseResult?.cases.find((c) => c.caseId === "AB")?.value, 9000);
+    assert.equal(next.declarationDraft?.fiscalResult?.totalRecettes, 9000);
   });
 });

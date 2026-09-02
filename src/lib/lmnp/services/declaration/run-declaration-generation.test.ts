@@ -30,21 +30,26 @@ function draftFor(session: RevenueGptSession): DeclarationDraft {
   } as unknown as DeclarationDraft;
 }
 
-function caseABValue(draft: DeclarationDraft): number | "BLOQUE" {
+function totalRecettesValue(draft: DeclarationDraft): number | "BLOQUE" {
   const generation = runDeclarationGeneration(draft, 2025);
   if (generation.status !== "generated") return "BLOQUE";
-  return generation.liasseResult.cases.find((c) => c.caseId === "AB")?.value as number;
+  return generation.fiscalResult.totalRecettes;
 }
 
 /**
  * Cycle 18 — section 8 : jusqu'ici (Cycles 15A-17), le montant avait été
  * vérifié jusqu'à `produceFiscalResult()` mais jamais jusqu'au point de
- * connexion réel `runDeclarationGeneration()` (F-006 → F-007 → 2031-SD), qui
- * n'avait aucun test dédié. Ce test suit un montant réel, issu d'un vrai
- * classeur Excel, jusqu'à la case "AB" du formulaire 2031-SD généré.
+ * connexion réel `runDeclarationGeneration()` (F-006 → F-007), qui n'avait
+ * aucun test dédié. Ce test suit un montant réel, issu d'un vrai classeur
+ * Excel, jusqu'à `fiscalResult.totalRecettes` exposé par F-007.
+ *
+ * Audit fiscal 2031-SD 2026 : la case "AB" n'a jamais existé sur ce
+ * formulaire (« Production vendue » appartient au 2033-B-SD, rubrique 218) —
+ * la trace ne vise donc plus une case Cerfa du 2031-SD, mais la donnée
+ * FiscalResult elle-même, disponible sur `generation.fiscalResult`.
  */
-describe("Cycle 18 — trace Excel → F-006 → F-007 → 2031-SD, montant exact", () => {
-  it("un montant Excel réel arrive inchangé en case AB du formulaire 2031-SD généré", async () => {
+describe("Cycle 18 — trace Excel → F-006 → F-007, montant exact", () => {
+  it("un montant Excel réel arrive inchangé dans fiscalResult.totalRecettes après runDeclarationGeneration()", async () => {
     const file = workbookToFile(
       buildWorkbook({ Feuille1: [["Mois", "Loyer"], ["Janvier", 4500], ["Février", 4500]] }),
       "revenus.xlsx",
@@ -70,9 +75,6 @@ describe("Cycle 18 — trace Excel → F-006 → F-007 → 2031-SD, montant exac
     if (generation.status !== "generated") return;
 
     assert.equal(generation.fiscalResult.totalRecettes, 9000, "F-006 : aucune perte ni ajout entre le pont F-013 et FiscalResult");
-
-    const caseAB = generation.liasseResult.cases.find((c) => c.caseId === "AB");
-    assert.equal(caseAB?.value, 9000, "F-007 : la case AB du 2031-SD reporte le montant exact, sans recalcul ni altération");
   });
 
   it("une anomalie bloquante (dateMiseEnService manquante) empêche réellement la génération — jamais de liasse silencieusement produite", async () => {
@@ -123,28 +125,28 @@ describe("Cycle 19 — séquence multi-upload complète, jusqu'à F-007 à chaqu
     const fileC = workbookToFile(buildWorkbook({ Feuille1: [["Mois", "Loyer"], ["Février", 2000]] }), "c.xlsx");
 
     let session = await uploadSequentially(undefined, fileA, 2025, "docA");
-    assert.equal(caseABValue(draftFor(session)), 1000, "après A");
+    assert.equal(totalRecettesValue(draftFor(session)), 1000, "après A");
 
     session = await uploadSequentially(session, fileA, 2025, "docA-bis");
-    assert.equal(caseABValue(draftFor(session)), 1000, "après réimport strict de A — doublon bloqué");
+    assert.equal(totalRecettesValue(draftFor(session)), 1000, "après réimport strict de A — doublon bloqué");
 
     session = await uploadSequentially(session, fileB, 2025, "docB");
-    assert.equal(caseABValue(draftFor(session)), 3000, "après A+B");
+    assert.equal(totalRecettesValue(draftFor(session)), 3000, "après A+B");
 
     session = await uploadSequentially(session, fileC, 2025, "docC");
-    assert.equal(caseABValue(draftFor(session)), 5000, "après A+B+C — C (nom différent, contenu=B) jamais dédupliqué avec B");
+    assert.equal(totalRecettesValue(draftFor(session)), 5000, "après A+B+C — C (nom différent, contenu=B) jamais dédupliqué avec B");
 
     session = removeDocumentFromRevenueSession(session, "docB", 2025);
-    assert.equal(caseABValue(draftFor(session)), 3000, "après suppression de B — reste A+C");
+    assert.equal(totalRecettesValue(draftFor(session)), 3000, "après suppression de B — reste A+C");
 
     session = await uploadSequentially(session, fileB, 2025, "docB-bis");
-    assert.equal(caseABValue(draftFor(session)), 5000, "après réimport de B — jamais bloqué en doublon permanent");
+    assert.equal(totalRecettesValue(draftFor(session)), 5000, "après réimport de B — jamais bloqué en doublon permanent");
 
     session = removeDocumentFromRevenueSession(session, "docA", 2025);
-    assert.equal(caseABValue(draftFor(session)), 4000, "après suppression de A — reste B+C");
+    assert.equal(totalRecettesValue(draftFor(session)), 4000, "après suppression de A — reste B+C");
 
     session = await uploadSequentially(session, fileA, 2025, "docA-ter");
-    assert.equal(caseABValue(draftFor(session)), 5000, "après réimport de A — retour à l'état complet A+B+C");
+    assert.equal(totalRecettesValue(draftFor(session)), 5000, "après réimport de A — retour à l'état complet A+B+C");
   });
 });
 
@@ -536,8 +538,7 @@ describe("P0-1 — liasseRfs expose les 4 formulaires complémentaires (2031-bis
     assert.equal(generation.status, "generated");
     if (generation.status !== "generated") return;
 
-    const caseAB = generation.liasseResult.cases.find((c) => c.caseId === "AB");
-    assert.equal(caseAB?.value, 9000, "F-007/2031-SD non affecté par le branchement de liasseRfs");
+    assert.equal(generation.fiscalResult.totalRecettes, 9000, "F-007/2031-SD non affecté par le branchement de liasseRfs");
     assert.equal(generation.liasseResult.formulairesManquants.length, 3, "P1-1 : 2033-D-SD retiré du périmètre attendu — F-007 ne liste plus que 2033-A/B/C comme manquants");
   });
 });

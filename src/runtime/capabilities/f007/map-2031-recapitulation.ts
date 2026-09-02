@@ -13,12 +13,10 @@ export function map2031RecapitulationCases(fiscalResult: FiscalResult): CerfaCas
     ksArtifacts: ["TRF-0032", "TRF-0033"],
   };
 
-  cases.push({
-    caseId: "AB",
-    label: "Production vendue (services) — loyers encaissés",
-    value: round2(fiscalResult.recettes.total),
-    trace: { ...frTrace, path: "recettes.total", ksArtifacts: ["TRF-0029", "TRF-0032", "TRF-0033"] },
-  });
+  // "AB" (recettes.total) retiré — le 2031-SD 2026 ne comporte aucune case
+  // "Production vendue" ; cette rubrique (n° 218) appartient au 2033-B-SD,
+  // déjà correctement alimentée par map-2033b.ts. Voir audit fiscal sourcé
+  // (Notice DGFiP 2033-NOT-SD 2026, Cerfa 50448#28, p.8/23).
 
   if (fiscalResult.resultatFiscal > 0) {
     cases.push({
