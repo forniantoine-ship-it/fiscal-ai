@@ -121,7 +121,6 @@ describe("F-007 — composition liasse", () => {
       "2033-A-SD",
       "2033-B-SD",
       "2033-C-SD",
-      "2033-D-SD",
     ]);
   });
 });

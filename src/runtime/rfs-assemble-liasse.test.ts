@@ -79,10 +79,10 @@ describe("Cycle 31 — TEST 1 et 2 : assembleLiasseFromRfs() retourne bien un 20
     assert.ok(liasse.form2033B.casesNonAlimentees.length > 0);
   });
 
-  it("formulairesGeneres liste exactement 2031-SD, 2033-A-SD, 2033-B-SD et 2033-C-SD (Cycle 55), formulairesManquants ne liste plus que 2033-D-SD", () => {
+  it("formulairesGeneres liste exactement 2031-SD, 2033-A-SD, 2033-B-SD et 2033-C-SD (Cycle 55) ; formulairesManquants est vide (P1-1 : 2033-D-SD retiré du périmètre LMNP réel simplifié à l'IR)", () => {
     const liasse = assembleLiasseFromRfs(rfs(fiscalResult()));
     assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"]);
-    assert.deepEqual(liasse.formulairesManquants, ["2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesManquants, []);
   });
 });
 
@@ -287,7 +287,7 @@ describe("Cycle 31 — TEST 12 : régression du chemin historique produceLiasse(
     assert.ok(output.liasse);
     assert.equal(output.liasse?.formulairesGeneres.length, 1);
     assert.equal(output.liasse?.formulairesGeneres[0].formId, "2031-SD");
-    assert.deepEqual(output.liasse?.formulairesManquants, ["2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+    assert.deepEqual(output.liasse?.formulairesManquants, ["2033-A-SD", "2033-B-SD", "2033-C-SD"]);
     assert.equal(output.liasse?.status, "partial");
   });
 });

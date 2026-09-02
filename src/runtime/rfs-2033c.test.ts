@@ -488,11 +488,11 @@ describe("Cycle 55 — non-régression assembleLiasseFromRfs()", () => {
     assert.deepEqual(liasse.form2033C, direct);
   });
 
-  it("2033-C-SD rejoint formulairesGeneres ; formulairesManquants ne contient plus que 2033-D-SD", () => {
+  it("2033-C-SD rejoint formulairesGeneres ; formulairesManquants est vide (P1-1 : 2033-D-SD retiré du périmètre LMNP réel simplifié à l'IR)", () => {
     const representation = rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE);
     const liasse = assembleLiasseFromRfs(representation);
     assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"]);
-    assert.deepEqual(liasse.formulairesManquants, ["2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesManquants, []);
   });
 
   it("2031-Bis-SD reste hors formulairesGeneres/Attendus/Manquants", () => {

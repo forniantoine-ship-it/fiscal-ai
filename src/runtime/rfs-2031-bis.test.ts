@@ -165,12 +165,12 @@ describe("Cycle 44 — TEST 6 : non-régression de assembleLiasseFromRfs()", () 
     assert.deepEqual(liasse.form2031Bis, direct);
     assert.equal(liasse.form2031Bis.formId, "2031-Bis-SD");
 
-    // 2031-Bis-SD reste hors du suivi ADR-004 (Cycle 41) — jamais dans ces
-    // trois tableaux, qui restent strictement les 5 formulaires ADR-004.
-    // (Cycle 55 : 2033-C-SD rejoint formulairesGeneres, formulairesManquants
-    // ne liste plus que 2033-D-SD — 2031-Bis-SD reste absent des trois.)
+    // 2031-Bis-SD reste hors du suivi du périmètre LMNP réel simplifié à l'IR —
+    // jamais dans ces trois tableaux. (Cycle 55 : 2033-C-SD rejoint
+    // formulairesGeneres. P1-1 : 2033-D-SD retiré du périmètre attendu —
+    // formulairesManquants est désormais vide — 2031-Bis-SD reste absent des trois.)
     assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"]);
-    assert.deepEqual(liasse.formulairesManquants, ["2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesManquants, []);
     assert.equal(liasse.formulairesAttendus.includes("2031-Bis-SD" as never), false);
   });
 });

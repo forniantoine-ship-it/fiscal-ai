@@ -60,7 +60,6 @@ export const LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE = [
   "2033-A-SD",
   "2033-B-SD",
   "2033-C-SD",
-  "2033-D-SD",
 ] as const;
 
 export type LiasseRepresentation = {
