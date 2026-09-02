@@ -120,6 +120,10 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         // DeclarationReadyView puisse construire le document client sans
         // reconstruire ni recalculer quoi que ce soit.
         rfs: outcome.rfs,
+        // Formulaires complémentaires (2031-bis, 2033-A/B/C) — assemblés depuis
+        // la même RFS ci-dessus, aucun second calcul. Jusqu'ici calculé par
+        // runDeclarationGeneration() mais jamais persisté (P0-1).
+        liasseRfs: outcome.liasseRfs,
       },
     });
     if (!paid) {

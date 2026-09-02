@@ -691,6 +691,12 @@ export interface DeclarationDraft {
   liasseGeneratedAt?: string;
   /** Représentation fiscale structurée (RFS) — alimente exports liasse et synthèse client. */
   rfs?: import("@/runtime/capabilities/rfs/types").FiscalRepresentation;
+  /**
+   * Formulaires complémentaires (2031-bis, 2033-A/B/C) assemblés depuis la RFS —
+   * même calcul que `rfs` ci-dessus, aucun second appel à produceFiscalResult().
+   * Champ additif : `liasseResult` (F-007, 2031-SD) reste la source du 2031-SD.
+   */
+  liasseRfs?: import("@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs").LiasseFromRfs;
   creditDocumentId?: string;
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;

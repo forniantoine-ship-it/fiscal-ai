@@ -11,7 +11,10 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
-import { downloadLiasseDocument } from "@/lib/lmnp/services/declaration/export-liasse-document";
+import {
+  downloadLiasseDocument,
+  downloadLiasseRfsDocument,
+} from "@/lib/lmnp/services/declaration/export-liasse-document";
 import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
 import { declarationCompletude } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -23,7 +26,7 @@ function fmtEur(value: number): string {
 export function DeclarationReadyView() {
   const { workspace } = useLmnp();
   const { fiscalYear } = workspace;
-  const { fiscalResult, liasseResult, rfs } = workspace.declarationDraft ?? {};
+  const { fiscalResult, liasseResult, rfs, liasseRfs } = workspace.declarationDraft ?? {};
   const completude = liasseResult ? declarationCompletude(liasseResult) : undefined;
 
   if (!fiscalResult || !liasseResult) {
@@ -135,6 +138,36 @@ export function DeclarationReadyView() {
           <p className="mt-3 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             Formulaires non encore générés : {liasseResult.formulairesManquants.join(", ")}
           </p>
+        ) : null}
+
+        {liasseRfs ? (
+          <div className="mt-6 border-t pt-6" style={{ borderColor: colors.border.subtle }}>
+            <p
+              className="text-center"
+              style={{
+                ...typography.caption.desktop,
+                color: colors.text.muted,
+                letterSpacing: typography.letterSpacing.label,
+              }}
+            >
+              Formulaires complémentaires
+            </p>
+            <p
+              className="mx-auto mt-2 max-w-lg text-center"
+              style={{ ...typography.caption.desktop, color: colors.text.muted }}
+            >
+              Représentation texte des cases calculées pour les formulaires 2031-bis, 2033-A, 2033-B et
+              2033-C — pas un rendu CERFA officiel.
+            </p>
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="ghost"
+                onClick={() => downloadLiasseRfsDocument(fiscalYear.year, liasseRfs)}
+              >
+                Télécharger les formulaires complémentaires
+              </Button>
+            </div>
+          </div>
         ) : null}
       </section>
 

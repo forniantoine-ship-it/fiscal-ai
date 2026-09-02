@@ -433,3 +433,50 @@ describe("Cycle 31 — runDeclarationGeneration() expose liasseRfs sans casser l
     assert.equal(generation.fiscalResult.resultatFiscal, 5500);
   });
 });
+
+/**
+ * P0-1 (audit 2026-09-02) — jusqu'ici `liasseRfs` était calculé par
+ * runDeclarationGeneration() (Cycle 31/35 ci-dessus) mais son résultat
+ * n'était jamais persisté ni exposé à l'utilisateur : ces tests couvrent le
+ * branchement, pas un nouveau calcul.
+ */
+describe("P0-1 — liasseRfs expose les 4 formulaires complémentaires (2031-bis, 2033-A/B/C)", () => {
+  function draftReel(): DeclarationDraft {
+    return {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+    } as unknown as DeclarationDraft;
+  }
+
+  it("generation.liasseRfs contient les 4 formulaires (2031-bis, 2033-A, 2033-B, 2033-C) avec leurs identifiants attendus", () => {
+    const generation = runDeclarationGeneration(draftReel(), 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    assert.equal(generation.liasseRfs.form2031Bis.formId, "2031-Bis-SD");
+    assert.equal(generation.liasseRfs.form2033A.formId, "2033-A-SD");
+    assert.equal(generation.liasseRfs.form2033B.formId, "2033-B-SD");
+    assert.equal(generation.liasseRfs.form2033C.formId, "2033-C-SD");
+    assert.ok(Array.isArray(generation.liasseRfs.form2031Bis.cases));
+    assert.ok(Array.isArray(generation.liasseRfs.form2033A.cases));
+    assert.ok(Array.isArray(generation.liasseRfs.form2033B.cases));
+    assert.ok(Array.isArray(generation.liasseRfs.form2033C.cases));
+  });
+
+  it("le 2031-SD (liasseResult, F-007) reste inchangé par la présence de liasseRfs — même dossier, mêmes cases", () => {
+    const generation = runDeclarationGeneration(draftReel(), 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    const caseAB = generation.liasseResult.cases.find((c) => c.caseId === "AB");
+    assert.equal(caseAB?.value, 9000, "F-007/2031-SD non affecté par le branchement de liasseRfs");
+    assert.equal(generation.liasseResult.formulairesManquants.length, 4, "formulairesManquants (F-007) inchangé — P0-2 hors périmètre de ce commit");
+  });
+});
