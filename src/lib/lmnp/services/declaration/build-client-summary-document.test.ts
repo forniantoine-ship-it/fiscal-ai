@@ -457,6 +457,76 @@ describe("Cycle 29 — charges par catégorie (fiscalResult.charges.detailParCat
   });
 });
 
+/**
+ * P0-4.1 — audit P0-4 (anomalie P1) : `chargesDeductibles` inclut
+ * `chargesExploitation + chargesFinancement`, mais `chargesParCategorie` ne
+ * couvrait jamais `chargesFinancement` (F-011 — intérêts/assurance d'emprunt),
+ * qui n'a pas de catégorie F-012 possible. Un client sommant le détail
+ * obtenait donc un total inférieur à celui annoncé. Restitution directe de
+ * fr.charges.chargesFinancement, jamais recalculée, jamais ventilée en
+ * intérêts/assurance séparés (cette ventilation reste réservée à la liasse
+ * technique 2033-B, cases 242/294 — P0-3a.2).
+ */
+describe("P0-4.1 — chargesParCategorie inclut le financement (réconciliation avec chargesDeductibles)", () => {
+  function chargesFixture(chargesExploitation: number, chargesFinancement: number, detailParCategorie: Record<string, number>) {
+    return {
+      totalDeductible: chargesExploitation + chargesFinancement,
+      chargesExploitation,
+      chargesFinancement,
+      chargesPreExploitation: 0,
+      detailParCategorie,
+    };
+  }
+
+  it("1. chargesFinancement > 0 : la ligne 'Intérêts et assurance d'emprunt' est présente avec exactement le montant canonique", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ charges: chargesFixture(6000, 2000, { taxe_fonciere: 6000 }) })),
+    );
+    const ligne = document.chargesParCategorie.find((c) => c.label === "Intérêts et assurance d'emprunt");
+    assert.ok(ligne, "la ligne financement doit être présente");
+    assert.equal(ligne!.montant, 2000, "restitution directe de fr.charges.chargesFinancement, jamais recalculée");
+  });
+
+  it("2. chargesFinancement = 0 : la ligne est absente", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ charges: chargesFixture(6000, 0, { taxe_fonciere: 6000 }) })),
+    );
+    assert.equal(
+      document.chargesParCategorie.some((c) => c.label === "Intérêts et assurance d'emprunt"),
+      false,
+      "aucune ligne inventée quand chargesFinancement est nul — comportement identique à avant P0-4.1",
+    );
+  });
+
+  it("3. F-012 + financement : la somme du détail affiché égale chargesDeductibles", () => {
+    const fr = fiscalResult({ charges: chargesFixture(6000, 2000, { taxe_fonciere: 4000, assurance_pno: 2000 }) });
+    const document = buildClientSummaryDocument(rfs(fr));
+    const total = document.chargesParCategorie.reduce((sum, c) => sum + c.montant, 0);
+    assert.equal(total, document.syntheseFiscale.chargesDeductibles, "6000 + 2000 = 8000, exactement chargesDeductibles");
+    assert.equal(total, 8000);
+  });
+
+  it("4. financement seul (aucune catégorie F-012) : la somme du détail égale chargesDeductibles", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 0, chargesFinancement: 2000, chargesPreExploitation: 0 } });
+    const document = buildClientSummaryDocument(rfs(fr));
+    const total = document.chargesParCategorie.reduce((sum, c) => sum + c.montant, 0);
+    assert.equal(document.chargesParCategorie.length, 1, "seule la ligne financement, aucune catégorie F-012 inventée");
+    assert.equal(total, document.syntheseFiscale.chargesDeductibles);
+    assert.equal(total, 2000);
+  });
+
+  it("5. aucun financement : comportement strictement identique à avant P0-4.1 (non-régression)", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ charges: chargesFixture(3200, 0, { taxe_fonciere: 800, copropriete: 1500, honoraires_comptable: 900 }) })),
+    );
+    assert.equal(document.chargesParCategorie.length, 3);
+    assert.deepEqual(
+      document.chargesParCategorie.map((c) => c.categorie),
+      ["copropriete", "honoraires_comptable", "taxe_fonciere"],
+    );
+  });
+});
+
 describe("Cycle 29 — déficits antérieurs imputés vs restants : jamais confondus", () => {
   it("un exercice qui impute une partie d'un déficit antérieur et en laisse un autre intact : les deux restent distincts", () => {
     // Résultat avant amort 2000, deux déficits antérieurs (2022: 500, 2023: 3000) :

@@ -289,18 +289,45 @@ function humanizeUnknownCategorie(categorie: string): string {
   return categorie.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 }
 
-/** Restitution triée par montant décroissant (tri d'affichage, pas une règle fiscale) des charges par catégorie déjà calculées par F-012/F-006. */
+/**
+ * P0-4.1 — `fr.charges.detailParCategorie` (F-012, `ChargesAssistantOutput.
+ * parCategorie`) ne couvre que les charges d'exploitation ; `chargesFinancement`
+ * (F-011 — intérêts et assurance d'emprunt de l'exercice) n'a jamais de
+ * catégorie possible dans `ChargeCategorie` et n'apparaissait donc dans aucune
+ * ligne de ce détail, alors qu'il est déjà inclus dans `chargesDeductibles`
+ * (`fr.charges.totalDeductible = chargesExploitation + chargesFinancement`).
+ * Un client sommant ce tableau obtenait donc un total inférieur à celui
+ * annoncé plus haut dans le document, sans explication. Restitution directe
+ * de `fr.charges.chargesFinancement` — jamais recalculé, jamais ventilé en
+ * intérêts/assurance séparés (cette ventilation reste une information de
+ * liasse technique, cases 242/294 du 2033-B — voir P0-3a.2). Absente si nulle,
+ * comme les autres catégories déjà filtrées à `> 0` ci-dessous.
+ */
+const CHARGES_FINANCEMENT_CATEGORIE = "financement_emprunt";
+const CHARGES_FINANCEMENT_LABEL = "Intérêts et assurance d'emprunt";
+
+/** Restitution triée par montant décroissant (tri d'affichage, pas une règle fiscale) des charges par catégorie déjà calculées par F-012/F-006/F-011. */
 function buildChargesParCategorie(fr: FiscalResult): ClientSummaryChargeCategorie[] {
   const detail = fr.charges.detailParCategorie;
-  if (!detail) return [];
-  return Object.entries(detail)
-    .filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0)
-    .map(([categorie, montant]) => ({
-      categorie,
-      label: CHARGE_CATEGORY_LABELS[categorie] ?? humanizeUnknownCategorie(categorie),
-      montant,
-    }))
-    .sort((a, b) => b.montant - a.montant);
+  const lignes: ClientSummaryChargeCategorie[] = detail
+    ? Object.entries(detail)
+        .filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0)
+        .map(([categorie, montant]) => ({
+          categorie,
+          label: CHARGE_CATEGORY_LABELS[categorie] ?? humanizeUnknownCategorie(categorie),
+          montant,
+        }))
+    : [];
+
+  if (fr.charges.chargesFinancement > 0) {
+    lignes.push({
+      categorie: CHARGES_FINANCEMENT_CATEGORIE,
+      label: CHARGES_FINANCEMENT_LABEL,
+      montant: fr.charges.chargesFinancement,
+    });
+  }
+
+  return lignes.sort((a, b) => b.montant - a.montant);
 }
 
 function buildCases2042(
