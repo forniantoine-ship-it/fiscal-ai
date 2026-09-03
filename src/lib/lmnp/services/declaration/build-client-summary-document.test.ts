@@ -87,6 +87,83 @@ describe("Cycle 27 — TEST 1 : source unique — le document ne fait que restit
   });
 });
 
+/**
+ * P0-3b — la formation du résultat ne doit plus jamais afficher une équation
+ * arithmétiquement fausse : "Charges déductibles de l'exercice" suivie de
+ * "= Résultat avant amortissement" doit désormais afficher, entre les deux,
+ * la ligne "Charges déductibles de pré-exploitation" dès que ce montant est
+ * non nul (fiscalResult.charges.chargesPreExploitation, A+B+C, restitution
+ * directe, jamais recalculée).
+ */
+describe("P0-3b — formation du résultat : ligne pré-exploitation, jamais une équation fausse", () => {
+  it("1. pré-exploitation = 1000 : la ligne est présente et vaut exactement 1000 €", () => {
+    const fr = fiscalResult({
+      recettes: { total: 10000 },
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 1000 },
+      resultatAvantAmort: 7000,
+    });
+    const document = buildClientSummaryDocument(rfs(fr));
+
+    assert.equal(document.syntheseFiscale.chargesPreExploitation, 1000, "restitution directe, jamais recalculée");
+    const ligne = document.formationDuResultat.find((l) => l.startsWith("Charges déductibles de pré-exploitation"));
+    assert.ok(ligne, "la ligne doit être présente dès que le montant est non nul");
+    assert.match(ligne!, /1\s?000\s?€/, "la ligne doit afficher exactement 1 000 €");
+  });
+
+  it("2. formation complète : 10 000 − 2 000 (exercice) − 1 000 (pré-exploitation) = 7 000 (avant amortissement)", () => {
+    const fr = fiscalResult({
+      recettes: { total: 10000 },
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 1000 },
+      resultatAvantAmort: 7000,
+    });
+    const document = buildClientSummaryDocument(rfs(fr));
+    const lignes = document.formationDuResultat;
+
+    const iRecettes = lignes.findIndex((l) => l.startsWith("Recettes"));
+    const iExercice = lignes.findIndex((l) => l.startsWith("Charges déductibles de l'exercice"));
+    const iPreExploitation = lignes.findIndex((l) => l.startsWith("Charges déductibles de pré-exploitation"));
+    const iAvantAmort = lignes.findIndex((l) => l.startsWith("= Résultat avant amortissement"));
+
+    assert.ok(iRecettes < iExercice, "ordre : recettes avant charges exercice");
+    assert.ok(iExercice < iPreExploitation, "ordre : charges exercice avant pré-exploitation");
+    assert.ok(iPreExploitation < iAvantAmort, "ordre : pré-exploitation avant le résultat avant amortissement");
+
+    assert.match(lignes[iRecettes]!, /10\s?000\s?€/);
+    assert.match(lignes[iExercice]!, /2\s?000\s?€/);
+    assert.match(lignes[iPreExploitation]!, /1\s?000\s?€/);
+    assert.match(lignes[iAvantAmort]!, /7\s?000\s?€/, "10 000 − 2 000 − 1 000 = 7 000, exactement ce que restitue resultatAvantAmort");
+  });
+
+  it("3. zéro pré-exploitation : la ligne est absente, aucun comportement incohérent", () => {
+    const fr = fiscalResult({
+      recettes: { total: 9000 },
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0 },
+      resultatAvantAmort: 7000,
+    });
+    const document = buildClientSummaryDocument(rfs(fr));
+
+    assert.equal(document.syntheseFiscale.chargesPreExploitation, 0);
+    assert.equal(
+      document.formationDuResultat.some((l) => l.startsWith("Charges déductibles de pré-exploitation")),
+      false,
+      "aucune ligne inventée quand le montant est nul — comportement identique à avant P0-3b",
+    );
+  });
+
+  it("5. aucune modification du résultat fiscal source : resultatAvantAmort/resultatFiscal restent des restitutions directes", () => {
+    const fr = fiscalResult({
+      recettes: { total: 10000 },
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 1000 },
+      resultatAvantAmort: 7000,
+      resultatFiscal: 4000,
+    });
+    const document = buildClientSummaryDocument(rfs(fr));
+
+    assert.equal(document.syntheseFiscale.resultatAvantAmortissement, fr.resultatAvantAmort, "jamais recalculé, transport pur");
+    assert.equal(document.syntheseFiscale.resultatFiscal, fr.resultatFiscal, "jamais recalculé, transport pur");
+  });
+});
+
 describe("Cycle 27 — TEST 2 : bénéfice", () => {
   it("résultat positif → resultatPrincipal.nature === 'benefice', case 5NA présente avec le bon montant, pas de 5NY", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult({ resultatFiscal: 5500, deficitNouveau: 0 })));

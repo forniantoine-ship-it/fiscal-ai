@@ -179,6 +179,9 @@ export function runDeclarationGeneration(
       resultatAvantAmort: fiscalResult.resultatAvantAmort,
       totalRecettes: fiscalResult.recettes.total,
       totalCharges: fiscalResult.charges.totalDeductible,
+      // P0-3b — transport pur, pour la formation du résultat de l'écran de
+      // validation (buildValidationFiscalDisplay).
+      chargesPreExploitation: fiscalResult.charges.chargesPreExploitation,
       amortDeduct: fiscalResult.amortDeduct,
       amortReporte: fiscalResult.amortReporte,
       deficitNouveau: fiscalResult.deficitNouveau,

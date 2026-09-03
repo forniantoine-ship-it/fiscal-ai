@@ -247,11 +247,34 @@ export function buildValidationFiscalDisplay(
 ): ValidationFiscalDisplay {
   if (fiscalResult) {
     const isDeficit = fiscalResult.deficitNouveau > 0;
+    const chargesPreExploitation = fiscalResult.chargesPreExploitation ?? 0;
     return {
       exact: true,
       rows: [
         { key: "recettes", label: "Revenus locatifs", value: fiscalResult.totalRecettes, format: formatCurrency },
-        { key: "charges", label: "Charges déductibles", value: fiscalResult.totalCharges, format: formatCurrency },
+        {
+          key: "charges",
+          label: "Charges déductibles de l'exercice",
+          value: fiscalResult.totalCharges,
+          format: formatCurrency,
+        },
+        // P0-3b — sans cette ligne, "Charges déductibles" (exercice seul)
+        // suivie de l'amortissement puis du résultat final laissait croire
+        // que Recettes − charges exercice reconstituait le résultat, alors
+        // que fiscalResult.resultatAvantAmort (TRF-0030) déduit aussi ce
+        // montant (A+B+C, transport pur depuis FiscalResult.charges.
+        // chargesPreExploitation — jamais recalculé ici). Masquée à 0, comme
+        // amortReporte ci-dessous.
+        ...(chargesPreExploitation > 0
+          ? [
+              {
+                key: "chargesPreExploitation",
+                label: "Charges déductibles de pré-exploitation",
+                value: chargesPreExploitation,
+                format: formatCurrency,
+              },
+            ]
+          : []),
         {
           key: "amortDeduct",
           label: "Amortissement déduit",

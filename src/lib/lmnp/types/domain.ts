@@ -578,6 +578,17 @@ export interface FiscalEngineOutput {
   resultatAvantAmort: number;
   totalRecettes: number;
   totalCharges: number;
+  /**
+   * P0-3b — transport pur de `FiscalResult.charges.chargesPreExploitation`
+   * (A+B+C, TRF-0025/TRF-0030) jusqu'à l'écran de validation, pour que
+   * `buildValidationFiscalDisplay()` puisse présenter une formation du
+   * résultat honnête (Recettes − charges exercice − charges pré-exploitation
+   * = résultat avant amortissement). Optionnel — comme les champs
+   * équivalents déjà introduits sur `FiscalResult`/`FinancementFiscalInput`
+   * — pour ne pas casser les constructions manuelles historiques de ce type
+   * (ex. `F006FiscalEnginePanel.tsx`).
+   */
+  chargesPreExploitation?: number;
   amortDeduct: number;
   amortReporte: number;
   deficitNouveau: number;

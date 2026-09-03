@@ -223,7 +223,16 @@ export function renderClientSummaryPdf(document: ClientSummaryDocument): jsPDF {
   cursor.spacer();
 
   cursor.line(`Recettes : ${fmtEurValue(s.recettes)}`);
-  cursor.line(`Charges déductibles : ${fmtEurValue(s.chargesDeductibles)}`);
+  cursor.line(`Charges déductibles de l'exercice : ${fmtEurValue(s.chargesDeductibles)}`);
+  // P0-3b — même correction que la page 2 (formationDuResultat) : sans cette
+  // ligne, "Résultat avant amortissement" juste en dessous ne se déduit pas
+  // arithmétiquement des deux lignes précédentes dès que ce montant est non
+  // nul. Restitution directe de syntheseFiscale.chargesPreExploitation
+  // (déjà transportée, jamais recalculée ici), masquée à 0 comme les autres
+  // lignes conditionnelles de ce bloc (amortissementReporte ci-dessous).
+  if (s.chargesPreExploitation > 0) {
+    cursor.line(`Charges déductibles de pré-exploitation : ${fmtEurValue(s.chargesPreExploitation)}`);
+  }
   cursor.line(`Résultat avant amortissement : ${fmtEurValue(s.resultatAvantAmortissement)}`);
   cursor.line(`Amortissement calculé : ${fmtEurValue(s.amortissementCalcule)}`);
   cursor.line(`Amortissement déductible : ${fmtEurValue(s.amortissementDeductible)}`);

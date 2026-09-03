@@ -254,6 +254,57 @@ function runTests(): void {
     assertEqual(amortReporte.value, 3720, "amortissement intégralement reporté (art. 39C), visible séparément");
   });
 
+  // P0-3b — même correction que build-client-summary-document.ts : sans la
+  // ligne "Charges déductibles de pré-exploitation", l'écran de validation
+  // laissait croire que Recettes − "Charges déductibles" (exercice seul)
+  // menait au résultat final, alors que fiscalResult.chargesPreExploitation
+  // (A+B+C, transport pur via FiscalEngineOutput.chargesPreExploitation,
+  // P0-3b) est aussi déduit dans resultatAvantAmort/resultatFiscal.
+
+  test("P0-3b — pré-exploitation = 1000 : la ligne est présente et vaut exactement 1000", () => {
+    const display = buildValidationFiscalDisplay(
+      fiscalResult({ totalRecettes: 10000, totalCharges: 2000, chargesPreExploitation: 1000, amortDeduct: 3000, resultatFiscal: 4000 }),
+      FALLBACK_SUMMARY,
+    );
+    const ligne = display.rows.find((r) => r.key === "chargesPreExploitation");
+    if (!ligne) throw new Error("ligne 'chargesPreExploitation' introuvable");
+    assertEqual(ligne.label, "Charges déductibles de pré-exploitation", "label");
+    assertEqual(ligne.value, 1000, "restitution directe, jamais recalculée");
+  });
+
+  test("P0-3b — même dossier : les lignes s'enchaînent dans le bon ordre (exercice puis pré-exploitation)", () => {
+    const display = buildValidationFiscalDisplay(
+      fiscalResult({ totalRecettes: 10000, totalCharges: 2000, chargesPreExploitation: 1000, amortDeduct: 3000, resultatFiscal: 4000 }),
+      FALLBACK_SUMMARY,
+    );
+    const iCharges = display.rows.findIndex((r) => r.key === "charges");
+    const iPreExploitation = display.rows.findIndex((r) => r.key === "chargesPreExploitation");
+    const iAmortDeduct = display.rows.findIndex((r) => r.key === "amortDeduct");
+    assertEqual(display.rows[iCharges]?.label, "Charges déductibles de l'exercice", "label renommé");
+    if (iPreExploitation < 0) throw new Error("ligne 'chargesPreExploitation' introuvable");
+    assertEqual(iCharges < iPreExploitation, true, "ordre : charges exercice avant pré-exploitation");
+    assertEqual(iPreExploitation < iAmortDeduct, true, "ordre : pré-exploitation avant amortissement déduit");
+  });
+
+  test("P0-3b — zéro pré-exploitation (absent) : la ligne est absente, comportement strictement identique à avant", () => {
+    const display = buildValidationFiscalDisplay(
+      fiscalResult({ totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, resultatFiscal: 5500 }),
+      FALLBACK_SUMMARY,
+    );
+    const ligne = display.rows.find((r) => r.key === "chargesPreExploitation");
+    assertEqual(ligne, undefined, "aucune ligne inventée quand chargesPreExploitation est absent/0");
+  });
+
+  test("P0-3b — aucune modification du résultat fiscal source : resultatFiscal reste une restitution directe", () => {
+    const display = buildValidationFiscalDisplay(
+      fiscalResult({ totalRecettes: 10000, totalCharges: 2000, chargesPreExploitation: 1000, amortDeduct: 3000, resultatFiscal: 4000 }),
+      FALLBACK_SUMMARY,
+    );
+    const resultat = display.rows.find((r) => r.key === "resultat");
+    if (!resultat) throw new Error("ligne 'resultat' introuvable");
+    assertEqual(resultat.value, 4000, "jamais recalculé — transport pur de fiscalResult.resultatFiscal");
+  });
+
   console.log(`\n${passed}/${total} tests passés`);
   if (passed !== total) process.exit(1);
 }

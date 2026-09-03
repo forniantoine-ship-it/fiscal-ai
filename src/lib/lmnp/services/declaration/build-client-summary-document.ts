@@ -77,7 +77,19 @@ export type ClientSummaryDocument = {
   };
   syntheseFiscale: {
     recettes: number;
+    /** Charges déductibles de l'exercice — exclut volontairement chargesPreExploitation (voir ce champ ci-dessous). */
     chargesDeductibles: number;
+    /**
+     * P0-3b — restitution directe de fiscalResult.charges.chargesPreExploitation
+     * (A+B+C, TRF-0025/TRF-0030), jamais recalculée. Sans cette donnée, la
+     * formation du résultat présentée au client sautait de "Charges
+     * déductibles" (exercice seul) à "Résultat avant amortissement" avec un
+     * signe "=" arithmétiquement faux dès que ce montant est non nul.
+     * Présentée comme un total unique (le document client ne ventile jamais
+     * A/B/C — cette ventilation reste une information de liasse technique,
+     * cf. cases 242/264/294 du 2033-B).
+     */
+    chargesPreExploitation: number;
     amortissementCalcule: number;
     amortissementDeductible: number;
     amortissementReporte: number;
@@ -330,10 +342,25 @@ function buildCases2042(
 function buildFormationDuResultat(fr: FiscalResult, isDeficit: boolean): string[] {
   const lignes: string[] = [
     `Recettes de l'activité : ${fmtEur(fr.recettes.total)}`,
-    `Charges déductibles : ${fmtEur(fr.charges.totalDeductible)}`,
+    `Charges déductibles de l'exercice : ${fmtEur(fr.charges.totalDeductible)}`,
+  ];
+
+  // P0-3b — sans cette ligne, "Charges déductibles" (exercice seul) suivie de
+  // "= Résultat avant amortissement" affichait une équation arithmétiquement
+  // fausse dès que ce montant est non nul (fiscalResult.resultatAvantAmort,
+  // TRF-0030, déduit aussi chargesPreExploitation). Restitution directe,
+  // jamais recalculée ; masquée à 0 comme les lignes conditionnelles
+  // ci-dessous (amortReporte, deficitsImputes). Total unique A+B+C — jamais
+  // ventilé ici (ventilation Cerfa 242/264/294 : information de liasse
+  // technique, hors document client).
+  if (fr.charges.chargesPreExploitation > 0) {
+    lignes.push(`Charges déductibles de pré-exploitation : ${fmtEur(fr.charges.chargesPreExploitation)}`);
+  }
+
+  lignes.push(
     `= Résultat avant amortissement : ${fmtEur(fr.resultatAvantAmort)}`,
     `Amortissement calculé sur l'exercice : ${fmtEur(fr.amortCalcule)}`,
-  ];
+  );
 
   if (fr.amortDeduct < fr.amortCalcule) {
     lignes.push(
@@ -428,6 +455,7 @@ export function buildClientSummaryDocument(
     syntheseFiscale: {
       recettes: fr.recettes.total,
       chargesDeductibles: fr.charges.totalDeductible,
+      chargesPreExploitation: fr.charges.chargesPreExploitation,
       amortissementCalcule: fr.amortCalcule,
       amortissementDeductible: fr.amortDeduct,
       amortissementReporte: fr.amortReporte,
