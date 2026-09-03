@@ -15,11 +15,12 @@ import {
   downloadLiasseDocument,
   downloadLiasseRfsDocument,
 } from "@/lib/lmnp/services/declaration/export-liasse-document";
-import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
 import {
-  declarationCompletude,
-  resolveFormulairesManquants,
-} from "@/lib/lmnp/services/declaration/run-declaration-generation";
+  formatLiasseCoverageMessage,
+  resolveLiasseCoverageState,
+} from "@/lib/lmnp/services/declaration/liasse-coverage-state";
+import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
+import { resolveFormulairesManquants } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 
 function fmtEur(value: number): string {
@@ -33,7 +34,12 @@ export function DeclarationReadyView() {
   // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
   // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
   const formulairesManquants = resolveFormulairesManquants(liasseResult, liasseRfs);
-  const completude = liasseResult ? declarationCompletude(formulairesManquants) : undefined;
+  // P0-2a — `formulairesGeneres` (RFS) atteste qu'un formulaire a été assemblé
+  // sans erreur, jamais que ses cases sont réellement alimentées : ce décompte
+  // ne doit donc jamais être présenté comme une preuve de "liasse complète"
+  // au sens officiel (cf. audit P0-2a).
+  const coverage = resolveLiasseCoverageState(liasseRfs);
+  const { coverageLine, disclaimer } = formatLiasseCoverageMessage(coverage);
 
   if (!fiscalResult || !liasseResult) {
     return (
@@ -76,8 +82,7 @@ export function DeclarationReadyView() {
             letterSpacing: typography.letterSpacing.label,
           }}
         >
-          Déclaration LMNP {fiscalYear.year} —{" "}
-          {completude === "complete" ? "génération complète" : "génération partielle"}
+          Déclaration LMNP {fiscalYear.year} — vos éléments fiscaux sont générés
         </p>
         <h1
           className="mx-auto mt-4 max-w-xl text-[1.375rem] sm:text-[1.625rem]"
@@ -95,19 +100,27 @@ export function DeclarationReadyView() {
           Ce document récapitule votre résultat fiscal et vous indique les informations à vérifier ou à
           reporter dans votre déclaration personnelle.
         </p>
-        <div className="mt-6 flex justify-center">
-          {rfs ? (
-            <Button
-              onClick={() =>
-                downloadClientSummaryPdf(
-                  buildClientSummaryDocument(rfs, { activityStartDate }),
-                )
-              }
+        {rfs ? (
+          <>
+            <p
+              className="mt-2"
+              style={{ ...typography.caption.desktop, color: colors.success.DEFAULT, fontWeight: typography.fontWeight.medium }}
             >
-              Télécharger ma synthèse fiscale et mon aide à la déclaration (PDF)
-            </Button>
-          ) : null}
-        </div>
+              Votre aide à la déclaration est prête
+            </p>
+            <div className="mt-6 flex justify-center">
+              <Button
+                onClick={() =>
+                  downloadClientSummaryPdf(
+                    buildClientSummaryDocument(rfs, { activityStartDate }),
+                  )
+                }
+              >
+                Télécharger ma synthèse fiscale et mon aide à la déclaration (PDF)
+              </Button>
+            </div>
+          </>
+        ) : null}
       </section>
 
       <section
@@ -132,11 +145,7 @@ export function DeclarationReadyView() {
           className="mx-auto mt-2 max-w-lg text-center"
           style={{ ...typography.caption.desktop, color: colors.text.muted }}
         >
-          Ce document n&apos;est ni un accusé de télétransmission EDI ni une preuve d&apos;acceptation par
-          l&apos;administration.{" "}
-          {completude === "complete"
-            ? "La liasse fiscale est complète."
-            : "Certains formulaires de la liasse restent à générer — le détail figure ci-dessous."}
+          {coverageLine} {disclaimer}
         </p>
         <div className="mt-4 flex justify-center">
           <Button

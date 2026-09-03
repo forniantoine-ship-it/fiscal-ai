@@ -29,10 +29,10 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { appendDeclarationVersion } from "@/lib/lmnp/services/declaration/append-declaration-version";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import {
-  declarationCompletude,
-  resolveFormulairesManquants,
-  runDeclarationGeneration,
-} from "@/lib/lmnp/services/declaration/run-declaration-generation";
+  formatLiasseCoverageMessage,
+  resolveLiasseCoverageState,
+} from "@/lib/lmnp/services/declaration/liasse-coverage-state";
+import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 
@@ -151,30 +151,23 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     dispatch({ type: "JOURNEY_MARK_DECLARATION_GENERATED" });
     showSuccess(
       "Déclaration générée",
-      "Vos documents officiels sont disponibles dans votre espace déclaration.",
+      "Vos éléments fiscaux sont générés et disponibles dans votre espace déclaration.",
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
   }, [dispatch, draft, fiscalYear.id, fiscalYear.year, paid, router, showSuccess]);
 
   if (generated && paid && !gate.canGenerate) {
-    // Cycle 25 — le statut affiché ne doit jamais dépasser ce qui est réellement
-    // produit : `formulairesManquants` fait foi, jamais un wording figé.
-    // Ne jamais mentionner un "reçu EDI" : la télétransmission n'est pas raccordée
-    // à ce jour (cf. commentaire GENERATION_AI_STEPS ci-dessus).
-    // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
-    // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
-    const formulairesManquants = resolveFormulairesManquants(draft?.liasseResult, draft?.liasseRfs);
-    const completude = draft?.liasseResult ? declarationCompletude(formulairesManquants) : "partielle";
-    const heading = completude === "complete" ? "✓ Déclaration générée" : "✓ Calcul fiscal généré";
-    const body =
-      completude === "complete"
-        ? "Vos documents officiels sont disponibles."
-        : `Votre résultat fiscal et les formulaires disponibles de la liasse sont accessibles dans votre espace déclaration. ${
-            formulairesManquants.length
-              ? `Formulaires restant à générer : ${formulairesManquants.join(", ")}.`
-              : ""
-          }`;
+    // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
+    // au sens officiel (Cerfa/EDI) : `formulairesGeneres` (RFS) atteste
+    // seulement qu'un formulaire a été assemblé sans erreur, jamais que ses
+    // cases sont réellement alimentées (cf. audit P0-2a). Le décompte
+    // formulaires/cases vient de resolveLiasseCoverageState (RFS uniquement) —
+    // jamais un wording figé "complet"/"documents officiels".
+    const coverage = resolveLiasseCoverageState(draft?.liasseRfs);
+    const { coverageLine, disclaimer } = formatLiasseCoverageMessage(coverage);
+    const heading = "✓ Vos éléments fiscaux sont générés";
+    const body = `${coverageLine} ${disclaimer}`;
 
     return (
       <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
