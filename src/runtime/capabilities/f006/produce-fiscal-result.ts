@@ -84,6 +84,12 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       chargesExploitation: data.chargesExploitation,
       chargesFinancement: data.chargesFinancement,
       chargesPreExploitation: data.chargesPreExploitation,
+      // P0-3a.3 — composante A seule (F-012, charges d'exploitation
+      // pré-exploitation), lue directement depuis l'entrée comme
+      // `detailParCategorie` juste en dessous — transport pur, jamais
+      // recalculé, n'entre dans aucune formule (chargesPreExploitation
+      // ci-dessus, resultatAvantAmort, resultatFiscal restent inchangés).
+      chargesExploitationPreExploitation: input.chargesAssistant?.totalPreExploitation ?? 0,
       totalNonDeductible: data.totalNonDeductible,
       detailParCategorie: input.chargesAssistant?.parCategorie,
     },

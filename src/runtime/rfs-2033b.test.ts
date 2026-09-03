@@ -268,25 +268,47 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
     assert.equal(findCase(form, "242"), undefined, "242 ne doit jamais être inventée sans rfs.emprunts");
   });
 
-  it("10. exercice avec pré-exploitation — P1 ne modifie ni ne lit interetsPreExploitation/assurancePreExploitation", () => {
+  it("10. P0-3a.2 — intérêts pré-exploitation rejoignent 294, assurance pré-exploitation rejoint 242", () => {
     const fr = fiscalResult({
-      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 700 },
-      resultatAvantAmort: 6300,
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 500 },
     });
     const form = map2033BFromRfs(
-      rfs(fr, [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 700 })]),
+      rfs(fr, [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 350, assurancePreExploitation: 150 })]),
     );
-    assert.equal(findCase(form, "294")?.value, 1000, "294 ne doit jamais inclure interetsPreExploitation");
-    assert.equal(findCase(form, "242")?.value, 0);
+    assert.equal(findCase(form, "294")?.value, 1350, "1000 (exercice) + 350 (pré-exploitation) — 294 doit désormais inclure interetsPreExploitation");
+    assert.equal(findCase(form, "242")?.value, 150, "assurancePreExploitation rejoint 242 (autres charges externes)");
     // 264/270/310 restent des lectures de fiscalResult.charges.chargesPreExploitation
-    // (P2, hors périmètre) — inchangées par l'introduction de 242/294 par nature.
+    // (TRF-0030, hors périmètre P0-3a.2) — strictement inchangées par la
+    // ventilation 242/294 : le résultat fiscal ne change pas, seule la
+    // restitution Cerfa des composantes déjà déduites devient visible.
     const sansEmprunts = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "264")?.value, findCase(sansEmprunts, "264")?.value);
+    assert.equal(findCase(form, "264")?.value, findCase(sansEmprunts, "264")?.value, "264 n'est jamais alimentée directement par le bloc pré-exploitation");
     assert.equal(findCase(form, "270")?.value, findCase(sansEmprunts, "270")?.value);
     assert.equal(findCase(form, "310")?.value, findCase(sansEmprunts, "310")?.value);
   });
 
-  it("11. invariant de conservation — Σ(242+294 par nature) === fiscalResult.charges.chargesFinancement", () => {
+  it("10b. plusieurs emprunts — agrégation des composantes pré-exploitation sur 294/242", () => {
+    const fr = fiscalResult({
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 475 },
+    });
+    const form = map2033BFromRfs(
+      rfs(fr, [
+        pret({ pretId: "pret-A", interetsPreExploitation: 100, assurancePreExploitation: 50 }),
+        pret({ pretId: "pret-B", interetsPreExploitation: 250, assurancePreExploitation: 75 }),
+      ]),
+    );
+    assert.equal(findCase(form, "294")?.value, 350, "100 + 250 (intérêts pré-exploitation, deux emprunts)");
+    assert.equal(findCase(form, "242")?.value, 125, "50 + 75 (assurance pré-exploitation, deux emprunts)");
+  });
+
+  it("10c. aucun montant pré-exploitation — 242/294 inchangées (zéro/absence, comportement existant préservé)", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
+    assert.equal(findCase(form, "294")?.value, 1000, "interetsPreExploitation=0 par défaut sur pret() — aucun effet");
+    assert.equal(findCase(form, "242")?.value, 500, "assurancePreExploitation=0 par défaut sur pret() — aucun effet");
+  });
+
+  it("11. invariant de conservation (charges de l'exercice seules, sans pré-exploitation) — Σ(242+294 par nature) === fiscalResult.charges.chargesFinancement", () => {
     const emprunts = [
       pret({ pretId: "pret-A", interetsEmpruntExercice: 1234.56, assuranceEmpruntExercice: 210.44 }),
       pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 175.5, garantieDeductible: 80 }),
@@ -316,6 +338,35 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
     );
   });
 
+  it("11b. P0-3a.2 — avec pré-exploitation, 242+294 dépasse chargesFinancement exactement de la somme pré-exploitation (nouvel invariant)", () => {
+    const emprunts = [
+      pret({ pretId: "pret-A", interetsEmpruntExercice: 1234.56, assuranceEmpruntExercice: 210.44, interetsPreExploitation: 100, assurancePreExploitation: 40 }),
+      pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 175.5, garantieDeductible: 80, interetsPreExploitation: 250, assurancePreExploitation: 60 }),
+    ];
+    const chargesFinancement = round2(
+      emprunts.reduce(
+        (acc, p) =>
+          acc + p.interetsEmpruntExercice + p.iraDeductible + p.assuranceEmpruntExercice + p.fraisDossierDeductibles + p.garantieDeductible,
+        0,
+      ),
+    );
+    const totalPreExploitationEmprunts = round2(
+      emprunts.reduce((acc, p) => acc + p.interetsPreExploitation + p.assurancePreExploitation, 0),
+    );
+    const fr = fiscalResult({
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement, chargesPreExploitation: totalPreExploitationEmprunts },
+    });
+    const form = map2033BFromRfs(rfs(fr, emprunts));
+    const case242 = findCase(form, "242")?.value as number;
+    const case294 = findCase(form, "294")?.value as number;
+    assert.equal(
+      round2(case242 + case294),
+      round2(chargesFinancement + totalPreExploitationEmprunts),
+      "242 + 294 reconstitue chargesFinancement UNIQUEMENT augmenté des montants pré-exploitation — chargesFinancement seul (charges de l'exercice) n'est plus reconstitué à l'identique, ce qui est attendu",
+    );
+    assert.notEqual(round2(case242 + case294), chargesFinancement, "l'ancien invariant (sans pré-exploitation) ne doit plus être vérifié tel quel dès que du pré-exploitation existe");
+  });
+
   it("242/294 sont tracées avec source=Emprunts et un pretId reconstituable quand le détail est disponible", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
@@ -330,6 +381,148 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "294")?.trace.source, "FiscalResult");
     assert.equal(findCase(form, "294")?.trace.path, "fiscalResult.charges.chargesFinancement");
+  });
+});
+
+/**
+ * P0-3a.4 — la composante A (`fiscalResult.charges.chargesExploitationPreExploitation`,
+ * P0-3a.3) rejoint la case 264 (charges d'exploitation), jamais 242/294 (déjà
+ * la destination de B/C depuis P0-3a.2). `chargesPreExploitation` (=A+B+C,
+ * TRF-0030) n'est JAMAIS lue par ce mapper — seule A l'est, explicitement.
+ */
+describe("P0-3a.4 — composante A (F-012) projetée en case 264, jamais mélangée à B/C", () => {
+  it("1. A seule (500) : 264 augmente de 500, 270 diminue de 500 — B/C absents, 242/294 inchangées", () => {
+    const base = { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0, totalNonDeductible: 0 };
+    const sansA = fiscalResult({ charges: base });
+    const avecA = fiscalResult({ charges: { ...base, chargesExploitationPreExploitation: 500 } });
+
+    const formSansA = map2033BFromRfs(rfs(sansA));
+    const formAvecA = map2033BFromRfs(rfs(avecA));
+
+    assert.equal(
+      (findCase(formAvecA, "264")?.value as number) - (findCase(formSansA, "264")?.value as number),
+      500,
+      "264 augmente exactement de A",
+    );
+    assert.equal(
+      (findCase(formAvecA, "270")?.value as number) - (findCase(formSansA, "270")?.value as number),
+      -500,
+      "270 (232 − 264) diminue exactement de A",
+    );
+    assert.equal(findCase(formAvecA, "242")?.value, undefined, "242 : rfs.emprunts absent, aucune projection inventée");
+    assert.equal(findCase(formAvecA, "294")?.value, 0, "294 : aucune contribution de A, chargesFinancement=0");
+  });
+
+  it("2. A+B+C (500/350/150) : chacun compté une seule fois, sur sa propre case — A en 264, B en 294, C en 242", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 1000, // A+B+C — jamais lu par ce mapper, présent pour un fixture réaliste
+        chargesExploitationPreExploitation: 500, // A
+        totalNonDeductible: 0,
+      },
+    });
+    const chargesSansPreExploitation = { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0, totalNonDeductible: 0 };
+    // `[]` — détail par prêt disponible (242 alimentée à 0, jamais absente),
+    // pour comparer des cases réellement homogènes avec `form` ci-dessous.
+    const sansPreExploitation = map2033BFromRfs(rfs(fiscalResult({ charges: chargesSansPreExploitation }), []));
+    const form = map2033BFromRfs(rfs(fr, [pret({ interetsPreExploitation: 350, assurancePreExploitation: 150 })]));
+
+    assert.equal(
+      (findCase(form, "264")?.value as number) - (findCase(sansPreExploitation, "264")?.value as number),
+      500,
+      "264 ne reçoit que A (500), jamais B ni C",
+    );
+    assert.equal(findCase(form, "294")?.value, 350, "294 ne reçoit que B (350)");
+    assert.equal(findCase(form, "242")?.value, 150, "242 ne reçoit que C (150)");
+
+    // Aucun des trois n'est compté deux fois : la somme des deltas sur les
+    // trois cases (264+294+242 vs un dossier sans aucun montant pré-exploitation)
+    // vaut exactement A+B+C, ni plus ni moins.
+    const sansRien = sansPreExploitation;
+    const delta264 = (findCase(form, "264")?.value as number) - (findCase(sansRien, "264")?.value as number);
+    const delta294 = (findCase(form, "294")?.value as number) - (findCase(sansRien, "294")?.value as number);
+    const delta242 = (findCase(form, "242")?.value as number) - (findCase(sansRien, "242")?.value as number);
+    assert.equal(round2(delta264 + delta294 + delta242), 1000, "500 (A, 264) + 350 (B, 294) + 150 (C, 242) = 1000, jamais plus");
+  });
+
+  it("3. réconciliation : 270 − (242+294) === résultat comptable (310/312/314) — aucun double comptage architectural", () => {
+    const fr = fiscalResult({
+      exercice: 2025,
+      recettes: { total: 9000 },
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 1000,
+        chargesPreExploitation: 1000,
+        chargesExploitationPreExploitation: 500,
+        totalNonDeductible: 0,
+      },
+      resultatAvantAmort: round2(9000 - (2000 + 1000) - 1000 - 0),
+      amortCalcule: 1500,
+    });
+    const form = map2033BFromRfs(
+      rfs(fr, [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 350, assurancePreExploitation: 150 })]),
+    );
+
+    const case270 = findCase(form, "270")?.value as number;
+    const case242 = (findCase(form, "242")?.value as number) ?? 0;
+    const case294 = findCase(form, "294")?.value as number;
+    const resultatFinal = fr.resultatAvantAmort - fr.amortCalcule - fr.charges.totalNonDeductible;
+
+    assert.equal(
+      round2(case270 - (case242 + case294)),
+      round2(resultatFinal),
+      "résultat d'exploitation (270) moins les charges financières (242+294, B/C inclus) reconstitue exactement le résultat final (310/312/314) — preuve qu'aucun euro n'est compté deux fois entre les deux sections",
+    );
+  });
+
+  it("4. zéro/absence : chargesExploitationPreExploitation à 0 ou absent → comportement strictement identique à l'ancien", () => {
+    const base = { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 500, chargesPreExploitation: 0, totalNonDeductible: 0 };
+    const absent = map2033BFromRfs(rfs(fiscalResult({ charges: base })));
+    const explicitementZero = map2033BFromRfs(rfs(fiscalResult({ charges: { ...base, chargesExploitationPreExploitation: 0 } })));
+
+    assert.equal(findCase(absent, "264")?.value, findCase(explicitementZero, "264")?.value);
+    assert.equal(findCase(absent, "270")?.value, findCase(explicitementZero, "270")?.value);
+    assert.ok(!Number.isNaN(findCase(absent, "264")?.value), "champ absent → jamais NaN (repli ?? 0)");
+  });
+
+  it("5. non-régression multi-emprunts (P0-3a.2) : A (264) et plusieurs prêts B/C (294/242) coexistent sans interférence", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        chargesExploitationPreExploitation: 500,
+        totalNonDeductible: 0,
+      },
+    });
+    const form = map2033BFromRfs(
+      rfs(fr, [
+        pret({ pretId: "pret-A", interetsPreExploitation: 100, assurancePreExploitation: 50 }),
+        pret({ pretId: "pret-B", interetsPreExploitation: 250, assurancePreExploitation: 75 }),
+      ]),
+    );
+    assert.equal(findCase(form, "294")?.value, 350, "294 : ventilation multi-emprunts P0-3a.2 inchangée (100+250)");
+    assert.equal(findCase(form, "242")?.value, 125, "242 : ventilation multi-emprunts P0-3a.2 inchangée (50+75)");
+
+    const sansA = map2033BFromRfs(
+      rfs(
+        fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0, totalNonDeductible: 0 } }),
+        [
+          pret({ pretId: "pret-A", interetsPreExploitation: 100, assurancePreExploitation: 50 }),
+          pret({ pretId: "pret-B", interetsPreExploitation: 250, assurancePreExploitation: 75 }),
+        ],
+      ),
+    );
+    assert.equal(
+      (findCase(form, "264")?.value as number) - (findCase(sansA, "264")?.value as number),
+      500,
+      "264 reçoit A indépendamment du nombre d'emprunts — jamais affectée par B/C",
+    );
   });
 });
 

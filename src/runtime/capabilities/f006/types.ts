@@ -130,6 +130,21 @@ export type FiscalResult = {
     chargesFinancement: number;
     chargesPreExploitation: number;
     /**
+     * P0-3a.3 (mini-audit read-only) — composante A seule de
+     * `chargesPreExploitation` (= A + B + C, TRF-0025/TRF-0030), soit
+     * `ChargesFiscalInput.totalPreExploitation` (F-012, charges d'exploitation
+     * pré-mise-en-service — taxe foncière, assurances, honoraires, frais
+     * bancaires, divers). Transport pur, jamais recalculé : n'affecte ni
+     * `chargesPreExploitation` ni `resultatAvantAmort`/`resultatFiscal`.
+     * N'inclut JAMAIS B (`totalInteretsPreExploitation`) ni C
+     * (`totalAssurancePreExploitation`), qui restent des composantes F-011
+     * exclusivement portées par `rfs.emprunts[]` (P0-3a.2). Optionnel — comme
+     * `totalNonDeductible`/`totalAssurancePreExploitation` avant lui — pour ne
+     * pas casser les reconstructions manuelles historiques de `FiscalResult`
+     * (ex. `fiscalResultFromDraft()`).
+     */
+    chargesExploitationPreExploitation?: number;
+    /**
      * Cycle 32 — audit 2033-B : charges comptabilisées mais fiscalement non
      * déductibles (F-012). Transport pur, jamais recalculé par F-006. Permet
      * de reconstituer le résultat comptable (distinct du résultat fiscal)

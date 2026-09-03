@@ -54,10 +54,22 @@ import { round2 } from "../../f007/types";
  * dossier + garantie non récupérable qualifiée) et 294 (intérêts + IRA),
  * depuis `rfs.emprunts` (F-011, jamais recalculé) — voir la garde de code
  * juste avant la construction de `cases`. `garantieDeductible` ne représente
- * aujourd'hui QUE la commission de caution ; garantie récupérable, garantie
- * non qualifiée et assurance pré-exploitation restent hors périmètre de ce
- * cycle (paliers ultérieurs). `rfs.emprunts` absent → repli sur l'ancien
- * comportement (294 = chargesFinancement en totalité, 242 absente).
+ * aujourd'hui QUE la commission de caution ; garantie récupérable et garantie
+ * non qualifiée restent hors périmètre de ce cycle (paliers ultérieurs).
+ * `rfs.emprunts` absent → repli sur l'ancien comportement (294 =
+ * chargesFinancement en totalité, 242 absente).
+ *
+ * P0-3a.2 (mini-audit read-only + décision verrouillée) — `interetsPreExploitation`
+ * et `assurancePreExploitation` (F-011, TRF-0023/P2) rejoignent désormais
+ * respectivement 294 et 242 : même donnée déjà transportée sur `rfs.emprunts[]`,
+ * simple ajout aux sommes existantes, aucun recalcul. Ces montants sont déjà
+ * déduits une seule fois du résultat via `fiscalResult.charges.
+ * chargesPreExploitation` (TRF-0030) — les restituer ici ne les réinjecte dans
+ * aucun calcul, cela les rend seulement visibles sur leur case Cerfa. Le total
+ * de contrôle `242 + 294 == chargesFinancement` (ci-dessous) ne couvre donc
+ * plus que les charges de l'exercice : dès que des montants pré-exploitation
+ * existent, `242 + 294` dépasse `chargesFinancement` de leur somme — c'est la
+ * réalité fiscale attendue, jamais forcé artificiellement à l'égalité.
  *
  * Audit fiscal ciblé (déficits LMNP) — 360 est reclassée en `non_applicable`,
  * pour la même raison que 356 : la notice 2033-NOT-SD réserve explicitement
@@ -113,8 +125,12 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // (run-declaration-generation.ts) — descendre au détail n'introduit donc
   // aucune seconde source de vérité, seulement un niveau de granularité plus
   // fin d'une donnée déjà calculée. `chargesFinancement` reste le total de
-  // contrôle (invariant de conservation, vérifié par les tests, jamais par
-  // ce code — voir rfs-2033b.test.ts).
+  // contrôle DES SEULES CHARGES DE L'EXERCICE (invariant de conservation,
+  // vérifié par les tests, jamais par ce code — voir rfs-2033b.test.ts) :
+  // depuis P0-3a.2, 242/294 incluent aussi les montants pré-exploitation
+  // (interetsPreExploitation/assurancePreExploitation), absents par
+  // construction de `chargesFinancement` — 242+294 dépasse alors
+  // `chargesFinancement` de la somme des deux, ce qui est attendu.
   //
   // `garantieDeductible` ne représente aujourd'hui QUE la commission de
   // caution (F-011 ne capture aucun montant pour hypothèque/IPPD/autre) —
@@ -126,18 +142,26 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // `rfs.emprunts` vide (`[]`, financement nul) est distinct : le détail est
   // disponible, la somme vaut simplement 0 des deux côtés.
   const emprunts = rfs.emprunts;
+  // P0-3a.2 — intérêts/assurance pré-exploitation (F-011, TRF-0023/P2) rejoignent
+  // 294/242 par nature, au même titre que leurs homologues de l'exercice :
+  // restitution pure d'une donnée déjà transportée sur rfs.emprunts[], jamais
+  // recalculée. Elles sont déjà déduites une seule fois du résultat fiscal via
+  // fiscalResult.charges.chargesPreExploitation (TRF-0030) — ce mapping ne fait
+  // que les rendre visibles sur la case Cerfa correspondant à leur nature
+  // financière, il ne les réinjecte dans aucun calcul.
   const financement242 =
     emprunts !== undefined
       ? round2(
           emprunts.reduce(
-            (acc, p) => acc + p.assuranceEmpruntExercice + p.fraisDossierDeductibles + p.garantieDeductible,
+            (acc, p) =>
+              acc + p.assuranceEmpruntExercice + p.assurancePreExploitation + p.fraisDossierDeductibles + p.garantieDeductible,
             0,
           ),
         )
       : undefined;
   const financement294 =
     emprunts !== undefined
-      ? round2(emprunts.reduce((acc, p) => acc + p.interetsEmpruntExercice + p.iraDeductible, 0))
+      ? round2(emprunts.reduce((acc, p) => acc + p.interetsEmpruntExercice + p.interetsPreExploitation + p.iraDeductible, 0))
       : round2(fr.charges.chargesFinancement);
   const empruntsTrace: Omit<CaseTrace, "path"> = { source: "Emprunts", ksArtifacts: ["TRF-0016", "TRF-0032"] };
 
@@ -149,7 +173,23 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // le FEC) + les charges comptabilisées mais fiscalement non déductibles
   // (F-012, ex. fonds de roulement de copropriété). Projection de trois
   // valeurs déjà calculées — aucune règle fiscale nouvelle.
-  const charges264 = round2(fr.charges.chargesExploitation + fr.amortCalcule + fr.charges.totalNonDeductible);
+  //
+  // P0-3a.4 — `chargesExploitationPreExploitation` (composante A, P0-3a.3)
+  // rejoint ce total : ce sont des charges d'exploitation F-012 (taxe
+  // foncière, assurances, honoraires, frais bancaires, divers) engagées avant
+  // mise en service, jamais des charges financières. B (intérêts) et C
+  // (assurance d'emprunt) pré-exploitation restent exclusivement en 294/242
+  // (P0-3a.2) — jamais ici. `chargesPreExploitation` (= A+B+C, TRF-0030)
+  // n'est JAMAIS lue par ce mapper : seule la composante A l'est,
+  // explicitement, pour éviter tout double comptage de B/C. Optionnelle
+  // (P0-3a.3) → repli `?? 0`, comportement strictement inchangé en son
+  // absence.
+  const charges264 = round2(
+    fr.charges.chargesExploitation +
+      (fr.charges.chargesExploitationPreExploitation ?? 0) +
+      fr.amortCalcule +
+      fr.charges.totalNonDeductible,
+  );
   // Case 270 — Résultat d'exploitation (I − II). Différence entre deux cases
   // déjà projetées (232 et 264) — présentation Cerfa, pas un calcul fiscal.
   const resultat270 = round2(fr.recettes.total - charges264);
@@ -183,8 +223,8 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: charges264,
       trace: {
         ...baseTrace,
-        path: "fiscalResult.charges.chargesExploitation + fiscalResult.amortCalcule + fiscalResult.charges.totalNonDeductible",
-        ksArtifacts: ["TRF-0020", "TRF-0012", "TRF-0032"],
+        path: "fiscalResult.charges.chargesExploitation + fiscalResult.charges.chargesExploitationPreExploitation + fiscalResult.amortCalcule + fiscalResult.charges.totalNonDeductible",
+        ksArtifacts: ["TRF-0020", "TRF-0025", "TRF-0012", "TRF-0032"],
       },
     },
     {
@@ -209,7 +249,7 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: financement294,
       trace:
         emprunts !== undefined
-          ? { ...empruntsTrace, path: "Σ rfs.emprunts[].(interetsEmpruntExercice + iraDeductible)" }
+          ? { ...empruntsTrace, path: "Σ rfs.emprunts[].(interetsEmpruntExercice + interetsPreExploitation + iraDeductible)" }
           : { ...baseTrace, path: "fiscalResult.charges.chargesFinancement" },
     },
     {
@@ -267,7 +307,7 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: financement242,
       trace: {
         ...empruntsTrace,
-        path: "Σ rfs.emprunts[].(assuranceEmpruntExercice + fraisDossierDeductibles + garantieDeductible)",
+        path: "Σ rfs.emprunts[].(assuranceEmpruntExercice + assurancePreExploitation + fraisDossierDeductibles + garantieDeductible)",
       },
     });
   }

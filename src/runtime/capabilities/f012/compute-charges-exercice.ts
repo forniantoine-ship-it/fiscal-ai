@@ -123,10 +123,17 @@ export function computeChargesExercice(
           description: "Taxe foncière — part pré-exploitation",
           montant: tf.montantPreExploitation,
           categorie: "taxe_fonciere",
-          deductibilite: "non_deductible",
+          // P0-3a.1 — AX-011/RAI-011/TRF-0025 : une charge pré-exploitation
+          // qualifiée (taxe foncière incluse) est déductible, jamais
+          // "non_deductible". Ce tag n'affecte pas totalDeductible ici
+          // (montantDeductible non fourni, reste 0 sur cette ligne) : il ne
+          // fait que retirer ce montant de totalNonDeductible, où il n'avait
+          // aucun fondement KS et faisait double emploi avec
+          // totalPreExploitation (qui, seul, porte déjà cette valeur).
+          deductibilite: "deductible",
           montantPreExploitation: tf.montantPreExploitation,
           source: "derived",
-          regleAppliquee: "F-012 — isolation pré-exploitation",
+          regleAppliquee: "AX-011/RAI-011 — charge pré-exploitation déductible",
         }),
       );
     }

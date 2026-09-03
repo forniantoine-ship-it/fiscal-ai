@@ -8,6 +8,7 @@ import { explainFiscalResult } from "./presentation/explain-fiscal-result";
 import { F006FiscalEngineAssistant } from "./assistants/f006-fiscal-engine/assistant";
 import { computeChargesExercice } from "./capabilities/f012/compute-charges-exercice";
 import { computeFinancementExercice } from "./capabilities/f011/compute-financement-exercice";
+import { buildFiscalRepresentation } from "./capabilities/rfs/build-fiscal-representation";
 
 const BASE_INPUT = {
   exerciceFiscal: 2024,
@@ -183,6 +184,97 @@ describe("P2 — assurance pré-exploitation intégrée à chargesPreExploitatio
 
     assert.equal(result.charges.totalNonDeductible, 100, "totalNonDeductible reste un transport pur de F-012, non affecté par le financement");
     assert.equal(result.charges.chargesExploitation, 2000, "chargesExploitation (F-012) non affectée par l'assurance pré-exploitation (financement)");
+  });
+});
+
+/**
+ * P0-3a.3 (mini-audit read-only) — expose séparément la composante A
+ * (`chargesAssistant.totalPreExploitation`, F-012) sur `FiscalResult.charges.
+ * chargesExploitationPreExploitation`, sans toucher à `chargesPreExploitation`
+ * (A+B+C) ni à `resultatAvantAmort`/`resultatFiscal`. Transport pur.
+ */
+describe("P0-3a.3 — FiscalResult.charges.chargesExploitationPreExploitation (composante A, transport pur)", () => {
+  it("1. A est transportée intacte : totalPreExploitation=500 → chargesExploitationPreExploitation=500", () => {
+    const result = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalPreExploitation: 500 },
+    }).result!;
+    assert.equal(result.charges.chargesExploitationPreExploitation, 500);
+  });
+
+  it("2. séparation A/B/C : chargesExploitationPreExploitation === A seule, chargesPreExploitation === A+B+C", () => {
+    const result = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalPreExploitation: 500 },
+      financementCharges: {
+        ...BASE_INPUT.financementCharges,
+        totalInteretsPreExploitation: 350,
+        totalAssurancePreExploitation: 150,
+      },
+    }).result!;
+    assert.equal(result.charges.chargesExploitationPreExploitation, 500, "A seule — jamais B ni C");
+    assert.equal(result.charges.chargesPreExploitation, 1000, "A+B+C — le merge existant reste inchangé (500+350+150)");
+  });
+
+  it("3. résultat fiscal strictement inchangé : ajouter chargesExploitationPreExploitation ne modifie ni resultatAvantAmort ni resultatFiscal", () => {
+    const input = {
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalPreExploitation: 500 },
+      financementCharges: {
+        ...BASE_INPUT.financementCharges,
+        totalInteretsPreExploitation: 350,
+        totalAssurancePreExploitation: 150,
+      },
+    };
+    const avecNouveauChamp = produceFiscalResult(input).result!;
+    // Même dossier vu par la formule historique (avant P0-3a.3) : mêmes
+    // chargesPreExploitation (A+B+C), donc même resultatAvantAmort/resultatFiscal —
+    // le nouveau champ n'est qu'une lecture supplémentaire, jamais une entrée
+    // de compute-resultat-avant-amort.ts.
+    const reference = computeResultatAvantAmort({
+      exerciceFiscal: 2024,
+      totalRecettes: 9000,
+      chargesExploitation: 7000,
+      chargesFinancement: 0,
+      chargesPreExploitation: 1000,
+      totalChargesDeductibles: 7000,
+      amortCalcule: 6779,
+      perteExceptionnelle: 0,
+    });
+    assert.equal(avecNouveauChamp.resultatAvantAmort, reference.resultatAvantAmort);
+  });
+
+  it("4. cas zéro/absence : totalPreExploitation=0 et chargesAssistant absent produisent 0, jamais NaN", () => {
+    const avecZero = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalPreExploitation: 0 },
+    }).result!;
+    assert.equal(avecZero.charges.chargesExploitationPreExploitation, 0);
+    assert.ok(!Number.isNaN(avecZero.charges.chargesExploitationPreExploitation));
+
+    const sansChargesAssistant = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: undefined,
+    });
+    // chargesAssistant est requis par validateFiscalInputs (ready=false) —
+    // aucun FiscalResult produit, donc aucun risque de NaN en aval non plus.
+    assert.equal(sansChargesAssistant.result, undefined);
+  });
+
+  it("5. le RFS reçoit automatiquement le champ, sans modification de build-fiscal-representation.ts", () => {
+    const result = produceFiscalResult({
+      ...BASE_INPUT,
+      chargesAssistant: { ...BASE_INPUT.chargesAssistant, totalPreExploitation: 500 },
+    }).result!;
+    const rfs = buildFiscalRepresentation({
+      fiscalResult: result,
+      identite: { siren: "104545108", siret: "10454510800011", denomination: "Test" },
+    });
+    assert.equal(
+      rfs.fiscalResult.charges.chargesExploitationPreExploitation,
+      result.charges.chargesExploitationPreExploitation,
+      "même référence : RFS.fiscalResult === FiscalResult, aucun recalcul ni reconstruction",
+    );
   });
 });
 

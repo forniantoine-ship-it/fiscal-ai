@@ -132,6 +132,10 @@ describe("F-012 — correction doublon totalPreExploitation (taxe foncière)", (
     assert.equal(result.charges.totalDeductible, 500);
     assert.equal(result.charges.totalPreExploitation, 700);
     assert.notEqual(result.charges.totalPreExploitation, 1400);
+    // P0-3a.1 (AX-011/RAI-011/TRF-0025) — la part pré-exploitation de la taxe
+    // foncière est une charge déductible, jamais "non_deductible" : elle ne
+    // doit plus jamais apparaître dans totalNonDeductible.
+    assert.equal(result.charges.totalNonDeductible, 0);
   });
 
   it("E. plusieurs catégories : une seule part pré-exploitation par catégorie", () => {
@@ -174,6 +178,58 @@ describe("F-012 — correction doublon totalPreExploitation (taxe foncière)", (
     assert.equal(result.charges.totalDeductible, 4640);
     assert.equal(result.charges.totalNonDeductible, 120);
     assert.equal(result.charges.totalPreExploitation, 0);
+  });
+});
+
+/**
+ * P0-3a.1 — mini-audit read-only validé : la taxe foncière pré-exploitation
+ * est une charge déductible d'exploitation (AX-011, RAI-011 ; TRF-0025 ne
+ * prévoit que 3 destinations — charges/immobilisation/travaux — jamais
+ * "non_deductible"). Avant ce correctif, `compute-charges-exercice.ts`
+ * taguait cette ligne "non_deductible", faisant apparaître le même montant
+ * à la fois dans `totalNonDeductible` et `totalPreExploitation`.
+ */
+describe("P0-3a.1 — taxe foncière pré-exploitation qualifiée déductible (plus jamais non_deductible)", () => {
+  it("600 € de taxe foncière, 300 € pré-exploitation : totalPreExploitation=300, totalNonDeductible=0", () => {
+    const result = computeChargesExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      taxeFonciere: 600,
+    });
+    const ligneTaxeFonciere = result.charges.lignes.find((l) => l.id === "taxe-fonciere");
+    const lignePreExploitation = result.charges.lignes.find((l) => l.id === "taxe-fonciere-pre-exploitation");
+
+    assert.equal(lignePreExploitation?.montantPreExploitation, 300, "le prorata pré-exploitation lui-même est inchangé");
+    assert.equal(
+      lignePreExploitation?.deductibilite,
+      "deductible",
+      "la ligne pré-exploitation doit désormais être qualifiée déductible, jamais non_deductible",
+    );
+    assert.equal(
+      result.charges.totalDeductible,
+      ligneTaxeFonciere?.montantDeductible,
+      "totalDeductible reste conforme au comportement existant de computeTaxeFonciereDeductible — inchangé par ce correctif",
+    );
+    assert.equal(result.charges.totalPreExploitation, 300, "totalPreExploitation n'a pas été modifié par ce correctif");
+    assert.equal(result.charges.totalNonDeductible, 0, "la part pré-exploitation ne doit plus jamais figurer dans totalNonDeductible");
+  });
+
+  it("non-régression : le fonds de travaux ALUR reste non_deductible (seule la taxe foncière change)", () => {
+    const result = computeChargesExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      taxeFonciere: 600,
+      coproLignes: [{ type: "fonds_travaux", montant: 120, description: "Fonds de travaux ALUR" }],
+    });
+    const ligneFonds = result.charges.lignes.find((l) => l.categorie === "copropriete");
+
+    assert.equal(ligneFonds?.deductibilite, "non_deductible", "le fonds de travaux ALUR reste non déductible — non concerné par ce correctif");
+    assert.equal(
+      result.charges.totalNonDeductible,
+      120,
+      "seule la part non_deductible du fonds de travaux reste dans totalNonDeductible — la taxe foncière pré-exploitation (300) n'y est plus",
+    );
+    assert.equal(result.charges.totalPreExploitation, 300, "la part pré-exploitation de la taxe foncière reste intégralement portée par totalPreExploitation");
   });
 });
 
