@@ -5,7 +5,7 @@ type: adr
 status: pending-decision
 version: "1.0"
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-09-03
 owner: product-owner
 tags: [adr, formulaires, liasse, knowledge-system, f-007]
 triggers: [F-007]
@@ -47,6 +47,12 @@ La liasse LMNP réel simplifié se compose de 5 formulaires Cerfa :
 | 2033-B | Compte de résultat simplifié |
 | 2033-C | Tableau des immobilisations et amortissements |
 | 2033-D | Tableau des provisions, amortissements dérogatoires, déficits reportables |
+
+> **Note P0-2b (2026-09-03)** — cette liste de 5 formulaires est antérieure à SAV-029, qui apporte deux nuances depuis confirmées (audit décisionnel P0-2b, sources CGI art. 302 septies A bis VI et BOFiP BOI-BIC-DECLA-30-20-10) :
+> - **2033-A** peut être légalement dispensable sous condition de chiffre d'affaires N-1 (dispense facultative) — le produit Fiscal AI 2026 continue néanmoins de le produire systématiquement (aucun mécanisme de CA N-1 n'existe dans le modèle de données).
+> - **2033-D** fait partie de la cible fiscale du réel simplifié (obligatoire sans condition de CA, y compris pour les entreprises dispensées de 2033-A) mais n'est **pas encore généré** par le produit — aucun mapper `map-2033d.ts` n'existe à ce stade. Il apparaît honnêtement comme formulaire manquant (`LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE`, `f007/types.ts`).
+>
+> Cette note ne rouvre pas la décision d'architecture documentaire ci-dessous (Approche C / Option 2, TRF d'abord) — elle clarifie uniquement le statut de production réel de 2033-A et 2033-D pour 2026. Voir SAV-029 pour le détail des seuils et références.
 
 Ces 5 formulaires contiennent plusieurs centaines de cases. Chaque case a une nature (calculée, saisie, reportée), une source dans le FiscalResult ou dans les données du dossier, et parfois une règle de remplissage non triviale.
 

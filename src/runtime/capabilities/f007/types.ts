@@ -60,12 +60,22 @@ export type Form2031SD = {
   cases: CerfaCase[];
 };
 
-/** SAV-029 — composition attendue (ADR-004, document KS à créer). */
+/**
+ * SAV-029 — composition attendue de la liasse LMNP réel simplifié à l'IR.
+ * P0-2b (2026-09-03) — 2033-D-SD réintégré : SAV-029 le documente comme
+ * obligatoire sans condition de chiffre d'affaires (confirmé BOFiP
+ * BOI-BIC-DECLA-30-20-10 §140 : reste dû même pour les entreprises dispensées
+ * du bilan 2033-A). Aucun mapper ne le génère encore (`map-2033d.ts` reste à
+ * construire, chantier séparé) — il doit donc apparaître dans
+ * `formulairesManquants` tant que ce mapper n'existe pas, jamais être retiré
+ * de la cible pour faire paraître la liasse complète.
+ */
 export const LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE = [
   "2031-SD",
   "2033-A-SD",
   "2033-B-SD",
   "2033-C-SD",
+  "2033-D-SD",
 ] as const;
 
 export type LiasseRepresentation = {

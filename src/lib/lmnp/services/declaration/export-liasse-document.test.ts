@@ -79,11 +79,11 @@ describe("P0-1 — buildLiasseRfsDocumentText() expose les 4 formulaires complé
     }
   });
 
-  it("aucun formulaire manquant (P1-1 : 2033-D-SD retiré du périmètre LMNP réel simplifié à l'IR) — pas de ligne 'formulaires non générés' inventée", () => {
+  it("2033-D-SD manquant (P0-2b : réintégré au périmètre attendu, non encore généré) — la ligne 'formulaires non générés' le reflète honnêtement", () => {
     const liasseRfs = assembleLiasseFromRfs(rfs(fiscalResult()));
     const text = buildLiasseRfsDocumentText(2025, liasseRfs);
 
-    assert.deepEqual(liasseRfs.formulairesManquants, []);
-    assert.doesNotMatch(text, /Formulaires non générés à ce stade/);
+    assert.deepEqual(liasseRfs.formulairesManquants, ["2033-D-SD"]);
+    assert.match(text, /Formulaires non générés à ce stade : 2033-D-SD/);
   });
 });

@@ -170,7 +170,7 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
     assert.equal(completude, "complete");
   });
 
-  it("runDeclarationGeneration() sur un dossier réel expose completude: 'complete' (P1-1 : 2033-D-SD retiré du périmètre LMNP réel simplifié à l'IR — les 4 formulaires attendus sont tous générés via la RFS)", async () => {
+  it("runDeclarationGeneration() sur un dossier réel expose completude: 'partielle' (P0-2b : 2033-D-SD réintégré au périmètre attendu — non généré par le produit, cf. SAV-029)", async () => {
     const draft: DeclarationDraft = {
       completedSteps: [],
       siret: "12345678901234",
@@ -188,8 +188,8 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
     if (generation.status !== "generated") return;
     assert.equal(
       generation.completude,
-      "complete",
-      "2033-D-SD n'est plus attendu (P1-1) : un dossier où les 4 formulaires du périmètre IR sont générés via la RFS n'est plus considéré incomplet",
+      "partielle",
+      "P0-2b : 2033-D-SD fait partie de la cible fiscale (SAV-029, obligatoire sans condition de CA) mais aucun mapper ne le génère encore — la complétude doit honnêtement le refléter, jamais masquer ce manque",
     );
   });
 });
@@ -451,9 +451,9 @@ describe("Cycle 35 — runDeclarationGeneration() expose form2033A avec l'immobi
     assert.equal(case030?.value, 121416, "125136 − 3720");
 
     // Champs historiques inchangés par cet ajout additif.
-    // P1-1 : 2033-D-SD retiré du périmètre attendu — les 4 formulaires du
-    // périmètre IR sont générés via la RFS, donc completude est "complete".
-    assert.equal(generation.completude, "complete");
+    // P0-2b : 2033-D-SD fait partie du périmètre attendu (SAV-029) mais n'est
+    // pas généré par le produit — completude reste honnêtement "partielle".
+    assert.equal(generation.completude, "partielle");
     assert.equal(generation.fiscalResult.resultatFiscal, 3280, "9000 - 2000 - 3720 (totalDotations aligné sur plan.totalAnnuelExercice)");
   });
 });
@@ -490,9 +490,9 @@ describe("Cycle 31 — runDeclarationGeneration() expose liasseRfs sans casser l
     );
 
     // Champs historiques inchangés — ce que testait déjà le Cycle 18 avant l'ajout de liasseRfs.
-    // P1-1 : 2033-D-SD retiré du périmètre attendu, des deux côtés (F-007 et RFS).
-    assert.equal(generation.completude, "complete");
-    assert.equal(generation.liasseResult.formulairesManquants.length, 3);
+    // P0-2b : 2033-D-SD réintégré au périmètre attendu, des deux côtés (F-007 et RFS).
+    assert.equal(generation.completude, "partielle");
+    assert.equal(generation.liasseResult.formulairesManquants.length, 4);
     assert.equal(generation.fiscalResult.resultatFiscal, 5500);
   });
 });
@@ -539,7 +539,7 @@ describe("P0-1 — liasseRfs expose les 4 formulaires complémentaires (2031-bis
     if (generation.status !== "generated") return;
 
     assert.equal(generation.fiscalResult.totalRecettes, 9000, "F-007/2031-SD non affecté par le branchement de liasseRfs");
-    assert.equal(generation.liasseResult.formulairesManquants.length, 3, "P1-1 : 2033-D-SD retiré du périmètre attendu — F-007 ne liste plus que 2033-A/B/C comme manquants");
+    assert.equal(generation.liasseResult.formulairesManquants.length, 4, "P0-2b : 2033-D-SD réintégré au périmètre attendu — F-007 (2031-SD seul généré) liste 2033-A/B/C/D comme manquants");
   });
 });
 
