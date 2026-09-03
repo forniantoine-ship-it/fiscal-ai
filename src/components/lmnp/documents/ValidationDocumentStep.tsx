@@ -26,6 +26,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { appendDeclarationVersion } from "@/lib/lmnp/services/declaration/append-declaration-version";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import {
   declarationCompletude,
@@ -109,6 +110,21 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     }
 
     const now = new Date().toISOString();
+    // P0 — DeclarationVersion (Level 2) : les 4 artefacts ci-dessous proviennent
+    // du même appel à runDeclarationGeneration() que le miroir courant patché
+    // juste en dessous — jamais de fiscalResultFromDraft() (chemin secondaire
+    // F-007, structurellement incomplet) comme source du snapshot. Append dans
+    // le même dispatch que le miroir : pas de 4e dispatch séparé (atomicité).
+    const { declaration, declarationVersions } = appendDeclarationVersion({
+      fiscalYearId: fiscalYear.id,
+      existingDeclaration: draft?.declaration,
+      existingVersions: draft?.declarationVersions,
+      fiscalResult: outcome.fiscalResult,
+      liasseResult: outcome.liasseResult,
+      rfs: outcome.rfs,
+      liasseRfs: outcome.liasseRfs,
+      now,
+    });
     dispatch({
       type: "DECLARATION_PATCH_DRAFT",
       patch: {
@@ -125,6 +141,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         // la même RFS ci-dessus, aucun second calcul. Jusqu'ici calculé par
         // runDeclarationGeneration() mais jamais persisté (P0-1).
         liasseRfs: outcome.liasseRfs,
+        declaration,
+        declarationVersions,
       },
     });
     if (!paid) {
@@ -137,7 +155,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear.year, paid, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear.id, fiscalYear.year, paid, router, showSuccess]);
 
   if (generated && paid && !gate.canGenerate) {
     // Cycle 25 — le statut affiché ne doit jamais dépasser ce qui est réellement

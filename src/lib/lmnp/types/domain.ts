@@ -608,6 +608,36 @@ export interface RevenusAssistantOutput {
   computedAt: string;
 }
 
+/**
+ * P0 — ENT-008, entité thin et stable. Aujourd'hui une Declaration par
+ * FiscalYear (mono-exercice) ; ce n'est pas une contrainte irréversible au-delà
+ * de ce palier — juste le modèle opérationnel actuel.
+ */
+export interface Declaration {
+  id: string;
+  fiscalYearId: string;
+  currentVersionId?: string;
+  createdAt: string;
+}
+
+/**
+ * P0 — snapshot immuable d'une génération persistée (ENT-008 Level 2).
+ * Append-only : une nouvelle génération ajoute une version, n'en réécrit jamais
+ * une existante. Les 4 artefacts doivent provenir d'un seul et même appel à
+ * runDeclarationGeneration() — jamais de fiscalResultFromDraft() (chemin
+ * secondaire F-007, structurellement incomplet) comme source du snapshot.
+ */
+export interface DeclarationVersion {
+  readonly id: string;
+  readonly declarationId: string;
+  readonly versionNumber: number;
+  readonly generatedAt: string;
+  readonly fiscalResult: FiscalEngineOutput;
+  readonly liasseResult: LiasseEngineOutput;
+  readonly rfs: import("@/runtime/capabilities/rfs/types").FiscalRepresentation;
+  readonly liasseRfs: import("@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs").LiasseFromRfs;
+}
+
 export interface DeclarationDraft {
   completedSteps: string[];
   documentStepsCompleted?: string[];
@@ -703,6 +733,14 @@ export interface DeclarationDraft {
    * Champ additif : `liasseResult` (F-007, 2031-SD) reste la source du 2031-SD.
    */
   liasseRfs?: import("@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs").LiasseFromRfs;
+  /**
+   * P0 — Declaration (thin, stable) : une par FiscalYear aujourd'hui (mono-exercice).
+   * Coexiste avec fiscalResult/liasseResult/rfs/liasseRfs ci-dessus, qui restent
+   * le miroir de la version courante pour compatibilité — l'historique fait foi.
+   */
+  declaration?: Declaration;
+  /** P0 — historique append-only des générations persistées. Jamais réécrit ni tronqué. */
+  declarationVersions?: DeclarationVersion[];
   creditDocumentId?: string;
   creditConfirmedAt?: string;
   creditDeclaredNoneAt?: string;
