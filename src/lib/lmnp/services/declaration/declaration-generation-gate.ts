@@ -146,6 +146,13 @@ export function resolveDeclarationGenerationGate(input: {
           canGenerate: true,
           blockingAnomalies: [],
           recoveryItems: [],
+          // P0-5.1 — `preview.fiscalResult` est déjà calculé ci-dessus (ligne
+          // utilisée pour détecter la dérive elle-même) : l'omettre ici forçait
+          // ValidationFiscalSummary à retomber sur buildFiscalSummary(), une
+          // estimation qui ignore chargesFinancement/chargesPreExploitation et
+          // le moteur 39C/déficits antérieurs, alors que showMainContent rend
+          // bien ce composant dans cet état (gate.canGenerate === true).
+          fiscalResult: preview.fiscalResult,
         };
       }
     }

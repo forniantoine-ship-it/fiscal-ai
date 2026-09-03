@@ -224,6 +224,62 @@ describe("Cycle 22 — porte de génération déclaration", () => {
     );
     assert.equal(gate.canGenerate, true);
   });
+
+  /**
+   * P0-5.1 (audit read-only P0-5, anomalie P1) — dans la branche
+   * `generated === true` avec dérive détectée, `preview.fiscalResult` était
+   * calculé (ligne juste au-dessus, pour détecter la dérive elle-même) mais
+   * jamais renvoyé : `gate.fiscalResult` restait `undefined`. Or
+   * `ValidationDocumentStep.tsx` rend bien `ValidationFiscalSummary` dans cet
+   * état (`showMainContent` est vrai dès que `gate.canGenerate === true`),
+   * qui retombait alors sur `buildFiscalSummary()` — une estimation qui ne
+   * lit jamais `financementCharges.totalChargesFinancementExercice` ni
+   * `chargesPreExploitation`, et ignore le moteur 39C/déficits antérieurs.
+   */
+  it("P0-5.1 — dérive après génération (financement ajouté) : gate.fiscalResult est le FiscalResult exact recalculé, jamais undefined", () => {
+    const draft = {
+      ...generationReadyDraft(),
+      financementCharges: {
+        exerciceFiscal: 2025,
+        totalChargesFinancementExercice: 1200,
+        totalInteretsPreExploitation: 0,
+      },
+      // Valeur stockée AVANT l'ajout du financement — déclenche la dérive
+      // (totalCharges stocké = 2000, sans financement).
+      fiscalResult: { totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, amortReporte: 0 },
+    } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(gate.canRetryAfterPayment, true, "l'ajout du financement doit être détecté comme une dérive");
+    assert.equal(gate.canGenerate, true);
+    assert.ok(gate.fiscalResult, "le FiscalResult exact (déjà calculé pour détecter la dérive) doit être exposé, jamais undefined");
+
+    // Le FiscalResult exposé doit être EXACTEMENT celui réellement recalculé —
+    // jamais une seconde formule, jamais une reconstruction séparée.
+    const attendu = runDeclarationGeneration(draft, 2025);
+    assert.equal(attendu.status, "generated");
+    if (attendu.status !== "generated") return;
+    assert.equal(gate.fiscalResult!.totalRecettes, attendu.fiscalResult.totalRecettes);
+    assert.equal(gate.fiscalResult!.totalCharges, attendu.fiscalResult.totalCharges);
+    assert.equal(gate.fiscalResult!.amortDeduct, attendu.fiscalResult.amortDeduct);
+
+    // Preuve que le fallback buildFiscalSummary() aurait perdu cette donnée :
+    // il ne lit que chargesAssistant.totalDeductible (2000), jamais
+    // financementCharges.totalChargesFinancementExercice (1200).
+    assert.equal(gate.fiscalResult!.totalCharges, 3200, "2000 (F-012) + 1200 (financement F-011) — visible uniquement via le FiscalResult exact");
+    assert.notEqual(
+      gate.fiscalResult!.totalCharges,
+      draft.chargesAssistant!.totalDeductible,
+      "si le fallback buildFiscalSummary() était utilisé à la place, le financement serait invisible (il ne lit que chargesAssistant.totalDeductible)",
+    );
+  });
 });
 
 /**
