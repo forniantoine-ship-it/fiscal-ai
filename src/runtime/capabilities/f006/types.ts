@@ -38,6 +38,12 @@ export type FinancementFiscalInput = {
   exerciceFiscal: number;
   totalChargesFinancementExercice: number;
   totalInteretsPreExploitation: number;
+  /**
+   * P2 — transport pur depuis ChargesFinancementExercice.totalAssurancePreExploitation
+   * (F-011), jamais recalculé ici. Optionnel : 0 si l'assistant n'a pas encore
+   * produit cette donnée (voir aggregate-inputs.ts).
+   */
+  totalAssurancePreExploitation?: number;
 };
 
 export type AmortissementFiscalInput = {

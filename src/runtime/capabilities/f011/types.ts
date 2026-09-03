@@ -29,6 +29,8 @@ export interface PretFinancementExercice {
   interetsEmpruntExercice: number;
   interetsPreExploitation: number;
   assuranceEmpruntExercice: number;
+  /** P2 — TRF-0023, déjà calculée par isolatePreExploitationInterests(), désormais transportée. */
+  assurancePreExploitation: number;
   capitalRembourseExercice: number;
   capitalRestantDu31_12: number;
   fraisDossierDeductibles: number;
@@ -43,6 +45,17 @@ export interface ChargesFinancementExercice {
   totalInteretsEmprunt: number;
   totalInteretsPreExploitation: number;
   totalAssurance: number;
+  /**
+   * P2 — somme de prets[].assurancePreExploitation, symétrique à
+   * totalInteretsPreExploitation. Optionnel, contrairement à ce champ
+   * jumeau : plusieurs sites (panel F-011, état "aucun financement")
+   * construisent cet objet champ par champ, hors périmètre P2, sans passer
+   * par computeFinancementExercice() — requis casserait leur compilation
+   * pour un champ qu'ils n'ont pas à connaître. computeFinancementExercice()
+   * la renseigne systématiquement ; aggregate-inputs.ts (F-006) applique un
+   * repli `?? 0` symétrique à celui déjà en place pour totalNonDeductible.
+   */
+  totalAssurancePreExploitation?: number;
   totalCapitalRembourse: number;
   totalChargesFinancementExercice: number;
 }

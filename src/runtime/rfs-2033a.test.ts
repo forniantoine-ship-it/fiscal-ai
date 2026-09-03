@@ -94,6 +94,7 @@ const EMPRUNT_REFERENCE: PretFinancementExercice = {
   interetsEmpruntExercice: 4602,
   interetsPreExploitation: 0,
   assuranceEmpruntExercice: 601,
+  assurancePreExploitation: 0,
   capitalRembourseExercice: 496,
   capitalRestantDu31_12: 130256,
   fraisDossierDeductibles: 0,

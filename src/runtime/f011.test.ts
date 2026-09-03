@@ -6,6 +6,7 @@ import { computeInFineInterests } from "./capabilities/f011/compute-in-fine-inte
 import { extractInterestsExercice } from "./capabilities/f011/extract-interests-exercice";
 import { generateLoanSchedule } from "./capabilities/f011/generate-loan-schedule";
 import { isolatePreExploitationInterests } from "./capabilities/f011/isolate-pre-exploitation-interests";
+import { round2 } from "./capabilities/f011/types";
 import { validateFinancement } from "./capabilities/f011/validate-financement";
 import { explainFinancement } from "./presentation/explain-financement";
 
@@ -77,6 +78,206 @@ describe("F-011 — reconstruction prêt amortissable", () => {
         result.charges.prets[1]!.interetsEmpruntExercice,
     );
     assert.ok(result.charges.totalChargesFinancementExercice > 0);
+  });
+});
+
+describe("P2 — assurance pré-exploitation transportée jusqu'à PretFinancementExercice", () => {
+  it("1. assurance pré-exploitation seule : mise en service en cours d'exercice → assurancePreExploitation > 0", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    });
+    const pret = result.charges.prets[0]!;
+    assert.ok(pret.assurancePreExploitation > 0, "6 échéances avant mise en service doivent porter une assurance pré-exploitation");
+    assert.equal(
+      pret.assurancePreExploitation + pret.assuranceEmpruntExercice,
+      300,
+      "la somme pré-exploitation + exercice doit reconstituer l'assurance annuelle complète",
+    );
+  });
+
+  it("2. assurance d'exercice seule : mise en service avant le début de l'exercice → assurancePreExploitation = 0", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 100000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2022-01-01",
+          assuranceAnnuelle: 661,
+          assuranceType: "bancaire",
+        },
+      ],
+    });
+    const pret = result.charges.prets[0]!;
+    assert.equal(pret.assurancePreExploitation, 0);
+    assert.ok(pret.assuranceEmpruntExercice > 0);
+  });
+
+  it("3. assurance pré-exploitation + exercice simultanément sur le même prêt", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    });
+    const pret = result.charges.prets[0]!;
+    assert.ok(pret.assurancePreExploitation > 0, "les deux valeurs doivent être non nulles simultanément");
+    assert.ok(pret.assuranceEmpruntExercice > 0, "les deux valeurs doivent être non nulles simultanément");
+  });
+
+  it("4. plusieurs prêts, un seul avec pré-exploitation → totalAssurancePreExploitation isole le bon prêt", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1-avec-preexploitation",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+        {
+          pretId: "p2-souscrit-apres-mes",
+          typePret: "amortissable",
+          capitalInitial: 20000,
+          tauxNominal: 0.02,
+          dureeMois: 60,
+          datePremiereMensualite: "2024-09-01",
+          assuranceAnnuelle: 120,
+          assuranceType: "externe",
+        },
+      ],
+    });
+    const [p1, p2] = result.charges.prets;
+    assert.ok(p1!.assurancePreExploitation > 0);
+    assert.equal(p2!.assurancePreExploitation, 0, "souscrit après la mise en service — aucune part pré-exploitation possible");
+    assert.equal(
+      result.charges.totalAssurancePreExploitation,
+      round2(p1!.assurancePreExploitation + p2!.assurancePreExploitation),
+    );
+  });
+
+  it("5. zéro assurance → assurancePreExploitation et totalAssurancePreExploitation à 0, rien n'est inventé", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+        },
+      ],
+    });
+    assert.equal(result.charges.prets[0]!.assurancePreExploitation, 0);
+    assert.equal(result.charges.totalAssurancePreExploitation, 0);
+  });
+
+  it("8. régression intérêts pré-exploitation — strictement inchangés par l'ajout du transport de l'assurance", () => {
+    const withoutInsurance = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+        },
+      ],
+    });
+    const withInsurance = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    });
+    assert.equal(
+      withInsurance.charges.prets[0]!.interetsPreExploitation,
+      withoutInsurance.charges.prets[0]!.interetsPreExploitation,
+      "la présence d'assurance ne doit jamais modifier le calcul des intérêts pré-exploitation",
+    );
+    assert.equal(
+      withInsurance.charges.prets[0]!.interetsEmpruntExercice,
+      withoutInsurance.charges.prets[0]!.interetsEmpruntExercice,
+    );
+    assert.equal(withInsurance.charges.totalInteretsPreExploitation, withoutInsurance.charges.totalInteretsPreExploitation);
+  });
+
+  it("totalAssurance (exercice) et totalChargesFinancementExercice restent inchangés — assurancePreExploitation n'y entre jamais", () => {
+    const result = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    });
+    assert.equal(result.charges.totalAssurance, result.charges.prets[0]!.assuranceEmpruntExercice);
+    const attendu = round2(
+      result.charges.totalInteretsEmprunt +
+        result.charges.totalAssurance +
+        result.charges.prets.reduce((acc, p) => acc + p.fraisDossierDeductibles + p.garantieDeductible + p.iraDeductible, 0),
+    );
+    assert.equal(
+      result.charges.totalChargesFinancementExercice,
+      attendu,
+      "totalChargesFinancementExercice ne doit jamais inclure totalAssurancePreExploitation",
+    );
   });
 });
 

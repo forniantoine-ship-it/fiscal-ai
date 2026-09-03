@@ -144,6 +144,10 @@ function computePret(
     interetsEmpruntExercice: isolated.interetsDeductiblesExercice,
     interetsPreExploitation: isolated.interetsPreExploitation,
     assuranceEmpruntExercice: isolated.assuranceDeductibleExercice,
+    // P2 — TRF-0023 calculait déjà cette valeur (isolatePreExploitationInterests),
+    // jamais transportée jusqu'ici. N'entre pas dans totalChargesFinancementExercice
+    // (294/242, P1) — suit chargesPreExploitation, comme interetsPreExploitation.
+    assurancePreExploitation: isolated.assurancePreExploitation,
     capitalRembourseExercice: extracted.capitalRembourseExercice,
     capitalRestantDu31_12: extracted.capitalRestantDu31_12,
     fraisDossierDeductibles: souscriptionExercice ? round2(pret.fraisDossier ?? 0) : 0,
@@ -165,6 +169,11 @@ export function computeFinancementExercice(
     prets.reduce((acc, p) => acc + p.interetsPreExploitation, 0),
   );
   const totalAssurance = round2(prets.reduce((acc, p) => acc + p.assuranceEmpruntExercice, 0));
+  // P2 — symétrique à totalInteretsPreExploitation ; volontairement absent de
+  // totalChargesFinancementExercice (voir plus bas), comme totalInteretsPreExploitation.
+  const totalAssurancePreExploitation = round2(
+    prets.reduce((acc, p) => acc + p.assurancePreExploitation, 0),
+  );
   const totalCapitalRembourse = round2(
     prets.reduce((acc, p) => acc + p.capitalRembourseExercice, 0),
   );
@@ -182,6 +191,7 @@ export function computeFinancementExercice(
       totalInteretsEmprunt,
       totalInteretsPreExploitation,
       totalAssurance,
+      totalAssurancePreExploitation,
       totalCapitalRembourse,
       totalChargesFinancementExercice,
     },

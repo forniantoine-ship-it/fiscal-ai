@@ -7,6 +7,7 @@ import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
 import { explainFiscalResult } from "./presentation/explain-fiscal-result";
 import { F006FiscalEngineAssistant } from "./assistants/f006-fiscal-engine/assistant";
 import { computeChargesExercice } from "./capabilities/f012/compute-charges-exercice";
+import { computeFinancementExercice } from "./capabilities/f011/compute-financement-exercice";
 
 const BASE_INPUT = {
   exerciceFiscal: 2024,
@@ -94,6 +95,94 @@ describe("F-006 — non-régression doublon pré-exploitation F-012 (taxe fonci�
       resultatAncienBug.resultatAvantAmort - resultatCorrige.resultatAvantAmort,
       -preExploitationCorrigee,
     );
+  });
+});
+
+describe("P2 — assurance pré-exploitation intégrée à chargesPreExploitation (F-006)", () => {
+  it("6. dossier existant sans assurance pré-exploitation — totalAssurancePreExploitation absent ou explicitement 0 → résultat strictement identique", () => {
+    const sansChamp = produceFiscalResult(BASE_INPUT);
+    const avecZeroExplicite = produceFiscalResult({
+      ...BASE_INPUT,
+      financementCharges: { ...BASE_INPUT.financementCharges, totalAssurancePreExploitation: 0 },
+    });
+    assert.equal(sansChamp.result?.resultatAvantAmort, avecZeroExplicite.result?.resultatAvantAmort);
+    assert.equal(sansChamp.result?.resultatFiscal, avecZeroExplicite.result?.resultatFiscal);
+    assert.equal(sansChamp.result?.charges.chargesPreExploitation, avecZeroExplicite.result?.charges.chargesPreExploitation);
+  });
+
+  it("7. cas de référence (150 € d'assurance pré-exploitation, diagnostic P2) — resultatAvantAmort diminue exactement du montant perdu auparavant", () => {
+    const financement = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    }).charges;
+    assert.equal(financement.totalAssurancePreExploitation, 150, "valeur de référence du diagnostic P2");
+
+    const input = {
+      exerciceFiscal: 2024,
+      activite: { dateMiseEnService: "2024-07-01" },
+      revenusAssistant: { exerciceFiscal: 2024, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2024, totalDeductible: 0, totalPreExploitation: 0, parCategorie: {} },
+      amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 0, status: "validated" as const },
+      logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
+    };
+
+    // Reproduit le comportement AVANT P2 : la même donnée financement, sans
+    // que le total d'assurance pré-exploitation n'ait jamais existé.
+    const avant = produceFiscalResult({
+      ...input,
+      financementCharges: { ...financement, totalAssurancePreExploitation: undefined },
+    });
+    const apres = produceFiscalResult({ ...input, financementCharges: financement });
+
+    assert.equal(
+      apres.result!.resultatAvantAmort - avant.result!.resultatAvantAmort,
+      -150,
+      "la correction P2 doit diminuer le résultat exactement du montant précédemment perdu, ni plus ni moins",
+    );
+  });
+
+  it("assurancePreExploitation ne touche jamais totalNonDeductible ni chargesExploitation", () => {
+    const financement = computeFinancementExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2024-07-01",
+      prets: [
+        {
+          pretId: "p1",
+          typePret: "amortissable",
+          capitalInitial: 150000,
+          tauxNominal: 0.02,
+          dureeMois: 240,
+          datePremiereMensualite: "2024-01-01",
+          assuranceAnnuelle: 300,
+          assuranceType: "externe",
+        },
+      ],
+    }).charges;
+
+    const result = produceFiscalResult({
+      exerciceFiscal: 2024,
+      activite: { dateMiseEnService: "2024-07-01" },
+      revenusAssistant: { exerciceFiscal: 2024, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2024, totalDeductible: 2000, totalPreExploitation: 0, totalNonDeductible: 100, parCategorie: {} },
+      financementCharges: financement,
+      amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 0, status: "validated" as const },
+      logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
+    }).result!;
+
+    assert.equal(result.charges.totalNonDeductible, 100, "totalNonDeductible reste un transport pur de F-012, non affecté par le financement");
+    assert.equal(result.charges.chargesExploitation, 2000, "chargesExploitation (F-012) non affectée par l'assurance pré-exploitation (financement)");
   });
 });
 

@@ -74,6 +74,7 @@ function pret(overrides: Partial<PretFinancementExercice> = {}): PretFinancement
     interetsEmpruntExercice: 0,
     interetsPreExploitation: 0,
     assuranceEmpruntExercice: 0,
+    assurancePreExploitation: 0,
     capitalRembourseExercice: 0,
     capitalRestantDu31_12: 0,
     fraisDossierDeductibles: 0,

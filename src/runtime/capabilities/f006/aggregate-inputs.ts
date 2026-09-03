@@ -22,7 +22,10 @@ export function aggregateFiscalInputs(
   const chargesFinancement = round2(input.financementCharges?.totalChargesFinancementExercice ?? 0);
   const chargesPreExploitation = round2(
     input.chargesAssistant.totalPreExploitation +
-      (input.financementCharges?.totalInteretsPreExploitation ?? 0),
+      (input.financementCharges?.totalInteretsPreExploitation ?? 0) +
+      // P2 — transport pur depuis FinancementFiscalInput.totalAssurancePreExploitation
+      // (F-011), jamais recalculé ici. Symétrique au terme intérêts ci-dessus.
+      (input.financementCharges?.totalAssurancePreExploitation ?? 0),
   );
 
   const totalChargesDeductibles = round2(chargesExploitation + chargesFinancement);
