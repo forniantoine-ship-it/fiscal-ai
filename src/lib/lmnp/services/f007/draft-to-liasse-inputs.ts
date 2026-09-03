@@ -95,6 +95,7 @@ export function fiscalResultFromDraft(
       total: stored.totalRecettes,
       loyersEncaisses: draft?.revenusAssistant?.loyersEncaisses,
       recettesPlateforme: draft?.revenusAssistant?.recettesPlateforme,
+      indemnitesAssurance: draft?.revenusAssistant?.indemnitesAssurance,
       ajustementsJanDec: draft?.revenusAssistant?.ajustementsJanDec,
     },
     charges: {

@@ -10,11 +10,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { identiteFromDeclarationDraft } from "./draft-to-liasse-inputs";
+import { fiscalResultFromDraft, identiteFromDeclarationDraft } from "./draft-to-liasse-inputs";
 import { assembleForm2031SD } from "@/runtime/capabilities/f007/assemble-form-2031";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
 import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
-import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
+import type { DeclarationDraft, FiscalEngineOutput } from "@/lib/lmnp/types/domain";
 import type { FiscalResult } from "@/runtime/capabilities/f006/types";
 
 function draftWith(overrides: Partial<DeclarationDraft>): DeclarationDraft {
@@ -143,5 +143,64 @@ describe("Propagation — identiteFromDeclarationDraft() → RFS → mapper 2031
 
     const resume = buildClientSummaryDocument(rfs, { activityStartDate: draft.activityStartDate });
     assert.equal(resume.meta.identite.exerciceDebut, undefined, "résumé client ne fabrique rien non plus");
+  });
+});
+
+function storedFiscalResult(overrides: Partial<FiscalEngineOutput> = {}): FiscalEngineOutput {
+  return {
+    exercice: 2025,
+    resultatFiscal: 5500,
+    resultatAvantAmort: 7000,
+    totalRecettes: 9000,
+    totalCharges: 2000,
+    amortDeduct: 1500,
+    amortReporte: 0,
+    deficitNouveau: 0,
+    stocks: { deficits: [], amortissementsReportes: 0 },
+    trace: { ksArtifacts: ["TRF-0032"], computedAt: "2026-08-31T00:00:00.000Z", journal: [] },
+    computedAt: "2026-08-31T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+describe("fiscalResultFromDraft() — P0-C, indemnitesAssurance", () => {
+  it("indemnitesAssurance non nul, présent dans revenusAssistant → transporté tel quel dans recettes.indemnitesAssurance", () => {
+    const draft = draftWith({
+      fiscalResult: storedFiscalResult(),
+      revenusAssistant: {
+        exerciceFiscal: 2025,
+        totalRecettes: 9000,
+        loyersEncaisses: 8500,
+        indemnitesAssurance: 275.5,
+        recettesPlateforme: 224.5,
+        ajustementsJanDec: 0,
+        moisLocationEffectifs: 12,
+        fieldSources: {},
+        computedAt: "2026-08-31T00:00:00.000Z",
+      },
+    });
+
+    const result = fiscalResultFromDraft(draft);
+
+    assert.equal(
+      result?.recettes.indemnitesAssurance,
+      275.5,
+      "la valeur réelle doit être transportée, pas seulement le champ être présent",
+    );
+    // Non-régression : les champs adjacents déjà transportés restent corrects.
+    assert.equal(result?.recettes.loyersEncaisses, 8500);
+    assert.equal(result?.recettes.recettesPlateforme, 224.5);
+    assert.equal(result?.recettes.ajustementsJanDec, 0);
+  });
+
+  it("revenusAssistant absent → indemnitesAssurance undefined, rien d'inventé", () => {
+    const draft = draftWith({ fiscalResult: storedFiscalResult() });
+    const result = fiscalResultFromDraft(draft);
+    assert.equal(result?.recettes.indemnitesAssurance, undefined);
+  });
+
+  it("draft.fiscalResult absent → fiscalResultFromDraft() retourne undefined (comportement inchangé)", () => {
+    const draft = draftWith({});
+    assert.equal(fiscalResultFromDraft(draft), undefined);
   });
 });

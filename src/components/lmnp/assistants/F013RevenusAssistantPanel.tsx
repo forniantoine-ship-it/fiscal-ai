@@ -11,6 +11,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
+import { buildRecettesFromRevenusAssistant } from "@/lib/lmnp/services/f013/f013-build-recettes-from-draft";
 import {
   F013RevenusAssistant,
   type ContinuiteBail,
@@ -265,17 +266,7 @@ export function F013RevenusAssistantPanel() {
         fieldSources: draft.revenusAssistant.fieldSources ?? {},
         modeCollecte: false,
         result: {
-          recettes: {
-            exerciceFiscal: draft.revenusAssistant.exerciceFiscal,
-            totalRecettes: draft.revenusAssistant.totalRecettes,
-            loyersEncaisses: draft.revenusAssistant.loyersEncaisses,
-            indemnitesAssurance: draft.revenusAssistant.indemnitesAssurance,
-            recettesPlateforme: draft.revenusAssistant.recettesPlateforme,
-            ajustementsJanDec: draft.revenusAssistant.ajustementsJanDec,
-            moisLocationEffectifs: draft.revenusAssistant.moisLocationEffectifs,
-            lignes: [],
-            deltaExplique: 0,
-          },
+          recettes: buildRecettesFromRevenusAssistant(draft.revenusAssistant),
           explanation: "",
           anomalies: [],
         },

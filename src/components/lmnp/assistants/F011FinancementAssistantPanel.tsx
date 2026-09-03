@@ -14,6 +14,7 @@ import { runF011UploadFlow } from "@/lib/lmnp/services/f011/f011-document-analys
 import { shouldFlushF011PersistedStep } from "@/lib/lmnp/services/f011/f011-critical-persist";
 import { resolveF011ResumeDecision } from "@/lib/lmnp/services/f011/f011-resume";
 import { resolveLoanFormAction, type LoanIdentity } from "@/lib/lmnp/services/f011/f011-loan-form-state";
+import { buildFinancementCharges } from "@/lib/lmnp/services/f011/f011-build-financement-charges";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { supabase } from "@/lib/supabase";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
@@ -349,17 +350,7 @@ export function F011FinancementAssistantPanel() {
         return;
       }
 
-      const financementCharges = {
-        exerciceFiscal: result.charges.exerciceFiscal,
-        totalInteretsEmprunt: result.charges.totalInteretsEmprunt,
-        totalInteretsPreExploitation: result.charges.totalInteretsPreExploitation,
-        totalAssurance: result.charges.totalAssurance,
-        totalCapitalRembourse: result.charges.totalCapitalRembourse,
-        totalChargesFinancementExercice: result.charges.totalChargesFinancementExercice,
-        prets: result.charges.prets,
-        fieldSources: finalState.fieldSources,
-        computedAt: now,
-      };
+      const financementCharges = buildFinancementCharges(result.charges, finalState.fieldSources, now);
       const financing = {
         loans: finalState.loans.map((loan, index) => ({
           id: loan.pretId,

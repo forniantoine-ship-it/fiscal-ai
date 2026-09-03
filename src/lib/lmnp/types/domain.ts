@@ -519,6 +519,12 @@ export interface FinancementChargesOutput {
   totalInteretsEmprunt: number;
   totalInteretsPreExploitation: number;
   totalAssurance: number;
+  /**
+   * P0-A — transport pur depuis ChargesFinancementExercice.totalAssurancePreExploitation
+   * (F-011), jamais recalculé ici. Optionnel, symétrique à totalInteretsPreExploitation
+   * qui reste requis pour compatibilité ascendante avec les dossiers déjà persistés.
+   */
+  totalAssurancePreExploitation?: number;
   totalCapitalRembourse: number;
   totalChargesFinancementExercice: number;
   prets: import("@/runtime").PretFinancementExercice[];
