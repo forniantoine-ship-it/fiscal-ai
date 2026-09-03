@@ -542,3 +542,125 @@ describe("P0-1 — liasseRfs expose les 4 formulaires complémentaires (2031-bis
     assert.equal(generation.liasseResult.formulairesManquants.length, 3, "P1-1 : 2033-D-SD retiré du périmètre attendu — F-007 ne liste plus que 2033-A/B/C comme manquants");
   });
 });
+
+/**
+ * P0-1 (audit 2026-09-03) — invariant d'idempotence : à données source
+ * inchangées, une nouvelle génération du MÊME exercice ne doit jamais
+ * modifier resultatFiscal/stocks. Avant le fix, `draft.fiscalResult.stocks`
+ * (la CLÔTURE persistée après R1) était relu comme OUVERTURE de R2 — un
+ * déficit ou un amortissement reporté de l'exercice courant se réinjectait
+ * alors dans son propre calcul, faisant dériver amortReporte à chaque
+ * régénération et dupliquant les lignes de stock de déficits.
+ */
+describe("P0-1 — idempotence : régénération du même exercice sans modification de données source", () => {
+  function regenerate(draft: DeclarationDraft, fiscalYear: number) {
+    const generation = runDeclarationGeneration(draft, fiscalYear);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return generation;
+  }
+
+  // Reproduit exactement ce que ValidationDocumentStep.tsx écrit sur le
+  // draft après une génération : le miroir fiscalResult est mis à jour.
+  function apresGeneration(draft: DeclarationDraft, generation: ReturnType<typeof regenerate>): DeclarationDraft {
+    return { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
+  }
+
+  function draftAvecDeficit(): DeclarationDraft {
+    return {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Elsa",
+      exploitantLastName: "Bouvard",
+      dateMiseEnService: "2025-02-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 5100 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 14962, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3720, status: "validated" },
+    } as unknown as DeclarationDraft;
+  }
+
+  it("TEST 1 — R1 → R2 sans modification : resultatFiscal, deficitNouveau, amortReporte et stocks strictement identiques", () => {
+    const draft = draftAvecDeficit();
+    const r1 = regenerate(draft, 2025);
+    const r2 = regenerate(apresGeneration(draft, r1), 2025);
+
+    assert.equal(r2.fiscalResult.resultatFiscal, r1.fiscalResult.resultatFiscal);
+    assert.equal(r2.fiscalResult.deficitNouveau, r1.fiscalResult.deficitNouveau);
+    assert.equal(r2.fiscalResult.amortDeduct, r1.fiscalResult.amortDeduct);
+    assert.equal(
+      r2.fiscalResult.amortReporte,
+      r1.fiscalResult.amortReporte,
+      "l'amortissement reporté ne doit pas s'accumuler à chaque régénération du même exercice",
+    );
+    assert.deepEqual(
+      r2.fiscalResult.stocks.deficits,
+      r1.fiscalResult.stocks.deficits,
+      "le déficit de l'exercice courant ne doit jamais être réinjecté comme stock antérieur de lui-même",
+    );
+    assert.equal(r2.fiscalResult.stocks.amortissementsReportes, r1.fiscalResult.stocks.amortissementsReportes);
+  });
+
+  it("TEST 2 — R1 → R2 → R3 sans modification : les trois générations sont strictement identiques", () => {
+    const draft = draftAvecDeficit();
+    const r1 = regenerate(draft, 2025);
+    const r2 = regenerate(apresGeneration(draft, r1), 2025);
+    const r3 = regenerate(apresGeneration(draft, r2), 2025);
+
+    assert.deepEqual(r2.fiscalResult.stocks, r1.fiscalResult.stocks);
+    assert.deepEqual(r3.fiscalResult.stocks, r2.fiscalResult.stocks);
+    assert.equal(r3.fiscalResult.amortReporte, r1.fiscalResult.amortReporte);
+    assert.equal(r3.fiscalResult.resultatFiscal, r1.fiscalResult.resultatFiscal);
+    assert.equal(r3.fiscalResult.deficitNouveau, r1.fiscalResult.deficitNouveau);
+  });
+
+  it("TEST 3 — un déficit produit en R1 n'est jamais dupliqué/réinjecté dans le stock de R2", () => {
+    const draft = draftAvecDeficit();
+    const r1 = regenerate(draft, 2025);
+    assert.equal(r1.fiscalResult.stocks.deficits.length, 1);
+    assert.equal(r1.fiscalResult.stocks.deficits[0]?.millesime, 2025);
+    assert.equal(r1.fiscalResult.stocks.deficits[0]?.montant, 9862, "5100 - 14962, en valeur absolue");
+
+    const r2 = regenerate(apresGeneration(draft, r1), 2025);
+    assert.equal(r2.fiscalResult.stocks.deficits.length, 1, "jamais deux lignes pour le même millésime après régénération");
+    assert.deepEqual(r2.fiscalResult.stocks.deficits, r1.fiscalResult.stocks.deficits);
+  });
+
+  it("TEST 4 — un amortissement reporté (39C) produit en R1 ne s'additionne pas à lui-même en R2", () => {
+    const draft = {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 8000, status: "validated" },
+    } as unknown as DeclarationDraft;
+
+    const r1 = regenerate(draft, 2025);
+    assert.equal(r1.fiscalResult.amortReporte, 1000, "8000 calculé - 7000 déduit (résultat avant amort = 7000)");
+
+    const r2 = regenerate(apresGeneration(draft, r1), 2025);
+    assert.equal(r2.fiscalResult.amortReporte, 1000, "ne doit jamais devenir 2000 (1000 + 1000) après régénération du même exercice");
+    assert.equal(r2.fiscalResult.resultatFiscal, r1.fiscalResult.resultatFiscal);
+  });
+
+  it("TEST 5 — modification fiscale réelle entre R1 et R2 : le résultat change bien en conséquence", () => {
+    const draft = draftAvecDeficit();
+    const r1 = regenerate(draft, 2025);
+
+    const draftModifie = {
+      ...apresGeneration(draft, r1),
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 20000 },
+    } as unknown as DeclarationDraft;
+    const r2 = regenerate(draftModifie, 2025);
+
+    assert.notEqual(
+      r2.fiscalResult.resultatFiscal,
+      r1.fiscalResult.resultatFiscal,
+      "une vraie modification de donnée source doit produire un résultat différent",
+    );
+  });
+});

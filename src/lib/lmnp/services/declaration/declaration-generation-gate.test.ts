@@ -322,8 +322,10 @@ describe("Cycle 24 — gate.fiscalResult === preview.fiscalResult === résultat 
       revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 7000 },
       chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1000, status: "validated" },
-      // Stock antérieur lu par run-declaration-generation.ts depuis draft.fiscalResult.stocks.deficits.
-      fiscalResult: { stocks: { deficits: [{ millesime: 2023, montant: 2000 }] } },
+      // Stock antérieur lu par run-declaration-generation.ts depuis draft.fiscalResult.stocks.deficits —
+      // seulement quand `exercice` est strictement antérieur à l'exercice généré (P0-1) : ce stub simule
+      // un FiscalResult d'un exercice 2023 réellement clos, pas une régénération du même exercice 2025.
+      fiscalResult: { exercice: 2023, stocks: { deficits: [{ millesime: 2023, montant: 2000 }] } },
     } as unknown as DeclarationDraft;
 
     const fiscalResult = assertSameFiscalResult(draft, 2025);
@@ -338,5 +340,96 @@ describe("Cycle 24 — gate.fiscalResult === preview.fiscalResult === résultat 
       [],
       "le déficit antérieur de 2000 a été intégralement imputé — le stock ne doit plus le porter",
     );
+  });
+});
+
+/**
+ * P0-1 (audit 2026-09-03) — TEST 6 / TEST 7. Un dossier "generated" doit
+ * exposer un draft dont `fiscalResult` ET `rfs` reflètent réellement une
+ * génération passée (comme le fait ValidationDocumentStep.tsx après un appel
+ * réel à runDeclarationGeneration) — jamais des fragments partiels.
+ */
+describe("P0-1 — TEST 7 : aucune donnée modifiée après génération → pas de CTA de régénération", () => {
+  function draftGenere() {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+  }
+
+  it("dossier généré, paiement effectué, retour sur l'écran sans aucune modification → canGenerate/canRetryAfterPayment restent false", () => {
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftGenere(),
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(gate.canGenerate, false, "aucune donnée pertinente n'a changé : pas de nouvelle génération proposée");
+    assert.equal(gate.canRetryAfterPayment, false, "pas de CTA de régénération sans modification réelle");
+    assert.equal(gate.canCheckout, false);
+  });
+});
+
+describe("P0-1 — TEST 6 : correction d'identité après génération → régénération autorisée sans re-paiement", () => {
+  function draftGenere() {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+  }
+
+  it("SIREN corrigé après génération (aucune donnée fiscale changée) → canGenerate: true", () => {
+    const draftApresGeneration = draftGenere();
+    const draftCorrige = { ...draftApresGeneration, siren: "987654321" } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(gate.canGenerate, true, "un SIREN corrigé doit débloquer une régénération, même sans dérive fiscale");
+    assert.equal(gate.canRetryAfterPayment, true, "pas de second paiement pour une simple correction d'identité");
+  });
+
+  it("dénomination (nom/prénom) corrigée après génération → canGenerate: true", () => {
+    const draftApresGeneration = draftGenere();
+    const draftCorrige = { ...draftApresGeneration, exploitantLastName: "Martin" } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(gate.canGenerate, true);
+    assert.equal(gate.canRetryAfterPayment, true);
+  });
+
+  it("SIRET corrigé après génération → la nouvelle génération contient effectivement la nouvelle identité", () => {
+    const draftApresGeneration = draftGenere();
+    const draftCorrige = { ...draftApresGeneration, siret: "98765432109876" } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, true);
+
+    const regeneration = runDeclarationGeneration(draftCorrige, 2025);
+    assert.equal(regeneration.status, "generated");
+    if (regeneration.status !== "generated") return;
+    assert.equal(regeneration.rfs.identite.siret, "98765432109876");
   });
 });

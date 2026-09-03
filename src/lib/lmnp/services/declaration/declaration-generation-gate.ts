@@ -2,6 +2,7 @@ import type { Anomaly } from "@/runtime";
 import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration } from "./run-declaration-generation";
+import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
 import {
   buildValidationDossierSnapshot,
   type MissingDossierItem,
@@ -87,6 +88,31 @@ function recoveryItemsFromAnomalies(anomalies: Anomaly[]): MissingDossierItem[] 
 }
 
 /**
+ * P0-1 (2026-09-03) — le drift fiscal (recettes/charges/amortissement) ne
+ * couvre pas l'identité (SIREN/SIRET/dénomination/adresse/début d'activité) :
+ * ces champs n'entrent jamais dans FiscalEngineOutput, seulement dans
+ * `identite` (RFS/liasse). Sans ce contrôle, une correction d'identité seule
+ * ne débloque jamais canGenerate. Compare l'identité qui a servi à la
+ * DERNIÈRE génération (`draft.rfs.identite`, déjà persistée — pas de nouveau
+ * champ) à celle recalculée depuis le draft courant, via la même fonction
+ * que la génération réelle (`identiteFromDeclarationDraft`).
+ */
+function identiteChanged(draft: DeclarationDraft | undefined, fiscalYear: number): boolean {
+  const previous = draft?.rfs?.identite;
+  if (!previous) return false;
+  const current = identiteFromDeclarationDraft(draft, fiscalYear);
+  return (
+    previous.siren !== current.siren ||
+    previous.siret !== current.siret ||
+    previous.denomination !== current.denomination ||
+    previous.adresseEntreprise !== current.adresseEntreprise ||
+    previous.exerciceDebut !== current.exerciceDebut ||
+    previous.email !== current.email ||
+    previous.telephone !== current.telephone
+  );
+}
+
+/**
  * Porte unique entre l'écran de validation et F-006/F-007.
  * Ne change aucune règle fiscale : elle refuse le paiement si la génération
  * serait bloquée, et autorise un nouvel essai si le paiement a déjà été
@@ -110,7 +136,8 @@ export function resolveDeclarationGenerationGate(input: {
         (stored?.totalRecettes !== preview.fiscalResult.totalRecettes ||
           stored?.totalCharges !== preview.fiscalResult.totalCharges ||
           stored?.amortDeduct !== preview.fiscalResult.amortDeduct ||
-          stored?.amortReporte !== preview.fiscalResult.amortReporte)
+          stored?.amortReporte !== preview.fiscalResult.amortReporte ||
+          identiteChanged(input.draft, input.fiscalYear))
       ) {
         return {
           snapshot,

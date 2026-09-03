@@ -87,6 +87,19 @@ export function runDeclarationGeneration(
   draft: DeclarationDraft | undefined,
   fiscalYear: number,
 ): DeclarationGenerationResult {
+  // P0-1 (2026-09-03) — `draft.fiscalResult` est le miroir de la DERNIÈRE
+  // génération, pas un stock d'ouverture indépendant. Régénérer le MÊME
+  // exercice (canRetryAfterPayment) ne doit jamais relire sa propre clôture
+  // comme ouverture (dérive : un déficit/amortissement reporté de l'exercice
+  // courant se réinjecterait dans son propre calcul). Seul un exercice
+  // antérieur constitue une ouverture légitime — inexistant dans l'archi
+  // mono-exercice actuelle (cf. audit P0-1), donc stocksOuverture est vide
+  // tant qu'aucun mécanisme de report inter-exercices n'existe.
+  const stocksOuverture =
+    draft?.fiscalResult && draft.fiscalResult.exercice < fiscalYear
+      ? draft.fiscalResult.stocks
+      : undefined;
+
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
     activite: {
@@ -99,8 +112,8 @@ export function runDeclarationGeneration(
     chargesAssistant: draft?.chargesAssistant,
     revenusAssistant: draft?.revenusAssistant,
     amortissementAssistant: draft?.amortissementAssistant,
-    stockDeficitsAnterieurs: draft?.fiscalResult?.stocks?.deficits,
-    stockAmortissementsReportes: draft?.fiscalResult?.stocks?.amortissementsReportes,
+    stockDeficitsAnterieurs: stocksOuverture?.deficits,
+    stockAmortissementsReportes: stocksOuverture?.amortissementsReportes,
   });
 
   if (!fiscalComputation.result) {
