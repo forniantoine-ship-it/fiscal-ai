@@ -35,7 +35,13 @@ export type CerfaCaseValue = number | string | boolean;
 
 /** Traçabilité obligatoire — ADR-004 règle 5. */
 export type CaseTrace = {
-  source: "FiscalResult" | "IdentiteDeclarante" | "scope";
+  /**
+   * "Emprunts" — P1 (ventilation financement 2033-B) : la valeur provient de
+   * `FiscalRepresentation.emprunts` (F-011, `PretFinancementExercice[]`),
+   * jamais recalculée — un niveau de détail plus fin que `FiscalResult`, mais
+   * pas une source concurrente (mêmes données, granularité différente).
+   */
+  source: "FiscalResult" | "IdentiteDeclarante" | "scope" | "Emprunts";
   path: string;
   ksArtifacts: string[];
 };

@@ -15,6 +15,7 @@ import type { FiscalResult } from "./capabilities/f006/types";
 import { round2 } from "./capabilities/f007/types";
 import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation } from "./capabilities/rfs/types";
+import type { PretFinancementExercice } from "./capabilities/f011/types";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
   return {
@@ -46,17 +47,39 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
 
 const IDENTITE: IdentiteDeclarante = { siren: "104545108", siret: "10454510800011", denomination: "Elsa Bouvard" };
 
-function rfs(fr: FiscalResult): FiscalRepresentation {
+function rfs(fr: FiscalResult, emprunts?: PretFinancementExercice[]): FiscalRepresentation {
   return {
     exercice: fr.exercice,
     identite: IDENTITE,
     fiscalResult: fr,
+    emprunts,
     trace: {
       ksArtifacts: fr.trace.ksArtifacts,
       assembledAt: "2026-08-31T00:00:00.000Z",
       sourceFiscalResultAt: fr.trace.computedAt,
-      sources: { identite: "IdentiteDeclarante (ENT-013)", fiscalResult: "FiscalResult (F-006)" },
+      sources: {
+        identite: "IdentiteDeclarante (ENT-013)",
+        fiscalResult: "FiscalResult (F-006)",
+        emprunts: emprunts ? "draft.financementCharges.prets (F-011)" : undefined,
+      },
     },
+  };
+}
+
+/** P1 — prêt minimal, valeurs nulles par défaut sur chaque nature de financement. */
+function pret(overrides: Partial<PretFinancementExercice> = {}): PretFinancementExercice {
+  return {
+    pretId: "pret-1",
+    typePret: "amortissable",
+    interetsEmpruntExercice: 0,
+    interetsPreExploitation: 0,
+    assuranceEmpruntExercice: 0,
+    capitalRembourseExercice: 0,
+    capitalRestantDu31_12: 0,
+    fraisDossierDeductibles: 0,
+    garantieDeductible: 0,
+    iraDeductible: 0,
+    ...overrides,
   };
 }
 
@@ -119,6 +142,193 @@ describe("Cycle 30 — TEST 1 à 4 : cases pass-through", () => {
       "360 est réservée aux entreprises à l'IS (Notice 2033-NOT-SD) — jamais alimentée pour un LMNP à l'IR",
     );
     assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
+  });
+});
+
+describe("Audit fiscal ciblé (case 300) — perte exceptionnelle", () => {
+  it("300 reprend exactement fiscalResult.perteExceptionnelle", () => {
+    const fr = fiscalResult({ perteExceptionnelle: 2500 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "300")?.value, 2500);
+  });
+
+  it("perteExceptionnelle = 0 → 300 alimentée avec 0 (convention identique à 218/254/350), jamais absente", () => {
+    const fr = fiscalResult({ perteExceptionnelle: 0 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "300")?.value, 0);
+    assert.notEqual(findCase(form, "300"), undefined, "300 doit être présente même à 0, pas bloquée");
+  });
+
+  it("absence de perte exceptionnelle (fixture par défaut) — comportement des autres cases inchangé", () => {
+    const fr = fiscalResult();
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "300")?.value, 0);
+    assert.equal(findCase(form, "264")?.value, round2(2000 + 1500 + 0), "264 non affectée par le mapping de 300");
+    assert.equal(findCase(form, "294")?.value, 0, "294 non affectée par le mapping de 300");
+  });
+
+  it("300 est un pass-through pur : 264/270/294/310 restent strictement identiques avec ou sans perte exceptionnelle", () => {
+    const base = {
+      recettes: { total: 9000 },
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 500, chargesPreExploitation: 0, totalNonDeductible: 100 },
+      resultatAvantAmort: 6900,
+      amortCalcule: 1500,
+    };
+    const sansPerte = map2033BFromRfs(rfs(fiscalResult({ ...base, perteExceptionnelle: 0 })));
+    const avecPerte = map2033BFromRfs(rfs(fiscalResult({ ...base, perteExceptionnelle: 2500 })));
+
+    for (const caseId of ["264", "270", "294", "310"]) {
+      assert.equal(
+        findCase(avecPerte, caseId)?.value,
+        findCase(sansPerte, caseId)?.value,
+        `${caseId} ne doit pas varier selon fiscalResult.perteExceptionnelle — seule la case 300 le doit`,
+      );
+    }
+    assert.equal(findCase(sansPerte, "300")?.value, 0);
+    assert.equal(findCase(avecPerte, "300")?.value, 2500);
+  });
+});
+
+describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
+  it("1. intérêts seuls → 294, 242 présente à 0 (détail disponible)", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000 })]));
+    assert.equal(findCase(form, "294")?.value, 1000);
+    assert.equal(findCase(form, "242")?.value, 0);
+  });
+
+  it("2. assurance d'exercice seule → 242", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 500, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ assuranceEmpruntExercice: 500 })]));
+    assert.equal(findCase(form, "242")?.value, 500);
+    assert.equal(findCase(form, "294")?.value, 0);
+  });
+
+  it("3. frais de dossier seuls → 242", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 300, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ fraisDossierDeductibles: 300 })]));
+    assert.equal(findCase(form, "242")?.value, 300);
+    assert.equal(findCase(form, "294")?.value, 0);
+  });
+
+  it("4. IRA seul → 294", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 400, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ iraDeductible: 400 })]));
+    assert.equal(findCase(form, "294")?.value, 400);
+    assert.equal(findCase(form, "242")?.value, 0);
+  });
+
+  it("5. intérêts + assurance — chacun sur sa case", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
+    assert.equal(findCase(form, "294")?.value, 1000);
+    assert.equal(findCase(form, "242")?.value, 500);
+  });
+
+  it("6. intérêts + frais de dossier + IRA", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1700, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(
+      rfs(fr, [pret({ interetsEmpruntExercice: 1000, fraisDossierDeductibles: 300, iraDeductible: 400 })]),
+    );
+    assert.equal(findCase(form, "294")?.value, 1400, "1000 (intérêts) + 400 (IRA)");
+    assert.equal(findCase(form, "242")?.value, 300, "300 (frais de dossier)");
+  });
+
+  it("7. plusieurs prêts, natures différentes → agrégation correcte 242/294 sur l'ensemble de rfs.emprunts", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 2400, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(
+      rfs(fr, [
+        pret({ pretId: "pret-A", interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 }),
+        pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 400, garantieDeductible: 200 }),
+      ]),
+    );
+    assert.equal(findCase(form, "242")?.value, 1000, "500 (assurance A) + 300 (dossier B) + 200 (garantie B)");
+    assert.equal(findCase(form, "294")?.value, 1400, "1000 (intérêts A) + 400 (IRA B)");
+  });
+
+  it("8. commission de caution → 242 (garantieDeductible, jamais hypothèque/IPPD)", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 250, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ garantieDeductible: 250 })]));
+    assert.equal(findCase(form, "242")?.value, 250);
+    assert.equal(findCase(form, "294")?.value, 0);
+  });
+
+  it("9a. zéro financement, rfs.emprunts vide ([]) — détail disponible, 242 et 294 à 0", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, []));
+    assert.equal(findCase(form, "242")?.value, 0, "détail disponible (tableau vide) — 242 alimentée à 0, pas absente");
+    assert.equal(findCase(form, "294")?.value, 0);
+  });
+
+  it("9b. rfs.emprunts absent (undefined) — repli explicite : 294 = chargesFinancement en totalité, 242 absente", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "294")?.value, 4602, "ancien comportement conservé — jamais une ventilation arbitraire faute de détail");
+    assert.equal(findCase(form, "242"), undefined, "242 ne doit jamais être inventée sans rfs.emprunts");
+  });
+
+  it("10. exercice avec pré-exploitation — P1 ne modifie ni ne lit interetsPreExploitation/assurancePreExploitation", () => {
+    const fr = fiscalResult({
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 700 },
+      resultatAvantAmort: 6300,
+    });
+    const form = map2033BFromRfs(
+      rfs(fr, [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 700 })]),
+    );
+    assert.equal(findCase(form, "294")?.value, 1000, "294 ne doit jamais inclure interetsPreExploitation");
+    assert.equal(findCase(form, "242")?.value, 0);
+    // 264/270/310 restent des lectures de fiscalResult.charges.chargesPreExploitation
+    // (P2, hors périmètre) — inchangées par l'introduction de 242/294 par nature.
+    const sansEmprunts = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "264")?.value, findCase(sansEmprunts, "264")?.value);
+    assert.equal(findCase(form, "270")?.value, findCase(sansEmprunts, "270")?.value);
+    assert.equal(findCase(form, "310")?.value, findCase(sansEmprunts, "310")?.value);
+  });
+
+  it("11. invariant de conservation — Σ(242+294 par nature) === fiscalResult.charges.chargesFinancement", () => {
+    const emprunts = [
+      pret({ pretId: "pret-A", interetsEmpruntExercice: 1234.56, assuranceEmpruntExercice: 210.44 }),
+      pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 175.5, garantieDeductible: 80 }),
+    ];
+    const chargesFinancement = round2(
+      emprunts.reduce(
+        (acc, p) =>
+          acc +
+          p.interetsEmpruntExercice +
+          p.iraDeductible +
+          p.assuranceEmpruntExercice +
+          p.fraisDossierDeductibles +
+          p.garantieDeductible,
+        0,
+      ),
+    );
+    const fr = fiscalResult({
+      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement, chargesPreExploitation: 0 },
+    });
+    const form = map2033BFromRfs(rfs(fr, emprunts));
+    const case242 = findCase(form, "242")?.value as number;
+    const case294 = findCase(form, "294")?.value as number;
+    assert.equal(
+      round2(case242 + case294),
+      chargesFinancement,
+      "242 + 294 doit reconstituer exactement fiscalResult.charges.chargesFinancement — le total de contrôle",
+    );
+  });
+
+  it("242/294 sont tracées avec source=Emprunts et un pretId reconstituable quand le détail est disponible", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
+    assert.equal(findCase(form, "242")?.trace.source, "Emprunts");
+    assert.equal(findCase(form, "294")?.trace.source, "Emprunts");
+    assert.ok(findCase(form, "242")?.trace.path.includes("rfs.emprunts"));
+    assert.ok(findCase(form, "294")?.trace.path.includes("rfs.emprunts"));
+  });
+
+  it("294 reste tracée source=FiscalResult en repli (rfs.emprunts absent), comme avant P1", () => {
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 } });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "294")?.trace.source, "FiscalResult");
+    assert.equal(findCase(form, "294")?.trace.path, "fiscalResult.charges.chargesFinancement");
   });
 });
 
@@ -447,12 +657,12 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
   });
 
-  it("aucune autre case du groupe 209-348 n'est nouvellement alimentée (350 exceptée — audit fiscal ciblé, déficits LMNP)", () => {
+  it("aucune autre case du groupe 209-348 n'est nouvellement alimentée (300/350 exceptées — audit fiscal ciblé, perte exceptionnelle et déficits LMNP)", () => {
     const form = map2033BFromRfs(rfs(fiscalResult({ recettes: { total: 9000 }, amortCalcule: 1500 })));
     const untouched = [
       "209", "210", "214", "215", "217", "222", "224", "226", "230",
       "234", "236", "238", "240", "242", "243", "244", "250", "252",
-      "255", "256", "259", "260", "262", "280", "290", "300", "306",
+      "255", "256", "259", "260", "262", "280", "290", "306",
       "316", "322", "324", "330",
     ];
     for (const caseId of untouched) {

@@ -36,13 +36,28 @@ import { round2 } from "../../f007/types";
  * dossier de référence : la même valeur apparaît en case 218 et en case 232).
  * 254 (Dotations aux amortissements) reprend exactement `amortCalcule`, déjà
  * utilisée dans la formule des cases 264/310. Toutes les autres cases du
- * formulaire (209-230 hors 218, 234-262 hors 254, 280, 290, 300/306, 316,
+ * formulaire (209-230 hors 218, 234-262 hors 242/254, 280, 290, 306, 316,
  * 322, 324, 330-348) restent volontairement non traitées : soit
  * structurellement `non_applicable`/`donnee_absente` à un LMNP réel
  * simplifié, soit `incoherence_modele` faute d'une correspondance PCG
  * suffisamment certaine entre les catégories F-012 (`detailParCategorie`) et
  * les postes du compte de résultat Cerfa (voir Cycle 46) — non ajoutées à
  * `casesNonAlimentees` ce cycle, périmètre strictement limité à 218/254.
+ *
+ * Audit fiscal ciblé (case 300) — `fiscalResult.perteExceptionnelle` était
+ * déjà un scalaire propre et déjà soustrait dans `resultatAvantAmort`
+ * (TRF-0027) : seule sa projection en case 300 manquait. Pass-through pur,
+ * sans effet sur 264/270/294/310, qui ne référencent pas cette case.
+ *
+ * P1 (ventilation financement) — case 242 introduite, `fiscalResult.charges.
+ * chargesFinancement` ventilé en 242 (assurance emprunteur + frais de
+ * dossier + garantie non récupérable qualifiée) et 294 (intérêts + IRA),
+ * depuis `rfs.emprunts` (F-011, jamais recalculé) — voir la garde de code
+ * juste avant la construction de `cases`. `garantieDeductible` ne représente
+ * aujourd'hui QUE la commission de caution ; garantie récupérable, garantie
+ * non qualifiée et assurance pré-exploitation restent hors périmètre de ce
+ * cycle (paliers ultérieurs). `rfs.emprunts` absent → repli sur l'ancien
+ * comportement (294 = chargesFinancement en totalité, 242 absente).
  *
  * Audit fiscal ciblé (déficits LMNP) — 360 est reclassée en `non_applicable`,
  * pour la même raison que 356 : la notice 2033-NOT-SD réserve explicitement
@@ -90,6 +105,41 @@ export type Form2033B = {
 export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   const fr = rfs.fiscalResult;
   const baseTrace: Omit<CaseTrace, "path"> = { source: "FiscalResult", ksArtifacts: ["TRF-0032"] };
+
+  // Cases 242/294 — P1 : ventilation du financement par nature, depuis
+  // `rfs.emprunts` (F-011, PretFinancementExercice[]), jamais recalculée.
+  // `rfs.emprunts` et `fiscalResult.charges.chargesFinancement` proviennent,
+  // dans le pipeline réel, du même appel à computeFinancementExercice()
+  // (run-declaration-generation.ts) — descendre au détail n'introduit donc
+  // aucune seconde source de vérité, seulement un niveau de granularité plus
+  // fin d'une donnée déjà calculée. `chargesFinancement` reste le total de
+  // contrôle (invariant de conservation, vérifié par les tests, jamais par
+  // ce code — voir rfs-2033b.test.ts).
+  //
+  // `garantieDeductible` ne représente aujourd'hui QUE la commission de
+  // caution (F-011 ne capture aucun montant pour hypothèque/IPPD/autre) —
+  // elle rejoint 242 à ce titre précis, jamais comme "toute garantie".
+  //
+  // `rfs.emprunts === undefined` (jamais fourni) → repli explicite sur
+  // l'ancien comportement : 294 = chargesFinancement en totalité, 242 reste
+  // absente. Jamais une ventilation arbitraire faute de détail disponible.
+  // `rfs.emprunts` vide (`[]`, financement nul) est distinct : le détail est
+  // disponible, la somme vaut simplement 0 des deux côtés.
+  const emprunts = rfs.emprunts;
+  const financement242 =
+    emprunts !== undefined
+      ? round2(
+          emprunts.reduce(
+            (acc, p) => acc + p.assuranceEmpruntExercice + p.fraisDossierDeductibles + p.garantieDeductible,
+            0,
+          ),
+        )
+      : undefined;
+  const financement294 =
+    emprunts !== undefined
+      ? round2(emprunts.reduce((acc, p) => acc + p.interetsEmpruntExercice + p.iraDeductible, 0))
+      : round2(fr.charges.chargesFinancement);
+  const empruntsTrace: Omit<CaseTrace, "path"> = { source: "Emprunts", ksArtifacts: ["TRF-0016", "TRF-0032"] };
 
   // Case 264 — Total des charges d'exploitation (II). Formule établie et
   // vérifiée par l'audit FEC (grand livre comptable réel du dossier de
@@ -156,8 +206,23 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     {
       caseId: "294",
       label: "Charges financières (V)",
-      value: round2(fr.charges.chargesFinancement),
-      trace: { ...baseTrace, path: "fiscalResult.charges.chargesFinancement" },
+      value: financement294,
+      trace:
+        emprunts !== undefined
+          ? { ...empruntsTrace, path: "Σ rfs.emprunts[].(interetsEmpruntExercice + iraDeductible)" }
+          : { ...baseTrace, path: "fiscalResult.charges.chargesFinancement" },
+    },
+    {
+      // Audit fiscal ciblé (case 300) — fiscalResult.perteExceptionnelle est
+      // déjà un scalaire propre (TRF-0027), déjà soustrait dans
+      // resultatAvantAmort en amont : cette case est un pass-through pur,
+      // au même titre que 218/254/350 — jamais bloquée, alimentée avec 0 en
+      // l'absence de perte. Aucune incidence sur 264/270/294/310, qui ne
+      // référencent pas cette case.
+      caseId: "300",
+      label: "Charges exceptionnelles (VI)",
+      value: round2(fr.perteExceptionnelle),
+      trace: { ...baseTrace, path: "fiscalResult.perteExceptionnelle", ksArtifacts: ["TRF-0027", "TRF-0032"] },
     },
     {
       // Audit fiscal ciblé (déficits LMNP) — la notice 2033-NOT-SD indique
@@ -188,6 +253,24 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       trace: { ...baseTrace, path: "fiscalResult.amortReporte", ksArtifacts: ["TRF-0031", "TRF-0032"] },
     },
   ];
+
+  // Case 242 — P1 : uniquement quand le détail par prêt est disponible
+  // (financement242 !== undefined, voir plus haut). Jamais une valeur à 0
+  // inventée en son absence : contrairement à 218/254/300/350 (scalaires
+  // propres de FiscalResult, toujours définis), 242 est une somme qui exige
+  // le détail — sans lui, il n'existe aucune base non arbitraire pour
+  // affirmer "242 = 0" pendant que 294 porte la totalité de chargesFinancement.
+  if (financement242 !== undefined) {
+    cases.push({
+      caseId: "242",
+      label: "Autres charges externes",
+      value: financement242,
+      trace: {
+        ...empruntsTrace,
+        path: "Σ rfs.emprunts[].(assuranceEmpruntExercice + fraisDossierDeductibles + garantieDeductible)",
+      },
+    });
+  }
 
   if (resultatComptable > 0) {
     cases.push({
