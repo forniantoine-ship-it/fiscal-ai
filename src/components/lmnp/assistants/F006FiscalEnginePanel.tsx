@@ -128,31 +128,14 @@ export function F006FiscalEnginePanel() {
     return assistant.start().messages;
   });
 
-  const persistResult = useCallback(
-    (result: F006Result) => {
-      dispatch({
-        type: "DECLARATION_PATCH_DRAFT",
-        patch: {
-          fiscalResult: {
-            exercice: result.fiscalResult.exercice,
-            resultatFiscal: result.fiscalResult.resultatFiscal,
-            resultatAvantAmort: result.fiscalResult.resultatAvantAmort,
-            totalRecettes: result.fiscalResult.recettes.total,
-            totalCharges: result.fiscalResult.charges.totalDeductible,
-            amortDeduct: result.fiscalResult.amortDeduct,
-            amortReporte: result.fiscalResult.amortReporte,
-            deficitNouveau: result.fiscalResult.deficitNouveau,
-            stocks: result.fiscalResult.stocks,
-            trace: result.fiscalResult.trace,
-            computedAt: result.fiscalResult.trace.computedAt,
-          },
-          fiscalResultConfirmedAt: new Date().toISOString(),
-        },
-      });
-      dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "fiscal-engine" });
-    },
-    [dispatch],
-  );
+  // P2-4 — F-006 ne persiste plus fiscalResult directement : seul
+  // runDeclarationGeneration() (Validation) écrit fiscalResult/rfs/liasseRfs/
+  // liasseResult, en un seul appel atomique. Ce panel reste un outil de
+  // calcul/affichage local (state.result, via ResultSummaryCard) — il ne fait
+  // ici que suivre l'avancement du parcours, sans écrire le résultat lui-même.
+  const completeFiscalEngineStep = useCallback(() => {
+    dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "fiscal-engine" });
+  }, [dispatch]);
 
   const runAction = useCallback(
     async (action: F006Action) => {
@@ -161,10 +144,10 @@ export function F006FiscalEnginePanel() {
       setMessages((prev) => [...prev, ...turn.messages]);
 
       if (turn.completed && turn.state.result) {
-        persistResult(turn.state.result);
+        completeFiscalEngineStep();
       }
     },
-    [assistant, persistResult, state],
+    [assistant, completeFiscalEngineStep, state],
   );
 
   const handleSuggestion = useCallback(

@@ -159,28 +159,14 @@ export function F007LiasseEnginePanel() {
     return assistant.start().messages;
   });
 
-  const persistResult = useCallback(
-    (result: F007Result) => {
-      const form = result.liasse.formulairesGeneres[0];
-      dispatch({
-        type: "DECLARATION_PATCH_DRAFT",
-        patch: {
-          liasseResult: {
-            exercice: result.liasse.exercice,
-            form2031Generated: true,
-            caseCount: form?.cases.length ?? 0,
-            cases: form?.cases ?? [],
-            formulairesManquants: [...result.liasse.formulairesManquants],
-            trace: result.liasse.trace,
-            generatedAt: result.liasse.trace.generatedAt,
-          },
-          liasseGeneratedAt: new Date().toISOString(),
-        },
-      });
-      dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "liasse-engine" });
-    },
-    [dispatch],
-  );
+  // P2-4 — F-007 ne persiste plus liasseResult directement : seul
+  // runDeclarationGeneration() (Validation) écrit fiscalResult/rfs/liasseRfs/
+  // liasseResult, en un seul appel atomique. Ce panel reste un outil de
+  // calcul/affichage local (state.result, via CasesPreviewCard) — il ne fait
+  // ici que suivre l'avancement du parcours, sans écrire le résultat lui-même.
+  const completeLiasseEngineStep = useCallback(() => {
+    dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "liasse-engine" });
+  }, [dispatch]);
 
   const runAction = useCallback(
     async (action: F007Action) => {
@@ -190,10 +176,10 @@ export function F007LiasseEnginePanel() {
       setMessages((prev) => [...prev, ...turn.messages]);
 
       if (turn.completed && turn.state.result) {
-        persistResult(turn.state.result);
+        completeLiasseEngineStep();
       }
     },
-    [assistant, persistResult, state],
+    [assistant, completeLiasseEngineStep, state],
   );
 
   const handleSuggestion = useCallback(
