@@ -5,7 +5,7 @@ import type { LiasseEngineInputs, LiasseRepresentation, ProduceLiasseOutput } fr
 import { LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE } from "./types";
 
 /**
- * Composition explicite F-007 (TRF-0033 partiel, ADR-004).
+ * Composition explicite F-007 (TRF-0034 partiel, ADR-004).
  * Transforme un FiscalResult validé en représentation documentaire — 2031-SD uniquement.
  */
 export function produceLiasse(input: LiasseEngineInputs): ProduceLiasseOutput {
@@ -30,7 +30,7 @@ export function produceLiasse(input: LiasseEngineInputs): ProduceLiasseOutput {
     formulairesManquants: [...formulairesManquants],
     trace: {
       ksArtifacts: [
-        "TRF-0033",
+        "TRF-0034",
         "TRF-0032",
         "ENT-013",
         "ADR-004",

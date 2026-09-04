@@ -43,7 +43,7 @@ describe("F-007 — validation des entrées", () => {
   });
 });
 
-describe("F-007 — TRF-0033 mapping 2031-SD", () => {
+describe("F-007 — TRF-0034 mapping 2031-SD", () => {
   it("audit fiscal 2031-SD 2026 — ne reporte plus AB (Production vendue appartient au 2033-B-SD, pas au 2031-SD)", () => {
     const { result } = produceFiscalResult({
       exerciceFiscal: 2025,

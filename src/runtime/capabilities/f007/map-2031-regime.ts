@@ -1,7 +1,7 @@
 import type { CerfaCase } from "./types";
 
 /**
- * TRF-0033 / 2031-SD — cadre régime d'imposition.
+ * TRF-0034 / 2031-SD — cadre régime d'imposition.
  * Constante de périmètre produit (LMNP réel simplifié) — pas un calcul.
  */
 export function map2031RegimeCases(): CerfaCase[] {
@@ -13,7 +13,7 @@ export function map2031RegimeCases(): CerfaCase[] {
       trace: {
         source: "scope",
         path: "lmnp.reel_simplifie",
-        ksArtifacts: ["ADR-004", "TRF-0033"],
+        ksArtifacts: ["ADR-004", "TRF-0034"],
       },
     },
   ];

@@ -7,12 +7,12 @@ function sirenFromIdentite(identite: IdentiteDeclarante): string | undefined {
 }
 
 /**
- * TRF-0033 / 2031-SD — section A Identification (ENT-013).
+ * TRF-0034 / 2031-SD — section A Identification (ENT-013).
  * Aucune transformation fiscale : report direct des données déclarant.
  */
 export function map2031IdentiteCases(identite: IdentiteDeclarante): CerfaCase[] {
   const cases: CerfaCase[] = [];
-  const traceBase = { source: "IdentiteDeclarante" as const, ksArtifacts: ["ENT-013", "TRF-0033"] };
+  const traceBase = { source: "IdentiteDeclarante" as const, ksArtifacts: ["ENT-013", "TRF-0034"] };
 
   const siren = sirenFromIdentite(identite);
   if (siren) {
