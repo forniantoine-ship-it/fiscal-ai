@@ -6,6 +6,7 @@ import { map2031BisFromRfs, type Form2031Bis } from "./map-2031-bis";
 import { map2033AFromRfs, type Form2033A } from "./map-2033a";
 import { map2033BFromRfs, type Form2033B } from "./map-2033b";
 import { map2033CFromRfs, type Form2033C } from "./map-2033c";
+import { map2033DFromRfs, type Form2033D } from "./map-2033d";
 
 /**
  * Assemblage additif de la liasse depuis la RFS.
@@ -34,6 +35,12 @@ export type LiasseFromRfs = {
   form2033A: Form2033A;
   form2033B: Form2033B;
   form2033C: Form2033C;
+  /**
+   * P3-LIASSE-1A — socle minimal honnête : formulaire présent (le mapper
+   * s'exécute sans erreur), mais aucune case alimentée — voir map-2033d.ts.
+   * Champ additif, au même titre que form2033A/B/C ci-dessus.
+   */
+  form2033D: Form2033D;
   formulairesAttendus: readonly string[];
   formulairesGeneres: string[];
   formulairesManquants: string[];
@@ -50,8 +57,15 @@ export function assembleLiasseFromRfs(rfs: FiscalRepresentation): LiasseFromRfs 
   const form2033A = map2033AFromRfs(rfs);
   const form2033B = map2033BFromRfs(rfs);
   const form2033C = map2033CFromRfs(rfs);
+  const form2033D = map2033DFromRfs(rfs);
 
-  const formulairesGeneres: string[] = [form2031.formId, form2033A.formId, form2033B.formId, form2033C.formId];
+  const formulairesGeneres: string[] = [
+    form2031.formId,
+    form2033A.formId,
+    form2033B.formId,
+    form2033C.formId,
+    form2033D.formId,
+  ];
   const formulairesManquants = LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE.filter(
     (id) => !formulairesGeneres.includes(id),
   );
@@ -63,6 +77,7 @@ export function assembleLiasseFromRfs(rfs: FiscalRepresentation): LiasseFromRfs 
     form2033A,
     form2033B,
     form2033C,
+    form2033D,
     formulairesAttendus: LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE,
     formulairesGeneres,
     formulairesManquants,

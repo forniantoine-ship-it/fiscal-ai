@@ -6,9 +6,9 @@ import type { LiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemb
  * - `formulairesGeneres`/`formulairesAttendus` (assemble-liasse-from-rfs.ts) —
  *   liste des IDs de formulaire assemblés SANS ERREUR, jamais une preuve que
  *   leurs cases sont réellement alimentées (cf. audit P0-2a).
- * - `cases`/`casesNonAlimentees` — seuls 2031-bis/2033-A/2033-B/2033-C portent
- *   `casesNonAlimentees` ; 2031-SD (F-007/RFS) n'a pas cette notion et est
- *   compté comme entièrement alimenté.
+ * - `cases`/`casesNonAlimentees` — seuls 2031-bis/2033-A/2033-B/2033-C/2033-D
+ *   portent `casesNonAlimentees` ; 2031-SD (F-007/RFS) n'a pas cette notion et
+ *   est compté comme entièrement alimenté.
  * N'affirme jamais une "liasse complète" au sens officiel — cette notion
  * (Cerfa, EDI) n'est pas un livrable de ce palier.
  */
@@ -24,7 +24,13 @@ export function resolveLiasseCoverageState(
 ): LiasseCoverageState | undefined {
   if (!liasseRfs) return undefined;
 
-  const formsAvecSuivi = [liasseRfs.form2031Bis, liasseRfs.form2033A, liasseRfs.form2033B, liasseRfs.form2033C];
+  const formsAvecSuivi = [
+    liasseRfs.form2031Bis,
+    liasseRfs.form2033A,
+    liasseRfs.form2033B,
+    liasseRfs.form2033C,
+    liasseRfs.form2033D,
+  ];
 
   return {
     formulairesGeneresCount: liasseRfs.formulairesGeneres.length,

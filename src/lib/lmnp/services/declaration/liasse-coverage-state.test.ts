@@ -89,14 +89,20 @@ describe("P0-2a — resolveLiasseCoverageState() : décompte honnête, jamais fa
 
     // Vérifié contre les données réelles de la fixture — jamais une valeur en dur
     // indépendante de ce que le RFS a effectivement produit.
-    const { form2031, form2031Bis, form2033A, form2033B, form2033C } = generation.liasseRfs;
+    const { form2031, form2031Bis, form2033A, form2033B, form2033C, form2033D } = generation.liasseRfs;
     const casesAlimenteesAttendues =
-      form2031.cases.length + form2031Bis.cases.length + form2033A.cases.length + form2033B.cases.length + form2033C.cases.length;
+      form2031.cases.length +
+      form2031Bis.cases.length +
+      form2033A.cases.length +
+      form2033B.cases.length +
+      form2033C.cases.length +
+      form2033D.cases.length;
     const casesNonAlimenteesAttendues =
       form2031Bis.casesNonAlimentees.length +
       form2033A.casesNonAlimentees.length +
       form2033B.casesNonAlimentees.length +
-      form2033C.casesNonAlimentees.length;
+      form2033C.casesNonAlimentees.length +
+      form2033D.casesNonAlimentees.length;
 
     assert.equal(coverage!.casesAlimentees, casesAlimenteesAttendues);
     assert.equal(coverage!.casesNonAlimentees, casesNonAlimenteesAttendues);

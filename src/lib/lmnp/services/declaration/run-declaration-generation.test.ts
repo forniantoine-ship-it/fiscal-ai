@@ -170,7 +170,7 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
     assert.equal(completude, "complete");
   });
 
-  it("runDeclarationGeneration() sur un dossier réel expose completude: 'partielle' (P0-2b : 2033-D-SD réintégré au périmètre attendu — non généré par le produit, cf. SAV-029)", async () => {
+  it("runDeclarationGeneration() sur un dossier réel expose completude: 'complete' (P3-LIASSE-1A : les 5 formulaires ADR-004/SAV-029 sont désormais dans formulairesGeneres — completude ne prouve que l'absence de formulaire manquant, jamais que les cases sont alimentées ; voir liasse-coverage-state.ts pour le décompte réel exposé à l'utilisateur)", async () => {
     const draft: DeclarationDraft = {
       completedSteps: [],
       siret: "12345678901234",
@@ -188,8 +188,8 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
     if (generation.status !== "generated") return;
     assert.equal(
       generation.completude,
-      "partielle",
-      "P0-2b : 2033-D-SD fait partie de la cible fiscale (SAV-029, obligatoire sans condition de CA) mais aucun mapper ne le génère encore — la complétude doit honnêtement le refléter, jamais masquer ce manque",
+      "complete",
+      "P3-LIASSE-1A : map2033DFromRfs() existe désormais (socle minimal honnête, cases: [] + casesNonAlimentees tracées) — les 5 formulaires ADR-004/SAV-029 sont tous dans formulairesGeneres, formulairesManquants est vide. completude ne mesure que cette présence, jamais la densité réelle d'alimentation (2033-A reste très partiellement couvert) — ce champ n'a aujourd'hui aucun consommateur UI (cf. arbitrage P3-LIASSE-1A) ; sa sémantique fera l'objet d'un chantier séparé avant tout branchement utilisateur",
     );
   });
 });
@@ -451,9 +451,10 @@ describe("Cycle 35 — runDeclarationGeneration() expose form2033A avec l'immobi
     assert.equal(case030?.value, 121416, "125136 − 3720");
 
     // Champs historiques inchangés par cet ajout additif.
-    // P0-2b : 2033-D-SD fait partie du périmètre attendu (SAV-029) mais n'est
-    // pas généré par le produit — completude reste honnêtement "partielle".
-    assert.equal(generation.completude, "partielle");
+    // P3-LIASSE-1A : 2033-D-SD est désormais dans formulairesGeneres (socle
+    // minimal honnête) — completude bascule mécaniquement à "complete" (aucun
+    // formulaire manquant), sans rapport avec la densité réelle des cases.
+    assert.equal(generation.completude, "complete");
     assert.equal(generation.fiscalResult.resultatFiscal, 3280, "9000 - 2000 - 3720 (totalDotations aligné sur plan.totalAnnuelExercice)");
   });
 });
@@ -490,8 +491,11 @@ describe("Cycle 31 — runDeclarationGeneration() expose liasseRfs sans casser l
     );
 
     // Champs historiques inchangés — ce que testait déjà le Cycle 18 avant l'ajout de liasseRfs.
-    // P0-2b : 2033-D-SD réintégré au périmètre attendu, des deux côtés (F-007 et RFS).
-    assert.equal(generation.completude, "partielle");
+    // P3-LIASSE-1A : côté RFS (liasseRfs), 2033-D-SD est désormais généré —
+    // completude bascule à "complete". Côté F-007 historique (liasseResult),
+    // 2033-D-SD reste absent (produceLiasse() non touché par ce palier) : la
+    // ligne suivante n'est donc pas affectée.
+    assert.equal(generation.completude, "complete");
     assert.equal(generation.liasseResult.formulairesManquants.length, 4);
     assert.equal(generation.fiscalResult.resultatFiscal, 5500);
   });

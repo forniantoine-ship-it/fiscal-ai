@@ -79,10 +79,10 @@ describe("Cycle 31 — TEST 1 et 2 : assembleLiasseFromRfs() retourne bien un 20
     assert.ok(liasse.form2033B.casesNonAlimentees.length > 0);
   });
 
-  it("formulairesGeneres liste exactement 2031-SD, 2033-A-SD, 2033-B-SD et 2033-C-SD (Cycle 55) ; formulairesManquants contient 2033-D-SD (P0-2b : réintégré au périmètre attendu, non encore généré)", () => {
+  it("formulairesGeneres liste les 5 formulaires ADR-004/SAV-029 (P3-LIASSE-1A : 2033-D-SD rejoint la liste, socle minimal) ; formulairesManquants est vide", () => {
     const liasse = assembleLiasseFromRfs(rfs(fiscalResult()));
-    assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"]);
-    assert.deepEqual(liasse.formulairesManquants, ["2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesManquants, []);
   });
 });
 

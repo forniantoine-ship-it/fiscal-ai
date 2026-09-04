@@ -79,11 +79,11 @@ describe("P0-1 — buildLiasseRfsDocumentText() expose les 4 formulaires complé
     }
   });
 
-  it("2033-D-SD manquant (P0-2b : réintégré au périmètre attendu, non encore généré) — la ligne 'formulaires non générés' le reflète honnêtement", () => {
+  it("P3-LIASSE-1A : 2033-D-SD rejoint formulairesGeneres (socle minimal) — formulairesManquants est vide, la ligne 'formulaires non générés' n'apparaît plus", () => {
     const liasseRfs = assembleLiasseFromRfs(rfs(fiscalResult()));
     const text = buildLiasseRfsDocumentText(2025, liasseRfs);
 
-    assert.deepEqual(liasseRfs.formulairesManquants, ["2033-D-SD"]);
-    assert.match(text, /Formulaires non générés à ce stade : 2033-D-SD/);
+    assert.deepEqual(liasseRfs.formulairesManquants, []);
+    assert.doesNotMatch(text, /Formulaires non générés à ce stade/);
   });
 });

@@ -488,11 +488,11 @@ describe("Cycle 55 — non-régression assembleLiasseFromRfs()", () => {
     assert.deepEqual(liasse.form2033C, direct);
   });
 
-  it("2033-C-SD rejoint formulairesGeneres ; formulairesManquants contient 2033-D-SD (P0-2b : réintégré au périmètre attendu, non encore généré)", () => {
+  it("2033-C-SD et 2033-D-SD rejoignent formulairesGeneres (P3-LIASSE-1A : socle minimal 2033-D) ; formulairesManquants est vide", () => {
     const representation = rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE);
     const liasse = assembleLiasseFromRfs(representation);
-    assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD"]);
-    assert.deepEqual(liasse.formulairesManquants, ["2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
+    assert.deepEqual(liasse.formulairesManquants, []);
   });
 
   it("2031-Bis-SD reste hors formulairesGeneres/Attendus/Manquants", () => {
