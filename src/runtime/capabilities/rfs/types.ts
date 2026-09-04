@@ -16,6 +16,7 @@ import type { FiscalResult } from "../f006/types";
 import type { IdentiteDeclarante } from "../f007/types";
 import type { AmortissementPlan } from "../f010/types";
 import type { PretFinancementExercice } from "../f011/types";
+import type { ComposantNouveau } from "../f012/types";
 
 /**
  * Plan d'amortissement (F-010) enrichi de la valeur du terrain — Cycle 35 —
@@ -42,6 +43,29 @@ export type ImmobilisationsRfs = AmortissementPlan & {
    * `totalBrut`/`totalAnnuelExercice`.
    */
   montantMobilier?: number;
+  /**
+   * P3-LIASSE-1B.2 — `draft.dateMiseEnService` (F-009) — transport pur,
+   * jamais recalculé. Champ frère de `.plan`, au même titre que
+   * `valeurTerrain`/`montantMobilier` ci-dessus : gouverne les colonnes de
+   * mouvement du 2033-C (début d'exercice / augmentations), aujourd'hui
+   * jamais alimentées faute de cette donnée dans la RFS (map-2033c.ts,
+   * `RAISON_MOUVEMENT`). `undefined` si le dossier n'a pas encore de date de
+   * mise en service persistée — jamais une valeur de repli inventée.
+   */
+  dateMiseEnService?: string;
+  /**
+   * P3-LIASSE-1B.2 — `draft.chargesAssistant.composantsNouveaux` (F-012,
+   * TRF-0028) — transport pur PAR RÉFÉRENCE, jamais recopié ni recalculé.
+   * Ces travaux sont déjà inclus dans `fiscalResult.amortCalcule` (via
+   * F-014, `compose-plan-amortissement.ts`) mais n'entrent jamais dans
+   * `AmortissementPlan` lui-même (F-010 ne les reçoit jamais en paramètre) —
+   * c'est exactement l'écart déjà détecté par la garde de divergence
+   * F-010/F-014 des mappers 2033-A/2033-C (`amortissementDivergent`).
+   * `undefined` si le dossier n'a pas encore de `chargesAssistant` (F-012
+   * non exécuté) — distinct d'un tableau vide, qui signifie « F-012 exécuté,
+   * aucun travaux à amortir » (CL-002, F-014 KS).
+   */
+  composantsNouveaux?: ComposantNouveau[];
 };
 
 /**

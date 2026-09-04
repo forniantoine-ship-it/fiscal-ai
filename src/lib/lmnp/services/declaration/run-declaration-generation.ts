@@ -144,11 +144,13 @@ export function runDeclarationGeneration(
   // RFS — assemblage pur, aucun second appel à produceFiscalResult() : le même
   // `fiscalResult` (F-006, complet) calculé ci-dessus est injecté tel quel.
   // Immobilisations/emprunts : lecture seule des sorties déjà persistées de
-  // F-010/F-011, jamais recalculées ici. `valeurTerrain` (Cycle 35) et
-  // `montantMobilier` (Cycle 58) sont des champs frères de `.plan` dans la
-  // sortie durable de F-010 — fusionnés ici (transport pur, aucun calcul)
-  // pour ne pas se perdre en route vers la RFS, comme c'était déjà le cas
-  // pour `valeurTerrain` avant le Cycle 35.
+  // F-010/F-011/F-012, jamais recalculées ici. `valeurTerrain` (Cycle 35),
+  // `montantMobilier` (Cycle 58), `dateMiseEnService` et `composantsNouveaux`
+  // (P3-LIASSE-1B.2) sont des champs frères de `.plan` dans la sortie durable
+  // de F-010/du draft — fusionnés ici (transport pur, aucun calcul) pour ne
+  // pas se perdre en route vers la RFS. `composantsNouveaux` est transporté
+  // PAR RÉFÉRENCE (même tableau que `draft.chargesAssistant.composantsNouveaux`,
+  // jamais recopié), sur le même modèle que `emprunts` ci-dessous.
   const rfs = buildFiscalRepresentation({
     fiscalResult,
     identite,
@@ -157,6 +159,8 @@ export function runDeclarationGeneration(
           ...draft.logementAmortissement.plan,
           valeurTerrain: draft.logementAmortissement.valeurTerrain,
           montantMobilier: draft.logementAmortissement.montantMobilier,
+          dateMiseEnService: draft.dateMiseEnService,
+          composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
         }
       : undefined,
     emprunts: draft?.financementCharges?.prets,

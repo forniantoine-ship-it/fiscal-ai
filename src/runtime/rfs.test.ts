@@ -127,4 +127,32 @@ describe("Cycle 26 — buildFiscalRepresentation() n'invente ni ne recalcule rie
     const rfs = buildFiscalRepresentation({ fiscalResult: fiscalResult(), identite: IDENTITE, immobilisations: plan });
     assert.equal(rfs.immobilisations?.valeurTerrain, undefined, "compatibilité ascendante — pas de 0 par défaut");
   });
+
+  it("P3-LIASSE-1B.2 — immobilisations fournies avec dateMiseEnService et composantsNouveaux → RFS les porte tels quels, aucune transformation", () => {
+    const composantsNouveaux = [
+      { label: "Cuisine équipée", montant: 12000, dureeAnnees: 18, dotationAnnuelle: 666.67, nature: "amélioration" as const, dateDebut: "2024-06-01" },
+    ];
+    const plan = {
+      lignes: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 }],
+      totalAnnuelExercice: 372,
+      totalBrut: 37186,
+      dateMiseEnService: "2024-04-15",
+      composantsNouveaux,
+    };
+    const rfs = buildFiscalRepresentation({ fiscalResult: fiscalResult(), identite: IDENTITE, immobilisations: plan });
+    assert.equal(rfs.immobilisations, plan, "même objet — aucune valeur recalculée");
+    assert.equal(rfs.immobilisations?.dateMiseEnService, "2024-04-15");
+    assert.equal(rfs.immobilisations?.composantsNouveaux, composantsNouveaux, "même tableau — transport par référence, pas une copie");
+  });
+
+  it("P3-LIASSE-1B.2 — immobilisations fournies SANS dateMiseEnService ni composantsNouveaux (dossier/fixture antérieur) → undefined, jamais une valeur inventée", () => {
+    const plan = {
+      lignes: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 }],
+      totalAnnuelExercice: 372,
+      totalBrut: 37186,
+    };
+    const rfs = buildFiscalRepresentation({ fiscalResult: fiscalResult(), identite: IDENTITE, immobilisations: plan });
+    assert.equal(rfs.immobilisations?.dateMiseEnService, undefined, "compatibilité ascendante — pas de valeur par défaut");
+    assert.equal(rfs.immobilisations?.composantsNouveaux, undefined, "absence de F-012 ≠ tableau vide inventé");
+  });
 });

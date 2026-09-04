@@ -398,6 +398,64 @@ describe("Cycle 26 — runDeclarationGeneration() expose une RFS", () => {
       "solde d'emprunt persisté par F-011, jamais recalculé par la RFS",
     );
   });
+
+  it("P3-LIASSE-1B.2 — round-trip Draft → RFS : dateMiseEnService et composantsNouveaux ne sont plus perdus", () => {
+    const composantsNouveaux = [
+      { label: "Cuisine équipée", montant: 12000, dureeAnnees: 18, dotationAnnuelle: 666.67, nature: "amélioration" as const, dateDebut: "2024-06-01" },
+    ];
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2024-04-15",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0, composantsNouveaux },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+      logementAmortissement: {
+        prixRevient: 125136,
+        valeurTerrain: 17960,
+        valeurBati: 107176,
+        baseAmortissableBati: 107176,
+        montantMobilier: 5400,
+        dotationAnnuelle: 1500,
+        dureeMoyenneAnnees: 30,
+        prorataRatio: 1,
+        plan: {
+          lignes: [
+            { label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 },
+          ],
+          totalAnnuelExercice: 372,
+          totalBrut: 37186,
+        },
+        fieldSources: {},
+        computedAt: "2026-08-31T00:00:00.000Z",
+      },
+    } as unknown as DeclarationDraft;
+
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    // Vérifie la VALEUR transportée, pas seulement la présence du champ.
+    assert.equal(
+      generation.rfs.immobilisations?.dateMiseEnService,
+      "2024-04-15",
+      "draft.dateMiseEnService atteint désormais rfs.immobilisations sans perte",
+    );
+    assert.equal(
+      generation.rfs.immobilisations?.composantsNouveaux,
+      composantsNouveaux,
+      "draft.chargesAssistant.composantsNouveaux atteint rfs.immobilisations par référence, jamais recopié",
+    );
+    // Aucune ligne/total F-010 ni valeurTerrain/montantMobilier n'est affecté par ce transport.
+    assert.deepEqual(
+      generation.rfs.immobilisations?.lignes,
+      draft.logementAmortissement!.plan.lignes,
+      "le transport de dateMiseEnService/composantsNouveaux ne touche à aucune valeur F-010 existante",
+    );
+  });
 });
 
 /**
