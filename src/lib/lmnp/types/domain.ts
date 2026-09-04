@@ -767,6 +767,14 @@ export interface DeclarationDraft {
   amortissementTravauxDocumentIds?: string[];
   amortissementMobilierDocumentIds?: string[];
   amortissementConfirmedAt?: string;
+  /**
+   * Snapshot of amortissement-category document ids present when the
+   * ventilation was confirmed — same pattern as chargesDocumentIds /
+   * creditDocumentId. Coarse (confirmation-level, not per-component): lets
+   * REMOVE_DOCUMENT invalidate amortissementConfirmedAt when a contributor
+   * is deleted, without a document↔component link that doesn't exist today.
+   */
+  amortissementDocumentIds?: string[];
   amortissementVentilation?: AmortissementVentilationData;
   /** Real extraction results persisted after runBulkDocumentExtraction — replaces mock invoices on remount. */
   amortissementExtractedInvoices?: import("@/lib/lmnp/services/amortissement-profile").ExtractedInvoice[];

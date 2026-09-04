@@ -598,6 +598,25 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         };
       }
 
+      // Same principle as Revenus (Cycle 15B), coarser grain: these three
+      // confirmations already snapshot their contributing document ids
+      // (chargesDocumentIds / creditDocumentId / amortissementDocumentIds).
+      // Deleting a contributor invalidates the confirmation timestamp only —
+      // the underlying fiscal data (chargesExtraction, creditFinancing,
+      // amortissementVentilation) is never touched, so nothing is silently
+      // recalculated; the existing reconfirmation flow takes over.
+      if (declarationDraft?.chargesDocumentIds?.includes(action.documentId)) {
+        declarationDraft = { ...declarationDraft, chargesConfirmedAt: undefined };
+      }
+
+      if (declarationDraft?.creditDocumentId === action.documentId) {
+        declarationDraft = { ...declarationDraft, creditConfirmedAt: undefined };
+      }
+
+      if (declarationDraft?.amortissementDocumentIds?.includes(action.documentId)) {
+        declarationDraft = { ...declarationDraft, amortissementConfirmedAt: undefined };
+      }
+
       return finalizeState({
         ...state,
         fileRegistry,
@@ -1027,12 +1046,19 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       const draft = state.declarationDraft ?? { completedSteps: [] };
       const completed = new Set(draft.documentStepsCompleted ?? []);
       completed.add("amortissements");
+      // No document is referenced by any AmortissementComponent — this is the
+      // coarsest reliable proxy available: every amortissement-category
+      // document present in the workspace at confirmation time. See P1-5.1.
+      const amortissementDocumentIds = state.documents
+        .filter((d) => d.category === "amortissement")
+        .map((d) => d.id);
       return finalizeState({
         ...state,
         declarationDraft: {
           ...draft,
           amortissementConfirmedAt: nowIso(),
           amortissementVentilation: action.ventilation,
+          amortissementDocumentIds,
           documentStepsCompleted: [...completed],
           completedSteps: [...new Set([...draft.completedSteps, "amortissement"])],
         },
