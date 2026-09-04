@@ -17,6 +17,7 @@
     "test:copro-parser": "npx tsx src/lib/lmnp/services/charges/parse-copropriete-document.test.ts",
     "test:charge-normalizer": "npx tsx src/lib/lmnp/services/charges/normalize-charge-transactions.test.ts",
     "test:charges-profile": "npx tsx src/lib/lmnp/services/charges-profile.test.ts",
+    "test:supabase-server-ownership": "npx tsx --test src/lib/supabase-server.test.ts",
     "test:dossier-status": "npx tsx src/lib/lmnp/engine/dossier-status.test.ts",
     "test:dossier-status-shadow": "npx tsx src/lib/lmnp/engine/dossier-status-shadow.test.ts",
     "test:dossier-completeness-shadow": "npx tsx src/lib/lmnp/engine/dossier-completeness-shadow.test.ts",

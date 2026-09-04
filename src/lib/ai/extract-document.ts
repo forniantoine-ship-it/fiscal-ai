@@ -21,7 +21,7 @@ import {
 import { extractInvoice } from "./extractors/extract-invoice";
 import type { InvoiceData } from "./schemas/invoice-schema";
 import { resolveDocumentClassification } from "./resolve-document-classification";
-import { getServerSupabase } from "@/lib/supabase-server";
+import { getServerSupabaseUnscoped } from "@/lib/supabase-server";
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 const PDF_MIME_TYPES = new Set(["application/pdf", "application/x-pdf"]);
@@ -317,7 +317,7 @@ async function persistExtraction(params: {
  */
 export async function extractDocument(input: ExtractDocumentInput): Promise<ExtractDocumentResult> {
   const model = getModel();
-  const supabase = getServerSupabase(input.authToken);
+  const supabase = getServerSupabaseUnscoped();
 
   console.log("[extract] start", {
     fileName: input.fileName,

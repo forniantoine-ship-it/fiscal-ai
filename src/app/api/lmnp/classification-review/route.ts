@@ -5,7 +5,14 @@ import {
   classificationFromRow,
   type ClassificationReviewAction,
 } from "@/lib/ai/apply-classification-review";
-import { getServerSupabase } from "@/lib/supabase-server";
+import {
+  assertDossierOwnership,
+  getServerSupabaseForUser,
+  getServerSupabaseUnscoped,
+  OwnershipError,
+  resolveExtractionDossierId,
+  UnauthorizedError,
+} from "@/lib/supabase-server";
 
 const VALID_ACTIONS = new Set<ClassificationReviewAction>(["confirm-ai", "keep-user-category"]);
 
@@ -28,7 +35,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "action invalide." }, { status: 400 });
     }
 
-    const supabase = getServerSupabase(body.authToken);
+    // Identity first — a missing/invalid token never falls through to the
+    // service-role client below.
+    const { userId } = await getServerSupabaseForUser(body.authToken);
+
+    const supabase = getServerSupabaseUnscoped();
+
+    const dossierId = await resolveExtractionDossierId(supabase, extractionRowId);
+    if (!dossierId) {
+      return NextResponse.json({ error: "Classification introuvable." }, { status: 404 });
+    }
+
+    // Ownership second — identity alone doesn't prove this extraction's dossier
+    // belongs to the caller.
+    await assertDossierOwnership(supabase, dossierId, userId);
 
     const { data: row, error: fetchError } = await supabase
       .from("extracted_document_data")
@@ -76,7 +96,8 @@ export async function POST(request: Request) {
         final_category: resolved.finalCategory,
         needs_review: false,
       })
-      .eq("id", extractionRowId);
+      .eq("id", extractionRowId)
+      .eq("dossier_id", dossierId);
 
     if (updateError) {
       throw new Error(updateError.message);
@@ -90,6 +111,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ classification: resolved });
   } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      return NextResponse.json({ error: err.message }, { status: 401 });
+    }
+    if (err instanceof OwnershipError) {
+      return NextResponse.json({ error: err.message }, { status: 403 });
+    }
     const message = err instanceof Error ? err.message : "Erreur serveur.";
     console.error("[api/lmnp/classification-review]", err);
     return NextResponse.json({ error: message }, { status: 500 });

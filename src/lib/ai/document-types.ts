@@ -65,7 +65,6 @@ export interface ExtractDocumentInput {
   dossierId: string;
   documentId?: string | null;
   mimeType?: string;
-  authToken?: string;
   /** Upload workflow section — used by classification normalization. */
   userCategory?: UserUploadCategory | null;
 }
