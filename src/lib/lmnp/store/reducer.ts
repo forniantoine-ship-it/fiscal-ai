@@ -243,6 +243,29 @@ function touchFiscalYear(
   };
 }
 
+/**
+ * P2-2 — égalité structurelle pour les valeurs de DeclarationDraft comparées
+ * dans DECLARATION_PATCH_DRAFT (financementCharges/revenusAssistant/
+ * amortissementAssistant : objets JSON-plats, jamais de fonction ni de Date).
+ * Volontairement locale à ce fichier — pas un utilitaire générique.
+ */
+function isDeepEqualDraftValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, i) => isDeepEqualDraftValue(item, b[i]));
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(b, key) &&
+      isDeepEqualDraftValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
+
 function extractionLabel(extraction: Extraction): string {
   return extraction.displayLabel ?? FIELD_REGISTRY[extraction.fieldKey].label;
 }
@@ -895,9 +918,29 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "DECLARATION_PATCH_DRAFT": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
+
+      // P2-2 — même invariant que P2-1.1 (REMOVE_DOCUMENT), pour un déclencheur
+      // différent : la modification d'une donnée contributive déjà utilisée par
+      // une génération existante, sans suppression de document. Ces trois clés
+      // sont les seules sorties d'assistant lues telles quelles par
+      // runDeclarationGeneration() (F-011/F-013/F-014) et réellement réécrites
+      // par un chemin accessible du parcours 2026 via ce case générique — pas
+      // une invalidation sur "n'importe quel patch", seulement sur celles-ci.
+      const contributiveKeyChanged = (
+        ["financementCharges", "revenusAssistant", "amortissementAssistant"] as const
+      ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
+
+      let fiscalYear = state.fiscalYear;
+      if (contributiveKeyChanged && fiscalYear.declarationGeneratedAt) {
+        // paidAt n'est jamais touché — seule la génération devient obsolète,
+        // ce qui rouvre canRetryAfterPayment sans facturer une seconde fois.
+        fiscalYear = { ...fiscalYear, declarationGeneratedAt: undefined };
+      }
+
       return finalizeState({
         ...state,
         declarationDraft: { ...draft, ...action.patch },
+        fiscalYear,
       });
     }
 
