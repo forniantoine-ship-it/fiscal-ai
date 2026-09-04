@@ -68,3 +68,97 @@ export async function runDocumentRemoval(params: {
     onPendingChange(documentId, false);
   }
 }
+
+export type BulkPurgeOutcome =
+  | { status: "no_documents" }
+  | { status: "purged"; count: number }
+  | { status: "failed"; failures: Array<{ documentId: string; message: string }> };
+
+/**
+ * Purges every Supabase-backed document (hasSupabaseArtifacts) before an
+ * operation that is about to replace the whole local workspace
+ * (CREATE_NEW_DECLARATION). Local-only documents never trigger a server
+ * call. Uses Promise.allSettled — not Promise.all — so a single failure
+ * doesn't prevent knowing the outcome of every document, which the caller
+ * needs to report accurately and to make retries converge (deleteOnServer
+ * is already idempotent per-document, see delete-document.ts).
+ */
+export async function purgeAllSupabaseDocuments(params: {
+  documents: Array<{ id: string; hasSupabaseArtifacts?: boolean }>;
+  dossierId: string | null;
+  deleteOnServer: (params: {
+    documentId: string;
+    dossierId: string;
+  }) => Promise<DeleteDocumentOutcome>;
+}): Promise<BulkPurgeOutcome> {
+  const { documents, dossierId, deleteOnServer } = params;
+  const contributors = documents.filter((d) => d.hasSupabaseArtifacts);
+
+  if (contributors.length === 0) {
+    return { status: "no_documents" };
+  }
+
+  if (!dossierId) {
+    return {
+      status: "failed",
+      failures: contributors.map((d) => ({
+        documentId: d.id,
+        message: "Dossier introuvable — suppression impossible pour l'instant.",
+      })),
+    };
+  }
+
+  const settled = await Promise.allSettled(
+    contributors.map((d) => deleteOnServer({ documentId: d.id, dossierId })),
+  );
+
+  const failures = settled.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [
+          {
+            documentId: contributors[index].id,
+            message: result.reason instanceof Error ? result.reason.message : "Suppression échouée.",
+          },
+        ]
+      : [],
+  );
+
+  if (failures.length > 0) {
+    return { status: "failed", failures };
+  }
+
+  return { status: "purged", count: contributors.length };
+}
+
+/**
+ * Orchestrates CREATE_NEW_DECLARATION: purge every Supabase-backed document
+ * first, and only call dispatchCreateNewDeclaration() once every purge has
+ * been confirmed. On any failure, dispatchCreateNewDeclaration() is never
+ * called — the current workspace (documents, declarationDraft) is left
+ * completely untouched, so a failed purge can never look like a success and
+ * can never leave the local workspace in a state Supabase disagrees with.
+ */
+export async function runCreateNewDeclaration(params: {
+  documents: Array<{ id: string; hasSupabaseArtifacts?: boolean }>;
+  dossierId: string | null;
+  deleteOnServer: (params: {
+    documentId: string;
+    dossierId: string;
+  }) => Promise<DeleteDocumentOutcome>;
+  dispatchCreateNewDeclaration: () => void;
+  onError: (message: string | null) => void;
+}): Promise<void> {
+  const outcome = await purgeAllSupabaseDocuments({
+    documents: params.documents,
+    dossierId: params.dossierId,
+    deleteOnServer: params.deleteOnServer,
+  });
+
+  if (outcome.status === "failed") {
+    params.onError(outcome.failures[0]?.message ?? "Suppression échouée.");
+    return;
+  }
+
+  params.onError(null);
+  params.dispatchCreateNewDeclaration();
+}

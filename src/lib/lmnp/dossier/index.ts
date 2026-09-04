@@ -13,5 +13,6 @@ export { deleteDocumentOnServer, DocumentDeletionError } from "./delete-document
 export {
   resolveDocumentDeletionPlan,
   runDocumentRemoval,
+  runCreateNewDeclaration,
   type DocumentDeletionPlan,
 } from "./document-deletion-plan";

@@ -41,6 +41,7 @@ import {
   getCurrentDossierId,
   reconcileWorkspaceDocuments,
   resolveDocumentDeletionPlan,
+  runCreateNewDeclaration,
   runDocumentRemoval,
 } from "@/lib/lmnp/dossier";
 interface LmnpContextValue {
@@ -337,6 +338,28 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         },
         onError: (id, message) => {
           setDocumentDeletionError(message ? { documentId: id, message } : null);
+        },
+      });
+      return;
+    }
+
+    if (action.type === "CREATE_NEW_DECLARATION") {
+      // Purge every Supabase-backed document BEFORE replacing the workspace —
+      // never the reverse. dispatch(action) below is what actually wipes
+      // state.documents, which is what the autosave effect watches; as long
+      // as it isn't called, no IndexedDB write of the empty workspace can
+      // happen, and a failed purge leaves the current workspace untouched.
+      void runCreateNewDeclaration({
+        documents: stateRef.current.documents,
+        dossierId: getCurrentDossierId(),
+        deleteOnServer: deleteDocumentOnServer,
+        dispatchCreateNewDeclaration: () => dispatch(action),
+        onError: (message) => {
+          if (message) {
+            alert(
+              `Suppression des documents impossible : ${message}\n\nVotre déclaration actuelle n'a pas été modifiée.`,
+            );
+          }
         },
       });
       return;

@@ -29,6 +29,13 @@ export function DeclarationCompletedActions({
   }, [workspace.fiscalYear.id, router]);
 
   const startNewDeclaration = () => {
+    const confirmed = window.confirm(
+      "Vous êtes sur le point de remplacer votre déclaration et votre dossier actuels. " +
+        "Tous les documents associés seront définitivement supprimés. " +
+        "Cette action est irréversible.\n\nContinuer ?",
+    );
+    if (!confirmed) return;
+
     pendingNewRef.current = true;
     dispatch({ type: "CREATE_NEW_DECLARATION" });
   };
