@@ -919,15 +919,25 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "DECLARATION_PATCH_DRAFT": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
 
-      // P2-2 — même invariant que P2-1.1 (REMOVE_DOCUMENT), pour un déclencheur
-      // différent : la modification d'une donnée contributive déjà utilisée par
-      // une génération existante, sans suppression de document. Ces trois clés
-      // sont les seules sorties d'assistant lues telles quelles par
-      // runDeclarationGeneration() (F-011/F-013/F-014) et réellement réécrites
-      // par un chemin accessible du parcours 2026 via ce case générique — pas
-      // une invalidation sur "n'importe quel patch", seulement sur celles-ci.
+      // P2-2/P2-3 — même invariant que P2-1.1 (REMOVE_DOCUMENT), pour un
+      // déclencheur différent : la modification d'une donnée contributive déjà
+      // utilisée par une génération existante, sans suppression de document.
+      // Ces sept clés sont exactement les entrées lues telles quelles par
+      // runDeclarationGeneration() (F-009/F-010/F-011/F-013/F-014 — F-012 exclu,
+      // verrouillé en lecture seule une fois confirmé, cf. audit P2-3) et
+      // réellement réécrites par un chemin accessible du parcours 2026 via ce
+      // case générique — pas une invalidation sur "n'importe quel patch",
+      // seulement sur celles-ci.
       const contributiveKeyChanged = (
-        ["financementCharges", "revenusAssistant", "amortissementAssistant"] as const
+        [
+          "financementCharges",
+          "revenusAssistant",
+          "amortissementAssistant",
+          "logementAmortissement",
+          "siret",
+          "dateMiseEnService",
+          "activityType",
+        ] as const
       ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
 
       let fiscalYear = state.fiscalYear;

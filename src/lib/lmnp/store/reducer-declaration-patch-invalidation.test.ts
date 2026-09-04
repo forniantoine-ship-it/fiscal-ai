@@ -5,6 +5,7 @@ import type {
   AmortissementAssistantOutput,
   FinancementChargesOutput,
   FiscalYear,
+  LogementAmortissementOutput,
   Property,
   RevenusAssistantOutput,
 } from "../types";
@@ -98,6 +99,25 @@ function amortissementFixture(
     planVersion: "v1",
     profil: "PROF-001",
     validatedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function logementAmortissementFixture(
+  overrides: Partial<LogementAmortissementOutput> = {},
+): LogementAmortissementOutput {
+  return {
+    prixRevient: 200000,
+    valeurTerrain: 40000,
+    valeurBati: 160000,
+    baseAmortissableBati: 160000,
+    montantMobilier: 10000,
+    dotationAnnuelle: 4000,
+    dureeMoyenneAnnees: 25,
+    prorataRatio: 1,
+    plan: { composants: [] } as unknown as LogementAmortissementOutput["plan"],
+    fieldSources: {},
+    computedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -307,5 +327,173 @@ describe("DECLARATION_PATCH_DRAFT — invalidation de declarationGeneratedAt sur
 
     assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
     assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+});
+
+describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activité (P2-3)", () => {
+  it("#9 logementAmortissement modifié + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      {
+        completedSteps: ["logement"],
+        logementAmortissement: logementAmortissementFixture(),
+        logementConfirmedAt: "2026-01-01T00:00:00Z",
+      },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { logementAmortissement: logementAmortissementFixture({ dotationAnnuelle: 4500 }) },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+
+  it("#10 logementAmortissement — même valeur qu'avant → pas d'invalidation inutile", async () => {
+    const lmnpReducer = await loadReducer();
+    const fixture = logementAmortissementFixture();
+    const state = baseState(
+      { completedSteps: ["logement"], logementAmortissement: fixture },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { logementAmortissement: { ...fixture } },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, GENERATED_AT);
+  });
+
+  it("#11 logementAmortissement modifié, declarationGeneratedAt absent → reste absent, aucun comportement parasite", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["logement"], logementAmortissement: logementAmortissementFixture() },
+      baseFiscalYear(),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { logementAmortissement: logementAmortissementFixture({ dotationAnnuelle: 4500 }) },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, undefined);
+  });
+
+  it("#12 siret modifié + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["siren"], siret: "12345678900011", inpiConfirmedAt: "2026-01-01T00:00:00Z" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { siret: "98765432100022" },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+
+  it("#13 dateMiseEnService modifiée + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["siren"], dateMiseEnService: "2025-03-01" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dateMiseEnService: "2025-04-15" },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+
+  it("#14 activityType modifié + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["siren"], activityType: "LMNP" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { activityType: "LMP" },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+
+  it("#15 siret/dateMiseEnService/activityType — même valeur qu'avant → pas d'invalidation inutile", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      {
+        completedSteps: ["siren"],
+        siret: "12345678900011",
+        dateMiseEnService: "2025-03-01",
+        activityType: "LMNP",
+      },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { siret: "12345678900011", dateMiseEnService: "2025-03-01", activityType: "LMNP" },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, GENERATED_AT);
+  });
+
+  it("#16 siret/dateMiseEnService/activityType modifiés, declarationGeneratedAt absent → reste absent, aucun comportement parasite", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["siren"], siret: "12345678900011" },
+      baseFiscalYear(),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { siret: "98765432100022" },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, undefined);
+  });
+
+  it("#17 F-012 Charges reste hors périmètre : chargesAssistant modifié + declarationGeneratedAt posé → aucune invalidation (non couvert, comme avant P2-2/P2-3)", async () => {
+    const lmnpReducer = await loadReducer();
+    const chargesFixture = {
+      exerciceFiscal: 2026,
+      totalDeductible: 1000,
+      totalNonDeductible: 0,
+      totalAmortissable: 0,
+      totalPreExploitation: 0,
+      parCategorie: {},
+      composantsNouveaux: [],
+      fieldSources: {},
+      computedAt: "2026-01-01T00:00:00Z",
+    };
+    const state = baseState(
+      { completedSteps: ["charges"], chargesAssistant: chargesFixture, chargesConfirmedAt: "2026-01-01T00:00:00Z" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { chargesAssistant: { ...chargesFixture, totalDeductible: 2000 } },
+    });
+
+    assert.equal(
+      next.fiscalYear.declarationGeneratedAt,
+      GENERATED_AT,
+      "F-012 est verrouillé en lecture seule une fois confirmé (audit P2-2/P2-3) — volontairement hors périmètre",
+    );
   });
 });
