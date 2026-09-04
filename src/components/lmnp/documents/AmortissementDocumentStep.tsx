@@ -1022,9 +1022,17 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
       [section]: false,
     }));
 
+    // Pass the Supabase-assigned documentId so local and Supabase UUIDs match
+    // (same fix as CreditDocumentStep). Without this, reconcileWorkspaceDocuments
+    // can't match this document by id, and a server-side delete has no reliable
+    // key to find the corresponding documents/extracted_document_data rows.
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: files.map((file) => ({ file, category })),
+      files: files.map((file, index) => ({
+        file,
+        category,
+        documentId: meta?.supabaseDocumentIds?.[index],
+      })),
     });
 
     showInfo(

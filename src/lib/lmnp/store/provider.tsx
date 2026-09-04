@@ -35,9 +35,13 @@ import {
 } from "@/lib/lmnp/hydration";
 import { LmnpHydrationProvider } from "@/lib/lmnp/hydration";
 import {
+  deleteDocumentOnServer,
   ensureActiveDossier,
   fetchDocumentsForDossier,
+  getCurrentDossierId,
   reconcileWorkspaceDocuments,
+  resolveDocumentDeletionPlan,
+  runDocumentRemoval,
 } from "@/lib/lmnp/dossier";
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
@@ -49,6 +53,10 @@ interface LmnpContextValue {
   persistenceUserId: string | null;
   /** Flush pending debounced save; optional draft patch for not-yet-committed dispatches. */
   flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
+  /** Document ids currently awaiting server-side deletion confirmation (Supabase-backed documents only). */
+  pendingDocumentDeletions: Set<string>;
+  /** Last document-deletion error, if any — cleared on the next removal attempt for that document. */
+  documentDeletionError: { documentId: string; message: string } | null;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -72,6 +80,11 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const [isHydratingWorkspace, setIsHydratingWorkspace] = useState(true);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
   const [persistenceUserId, setPersistenceUserId] = useState<string | null>(null);
+  const [pendingDocumentDeletions, setPendingDocumentDeletions] = useState<Set<string>>(new Set());
+  const [documentDeletionError, setDocumentDeletionError] = useState<{
+    documentId: string;
+    message: string;
+  } | null>(null);
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -298,10 +311,38 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   );
 
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {
-    dispatch(action);
     if (action.type === "REMOVE_DOCUMENT") {
-      void removePersistedDocument(action.documentId);
+      const documentId = action.documentId;
+      const target = stateRef.current.documents.find((d) => d.id === documentId);
+      const plan = resolveDocumentDeletionPlan({
+        hasSupabaseArtifacts: target?.hasSupabaseArtifacts,
+        dossierId: getCurrentDossierId(),
+      });
+
+      void runDocumentRemoval({
+        documentId,
+        plan,
+        removeLocal: (id) => {
+          dispatch(action);
+          void removePersistedDocument(id);
+        },
+        deleteOnServer: deleteDocumentOnServer,
+        onPendingChange: (id, pending) => {
+          setPendingDocumentDeletions((current) => {
+            const next = new Set(current);
+            if (pending) next.add(id);
+            else next.delete(id);
+            return next;
+          });
+        },
+        onError: (id, message) => {
+          setDocumentDeletionError(message ? { documentId: id, message } : null);
+        },
+      });
+      return;
     }
+
+    dispatch(action);
   }, []);
 
   const value = useMemo(
@@ -313,8 +354,20 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       autosaveStatus,
       persistenceUserId,
       flushWorkspace,
+      pendingDocumentDeletions,
+      documentDeletionError,
     }),
-    [workspace, dispatchWithPersistence, getFile, isReady, autosaveStatus, persistenceUserId, flushWorkspace],
+    [
+      workspace,
+      dispatchWithPersistence,
+      getFile,
+      isReady,
+      autosaveStatus,
+      persistenceUserId,
+      flushWorkspace,
+      pendingDocumentDeletions,
+      documentDeletionError,
+    ],
   );
 
   if (!isReady) {

@@ -815,6 +815,13 @@ export interface LmnpDocument {
   storagePath?: string;
   /** True when restored from Supabase without a local IndexedDB blob. */
   remoteRestored?: boolean;
+  /**
+   * True when this document's id is a real Supabase documents.id (set at upload
+   * time from UPLOAD_DOCUMENTS' documentId) — meaning it has server-side artifacts
+   * (Storage object, extracted_document_data rows) that a local-only removal
+   * would silently leave behind. Never inferred from filename or other heuristics.
+   */
+  hasSupabaseArtifacts?: boolean;
   ocrMeta?: DocumentOcrMeta;
   /**
    * Full text corpus captured at analysis time (embedded PDF + OCR fields).

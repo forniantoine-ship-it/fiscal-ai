@@ -523,6 +523,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         documentType: "unknown",
         status: "uploaded",
         uploadedAt: now,
+        hasSupabaseArtifacts: documentId != null,
       }));
       // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
       newDocs.filter((d) => d.category === "charges").forEach((d, i) => {
