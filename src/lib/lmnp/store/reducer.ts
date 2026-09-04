@@ -576,6 +576,12 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
       const removedDocument = state.documents.find((d) => d.id === action.documentId);
       let declarationDraft = state.declarationDraft;
+      // P2-1.1 — une déclaration déjà générée ne doit jamais rester affichée comme
+      // "prête" une fois qu'un des quatre contributeurs ci-dessous a été retiré.
+      // Suit exactement les mêmes branches que l'invalidation de confirmation
+      // (P1-5.2) : aucune nouvelle détection de "document contributif", on
+      // réutilise le déclenchement déjà présent.
+      let confirmationInvalidated = false;
 
       // Cycle 15B — Test G : la suppression explicite d'un document revenus retire
       // sa contribution du calcul. Jamais déduit d'un montant/date qui se ressemble
@@ -596,6 +602,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           revenusAssistant: undefined,
           revenusConfirmedAt: undefined,
         };
+        confirmationInvalidated = true;
       }
 
       // Same principle as Revenus (Cycle 15B), coarser grain: these three
@@ -607,14 +614,29 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       // recalculated; the existing reconfirmation flow takes over.
       if (declarationDraft?.chargesDocumentIds?.includes(action.documentId)) {
         declarationDraft = { ...declarationDraft, chargesConfirmedAt: undefined };
+        confirmationInvalidated = true;
       }
 
       if (declarationDraft?.creditDocumentId === action.documentId) {
         declarationDraft = { ...declarationDraft, creditConfirmedAt: undefined };
+        confirmationInvalidated = true;
       }
 
       if (declarationDraft?.amortissementDocumentIds?.includes(action.documentId)) {
         declarationDraft = { ...declarationDraft, amortissementConfirmedAt: undefined };
+        confirmationInvalidated = true;
+      }
+
+      // P2-1.1 — la génération elle-même devient obsolète dès qu'un de ses
+      // contributeurs l'est. Le paiement (paidAt) n'est jamais remis en cause :
+      // seul declarationGeneratedAt est effacé, ce qui rouvre le chemin
+      // canRetryAfterPayment déjà prévu par resolveDeclarationGenerationGate
+      // pour régénérer sans facturer une seconde fois. Aucun changement si la
+      // déclaration n'a jamais été générée, ou si aucune des branches
+      // ci-dessus ne s'est déclenchée pour ce document.
+      let fiscalYear = state.fiscalYear;
+      if (confirmationInvalidated && fiscalYear.declarationGeneratedAt) {
+        fiscalYear = { ...fiscalYear, declarationGeneratedAt: undefined };
       }
 
       return finalizeState({
@@ -624,6 +646,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         extractions: state.extractions.filter((e) => e.documentId !== action.documentId),
         validationItems: state.validationItems.filter((v) => v.documentId !== action.documentId),
         declarationDraft,
+        fiscalYear,
       });
     }
 
