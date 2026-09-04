@@ -37,8 +37,17 @@ export function prorataPremiereAnnee(
       return { ratio: 0, dotationsAnnee1: [], anomalies };
     }
 
-    const yearStart = new Date(input.exerciceFiscal, 0, 1);
-    const yearEnd = new Date(input.exerciceFiscal, 11, 31);
+    // TRF-0011/TRF-0012 (KS) : dotations_année_1 est une valeur FIXE, calculée une
+    // seule fois pour l'année de mise en service, puis réutilisée telle quelle par
+    // TRF-0012/assemblePlan pour tous les exercices suivants (SAV-009 : le prorata
+    // n'ajuste que la première — ou dernière — année). Le ratio doit donc toujours
+    // être ancré sur l'année de dateDebutAmortissement, jamais sur exerciceFiscal
+    // (l'exercice interrogé) — sinon un dossier consulté en N+1/N+2 recalcule à tort
+    // un « prorata » sur l'exercice courant au lieu de réutiliser celui de la
+    // première année, ce qui fausse les cumuls (assemblePlan additionne d1 + da×n).
+    const anneeMiseEnService = debut.getFullYear();
+    const yearStart = new Date(anneeMiseEnService, 0, 1);
+    const yearEnd = new Date(anneeMiseEnService, 11, 31);
 
     let ratio: number;
     if (debut <= yearStart) {
@@ -51,7 +60,7 @@ export function prorataPremiereAnnee(
     } else {
       const msPerDay = 24 * 60 * 60 * 1000;
       const nombreJours = Math.floor((yearEnd.getTime() - debut.getTime()) / msPerDay) + 1;
-      ratio = nombreJours / daysInYear(input.exerciceFiscal);
+      ratio = nombreJours / daysInYear(anneeMiseEnService);
     }
     ratio = Math.round(ratio * 10000) / 10000;
 

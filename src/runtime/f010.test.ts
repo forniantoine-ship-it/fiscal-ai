@@ -218,3 +218,120 @@ describe("F-010 — estimations et suggestions (SAV / JUG)", () => {
     assert.ok(mobilier.anomalies.some((a) => a.severity === "fatal"));
   });
 });
+
+describe("F-010 — P0 : le prorata première année est ancré sur l'année de mise en service, jamais sur l'exercice interrogé", () => {
+  const NOMINAL = {
+    prixAcquisition: 280000,
+    mobilierInclus: false,
+    fraisNotaire: 19500,
+    choixTraitementFrais: "integration" as const,
+    typeBien: "appartement" as const,
+    ratioTerrain: 0.15,
+    dateMiseEnService: "2024-04-15",
+  };
+
+  it("mise en service = exercice (2024) : le prorata (< 1) est appliqué", () => {
+    const r = computeAmortizationPlan({ ...NOMINAL, exerciceFiscal: 2024 });
+    assert.equal(r.prorataRatio, 0.7104);
+    const grosOeuvre = r.plan.lignes.find((l) => l.label === "Gros œuvre")!;
+    assert.equal(grosOeuvre.dotationExercice, 1808.5);
+    assert.equal(grosOeuvre.amortissementsCumules, 1808.5);
+  });
+
+  it("régression HEAD d600d40 : N+1/N+2 sont des années pleines, le ratio de première année ne varie jamais avec l'exercice interrogé", () => {
+    const y2024 = computeAmortizationPlan({ ...NOMINAL, exerciceFiscal: 2024 });
+    const y2025 = computeAmortizationPlan({ ...NOMINAL, exerciceFiscal: 2025 });
+    const y2026 = computeAmortizationPlan({ ...NOMINAL, exerciceFiscal: 2026 });
+
+    // Avant correction, prorataRatio retombait à 1 dès que exerciceFiscal != 2024.
+    assert.equal(y2025.prorataRatio, y2024.prorataRatio);
+    assert.equal(y2026.prorataRatio, y2024.prorataRatio);
+
+    const g2025 = y2025.plan.lignes.find((l) => l.label === "Gros œuvre")!;
+    const g2026 = y2026.plan.lignes.find((l) => l.label === "Gros œuvre")!;
+
+    // Année pleine sur l'exercice courant...
+    assert.equal(g2025.dotationExercice, 2545.75);
+    assert.equal(g2026.dotationExercice, 2545.75);
+
+    // ...mais le cumul intègre le VRAI prorata 2024 (1808.5), jamais une
+    // année 2024 recalculée à tort comme pleine (le HEAD d600d40 produisait
+    // 5091.5 en 2025 et 7637.25 en 2026 — un historique réécrit).
+    assert.equal(g2025.amortissementsCumules, 4354.25);
+    assert.equal(g2026.amortissementsCumules, 6900);
+  });
+
+  it("mise en service postérieure à l'exercice interrogé : dotation et cumul nuls (comportement assemblePlan existant, non affecté)", () => {
+    const r = computeAmortizationPlan({ ...NOMINAL, exerciceFiscal: 2023 });
+    const grosOeuvre = r.plan.lignes.find((l) => l.label === "Gros œuvre")!;
+    assert.equal(grosOeuvre.dotationExercice, 0);
+    assert.equal(grosOeuvre.amortissementsCumules, 0);
+  });
+
+  it("dernière année de durée : complément exact (VNC = 0) ; exercice suivant : dotation nulle, composant terminé", () => {
+    const base = { ...NOMINAL, mobilierInclus: true, montantMobilier: 8000, mobilierMode: "lot" as const };
+    const derniereAnnee = computeAmortizationPlan({ ...base, exerciceFiscal: 2031 });
+    const apresDuree = computeAmortizationPlan({ ...base, exerciceFiscal: 2032 });
+    const mobilierDerniereAnnee = derniereAnnee.plan.lignes.find((l) => l.label === "Mobilier (lot)")!;
+    const mobilierApresDuree = apresDuree.plan.lignes.find((l) => l.label === "Mobilier (lot)")!;
+
+    assert.equal(mobilierDerniereAnnee.amortissementsCumules, 8000);
+    assert.equal(mobilierDerniereAnnee.vnc, 0);
+    assert.equal(mobilierApresDuree.dotationExercice, 0);
+    assert.equal(mobilierApresDuree.amortissementsCumules, 8000);
+  });
+
+  it("date de mise en service absente/invalide : comportement existant conservé (anomalie fatale, ratio 0)", () => {
+    const composant = { label: "X", montant: 10000, dureeAnnees: 10, dotationAnnuelle: 1000 };
+    const prorata = prorataPremiereAnnee({
+      composantsBati: [composant],
+      composantsMobilier: [],
+      dateDebutAmortissement: "invalide",
+      methodeProrata: "jours",
+      exerciceFiscal: 2024,
+    });
+    assert.equal(prorata.ratio, 0);
+    assert.deepEqual(prorata.dotationsAnnee1, []);
+    assert.ok(prorata.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("année bissextile : le ratio de première année reste cohérent et invariant quel que soit l'exercice interrogé", () => {
+    const composant = { label: "X", montant: 10000, dureeAnnees: 10, dotationAnnuelle: 1000 };
+    // 2024 est bissextile ; mise en service le 1er mars 2024.
+    const vueDepuis2024 = prorataPremiereAnnee({
+      composantsBati: [composant],
+      composantsMobilier: [],
+      dateDebutAmortissement: "2024-03-01",
+      methodeProrata: "jours",
+      exerciceFiscal: 2024,
+    });
+    const vueDepuis2026 = prorataPremiereAnnee({
+      composantsBati: [composant],
+      composantsMobilier: [],
+      dateDebutAmortissement: "2024-03-01",
+      methodeProrata: "jours",
+      exerciceFiscal: 2026,
+    });
+    assert.equal(vueDepuis2024.ratio, vueDepuis2026.ratio);
+    assert.equal(vueDepuis2024.ratio, 0.8333);
+  });
+
+  it("F-014 (composantsNouveaux) : le call site partagé bénéficie de la même correction", () => {
+    const composant = { label: "X", montant: 10000, dureeAnnees: 10, dotationAnnuelle: 1000 };
+    const y2024 = prorataPremiereAnnee({
+      composantsBati: [composant],
+      composantsMobilier: [],
+      dateDebutAmortissement: "2024-06-01",
+      methodeProrata: "mois",
+      exerciceFiscal: 2024,
+    });
+    const y2025 = prorataPremiereAnnee({
+      composantsBati: [composant],
+      composantsMobilier: [],
+      dateDebutAmortissement: "2024-06-01",
+      methodeProrata: "mois",
+      exerciceFiscal: 2025,
+    });
+    assert.equal(y2025.ratio, y2024.ratio);
+  });
+});
