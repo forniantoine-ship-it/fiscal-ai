@@ -1,11 +1,20 @@
 /** IndexedDB database for LMNP offline-first persistence. */
 
 export const LMNP_DB_NAME = "fiscal-ai-lmnp";
-export const LMNP_DB_VERSION = 1;
+/**
+ * P3-SOCLE-CYCLE-FISCAL — P0-1 — v2 ajoute les stores `dossier`/`fiscalYears`
+ * (cycle fiscal pluriannuel) sans toucher aux stores v1 existants
+ * (`meta`/`workspace`/`document-blobs`), qui restent lus tels quels tant que
+ * la migration (`dossier-db.ts`) n'a pas encore traité un utilisateur donné.
+ */
+export const LMNP_DB_VERSION = 2;
 
 export const STORE_META = "meta";
 export const STORE_WORKSPACE = "workspace";
 export const STORE_DOCUMENT_BLOBS = "document-blobs";
+export const STORE_DOSSIER = "dossier";
+export const STORE_FISCAL_YEARS = "fiscalYears";
+const INDEX_FISCAL_YEARS_DOSSIER_ID = "dossierId";
 
 const LEGACY_WORKSPACE_KEY = "active";
 const SCHEMA_META_KEY = "schema";
@@ -14,7 +23,12 @@ export function workspaceKeyForUser(userId: string): string {
   return `user:${userId}`;
 }
 
-export const LMNP_SCHEMA_VERSION = 1;
+/**
+ * P3-SOCLE-CYCLE-FISCAL — P0-1 — version applicative tenue en cohérence avec
+ * LMNP_DB_VERSION : ce numéro monte exactement quand une migration
+ * structurelle réelle a eu lieu (jamais un simple bump isolé).
+ */
+export const LMNP_SCHEMA_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -63,6 +77,21 @@ export function openLmnpDatabase(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE_DOCUMENT_BLOBS)) {
           db.createObjectStore(STORE_DOCUMENT_BLOBS, { keyPath: "documentId" });
         }
+        if (!db.objectStoreNames.contains(STORE_DOSSIER)) {
+          db.createObjectStore(STORE_DOSSIER, { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains(STORE_FISCAL_YEARS)) {
+          const fiscalYears = db.createObjectStore(STORE_FISCAL_YEARS, { keyPath: "id" });
+          fiscalYears.createIndex(INDEX_FISCAL_YEARS_DOSSIER_ID, "dossierId", { unique: false });
+        } else if (tx) {
+          // Montée de version ultérieure sans recréation de store : l'index
+          // n'existe que s'il a été créé à la création du store — vérifié
+          // explicitement plutôt que supposé.
+          const fiscalYears = tx.objectStore(STORE_FISCAL_YEARS);
+          if (!fiscalYears.indexNames.contains(INDEX_FISCAL_YEARS_DOSSIER_ID)) {
+            fiscalYears.createIndex(INDEX_FISCAL_YEARS_DOSSIER_ID, "dossierId", { unique: false });
+          }
+        }
 
         if (tx) {
           const meta = tx.objectStore(STORE_META);
@@ -95,6 +124,40 @@ function withStore<T>(
           reject(request.error ?? new Error("IndexedDB request failed"));
 
         tx.oncomplete = () => resolve(result);
+        tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+        tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+      }),
+  );
+}
+
+/**
+ * P3-SOCLE-CYCLE-FISCAL — P0-1 — transaction atomique couvrant plusieurs
+ * object stores dans UNE seule transaction IndexedDB (tout ou rien). Requis
+ * dès qu'une opération doit écrire de façon cohérente sur `dossier` ET
+ * `fiscalYears` (ex. création de N+1) — deux `idbPut()` séquentiels sur des
+ * transactions indépendantes ne garantiraient pas cette cohérence en cas
+ * d'interruption entre les deux (Mini-audit technique final §2).
+ */
+export function withStores(
+  storeNames: string[],
+  mode: IDBTransactionMode,
+  run: (stores: Record<string, IDBObjectStore>) => void,
+): Promise<void> {
+  return openLmnpDatabase().then(
+    (db) =>
+      new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(storeNames, mode);
+        const stores: Record<string, IDBObjectStore> = {};
+        for (const name of storeNames) stores[name] = tx.objectStore(name);
+
+        try {
+          run(stores);
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+
+        tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
         tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
       }),
@@ -173,3 +236,46 @@ export function deleteDocumentBlob(documentId: string): Promise<void> {
 export function getAllDocumentBlobs(): Promise<DocumentBlobRecord[]> {
   return idbGetAll<DocumentBlobRecord>(STORE_DOCUMENT_BLOBS);
 }
+
+// ---------------------------------------------------------------------------
+// P3-SOCLE-CYCLE-FISCAL — P0-1 — Dossier / FiscalYear (cycle pluriannuel).
+// ---------------------------------------------------------------------------
+
+export function getDossierRecord<T>(dossierId: string): Promise<T | undefined> {
+  return idbGet<T>(STORE_DOSSIER, dossierId);
+}
+
+export function putDossierRecord<T extends { id: string }>(record: T): Promise<void> {
+  return idbPut(STORE_DOSSIER, record).then(() => undefined);
+}
+
+export function getFiscalYearRecord<T>(fiscalYearId: string): Promise<T | undefined> {
+  return idbGet<T>(STORE_FISCAL_YEARS, fiscalYearId);
+}
+
+export function putFiscalYearRecord<T extends { id: string }>(record: T): Promise<void> {
+  return idbPut(STORE_FISCAL_YEARS, record).then(() => undefined);
+}
+
+/** Utilise l'index `dossierId` — jamais un scan complet du store. */
+export function listFiscalYearsForDossier<T>(dossierId: string): Promise<T[]> {
+  return openLmnpDatabase().then(
+    (db) =>
+      new Promise<T[]>((resolve, reject) => {
+        const tx = db.transaction(STORE_FISCAL_YEARS, "readonly");
+        const index = tx.objectStore(STORE_FISCAL_YEARS).index(INDEX_FISCAL_YEARS_DOSSIER_ID);
+        const request = index.getAll(dossierId);
+        let result: T[] = [];
+
+        request.onsuccess = () => {
+          result = request.result as T[];
+        };
+        request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed"));
+
+        tx.oncomplete = () => resolve(result);
+        tx.onerror = () => reject(tx.error ?? new Error("IndexedDB transaction failed"));
+        tx.onabort = () => reject(tx.error ?? new Error("IndexedDB transaction aborted"));
+      }),
+  );
+}
+

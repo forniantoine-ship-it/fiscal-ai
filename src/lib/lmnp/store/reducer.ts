@@ -43,6 +43,10 @@ import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/fi
 import { HIGH_CONFIDENCE_THRESHOLD } from "../validation/display";
 import { createDefaultWorkspace, type PersistedWorkspace } from "./persistence";
 import type { AiActivityEvent, AiActivityResolutionState } from "../types/ai-activity";
+import {
+  closeFiscalYear,
+  createNextDeclarationDraft,
+} from "../services/dossier/fiscal-year-cycle";
 
 export type FileRegistry = Map<string, File>;
 
@@ -119,6 +123,13 @@ export type LmnpAction =
     }
   | { type: "DECLARATION_COMPLETE_STEP"; stepId: string }
   | { type: "CREATE_NEW_DECLARATION" }
+  /**
+   * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — distinct de CREATE_NEW_DECLARATION :
+   * même dossier, nouvel exercice. `nextFiscalYear` doit être exactement
+   * celui déjà persisté par persistFiscalYearTransition() (create-next-
+   * fiscal-year.ts) — jamais recalculé dans le reducer.
+   */
+  | { type: "CREATE_NEXT_FISCAL_YEAR"; nextFiscalYear: PersistedWorkspace["fiscalYear"] }
   | {
       type: "CONFIRM_INPI_PROFILE";
       profile: {
@@ -907,14 +918,25 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         },
       });
 
-    case "JOURNEY_MARK_TRANSMITTED":
+    case "JOURNEY_MARK_TRANSMITTED": {
+      // P3-SOCLE-CYCLE-FISCAL — P0-1 — la transmission est le moment où
+      // l'exercice devient réellement "closed" dans le cycle de vie existant
+      // (déjà le cas avant ce chantier) : c'est donc le point naturel où
+      // figer une closure (stocks de continuité pour N+1), jamais une
+      // nouvelle étape UX inventée. `closeFiscalYear()` est un no-op si
+      // aucun FiscalResult n'existe encore — jamais une closure vide.
+      const now = nowIso();
+      const closedFiscalYear = closeFiscalYear(
+        touchFiscalYear(state.fiscalYear, "closed"),
+        state.declarationDraft?.fiscalResult,
+        now,
+        { sourceDeclarationVersionId: state.declarationDraft?.declaration?.currentVersionId },
+      );
       return finalizeState({
         ...state,
-        fiscalYear: {
-          ...touchFiscalYear(state.fiscalYear, "closed"),
-          transmittedAt: nowIso(),
-        },
+        fiscalYear: { ...closedFiscalYear, transmittedAt: now },
       });
+    }
 
     case "DECLARATION_PATCH_DRAFT": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
@@ -1008,10 +1030,41 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     }
 
     case "CREATE_NEW_DECLARATION": {
+      // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 : comportement historique restauré
+      // à l'identique — "déclarer un autre bien" reste un remplacement
+      // intégral et irréversible (nouveau propertyId, dossier vidé). Ne
+      // JAMAIS y réintroduire de logique de cycle fiscal N → N+1 : c'est le
+      // rôle exclusif de CREATE_NEXT_FISCAL_YEAR, ci-dessous, un chemin
+      // entièrement distinct.
       const fresh = createDefaultWorkspace();
       return finalizeState({
         ...fresh,
         fileRegistry: new Map(),
+      });
+    }
+
+    case "CREATE_NEXT_FISCAL_YEAR": {
+      // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — action dédiée, distincte de
+      // CREATE_NEW_DECLARATION : même dossier, même patrimoine, nouvel
+      // exercice. `action.nextFiscalYear` est le FiscalYear DÉJÀ construit
+      // ET persisté par persistFiscalYearTransition() (create-next-fiscal-
+      // year.ts) — jamais recalculé ici, pour ne jamais dispatcher un
+      // FiscalYear différent (id notamment) de celui réellement écrit en
+      // IndexedDB. Ce reducer ne fait que refléter le résultat en mémoire :
+      // aucune précondition n'est revérifiée ici (déjà vérifiées avant tout
+      // appel à ce dispatch — voir runCreateNextFiscalYear()).
+      return finalizeState({
+        ...state,
+        fiscalYear: action.nextFiscalYear,
+        // properties[] n'est PAS régénéré : mêmes IDs, mêmes biens (Property
+        // reste conceptuellement Dossier-level — voir fiscal-year-cycle.ts).
+        properties: state.properties,
+        documents: [],
+        extractions: [],
+        validationItems: [],
+        ledgerEntries: [],
+        aiActivityFeed: [],
+        declarationDraft: createNextDeclarationDraft(state.declarationDraft),
       });
     }
 

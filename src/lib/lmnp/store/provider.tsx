@@ -26,6 +26,7 @@ import {
   type AutosaveStatus,
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
+import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import type { DeclarationDraft } from "../types";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
@@ -58,6 +59,15 @@ interface LmnpContextValue {
   pendingDocumentDeletions: Set<string>;
   /** Last document-deletion error, if any — cleared on the next removal attempt for that document. */
   documentDeletionError: { documentId: string; message: string } | null;
+  /**
+   * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — crée l'exercice fiscal suivant du MÊME
+   * dossier (distinct de "déclarer un autre bien" / dispatch
+   * CREATE_NEW_DECLARATION). Aucun déclencheur UI n'est câblé sur cette
+   * fonction pour l'instant — exposée pour un chantier ultérieur.
+   */
+  createNextFiscalYear: () => Promise<void>;
+  /** Dernière erreur de createNextFiscalYear, le cas échéant. */
+  nextFiscalYearError: string | null;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -86,6 +96,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     documentId: string;
     message: string;
   } | null>(null);
+  // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — dernière erreur de CREATE_NEXT_FISCAL_YEAR.
+  const [nextFiscalYearError, setNextFiscalYearError] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -311,6 +323,22 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — même dossier, exercice suivant.
+  // Chemin entièrement distinct de CREATE_NEW_DECLARATION (dispatchWithPersistence
+  // ci-dessous) : aucune purge de document, préconditions vérifiées avant tout
+  // effet, dispatch uniquement après persistance atomique réussie.
+  // Aucun déclencheur UI n'existe encore pour cette fonction — exposée ici
+  // pour un câblage dans un chantier ultérieur (voir rapport).
+  const createNextFiscalYear = useCallback(async () => {
+    await runCreateNextFiscalYear({
+      dossierId: getCurrentDossierId(),
+      workspace: toPersisted(stateRef.current),
+      dispatchCreateNextFiscalYear: (nextFiscalYear) =>
+        dispatch({ type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear }),
+      onError: setNextFiscalYearError,
+    });
+  }, []);
+
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {
     if (action.type === "REMOVE_DOCUMENT") {
       const documentId = action.documentId;
@@ -349,6 +377,15 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       // state.documents, which is what the autosave effect watches; as long
       // as it isn't called, no IndexedDB write of the empty workspace can
       // happen, and a failed purge leaves the current workspace untouched.
+      //
+      // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 : cette action reste strictement
+      // "déclarer un autre bien" (nouveau dossier/parcours, remplacement
+      // intégral et irréversible — cf. le texte de confirmation affiché à
+      // l'utilisateur dans DeclarationCompletedActions.tsx). Elle ne doit
+      // JAMAIS créer un FiscalYear N+1 du dossier courant — c'est le rôle de
+      // CREATE_NEXT_FISCAL_YEAR (voir create-next-fiscal-year.ts), un flux
+      // entièrement séparé. Ne pas réintroduire ici de logique de cycle
+      // fiscal pluriannuel.
       void runCreateNewDeclaration({
         documents: stateRef.current.documents,
         dossierId: getCurrentDossierId(),
@@ -379,6 +416,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       flushWorkspace,
       pendingDocumentDeletions,
       documentDeletionError,
+      createNextFiscalYear,
+      nextFiscalYearError,
     }),
     [
       workspace,
@@ -390,6 +429,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       flushWorkspace,
       pendingDocumentDeletions,
       documentDeletionError,
+      createNextFiscalYear,
+      nextFiscalYearError,
     ],
   );
 

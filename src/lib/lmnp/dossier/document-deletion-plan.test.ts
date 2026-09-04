@@ -451,4 +451,9 @@ describe("runCreateNewDeclaration (P1-6.2)", () => {
     await removal;
     assert.equal(order[order.length - 1], "dispatch", "dispatch survient seulement après la dernière résolution serveur");
   });
+
+  // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 : runCreateNewDeclaration() ne porte plus
+  // aucune logique de cycle fiscal (persistFiscalYearTransition retiré) —
+  // cette fonction reste strictement dédiée à "déclarer un autre bien".
+  // Voir create-next-fiscal-year.test.ts pour le flux N → N+1 séparé.
 });

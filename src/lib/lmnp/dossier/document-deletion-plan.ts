@@ -137,6 +137,12 @@ export async function purgeAllSupabaseDocuments(params: {
  * called — the current workspace (documents, declarationDraft) is left
  * completely untouched, so a failed purge can never look like a success and
  * can never leave the local workspace in a state Supabase disagrees with.
+ *
+ * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 : cette fonction reste dédiée à "déclarer
+ * un autre bien" (remplacement intégral et irréversible du dossier). Elle ne
+ * doit plus jamais porter de logique de cycle fiscal pluriannuel — voir
+ * `create-next-fiscal-year.ts` pour CREATE_NEXT_FISCAL_YEAR, un flux
+ * entièrement séparé qui ne purge jamais de document.
  */
 export async function runCreateNewDeclaration(params: {
   documents: Array<{ id: string; hasSupabaseArtifacts?: boolean }>;

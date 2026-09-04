@@ -430,6 +430,13 @@ export interface Property {
   acquisitionDate?: string;
   status?: string;
   notaryDocumentId?: string;
+  /**
+   * P3-SOCLE-CYCLE-FISCAL — P0-1 — base stable F-010, extraite une fois de
+   * `LogementAmortissementOutput` pour survivre au-delà d'un seul exercice
+   * (`domain.ts`/`fiscal-year-cycle.ts`). `undefined` tant qu'aucun exercice
+   * n'a encore produit de plan d'amortissement pour ce bien.
+   */
+  amortissementBase?: import("./dossier").PropertyAmortissementBase;
 }
 
 export type JourneyStepId =
@@ -487,6 +494,27 @@ export interface FiscalYear {
   propertyIds: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * P3-SOCLE-CYCLE-FISCAL — P0-1 — identité du Dossier auquel appartient cet
+   * exercice. `undefined` pour un `FiscalYear` créé avant ce chantier, tant
+   * que la migration (`fiscal-year-cycle.ts`) ne l'a pas rattaché.
+   */
+  dossierId?: string;
+  /**
+   * Exercice immédiatement précédent du MÊME dossier — jamais présumé,
+   * toujours revérifié à la lecture (dossierId, adjacence stricte, statut
+   * clos, closure exploitable) par `resolveStocksOuverture()`. `null` pour
+   * le premier exercice connu d'un dossier (jamais fabriqué).
+   */
+  previousFiscalYearId?: string | null;
+  /**
+   * Historique append-only des clôtures de CET exercice — jamais un champ
+   * `closure` unique remplacé en place (D1 : correction autorisée mais
+   * versionnée, aucun snapshot déjà consommé par N+1 ne doit être réécrit).
+   * Toujours utiliser `latestClosure()`/`appendClosure()`
+   * (`fiscal-year-cycle.ts`), jamais une écriture directe de ce tableau.
+   */
+  closures?: import("./dossier").FiscalYearClosure[];
 }
 
 export interface CoOwner {
