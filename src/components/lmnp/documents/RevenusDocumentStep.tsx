@@ -437,7 +437,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
     if (uploadedFiles.length === 0) return;
 
     setValidatedSuccess(false);
@@ -451,7 +451,12 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: uploadedFiles.map((file) => ({ file, category: REVENUS_UPLOAD_CATEGORY })),
+      files: uploadedFiles.map((file, index) => ({
+        file,
+        category: REVENUS_UPLOAD_CATEGORY,
+        documentId: documentIds[index],
+        isSupabaseDocumentId: true,
+      })),
     });
 
     logRevenueRuntimeStage("upload", {

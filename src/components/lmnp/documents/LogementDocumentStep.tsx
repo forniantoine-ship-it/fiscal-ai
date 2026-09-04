@@ -1032,7 +1032,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
 
     if (uploadedFiles.length === 0) {
       console.error("[LogementDocumentStep] upload failed: no files stored in Supabase");
@@ -1046,7 +1046,12 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     if (multiProperty) {
       dispatch({
         type: "UPLOAD_DOCUMENTS",
-        files: uploadedFiles.map((file) => ({ file, category: LOGEMENT_UPLOAD_CATEGORY })),
+        files: uploadedFiles.map((file, index) => ({
+          file,
+          category: LOGEMENT_UPLOAD_CATEGORY,
+          documentId: documentIds[index],
+          isSupabaseDocumentId: true,
+        })),
       });
       showInfo(
         "Plusieurs biens détectés",
@@ -1062,7 +1067,12 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: uploadedFiles.map((file) => ({ file, category: LOGEMENT_UPLOAD_CATEGORY })),
+      files: uploadedFiles.map((file, index) => ({
+        file,
+        category: LOGEMENT_UPLOAD_CATEGORY,
+        documentId: documentIds[index],
+        isSupabaseDocumentId: true,
+      })),
     });
 
     setValidatedSuccess(false);

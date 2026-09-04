@@ -1594,6 +1594,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         file,
         category: CREDIT_UPLOAD_CATEGORY,
         documentId: documentIds[i],
+        isSupabaseDocumentId: true,
       })),
     });
 

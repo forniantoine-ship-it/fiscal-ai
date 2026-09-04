@@ -56,7 +56,19 @@ export type LmnpAction =
   | { type: "REGISTER_FILE"; documentId: string; file: File }
   | {
       type: "UPLOAD_DOCUMENTS";
-      files: { file: File; category: DocumentCategory; documentId?: string }[];
+      files: {
+        file: File;
+        category: DocumentCategory;
+        documentId?: string;
+        /**
+         * True only when `documentId` is the real Supabase documents.id just
+         * returned by uploadFilesForUser() — never inferred from `documentId`
+         * being non-null, since a producer may legitimately pass a locally
+         * generated id it needs synchronously (REGISTER_FILE, assistant state)
+         * with no Supabase artifact behind it at all.
+         */
+        isSupabaseDocumentId?: boolean;
+      }[];
     }
   | { type: "REMOVE_DOCUMENT"; documentId: string }
   | { type: "DOCUMENT_SET_STATUS"; documentId: string; status: LmnpDocument["status"] }
@@ -512,19 +524,21 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "UPLOAD_DOCUMENTS": {
       const now = nowIso();
-      const newDocs: LmnpDocument[] = action.files.map(({ file, category, documentId }) => ({
-        id: documentId ?? crypto.randomUUID(),
-        fiscalYearId: state.fiscalYear.id,
-        propertyId: state.fiscalYear.propertyIds[0],
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        category,
-        documentType: "unknown",
-        status: "uploaded",
-        uploadedAt: now,
-        hasSupabaseArtifacts: documentId != null,
-      }));
+      const newDocs: LmnpDocument[] = action.files.map(
+        ({ file, category, documentId, isSupabaseDocumentId }) => ({
+          id: documentId ?? crypto.randomUUID(),
+          fiscalYearId: state.fiscalYear.id,
+          propertyId: state.fiscalYear.propertyIds[0],
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          category,
+          documentType: "unknown",
+          status: "uploaded",
+          uploadedAt: now,
+          hasSupabaseArtifacts: Boolean(isSupabaseDocumentId),
+        }),
+      );
       // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
       newDocs.filter((d) => d.category === "charges").forEach((d, i) => {
         const supabaseDocumentId = action.files[i].documentId;

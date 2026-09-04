@@ -495,14 +495,17 @@ export function F011FinancementAssistantPanel() {
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { files: uploadedFiles } = await uploadFilesForUser([file], user.id);
+        const { files: uploadedFiles, documentIds } = await uploadFilesForUser([file], user.id);
         const uploadedFile = uploadedFiles[0];
         if (!uploadedFile) return;
 
-        const documentId = crypto.randomUUID();
+        // The real Supabase documents.id — already available here, used as-is
+        // rather than a locally generated one, so a server-side deletion can
+        // later find the exact row it needs to purge.
+        const documentId = documentIds[0];
         dispatch({
           type: "UPLOAD_DOCUMENTS",
-          files: [{ file: uploadedFile, category: "emprunt", documentId }],
+          files: [{ file: uploadedFile, category: "emprunt", documentId, isSupabaseDocumentId: true }],
         });
         dispatch({ type: "REGISTER_FILE", documentId, file: uploadedFile });
 

@@ -1032,6 +1032,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         file,
         category,
         documentId: meta?.supabaseDocumentIds?.[index],
+        isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
       })),
     });
 

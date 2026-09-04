@@ -202,6 +202,9 @@ export function reconcileWorkspaceDocuments(params: {
       uploadedAt: row.created_at,
       storagePath: row.file_path,
       remoteRestored,
+      // Rebuilt directly from a confirmed Supabase documents row — Supabase
+      // origin is certain here regardless of what the original producer did.
+      hasSupabaseArtifacts: true,
     };
 
     mergedById.set(row.id, document);

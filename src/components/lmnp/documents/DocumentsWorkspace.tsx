@@ -310,11 +310,16 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
     return () => window.clearTimeout(timer);
   }, [uploadedIds.join(","), hasProcessing, isAnalyzing, runAnalysisForIds, uploadedIds]);
 
-  function handleUpload(files: File[]) {
+  function handleUpload(files: File[], meta?: { supabaseDocumentIds: string[] }) {
     if (!files.length) return;
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: files.map((file) => ({ file, category: step.category as DocumentCategory })),
+      files: files.map((file, index) => ({
+        file,
+        category: step.category as DocumentCategory,
+        documentId: meta?.supabaseDocumentIds?.[index],
+        isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
+      })),
     });
     showInfo(
       `${files.length} fichier${files.length > 1 ? "s" : ""} reçu${files.length > 1 ? "s" : ""}`,

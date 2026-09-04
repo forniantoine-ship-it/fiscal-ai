@@ -3,7 +3,7 @@
 import { UploadZone } from "@/design-system/components/UploadZone";
 
 interface DocumentUploadZoneProps {
-  onFiles: (files: File[]) => void;
+  onFiles: (files: File[], meta?: { supabaseDocumentIds: string[] }) => void;
   hint?: string;
 }
 

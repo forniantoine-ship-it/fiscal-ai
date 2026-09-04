@@ -686,6 +686,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       files: uploadedFiles.map((file, index) => ({
         file,
         documentId: documentIds[index],
+        isSupabaseDocumentId: true,
         category: CHARGES_UPLOAD_CATEGORY,
       })),
     });

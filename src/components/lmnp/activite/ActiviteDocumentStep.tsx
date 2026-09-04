@@ -480,7 +480,7 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
 
     if (uploadedFiles.length === 0) {
       console.error("[ActiviteDocumentStep] upload failed: no files stored in Supabase");
@@ -511,7 +511,12 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
 
     dispatch({
       type: "UPLOAD_DOCUMENTS",
-      files: uploadedFiles.map((file) => ({ file, category: "autre" })),
+      files: uploadedFiles.map((file, index) => ({
+        file,
+        category: "autre",
+        documentId: documentIds[index],
+        isSupabaseDocumentId: true,
+      })),
     });
 
     showInfo(
