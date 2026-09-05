@@ -137,11 +137,18 @@ function withStore<T>(
  * `fiscalYears` (ex. création de N+1) — deux `idbPut()` séquentiels sur des
  * transactions indépendantes ne garantiraient pas cette cohérence en cas
  * d'interruption entre les deux (Mini-audit technique final §2).
+ *
+ * `run` reçoit aussi la transaction brute (`tx`) — nécessaire pour chaîner un
+ * `get()` puis un `put()` conditionnel DANS la même transaction (relecture
+ * anti-concurrence, P0 FINAL GATE — clôture N → N+1) et pour appeler
+ * `tx.abort()` explicitement si cette relecture révèle qu'une autre
+ * transaction a déjà écrit un état plus avancé. Paramètre optionnel côté
+ * appelant : les usages existants qui n'en ont pas besoin restent inchangés.
  */
 export function withStores(
   storeNames: string[],
   mode: IDBTransactionMode,
-  run: (stores: Record<string, IDBObjectStore>) => void,
+  run: (stores: Record<string, IDBObjectStore>, tx: IDBTransaction) => void,
 ): Promise<void> {
   return openLmnpDatabase().then(
     (db) =>
@@ -151,7 +158,7 @@ export function withStores(
         for (const name of storeNames) stores[name] = tx.objectStore(name);
 
         try {
-          run(stores);
+          run(stores, tx);
         } catch (error) {
           reject(error instanceof Error ? error : new Error(String(error)));
           return;

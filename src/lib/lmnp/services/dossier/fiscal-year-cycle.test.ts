@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   appendClosure,
   buildFiscalYearClosure,
+  canCloseFiscalYear,
   canCreateNextFiscalYear,
   createNextDeclarationDraft,
   createNextFiscalYear,
@@ -21,9 +22,10 @@ import {
   latestClosure,
   resolveStocksOuverture,
 } from "./fiscal-year-cycle";
-import type { DeclarationDraft, FiscalYear } from "../../types/domain";
+import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
 import type { PersistedWorkspace } from "../../store/persistence";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
+import { runDeclarationGeneration } from "../declaration/run-declaration-generation";
 
 const NOW = "2026-09-04T00:00:00.000Z";
 
@@ -429,5 +431,235 @@ describe("canCreateNextFiscalYear — préconditions 3/4", () => {
       ],
     });
     assert.equal(result.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Design Gate "Clôture N → N+1", Décision 1 — précondition du geste
+// utilisateur unique "Clôturer et continuer".
+// ---------------------------------------------------------------------------
+describe("canCloseFiscalYear — précondition du geste de clôture", () => {
+  it("refuse si status !== ready_to_close", () => {
+    const result = canCloseFiscalYear({
+      fiscalYear: baseFiscalYear({ status: "pending_validation", declarationGeneratedAt: NOW }),
+      declarationDraft: undefined,
+      properties: [],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("refuse si declarationGeneratedAt est absent, même si status === ready_to_close", () => {
+    const result = canCloseFiscalYear({
+      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: undefined }),
+      declarationDraft: undefined,
+      properties: [],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("autorise quand status === ready_to_close ET declarationGeneratedAt existe (dossier minimal, aucune dérive détectable)", () => {
+    const result = canCloseFiscalYear({
+      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW }),
+      declarationDraft: undefined,
+      properties: [],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it("ne dépend jamais de transmittedAt — la clôture reste indépendante de l'EDI", () => {
+    const withoutTransmission = canCloseFiscalYear({
+      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW, transmittedAt: undefined }),
+      declarationDraft: undefined,
+      properties: [],
+    });
+    assert.equal(withoutTransmission.ok, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0-1 (audit "Idempotence + Generation Gate", constats B1/B2) — la clôture
+// ne doit jamais reposer sur declarationGeneratedAt seul : elle doit refléter
+// la MÊME dérive que resolveDeclarationGenerationGate() (aucune seconde liste
+// de champs, aucun fingerprint parallèle — réutilisation directe du gate).
+// ---------------------------------------------------------------------------
+describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
+  const PROPERTY: Property = {
+    id: "prop-1",
+    label: "Studio Lyon",
+    address: "1 rue Test",
+    city: "Lyon",
+    postalCode: "69001",
+  };
+
+  function completeFlags(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
+    return {
+      completedSteps: [],
+      inpiConfirmedAt: NOW,
+      logementConfirmedAt: NOW,
+      creditDeclaredNoneAt: NOW,
+      revenusConfirmedAt: NOW,
+      chargesConfirmedAt: NOW,
+      amortissementConfirmedAt: NOW,
+      ...overrides,
+    } as DeclarationDraft;
+  }
+
+  function generationReadyDraft(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
+    return completeFlags({
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      exploitantEmail: "marie.dupont@example.com",
+      exploitantTelephone: "0601020304",
+      personalAddress: "10 rue des Lilas",
+      personalCity: "Lyon",
+      personalPostalCode: "69001",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+      ...overrides,
+    } as DeclarationDraft);
+  }
+
+  function readyFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
+    return baseFiscalYear({
+      status: "ready_to_close",
+      declarationGeneratedAt: NOW,
+      ...overrides,
+    });
+  }
+
+  // Reproduit exactement ce que ValidationDocumentStep.tsx écrit sur le
+  // draft après une génération (fiscalResult = miroir de la dernière
+  // génération) — même helper que run-declaration-generation.test.ts.
+  function apresGeneration(draft: DeclarationDraft): DeclarationDraft {
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated", "le fixture doit produire une génération réelle, pas un blocage");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+  }
+
+  it("R1 — génération valide → canCloseFiscalYear === true", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: draft,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it("R2 — replay identique (aucun changement fiscal/identité) → canCloseFiscalYear === true", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    // Deuxième évaluation, mêmes données strictement — simule un rendu
+    // ultérieur sans aucune modification utilisateur entre-temps.
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: { ...draft },
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, true);
+  });
+
+  it("R3a — nom/prénom modifiés après génération → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = { ...draft, exploitantLastName: "Martin" } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.ok === false && result.reason.length > 0);
+  });
+
+  it("R3a — SIREN modifié après génération → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = { ...draft, siren: "987654321" } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("R3a — adresse personnelle modifiée après génération → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = { ...draft, personalAddress: "22 avenue Neuve" } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("R3a — email/téléphone modifiés après génération → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = {
+      ...draft,
+      exploitantEmail: "nouvelle.adresse@example.com",
+      exploitantTelephone: "0611223344",
+    } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("R3b — financement ajouté après génération (dérive fiscale) → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = {
+      ...draft,
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000 + 1200, totalPreExploitation: 0 },
+    } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("R3b — amortissement modifié après génération (dérive fiscale) → canCloseFiscalYear === false", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = {
+      ...draft,
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3000, status: "validated" as const },
+    } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("R4 — après correction détectée, une nouvelle génération valide redonne canCloseFiscalYear === true", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = { ...draft, exploitantLastName: "Martin" } as DeclarationDraft;
+
+    const bloque = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(bloque.ok, false, "la clôture doit être bloquée avant régénération");
+
+    // Régénération réelle (même chemin que ValidationDocumentStep.tsx) sur
+    // le draft corrigé — le nouveau fiscalResult/rfs reflète "Martin".
+    const regenere = apresGeneration(corrige);
+
+    const debloque = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: regenere,
+      properties: [PROPERTY],
+    });
+    assert.equal(debloque.ok, true, "après régénération, plus aucune dérive détectée");
   });
 });

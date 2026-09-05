@@ -130,6 +130,17 @@ export type LmnpAction =
    * fiscal-year.ts) — jamais recalculé dans le reducer.
    */
   | { type: "CREATE_NEXT_FISCAL_YEAR"; nextFiscalYear: PersistedWorkspace["fiscalYear"] }
+  /**
+   * Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
+   * "Clôturer et continuer" : clôture explicite de N + transition vers N+1
+   * en une seule action. `nextWorkspace` doit être exactement celui déjà
+   * construit ET persisté par persistFiscalYearClosureAndTransition()
+   * (close-and-create-next-fiscal-year.ts) — jamais recalculé ici, pour ne
+   * jamais dispatcher un état différent de celui réellement écrit en
+   * IndexedDB. Distincte de JOURNEY_MARK_TRANSMITTED (EDI, inchangée) et de
+   * CREATE_NEXT_FISCAL_YEAR (reste utilisable indépendamment).
+   */
+  | { type: "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT"; nextWorkspace: PersistedWorkspace }
   | {
       type: "CONFIRM_INPI_PROFILE";
       profile: {
@@ -1065,6 +1076,29 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         ledgerEntries: [],
         aiActivityFeed: [],
         declarationDraft: createNextDeclarationDraft(state.declarationDraft),
+      });
+    }
+
+    case "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT": {
+      // Design Gate "Clôture N → N+1", Décision 1 — action dédiée, distincte
+      // de CREATE_NEXT_FISCAL_YEAR et de JOURNEY_MARK_TRANSMITTED :
+      // `action.nextWorkspace` est le PersistedWorkspace DÉJÀ construit ET
+      // persisté par persistFiscalYearClosureAndTransition()
+      // (close-and-create-next-fiscal-year.ts) — jamais recalculé ici, même
+      // principe que CREATE_NEXT_FISCAL_YEAR ci-dessus. Ce reducer ne fait
+      // que refléter le résultat en mémoire : aucune précondition n'est
+      // revérifiée ici (déjà vérifiées avant tout appel à ce dispatch — voir
+      // runCloseAndCreateNextFiscalYear()).
+      return finalizeState({
+        ...state,
+        fiscalYear: action.nextWorkspace.fiscalYear,
+        properties: action.nextWorkspace.properties,
+        documents: action.nextWorkspace.documents,
+        extractions: action.nextWorkspace.extractions,
+        validationItems: action.nextWorkspace.validationItems,
+        ledgerEntries: action.nextWorkspace.ledgerEntries,
+        aiActivityFeed: action.nextWorkspace.aiActivityFeed ?? [],
+        declarationDraft: action.nextWorkspace.declarationDraft,
       });
     }
 

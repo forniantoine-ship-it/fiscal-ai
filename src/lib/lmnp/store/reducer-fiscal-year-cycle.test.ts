@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 
 import { lmnpReducer, type LmnpState } from "./reducer";
 import type { FiscalEngineOutput, FiscalYear, Property } from "../types";
+import type { PersistedWorkspace } from "./persistence";
 
 function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
   return {
@@ -178,6 +179,100 @@ describe("CREATE_NEXT_FISCAL_YEAR — même dossier, exercice suivant (P0-1 v2)"
     };
     lmnpReducer(closed, { type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear });
     assert.equal(JSON.stringify(closed.fiscalYear), snapshotBefore, "N n'est jamais muté par la création de N+1");
+  });
+});
+
+describe("CLOSE_FISCAL_YEAR_AND_CREATE_NEXT — geste unique « Clôturer et continuer » (Design Gate, Décision 1)", () => {
+  it("applique exactement le PersistedWorkspace fourni, N n'est référencé nulle part dans l'état résultant", () => {
+    const state = baseState({
+      fiscalYear: baseFiscalYear({
+        dossierId: "dossier-1",
+        status: "ready_to_close",
+        declarationGeneratedAt: "2026-09-01T00:00:00.000Z",
+      }),
+      declarationDraft: { completedSteps: [], siren: "123456789", fiscalResult: fiscalResult() },
+    });
+
+    // Simule ce que persistFiscalYearClosureAndTransition() aurait construit et
+    // déjà persisté — le reducer ne doit JAMAIS recalculer ce workspace.
+    const nextWorkspace: PersistedWorkspace = {
+      fiscalYear: {
+        id: "fy-2",
+        year: state.fiscalYear.year + 1,
+        status: "draft",
+        regime: "reel",
+        propertyIds: state.fiscalYear.propertyIds,
+        dossierId: "dossier-1",
+        previousFiscalYearId: state.fiscalYear.id,
+        closures: [],
+        createdAt: "2026-09-04T00:00:00.000Z",
+        updatedAt: "2026-09-04T00:00:00.000Z",
+      },
+      properties: state.properties,
+      documents: [],
+      extractions: [],
+      validationItems: [],
+      ledgerEntries: [],
+      declarationDraft: { completedSteps: [], siren: "123456789" },
+      aiActivityFeed: [],
+    };
+
+    const next = lmnpReducer(state, { type: "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT", nextWorkspace });
+
+    // Exercice N absent du workspace actif après l'action (et donc après un
+    // reload, puisque c'est ce même état qui est autosauvegardé).
+    assert.notEqual(next.fiscalYear.id, state.fiscalYear.id);
+    assert.equal(next.fiscalYear.id, "fy-2");
+    assert.equal(next.fiscalYear.previousFiscalYearId, state.fiscalYear.id);
+    assert.equal(next.fiscalYear.dossierId, "dossier-1");
+    assert.equal(next.fiscalYear.status, "draft");
+
+    // transmittedAt jamais posé par ce chemin (indépendance EDI).
+    assert.equal(next.fiscalYear.transmittedAt, undefined);
+
+    // Données exercice-scoped reparties vides, identité reportée.
+    assert.deepEqual(next.documents, []);
+    assert.deepEqual(next.extractions, []);
+    assert.deepEqual(next.validationItems, []);
+    assert.deepEqual(next.ledgerEntries, []);
+    assert.deepEqual(next.aiActivityFeed ?? [], []);
+    assert.equal(next.declarationDraft?.fiscalResult, undefined);
+    assert.equal(next.declarationDraft?.siren, "123456789");
+
+    // properties[] conservé tel quel (Property reste Dossier-level).
+    assert.equal(next.properties.length, 1);
+    assert.equal(next.properties[0].id, "prop-1");
+  });
+
+  it("N reste intégralement conservé en mémoire jusqu'au dispatch — le reducer ne mute jamais N", () => {
+    const state = baseState({
+      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: "2026-09-01T00:00:00.000Z" }),
+    });
+    const snapshotBefore = JSON.stringify(state.fiscalYear);
+
+    const nextWorkspace: PersistedWorkspace = {
+      fiscalYear: {
+        id: "fy-2",
+        year: state.fiscalYear.year + 1,
+        status: "draft",
+        regime: "reel",
+        propertyIds: state.fiscalYear.propertyIds,
+        previousFiscalYearId: state.fiscalYear.id,
+        closures: [],
+        createdAt: "2026-09-04T00:00:00.000Z",
+        updatedAt: "2026-09-04T00:00:00.000Z",
+      },
+      properties: state.properties,
+      documents: [],
+      extractions: [],
+      validationItems: [],
+      ledgerEntries: [],
+      declarationDraft: { completedSteps: [] },
+      aiActivityFeed: [],
+    };
+
+    lmnpReducer(state, { type: "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT", nextWorkspace });
+    assert.equal(JSON.stringify(state.fiscalYear), snapshotBefore, "N n'est jamais muté par cette action");
   });
 });
 

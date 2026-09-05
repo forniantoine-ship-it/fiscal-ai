@@ -27,6 +27,7 @@ import {
 } from "./persistence";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
+import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
 import type { DeclarationDraft } from "../types";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
@@ -68,6 +69,14 @@ interface LmnpContextValue {
   createNextFiscalYear: () => Promise<void>;
   /** Dernière erreur de createNextFiscalYear, le cas échéant. */
   nextFiscalYearError: string | null;
+  /**
+   * Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
+   * "Clôturer et continuer" : clôture explicite de N + transition atomique
+   * vers N+1. Câblée depuis DeclarationReadyView.tsx.
+   */
+  closeFiscalYearAndCreateNext: () => Promise<void>;
+  /** Dernière erreur de closeFiscalYearAndCreateNext, le cas échéant. */
+  closeFiscalYearError: string | null;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -98,6 +107,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   } | null>(null);
   // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — dernière erreur de CREATE_NEXT_FISCAL_YEAR.
   const [nextFiscalYearError, setNextFiscalYearError] = useState<string | null>(null);
+  // Design Gate "Clôture N → N+1" — dernière erreur de closeFiscalYearAndCreateNext.
+  const [closeFiscalYearError, setCloseFiscalYearError] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -339,6 +350,22 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
+  // "Clôturer et continuer", câblé depuis DeclarationReadyView.tsx. userId
+  // transmis explicitement (authUserIdRef.current) : requis pour flusher le
+  // debounce en attente (Couche 1, P0 FINAL GATE) ET pour écrire le workspace
+  // de N+1 dans la même transaction atomique.
+  const closeFiscalYearAndCreateNext = useCallback(async () => {
+    await runCloseAndCreateNextFiscalYear({
+      dossierId: getCurrentDossierId(),
+      userId: authUserIdRef.current,
+      workspace: toPersisted(stateRef.current),
+      dispatchCloseAndCreateNext: (nextWorkspace) =>
+        dispatch({ type: "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT", nextWorkspace }),
+      onError: setCloseFiscalYearError,
+    });
+  }, []);
+
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {
     if (action.type === "REMOVE_DOCUMENT") {
       const documentId = action.documentId;
@@ -418,6 +445,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       documentDeletionError,
       createNextFiscalYear,
       nextFiscalYearError,
+      closeFiscalYearAndCreateNext,
+      closeFiscalYearError,
     }),
     [
       workspace,
@@ -431,6 +460,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       documentDeletionError,
       createNextFiscalYear,
       nextFiscalYearError,
+      closeFiscalYearAndCreateNext,
+      closeFiscalYearError,
     ],
   );
 

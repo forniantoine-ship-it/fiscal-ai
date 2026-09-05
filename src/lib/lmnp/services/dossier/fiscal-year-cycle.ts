@@ -26,6 +26,7 @@ import type {
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
+import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
 
 /** Champs d'identité — Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) — jamais remis à zéro au passage N → N+1. */
 const IDENTITY_FIELDS = [
@@ -165,6 +166,64 @@ export function canCreateNextFiscalYear(fiscalYear: FiscalYear): CreateNextFisca
   if (!latestClosure(fiscalYear)) {
     return { ok: false, reason: "Aucune clôture n'existe pour l'exercice courant — impossible de créer l'exercice suivant." };
   }
+  return { ok: true };
+}
+
+/**
+ * Précondition du geste de clôture explicite "Clôturer et continuer" (Design
+ * Gate — Décision 1). Distincte de `canCreateNextFiscalYear()` (qui vérifie
+ * que N est déjà clos) : celle-ci vérifie que N est prêt à ÊTRE clos. Ne
+ * vérifie jamais `transmittedAt` — la clôture reste indépendante de la
+ * télétransmission EDI (JOURNEY_MARK_TRANSMITTED, chemin séparé).
+ *
+ * P0-1 (audit "Idempotence + Generation Gate", constats B1/B2) —
+ * `declarationGeneratedAt` renseigné est nécessaire mais jamais suffisant :
+ * ce flag ne redevient jamais `undefined` pour une correction d'identité
+ * (nom, adresse, email, téléphone, SIREN, `activityStartDate`) — seuls
+ * `financementCharges`/`revenusAssistant`/`amortissementAssistant`/
+ * `logementAmortissement`/`siret`/`dateMiseEnService`/`activityType`
+ * l'invalident (reducer.ts, `DECLARATION_PATCH_DRAFT`). La SEULE vérité déjà
+ * fiable pour "la génération correspond-elle encore aux données actuelles ?"
+ * est `resolveDeclarationGenerationGate()` (declaration-generation-gate.ts) —
+ * elle recalcule un aperçu frais et compare aussi bien la dérive fiscale
+ * (totalRecettes/totalCharges/amortDeduct/amortReporte) que l'identité
+ * complète (`identiteChanged()`, elle-même fondée sur
+ * `identiteFromDeclarationDraft()`, la même fonction que la génération
+ * réelle). Réutilisée ici telle quelle — aucune seconde liste de champs,
+ * aucun fingerprint parallèle : `gate.canGenerate === true` après une
+ * génération signifie exactement "une régénération est nécessaire", donc la
+ * clôture doit être refusée dans ce cas précis.
+ */
+export function canCloseFiscalYear(input: {
+  fiscalYear: FiscalYear;
+  declarationDraft: DeclarationDraft | undefined;
+  properties: Property[];
+}): CreateNextFiscalYearPrecondition {
+  const { fiscalYear, declarationDraft, properties } = input;
+
+  if (fiscalYear.status !== "ready_to_close") {
+    return { ok: false, reason: "L'exercice n'est pas prêt à être clôturé." };
+  }
+  if (!fiscalYear.declarationGeneratedAt) {
+    return { ok: false, reason: "La déclaration n'a pas encore été générée pour cet exercice." };
+  }
+
+  const gate = resolveDeclarationGenerationGate({
+    draft: declarationDraft,
+    properties,
+    fiscalYear: fiscalYear.year,
+    paid: Boolean(fiscalYear.paidAt),
+    generated: true,
+  });
+
+  if (gate.canGenerate) {
+    return {
+      ok: false,
+      reason:
+        "Le dossier a changé depuis la dernière génération de votre déclaration — régénérez-la avant de clôturer l'exercice.",
+    };
+  }
+
   return { ok: true };
 }
 

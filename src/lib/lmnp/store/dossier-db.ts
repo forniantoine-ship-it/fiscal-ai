@@ -18,8 +18,11 @@ import {
   getDossierRecord,
   getFiscalYearRecord,
   withStores,
+  workspaceKeyForUser,
   STORE_DOSSIER,
   STORE_FISCAL_YEARS,
+  STORE_WORKSPACE,
+  type WorkspaceRecord,
 } from "./db";
 import type { PersistedWorkspace } from "./persistence";
 import type {
@@ -32,6 +35,8 @@ import type {
 } from "../types/domain";
 import type { Dossier } from "../types/dossier";
 import {
+  closeFiscalYear,
+  createNextDeclarationDraft,
   createNextFiscalYear,
   extractDossierLevelDataFromWorkspace,
   extractIdentity,
@@ -165,4 +170,176 @@ export async function persistFiscalYearTransition(params: {
  */
 export function loadArchivedFiscalYear(fiscalYearId: string): Promise<FiscalYearRecord | undefined> {
   return getFiscalYearRecord<FiscalYearRecord>(fiscalYearId);
+}
+
+/**
+ * Levée quand la relecture anti-concurrence (DANS la transaction) révèle que
+ * l'exercice courant a déjà été clôturé par une autre transaction (autre
+ * onglet, ou double clic ayant échappé à `transitionInFlight`) — jamais une
+ * erreur générique dans ce cas précis, pour que l'appelant puisse afficher un
+ * message explicite plutôt qu'un échec IndexedDB opaque.
+ */
+export class FiscalYearAlreadyClosedError extends Error {
+  constructor(fiscalYearId: string) {
+    super(
+      `L'exercice ${fiscalYearId} a déjà été clôturé — probablement depuis un autre onglet. Votre dossier va être mis à jour.`,
+    );
+    this.name = "FiscalYearAlreadyClosedError";
+  }
+}
+
+export type PersistFiscalYearClosureAndTransitionResult = {
+  dossier: Dossier;
+  closedFiscalYear: FiscalYearRecord;
+  /** FiscalYear "identité" de N+1 — c'est CE qui doit être dispatché en mémoire, jamais recalculé. */
+  nextFiscalYear: FiscalYear;
+  /**
+   * Workspace complet de N+1, EXACTEMENT ce qui vient d'être écrit dans
+   * `STORE_WORKSPACE` — le reducer ne fait que l'appliquer tel quel (même
+   * principe que `nextFiscalYear` pour `persistFiscalYearTransition`).
+   */
+  nextWorkspace: PersistedWorkspace;
+};
+
+/**
+ * P3-SOCLE-CYCLE-FISCAL — Décision 1 (Design Gate clôture) — persiste
+ * atomiquement le geste unique "Clôturer et continuer" :
+ *  - clôture explicite de N (`closeFiscalYear()`, jamais `transmittedAt`) ;
+ *  - archive de N (`fiscalYears/{N}`), étendue de ses documents/extractions/
+ *    validationItems/ledgerEntries/declarationDraft — jamais supprimés ;
+ *  - création de N+1 (`fiscalYears/{N+1}`, coquille technique vide — voir
+ *    Design Gate §5, ce n'est pas un enregistrement actif consultable) ;
+ *  - bascule du workspace actif vers N+1 (`STORE_WORKSPACE`).
+ *
+ * UNE SEULE transaction IndexedDB (`withStores`) couvrant `dossier` +
+ * `fiscalYears` + `workspace` — P0 FINAL GATE (workspace debounce) : sans
+ * cela, l'autosave débouncée existante pourrait réécrire l'ancien N sur
+ * `workspace` après le commit de cette transition (voir §5 du P0 FINAL GATE).
+ *
+ * Relecture anti-concurrence DANS la transaction (P0 FINAL GATE §5/§6) :
+ * avant tout `put()`, relit `fiscalYears/{N}` depuis le store lui-même (pas
+ * depuis `params.workspace`, potentiellement stale côté appelant) — si un
+ * autre onglet a déjà clôturé ce même exercice, la transaction est annulée
+ * (`tx.abort()`) SANS AUCUNE écriture partielle, et `FiscalYearAlreadyClosedError`
+ * est levée. `transitionInFlight` (orchestration) ne protège que le même
+ * onglet — cette relecture est la seule protection multi-onglet réelle,
+ * puisqu'elle s'appuie sur IndexedDB, partagé entre onglets.
+ */
+export async function persistFiscalYearClosureAndTransition(params: {
+  dossierId: string;
+  userId: string;
+  workspace: PersistedWorkspace;
+  now: string;
+}): Promise<PersistFiscalYearClosureAndTransitionResult> {
+  const { dossierId, userId, workspace, now } = params;
+
+  const fiscalResult = workspace.declarationDraft?.fiscalResult;
+  if (!fiscalResult) {
+    // closeFiscalYear() n'ajoute une closure QUE si fiscalResult existe — elle
+    // ne pose jamais status:"closed" elle-même (c'est la responsabilité de
+    // l'appelant, exactement comme le fait déjà touchFiscalYear(fy, "closed")
+    // dans le reducer pour JOURNEY_MARK_TRANSMITTED, reducer.ts). L'appelant
+    // doit avoir déjà vérifié canCloseFiscalYear() avant d'invoquer cette
+    // fonction ; ce refus explicite est un filet de sécurité, jamais une
+    // précondition supplémentaire inventée ici — on ne clôture jamais "sans
+    // rien à figer".
+    throw new Error(
+      "Impossible de clôturer cet exercice : aucun résultat fiscal disponible pour figer une clôture.",
+    );
+  }
+
+  const closedFiscalYearIdentity = closeFiscalYear(
+    { ...workspace.fiscalYear, status: "closed", updatedAt: now },
+    fiscalResult,
+    now,
+    { sourceDeclarationVersionId: workspace.declarationDraft?.declaration?.currentVersionId },
+  );
+
+  const closedFiscalYear: FiscalYearRecord = {
+    ...closedFiscalYearIdentity,
+    dossierId,
+    documents: workspace.documents,
+    extractions: workspace.extractions,
+    validationItems: workspace.validationItems,
+    ledgerEntries: workspace.ledgerEntries,
+    declarationDraft: workspace.declarationDraft,
+  };
+
+  const baseDossier = await buildOrLoadDossier(dossierId, workspace, now);
+  const { properties, financements } = extractDossierLevelDataFromWorkspace(workspace);
+  const nextFiscalYear = createNextFiscalYear(closedFiscalYear, dossierId, now);
+  const nextFiscalYearRecord: FiscalYearRecord = {
+    ...nextFiscalYear,
+    documents: [],
+    extractions: [],
+    validationItems: [],
+    ledgerEntries: [],
+    declarationDraft: undefined,
+  };
+
+  const fiscalYearIds = [...new Set([...baseDossier.fiscalYearIds, closedFiscalYear.id, nextFiscalYear.id])];
+  const dossier: Dossier = {
+    ...baseDossier,
+    ...extractIdentity(workspace.declarationDraft),
+    properties,
+    financements,
+    fiscalYearIds,
+    updatedAt: now,
+  };
+
+  // Même reset que le reducer CREATE_NEXT_FISCAL_YEAR — properties[] n'est
+  // PAS régénéré (mêmes IDs, mêmes biens ; Property reste Dossier-level).
+  const nextWorkspace: PersistedWorkspace = {
+    fiscalYear: nextFiscalYear,
+    properties: workspace.properties,
+    documents: [],
+    extractions: [],
+    validationItems: [],
+    ledgerEntries: [],
+    declarationDraft: createNextDeclarationDraft(workspace.declarationDraft),
+    aiActivityFeed: [],
+  };
+
+  const workspaceRecord: WorkspaceRecord = {
+    id: workspaceKeyForUser(userId),
+    data: nextWorkspace,
+    updatedAt: now,
+  };
+
+  let concurrencyConflict = false;
+
+  try {
+    await withStores(
+      [STORE_DOSSIER, STORE_FISCAL_YEARS, STORE_WORKSPACE],
+      "readwrite",
+      (stores, tx) => {
+        const checkRequest = stores[STORE_FISCAL_YEARS]!.get(workspace.fiscalYear.id);
+        checkRequest.onsuccess = () => {
+          const currentOnDisk = checkRequest.result as FiscalYearRecord | undefined;
+          if (currentOnDisk?.status === "closed") {
+            // Une autre transaction (autre onglet, ou double clic ayant
+            // échappé à transitionInFlight) a déjà clôturé N — abort strict,
+            // aucune écriture partielle (P0 FINAL GATE §5/§6).
+            concurrencyConflict = true;
+            tx.abort();
+            return;
+          }
+          stores[STORE_DOSSIER]!.put(dossier);
+          stores[STORE_FISCAL_YEARS]!.put(closedFiscalYear);
+          stores[STORE_FISCAL_YEARS]!.put(nextFiscalYearRecord);
+          stores[STORE_WORKSPACE]!.put(workspaceRecord);
+        };
+        checkRequest.onerror = () => {
+          tx.abort();
+        };
+      },
+    );
+  } catch (error) {
+    if (concurrencyConflict) {
+      throw new FiscalYearAlreadyClosedError(workspace.fiscalYear.id);
+    }
+    throw error;
+  }
+
+  return { dossier, closedFiscalYear, nextFiscalYear, nextWorkspace };
 }

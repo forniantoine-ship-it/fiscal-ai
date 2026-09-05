@@ -27,6 +27,7 @@ import {
 } from "./db";
 import {
   isRegressiveWorkspaceWrite,
+  isStaleFiscalYearIdentityWrite,
   resolveFlushSnapshot,
 } from "./workspace-flush-guard";
 import {
@@ -274,6 +275,15 @@ async function writeWorkspaceToDisk(
       existing?.data && isValidWorkspace(existing.data) ? existing.data : null;
     if (existingData && isRegressiveWorkspaceWrite(data, existingData)) {
       console.warn("[lmnp] skipped regressive workspace write", { userId });
+      return;
+    }
+    // P0 FINAL GATE (workspace debounce vs clôture N → N+1) — protection
+    // complémentaire, pas un remplacement de isRegressiveWorkspaceWrite : celle-ci
+    // protège deux timestamps de parcours sur un MÊME exercice, celle-ci protège
+    // l'identité de l'exercice lui-même (une écriture stale de N alors que le
+    // disque porte déjà N+1).
+    if (existingData && isStaleFiscalYearIdentityWrite(data, existingData)) {
+      console.warn("[lmnp] skipped stale fiscal year identity write", { userId });
       return;
     }
     if (isStaleWorkspaceWrite(generation)) return;
