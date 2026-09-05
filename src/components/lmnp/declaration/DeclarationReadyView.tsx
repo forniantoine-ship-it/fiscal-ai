@@ -22,6 +22,7 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
+import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
 import { resolveFormulairesManquants } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -59,6 +60,22 @@ export function DeclarationReadyView() {
     [fiscalYear, workspace.declarationDraft, workspace.properties],
   );
   const canCloseThisFiscalYear = closePrecondition.ok;
+
+  // P0-2a — Vérité immédiate de la liasse : ce booléen ne change JAMAIS ce qui
+  // est affiché/téléchargé (fiscalResult/liasseResult/rfs/liasseRfs restent la
+  // dernière génération réellement produite, "B") — il ajoute uniquement un
+  // signal de fraîcheur. Réutilise le même mécanisme que canCloseThisFiscalYear
+  // ci-dessus (resolveDeclarationGenerationGate(), P0-1), via un second appel
+  // pur dans un useMemo plutôt qu'une seconde logique de détection.
+  const declarationOutOfDate = useMemo(
+    () =>
+      resolveDeclarationOutOfDate({
+        fiscalYear,
+        declarationDraft: workspace.declarationDraft,
+        properties: workspace.properties,
+      }),
+    [fiscalYear, workspace.declarationDraft, workspace.properties],
+  );
 
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const [closingFiscalYear, setClosingFiscalYear] = useState(false);
@@ -177,6 +194,39 @@ export function DeclarationReadyView() {
           </>
         ) : null}
       </section>
+
+      {declarationOutOfDate ? (
+        <section
+          className="w-full text-center"
+          style={{
+            borderRadius: radius.lg,
+            border: `1px solid ${colors.warning.border}`,
+            backgroundColor: colors.warning.surface,
+            padding: spacing.card.md,
+          }}
+        >
+          <p
+            style={{
+              ...typography.caption.desktop,
+              color: colors.warning.DEFAULT,
+              fontWeight: typography.fontWeight.medium,
+              letterSpacing: typography.letterSpacing.label,
+            }}
+          >
+            Ces chiffres correspondent à une génération antérieure
+          </p>
+          <p className="mx-auto mt-2 max-w-lg" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+            Les informations de votre dossier ont changé depuis cette génération. Vous pouvez toujours
+            consulter et télécharger cette déclaration, mais générez une nouvelle version pour obtenir une
+            déclaration à jour.
+          </p>
+          <p className="mt-3">
+            <Link href={documentJourneyRoute("validation")} style={{ color: colors.warning.DEFAULT }}>
+              Mettre à jour ma déclaration
+            </Link>
+          </p>
+        </section>
+      ) : null}
 
       <section
         className="w-full"
