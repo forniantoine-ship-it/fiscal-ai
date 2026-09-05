@@ -86,6 +86,50 @@ import { round2 } from "../../f007/types";
  * traitée » : projection informative pure de `fiscalResult.deficitsImputes`
  * — elle ne participe à aucun calcul de 352/354/370/372, qui restent des
  * lectures indépendantes de `resultatFiscal`/`deficitNouveau`.
+ *
+ * La case 350 « Divers à déduire » n'a, à ce jour, qu'UN SEUL cas d'usage
+ * spécifié par ce mapper : le déficit LMNP antérieur imputé sur le bénéfice
+ * de l'exercice (`fiscalResult.deficitsImputes`), sur la base de la notice
+ * 2033-NOT-SD. D'autres usages existent sur le formulaire officiel (bénéfice
+ * non professionnel, report en arrière pour les entreprises à l'IS — hors
+ * périmètre LMNP réel simplifié à l'IR) mais ne sont projetés par aucune
+ * donnée de ce mapper : ce n'est pas un oubli, c'est l'absence de source
+ * fiscale suffisamment établie pour les représenter sans les inventer (voir
+ * `src/lib/lmnp/services/liasse-pdf/excluded-cases.ts` pour l'arbitrage
+ * géométrique correspondant, distinct de cet arbitrage de mapping).
+ *
+ * Correction P0 fiscale (audit indépendant Cursor/Grok, confirmée) — case
+ * 330 « Divers* » (bloc RÉINTÉGRATIONS, notice 2033-NOT-SD 2026 : inclut le
+ * déficit d'activités non professionnelles, CGI art. 156-I-1° bis — voir
+ * AX-016 du Knowledge System, « Les déficits BIC non professionnels sont
+ * reportables 10 ans... Ils ne s'imputent pas sur le revenu global »).
+ *
+ * AVANT cette correction, `fiscalResult.deficitNouveau` était projeté
+ * directement sur la case 372 (« Résultat fiscal après imputation des
+ * déficits — Déficit »). C'était fiscalement incorrect : un déficit LMNP non
+ * professionnel n'est PAS un déficit BIC ordinaire qui s'impute (ou se
+ * reporte) via le circuit général 370/372 — par construction de
+ * TRF-0031/AX-016, il ne s'impute JAMAIS sur autre chose qu'un bénéfice de
+ * même nature, et jamais sur le revenu global. C'est précisément pour cette
+ * raison que `applyAmortissementStocks` (F-006, TRF-0031, INCHANGÉ par cette
+ * correction) fixe `resultatFiscal = 0` (jamais négatif) dans la branche
+ * déficitaire : `resultatFiscal` représente déjà le résultat BIC après
+ * application de la règle de non-imputation, et `deficitNouveau` représente
+ * le montant du déficit LMNP mis en réserve pour un report futur (case 7b /
+ * `I_7B`, `I_AUTRES_LMNP_DEFICIT` — INCHANGÉES, c'est leur rôle).
+ *
+ * `fiscalResult.resultatFiscal = 0` / `fiscalResult.deficitNouveau = 9862`
+ * (scénario témoin) EST donc déjà la bonne représentation fiscale interne —
+ * F-006 n'est PAS modifié par cette correction. Ce qui était incorrect était
+ * la DESTINATION Cerfa de `deficitNouveau` : désormais projeté sur la case
+ * 330 (réintégration explicite du déficit non professionnel, pour que la
+ * ligne 370/372 — un circuit générique BIC qui n'a pas vocation à recevoir
+ * un déficit non-imputable sur le revenu global — retombe à zéro, comme
+ * `resultatFiscal` l'indique déjà). La case 372 ne lit plus jamais
+ * `deficitNouveau` : elle lit désormais `resultatFiscal < 0`, une condition
+ * qui ne se déclenche jamais avec le F-006 actuel (garanti ≥0 par
+ * TRF-0031) — cohérent avec le fait qu'un déficit LMNP non professionnel
+ * n'apparaît jamais sur cette ligne.
  */
 
 /** Pourquoi une case Cerfa n'est volontairement pas alimentée. */
@@ -270,7 +314,9 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       // ligne le montant de déficit imputé sur le bénéfice catégoriel (à la
       // place du Cadre II du 2033-D-SD, réservé à l'IS). Projection
       // informative pure de fiscalResult.deficitsImputes, déjà calculé par
-      // TRF-0031 — ne participe à aucun calcul de 352/354/370/372.
+      // TRF-0031 — ne participe à aucun calcul de 352/354/370/372. Seul cas
+      // d'usage spécifié pour cette case dans ce mapper — voir le commentaire
+      // d'en-tête du fichier pour les autres usages notice non couverts ici.
       caseId: "350",
       label: "Divers à déduire",
       value: round2(fr.deficitsImputes),
@@ -338,6 +384,24 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     });
   }
 
+  // Correction P0 fiscale (audit indépendant Cursor/Grok) — le déficit LMNP
+  // non professionnel (`deficitNouveau`) est réintégré ici, case 330 « Divers
+  // » (bloc RÉINTÉGRATIONS ; notice 2033-NOT-SD 2026 : déficit d'activités
+  // non professionnelles, CGI art. 156-I-1° bis, AX-016 du Knowledge
+  // System) — jamais projeté sur 372 (voir ci-dessous et le commentaire
+  // d'en-tête du fichier pour le raisonnement complet). Comme 350, cette case
+  // ne participe à aucun calcul de 352/354/370/372 dans ce mapper : lecture
+  // indépendante et informative de `deficitNouveau`, déjà calculé par
+  // TRF-0031.
+  if (fr.deficitNouveau > 0) {
+    cases.push({
+      caseId: "330",
+      label: "Divers (réintégration du déficit LMNP non professionnel)",
+      value: round2(fr.deficitNouveau),
+      trace: { ...baseTrace, path: "fiscalResult.deficitNouveau", ksArtifacts: ["TRF-0031", "TRF-0032", "AX-016"] },
+    });
+  }
+
   if (fr.resultatFiscal > 0) {
     cases.push({
       caseId: "370",
@@ -347,12 +411,19 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     });
   }
 
-  if (fr.deficitNouveau > 0) {
+  // Correction P0 fiscale — 372 ne lit plus jamais `deficitNouveau` (voir
+  // commentaire d'en-tête). Cette condition reflète la définition réelle de
+  // la case (résultat fiscal négatif après imputation) plutôt que le déficit
+  // LMNP mis en réserve : elle ne se déclenche jamais avec le F-006 actuel,
+  // qui garantit `resultatFiscal >= 0` (TRF-0031, applyAmortissementStocks —
+  // INCHANGÉ). Conservée sous cette forme (plutôt que supprimée) pour rester
+  // correcte si cette garantie F-006 changeait un jour.
+  if (fr.resultatFiscal < 0) {
     cases.push({
       caseId: "372",
       label: "Résultat fiscal après imputation des déficits — Déficit (col. 2)",
-      value: round2(fr.deficitNouveau),
-      trace: { ...baseTrace, path: "fiscalResult.deficitNouveau", ksArtifacts: ["TRF-0031", "TRF-0032"] },
+      value: round2(Math.abs(fr.resultatFiscal)),
+      trace: { ...baseTrace, path: "fiscalResult.resultatFiscal", ksArtifacts: ["TRF-0032"] },
     });
   }
 

@@ -60,7 +60,15 @@ describe("F-007 — TRF-0034 mapping 2031-SD", () => {
     );
   });
 
-  it("CASE-001 — reporte le déficit en col. 2 sans recalcul", () => {
+  it("CASE-001 — CORRIGÉ (audit fiscal P0, Cursor/Grok) : un déficit LMNP non professionnel n'apparaît plus sur C_L1_COL2, seulement sur I_7B", () => {
+    // AVANT correction, cette même assertion attendait C_L1_COL2 === 2287
+    // (copie conforme de I_7B). C'était fiscalement incorrect : la ligne
+    // "1. Résultat fiscal" (C_L1) du 2031-SD est le REPORT de la case 370 ou
+    // 372 du 2033-B-SD (texte imprimé sur le Cerfa officiel) — jamais une
+    // lecture indépendante de `deficitNouveau`. Un déficit LMNP non
+    // professionnel (CGI art. 156-I-1° bis, AX-016) ne s'impute/reporte que
+    // via le circuit dédié 7a/7b — jamais via 370/372/C_L1. Voir
+    // map-2031-recapitulation.ts et map-2033b.ts pour le raisonnement complet.
     const { result } = produceFiscalResult({
       exerciceFiscal: 2025,
       activite: { dateMiseEnService: "2025-09-01" },
@@ -68,9 +76,11 @@ describe("F-007 — TRF-0034 mapping 2031-SD", () => {
       chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 5287, totalPreExploitation: 0 },
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 2266.1, status: "validated" },
     });
+    assert.equal(result!.resultatFiscal, 0, "précondition : F-006 (inchangé) fixe resultatFiscal=0 dans une année déficitaire");
+    assert.equal(result!.deficitNouveau, 2287, "précondition : le déficit LMNP de l'exercice reste 2287, F-006 inchangé");
     const { form } = assembleForm2031SD(result!, IDENTITE);
-    assert.equal(caseValue(form, "C_L1_COL2"), 2287);
-    assert.equal(caseValue(form, "I_7B"), 2287);
+    assert.equal(caseValue(form, "C_L1_COL2"), undefined, "C_L1_COL2 = report de 372 (resultatFiscal<0), jamais déclenché ici");
+    assert.equal(caseValue(form, "I_7B"), 2287, "I_7B (circuit dédié BIC non pro) continue de porter le déficit LMNP, inchangé");
     assert.equal(caseValue(form, "C_L1_COL1"), undefined);
   });
 

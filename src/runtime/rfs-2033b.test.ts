@@ -615,10 +615,17 @@ describe("Cycle 30 — TEST 5 : 370/372, bénéfice et déficit jamais mélangé
     assert.equal(findCase(form, "372"), undefined, "372 ne doit pas apparaître dans les cases en cas de bénéfice");
   });
 
-  it("déficit → 372 alimentée, 370 absente du formulaire", () => {
+  it("CORRIGÉ (audit fiscal P0, Cursor/Grok) — déficit LMNP → 330 alimentée, 370 ET 372 absentes du formulaire", () => {
+    // AVANT correction, ce test attendait 372=9862. Un déficit LMNP non
+    // professionnel (CGI art. 156-I-1° bis, AX-016) ne s'impute/reporte
+    // jamais via le circuit générique 370/372 — il est réintégré en case 330
+    // (voir map-2033b.ts pour le raisonnement complet). F-006 (inchangé)
+    // garantit resultatFiscal=0 (jamais négatif) dans ce cas : 372 exige
+    // désormais resultatFiscal<0, jamais vrai ici.
     const fr = fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "372")?.value, 9862);
+    assert.equal(findCase(form, "330")?.value, 9862, "330 réintègre le déficit LMNP");
+    assert.equal(findCase(form, "372"), undefined, "372 ne doit plus jamais recevoir deficitNouveau");
     assert.equal(findCase(form, "370"), undefined, "370 ne doit pas apparaître dans les cases en cas de déficit");
   });
 });
@@ -738,14 +745,21 @@ describe("Cycle 30 — non-divergence avec le document client", () => {
     assert.equal(findCase(form, "232")?.value, clientDoc.syntheseFiscale.recettes);
   });
 
-  it("370/372 (2033-B) et le résultat principal du document client proviennent de la même valeur, cas déficitaire", async () => {
+  it("330 (2033-B) et le résultat principal du document client proviennent de la même valeur, cas déficitaire — CORRIGÉ (audit fiscal P0)", async () => {
+    // AVANT correction, ce test comparait clientDoc.syntheseFiscale.deficitFiscal
+    // à la case 372 (alors alimentée à tort par deficitNouveau). Le déficit
+    // LMNP non professionnel n'apparaît plus sur 372 (voir map-2033b.ts) :
+    // c'est désormais la case 330 qui porte la même valeur que le document
+    // client — la non-divergence document-client / Cerfa reste garantie,
+    // simplement vers la case fiscalement correcte.
     const { buildClientSummaryDocument } = await import(
       "@/lib/lmnp/services/declaration/build-client-summary-document"
     );
     const representation = rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 }));
     const clientDoc = buildClientSummaryDocument(representation);
     const form = map2033BFromRfs(representation);
-    assert.equal(findCase(form, "372")?.value, clientDoc.syntheseFiscale.deficitFiscal);
+    assert.equal(findCase(form, "372"), undefined, "372 ne doit plus jamais être alimentée pour un déficit LMNP");
+    assert.equal(findCase(form, "330")?.value, clientDoc.syntheseFiscale.deficitFiscal);
   });
 });
 

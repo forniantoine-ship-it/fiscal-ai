@@ -145,7 +145,11 @@ describe("Cycle 31 — TEST 3 et 4 : valeurs exactes des cases pass-through", ()
 });
 
 describe("Cycle 31 — TEST 5 : 370 et 372 jamais alimentées simultanément", () => {
-  it("bénéfice → 370 seule ; déficit → 372 seule", () => {
+  it("bénéfice → 370 seule ; déficit LMNP → 330 seule (ni 370 ni 372) — CORRIGÉ (audit fiscal P0, Cursor/Grok)", () => {
+    // AVANT correction, la branche déficit attendait 372 alimentée. Un
+    // déficit LMNP non professionnel (CGI art. 156-I-1° bis, AX-016) ne
+    // s'impute/reporte jamais via le circuit générique 370/372 : il est
+    // réintégré en case 330 (voir map-2033b.ts pour le raisonnement complet).
     const liasseBenef = assembleLiasseFromRfs(rfs(fiscalResult({ resultatFiscal: 5500, deficitNouveau: 0 })));
     const has = (liasse: ReturnType<typeof assembleLiasseFromRfs>, id: string) =>
       liasse.form2033B.cases.some((c) => c.caseId === id);
@@ -153,7 +157,8 @@ describe("Cycle 31 — TEST 5 : 370 et 372 jamais alimentées simultanément", (
     assert.equal(has(liasseBenef, "372"), false);
 
     const liasseDeficit = assembleLiasseFromRfs(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 })));
-    assert.equal(has(liasseDeficit, "372"), true);
+    assert.equal(has(liasseDeficit, "330"), true, "330 réintègre le déficit LMNP");
+    assert.equal(has(liasseDeficit, "372"), false, "372 exige resultatFiscal<0, jamais vrai pour un déficit LMNP réel");
     assert.equal(has(liasseDeficit, "370"), false);
   });
 });
@@ -272,11 +277,19 @@ describe("Cycle 31 — TEST 11 : document client 149 € et liasse RFS ne peuven
       clientDocBenef.syntheseFiscale.resultatFiscal,
     );
 
+    // CORRIGÉ (audit fiscal P0, Cursor/Grok) — le déficit LMNP non
+    // professionnel n'apparaît plus sur 372 : c'est désormais 330 qui porte
+    // la même valeur que le document client (voir map-2033b.ts).
     const representationDeficit = rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 }));
     const liasseDeficit = assembleLiasseFromRfs(representationDeficit);
     const clientDocDeficit = buildClientSummaryDocument(representationDeficit);
     assert.equal(
       liasseDeficit.form2033B.cases.find((c) => c.caseId === "372")?.value,
+      undefined,
+      "372 ne doit plus jamais être alimentée pour un déficit LMNP",
+    );
+    assert.equal(
+      liasseDeficit.form2033B.cases.find((c) => c.caseId === "330")?.value,
       clientDocDeficit.syntheseFiscale.deficitFiscal,
     );
   });

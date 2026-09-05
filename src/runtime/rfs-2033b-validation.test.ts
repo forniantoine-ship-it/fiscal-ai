@@ -97,11 +97,32 @@ describe("Cycle 33 — STEP 2 : conventions de signe", () => {
     assert.equal(findCase(form, "372"), undefined);
   });
 
-  it("résultat fiscal négatif (déficit) → 372 exclusivement, jamais 370", () => {
+  it("CORRIGÉ (audit fiscal P0, Cursor/Grok) — un déficit LMNP (deficitNouveau>0, resultatFiscal=0, cas réel produit par F-006) n'alimente ni 370 ni 372 : il est réintégré en case 330, jamais projeté sur le circuit générique 370/372", () => {
+    // AVANT correction, ce test s'appelait "résultat fiscal négatif (déficit)
+    // → 372 exclusivement" et attendait 372=4200 — alors même que
+    // `resultatFiscal` valait 0, PAS un nombre négatif : le titre confondait
+    // "deficitNouveau > 0" avec "résultat fiscal négatif", deux concepts
+    // fiscaux distincts (voir map-2033b.ts). Un déficit LMNP non professionnel
+    // (CGI art. 156-I-1° bis, AX-016) ne s'impute/reporte jamais via 370/372 —
+    // seulement via 330 (réintégration) et le circuit dédié 7a/7b.
     const fr = fiscalResult({ resultatFiscal: 0, deficitNouveau: 4200 });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "330")?.value, 4200, "330 réintègre le déficit LMNP, seule destination Cerfa correcte");
+    assert.equal(findCase(form, "372"), undefined, "372 exige resultatFiscal<0 — jamais vrai ici, F-006 garantit resultatFiscal>=0");
+    assert.equal(findCase(form, "370"), undefined);
+  });
+
+  it("résultat fiscal RÉELLEMENT négatif (cas hypothétique, jamais produit par le F-006 actuel) → 372 exclusivement, jamais 370, jamais 330", () => {
+    // F-006 (TRF-0031, applyAmortissementStocks, INCHANGÉ) garantit
+    // resultatFiscal >= 0 en toute circonstance — ce cas n'est donc jamais
+    // exercé en pratique. Ce test vérifie que la fonction du mapper reste
+    // correcte par construction si cette garantie changeait un jour, sans
+    // dépendre de deficitNouveau pour ce faire.
+    const fr = fiscalResult({ resultatFiscal: -4200, deficitNouveau: 0 });
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "372")?.value, 4200);
     assert.equal(findCase(form, "370"), undefined);
+    assert.equal(findCase(form, "330"), undefined, "330 réintègre deficitNouveau, pas resultatFiscal — non déclenché ici (deficitNouveau=0)");
   });
 
   it("312 et 314 ne sont jamais simultanément présentes, sur un échantillon de résultats variés", () => {
@@ -116,7 +137,11 @@ describe("Cycle 33 — STEP 2 : conventions de signe", () => {
   });
 
   it("370 et 372 ne sont jamais simultanément présentes, sur un échantillon de résultats variés", () => {
-    const echantillon: [number, number][] = [[5000, 0], [0, 5000], [1, 0], [0, 1], [0, 0]];
+    // -1 ajouté (correction P0) : 372 est désormais conditionnée à
+    // `resultatFiscal < 0`, jamais à `deficitNouveau` — sans une valeur
+    // négative dans l'échantillon, la branche 372 ne serait plus jamais
+    // exercée par ce test.
+    const echantillon: [number, number][] = [[5000, 0], [0, 5000], [1, 0], [0, 1], [0, 0], [-1, 1]];
     for (const [resultatFiscal, deficitNouveau] of echantillon) {
       const fr = fiscalResult({ resultatFiscal, deficitNouveau });
       const form = map2033BFromRfs(rfs(fr));
@@ -352,14 +377,19 @@ describe("Cycle 33 — STEP 6 : matrice de combinaisons", () => {
     assert.equal(findCase(nul, "310")?.value, 0);
   });
 
-  it("H/I. résultat fiscal positif puis négatif", () => {
+  it("H/I. résultat fiscal positif (bénéfice) puis déficit LMNP réel (resultatFiscal=0, deficitNouveau>0) — CORRIGÉ audit fiscal P0", () => {
     const benefice = map2033BFromRfs(rfs(fiscalResult({ resultatFiscal: 3000, deficitNouveau: 0 })));
     assert.ok(findCase(benefice, "370"));
     assert.equal(findCase(benefice, "372"), undefined);
+    assert.equal(findCase(benefice, "330"), undefined, "330 ne réintègre rien en l'absence de déficit LMNP");
 
+    // AVANT correction : attendait 372 alimentée ici. Le cas réel produit par
+    // F-006 pour un déficit LMNP est resultatFiscal=0 (jamais négatif) — 372
+    // ne doit donc PAS s'alimenter ; la réintégration passe par 330.
     const deficit = map2033BFromRfs(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 3000 })));
     assert.equal(findCase(deficit, "370"), undefined);
-    assert.ok(findCase(deficit, "372"));
+    assert.equal(findCase(deficit, "372"), undefined, "372 exige resultatFiscal<0, jamais vrai pour un déficit LMNP réel");
+    assert.equal(findCase(deficit, "330")?.value, 3000, "330 réintègre le déficit LMNP");
   });
 
   it("J. déficits antérieurs imputés SANS limitation d'amortissement la même année → 360 reste non alimentée (audit fiscal ciblé, IS uniquement), aucun blocage supplémentaire", () => {
