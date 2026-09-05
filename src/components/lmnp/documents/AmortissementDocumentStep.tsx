@@ -1193,8 +1193,16 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
           className="mx-auto max-w-2xl text-center animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
           style={{ ...typography.body.desktop, color: colors.text.secondary }}
         >
-          Le logiciel reprendra automatiquement vos anciens amortissements afin d&apos;assurer la
-          continuité comptable.
+          {/* P0-2b (audit "périmètre fiscal / documentaire", défaut D4) — le texte
+              précédent promettait une reprise automatique des amortissements
+              antérieurs à partir de ce document ; ce n'est pas le cas aujourd'hui
+              (isContinuityDocument() ne fait qu'un test de nom de fichier pour
+              débloquer l'étape suivante, aucune valeur n'en est extraite). Ne pas
+              réintroduire cette promesse tant que la reprise réelle n'existe pas. */}
+          Vous pouvez transmettre vos documents de continuité (ancienne liasse, tableau
+          d&apos;amortissements) à titre de référence. Ils ne sont pas utilisés aujourd&apos;hui
+          pour reconstruire automatiquement vos amortissements antérieurs : votre plan est
+          calculé à partir de la date de mise en service que vous avez renseignée.
         </p>
       ) : null}
 

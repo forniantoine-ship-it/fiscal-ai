@@ -684,12 +684,25 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         fiscalYear = { ...fiscalYear, declarationGeneratedAt: undefined };
       }
 
+      // P0-2b (audit "périmètre fiscal / documentaire", défaut D6) — même principe
+      // que extractions/validationItems ci-dessus : une ledgerEntry issue de ce
+      // document ne doit plus rester active. Voidée (jamais supprimée
+      // physiquement) — symétrique à voidLedgerEntry() déjà utilisé par
+      // LEDGER_UPDATE_VALUE/VALIDATION_APPROVE/VALIDATION_CORRECT ci-dessus dans
+      // ce même fichier ; conserve l'historique, ne crée aucun nouveau mécanisme.
+      const ledgerEntries = state.ledgerEntries.map((entry) =>
+        entry.status === "active" && entry.sourceDocumentIds.includes(action.documentId)
+          ? voidLedgerEntry(entry)
+          : entry,
+      );
+
       return finalizeState({
         ...state,
         fileRegistry,
         documents: state.documents.filter((d) => d.id !== action.documentId),
         extractions: state.extractions.filter((e) => e.documentId !== action.documentId),
         validationItems: state.validationItems.filter((v) => v.documentId !== action.documentId),
+        ledgerEntries,
         declarationDraft,
         fiscalYear,
       });

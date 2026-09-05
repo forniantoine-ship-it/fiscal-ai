@@ -305,6 +305,49 @@ function runTests(): void {
     assertEqual(resultat.value, 4000, "jamais recalculé — transport pur de fiscalResult.resultatFiscal");
   });
 
+  // ---------------------------------------------------------------------
+  // P0-2b (audit "périmètre fiscal / documentaire", défaut D2) —
+  // isChargesComplete() doit refléter chargesAssistant (le seul champ lu
+  // par produceFiscalResult()/validateFiscalInputs()), jamais
+  // chargesConfirmedAt seul (posé aussi par le chemin legacy
+  // ChargesDocumentStep.tsx / CONFIRM_CHARGES, qui n'écrit jamais
+  // chargesAssistant).
+  // ---------------------------------------------------------------------
+  test("D2 — chargesConfirmedAt présent, chargesAssistant absent (legacy) → Charges NON complètes", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      chargesConfirmedAt: "2026-08-31T00:00:00.000Z",
+    };
+    const steps = buildDossierSteps(draft);
+    const charges = steps.find((s) => s.id === "charges");
+    if (!charges) throw new Error("step 'charges' introuvable dans buildDossierSteps()");
+    assertEqual(charges.status, "incomplete", "chargesConfirmedAt seul ne doit plus suffire");
+  });
+
+  test("D2 — chargesAssistant présent (et valide) → Charges complètes", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      chargesConfirmedAt: "2026-08-31T00:00:00.000Z",
+      chargesAssistant: {
+        exerciceFiscal: 2025,
+        totalDeductible: 2000,
+        totalPreExploitation: 0,
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const charges = steps.find((s) => s.id === "charges");
+    if (!charges) throw new Error("step 'charges' introuvable dans buildDossierSteps()");
+    assertEqual(charges.status, "complete", "chargesAssistant présent doit suffire");
+  });
+
+  test("D2 — chargesAssistant absent (même sans chargesConfirmedAt) → Charges NON complètes, jamais 'prêt' sur ce seul flag", () => {
+    const draft: DeclarationDraft = { completedSteps: [] };
+    const steps = buildDossierSteps(draft);
+    const charges = steps.find((s) => s.id === "charges");
+    if (!charges) throw new Error("step 'charges' introuvable dans buildDossierSteps()");
+    assertEqual(charges.status, "incomplete", "aucun signal de complétude sans chargesAssistant");
+  });
+
   console.log(`\n${passed}/${total} tests passés`);
   if (passed !== total) process.exit(1);
 }

@@ -79,8 +79,18 @@ function isRevenusComplete(draft?: DeclarationDraft): boolean {
   return Boolean(draft?.revenusConfirmedAt);
 }
 
+/**
+ * P0-2b (audit "périmètre fiscal / documentaire", défaut D2) — `chargesConfirmedAt`
+ * seul ne prouve plus que F-006 dispose de quoi calculer : il peut être posé par
+ * le chemin legacy (`ChargesDocumentStep.tsx` / `CONFIRM_CHARGES`,
+ * `declarationDraft.chargesExtraction`) sans que `chargesAssistant` — le SEUL champ
+ * lu par `produceFiscalResult()` — ne soit jamais renseigné. `chargesConfirmedAt`
+ * n'est volontairement pas supprimé du modèle (donnée legacy conservée telle
+ * quelle) ; seule cette vérification de complétude change, pour refléter
+ * exactement la même condition que `validateFiscalInputs()` (F-006).
+ */
 function isChargesComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.chargesConfirmedAt);
+  return Boolean(draft?.chargesAssistant);
 }
 
 export function buildDossierSteps(draft?: DeclarationDraft): DossierStepItem[] {
