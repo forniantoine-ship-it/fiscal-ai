@@ -20,14 +20,25 @@ import { round2 } from "../../f007/types";
  * numéroté. L'identifiant `I_AUTRES_LMNP_*` suit la même convention que
  * `I_7A`/`I_7B` (préfixe du cadre officiel), sans inventer de code.
  *
- * Périmètre volontairement restreint (Cycles 42-43) : aucune source officielle
- * (BOI-BIC-DEF-10, BOI-BIC-DEF-20-10, notice DGFiP, recherche documentaire) ne
- * confirme la formule reliant cette ligne à `fiscalResult.deficitsImputes`
- * quand un déficit antérieur est imputé cette année. La ligne n'est donc
- * alimentée que lorsque `deficitsImputes === 0` (auquel cas la valeur avant et
- * après imputation coïncident nécessairement) — jamais par
- * `resultatFiscal + deficitsImputes`, formule non prouvée. Voir
- * `rfs-2031-bis.test.ts` pour la preuve.
+ * CORRECTION JALON 1B (audit indépendant, suite JALON 1A) — l'ancien
+ * comportement (Cycles 42-44) n'alimentait cette ligne QUE lorsque
+ * `fiscalResult.deficitsImputes === 0`, au motif qu'aucune source officielle
+ * ne confirmerait la formule reliant "avant imputation" et "après
+ * imputation". C'était une fausse ambiguïté : `I_7A`/`I_7B` (même page,
+ * `map-2031-recapitulation.ts`) sont DÉJÀ, depuis le socle fiscal validé
+ * (JALON 1A, commit aa765cb), un pass-through direct de
+ * `resultatFiscal`/`deficitNouveau` — deux champs qui sont TOUJOURS le
+ * résultat/déficit APRÈS imputation (TRF-0031, `applyAmortissementStocks` —
+ * INCHANGÉ ici). Il n'existe donc, dans le modèle F-006 actuel, aucune
+ * grandeur "avant imputation" distincte à laquelle cette ligne pourrait se
+ * référer : la question posée par l'ancienne garde ne se pose simplement
+ * pas. La ligne « Autres locations meublées non professionnelles » du Cadre
+ * I documente, pour ce même dossier LMNP réel simplifié, exactement le même
+ * résultat/déficit que le Cadre 7 (I_7A/I_7B) — jamais une seconde grandeur
+ * ni une formule additionnelle (`resultatFiscal + deficitsImputes` n'a
+ * JAMAIS été et n'est TOUJOURS PAS calculée ici). `deficitsImputes` n'est
+ * plus lu par ce mapper : il n'intervient dans aucune condition ni aucune
+ * valeur.
  */
 
 export type CerfaCaseNonAlimenteeCategorie =
@@ -54,52 +65,38 @@ export type Form2031Bis = {
 const LABEL_BENEFICE = "BIC non professionnels — Autres locations meublées non professionnelles (Bénéfice)";
 const LABEL_DEFICIT = "BIC non professionnels — Autres locations meublées non professionnelles (Déficit)";
 
-const RAISON_AMBIGUE =
-  "Ligne 2031 Bis-SD non alimentée : la formule officielle reliant le résultat de l'activité avant imputation des déficits antérieurs au résultat fiscal après imputation n'est pas suffisamment établie.";
-
 export function map2031BisFromRfs(rfs: FiscalRepresentation): Form2031Bis {
   const fr = rfs.fiscalResult;
   const baseTrace: Omit<CaseTrace, "path"> = { source: "FiscalResult", ksArtifacts: ["TRF-0032"] };
 
   const cases: CerfaCase[] = [];
-  const casesNonAlimentees: CerfaCaseNonAlimentee[] = [];
-
-  if (fr.deficitsImputes === 0) {
-    // Aucun déficit antérieur imputé cette année : le résultat « avant » et
-    // « après » imputation coïncident nécessairement — la valeur est un
-    // pass-through direct, déjà utilisé et validé pour les cases I_7A/I_7B
-    // du 2031-SD et 370/372 du 2033-B.
-    if (fr.resultatFiscal > 0) {
-      cases.push({
-        caseId: "I_AUTRES_LMNP_BENEFICE",
-        label: LABEL_BENEFICE,
-        value: round2(fr.resultatFiscal),
-        trace: { ...baseTrace, path: "fiscalResult.resultatFiscal", ksArtifacts: ["TRF-0032"] },
-      });
-    }
-    if (fr.deficitNouveau > 0) {
-      cases.push({
-        caseId: "I_AUTRES_LMNP_DEFICIT",
-        label: LABEL_DEFICIT,
-        value: round2(fr.deficitNouveau),
-        trace: { ...baseTrace, path: "fiscalResult.deficitNouveau", ksArtifacts: ["TRF-0031", "TRF-0032"] },
-      });
-    }
-  } else {
-    // deficitsImputes > 0 : la formule reliant cette ligne à resultatFiscal
-    // n'est pas prouvée (Cycles 42-43) — jamais resultatFiscal + deficitsImputes.
-    if (fr.resultatFiscal > 0) {
-      casesNonAlimentees.push({ caseId: "I_AUTRES_LMNP_BENEFICE", label: LABEL_BENEFICE, raison: RAISON_AMBIGUE, categorie: "incoherence_modele" });
-    }
-    if (fr.deficitNouveau > 0) {
-      casesNonAlimentees.push({ caseId: "I_AUTRES_LMNP_DEFICIT", label: LABEL_DEFICIT, raison: RAISON_AMBIGUE, categorie: "incoherence_modele" });
-    }
+  // CORRECTION JALON 1B : plus aucune condition sur `deficitsImputes` — voir
+  // le commentaire d'en-tête du fichier. `resultatFiscal`/`deficitNouveau`
+  // sont déjà, par construction F-006 (TRF-0031, inchangé), le résultat/
+  // déficit APRÈS imputation : exactement ce que cette ligne doit reporter,
+  // à l'identique de I_7A/I_7B (`map-2031-recapitulation.ts`), jamais une
+  // formule distincte.
+  if (fr.resultatFiscal > 0) {
+    cases.push({
+      caseId: "I_AUTRES_LMNP_BENEFICE",
+      label: LABEL_BENEFICE,
+      value: round2(fr.resultatFiscal),
+      trace: { ...baseTrace, path: "fiscalResult.resultatFiscal (= I_7A du 2031-SD)", ksArtifacts: ["TRF-0032"] },
+    });
+  }
+  if (fr.deficitNouveau > 0) {
+    cases.push({
+      caseId: "I_AUTRES_LMNP_DEFICIT",
+      label: LABEL_DEFICIT,
+      value: round2(fr.deficitNouveau),
+      trace: { ...baseTrace, path: "fiscalResult.deficitNouveau (= I_7B du 2031-SD)", ksArtifacts: ["TRF-0031", "TRF-0032"] },
+    });
   }
 
   return {
     formId: "2031-Bis-SD",
     millésime: rfs.exercice,
     cases,
-    casesNonAlimentees,
+    casesNonAlimentees: [],
   };
 }

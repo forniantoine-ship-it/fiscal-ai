@@ -1,8 +1,15 @@
 /**
  * Cycle 44 — projection Cerfa 2031 Bis-SD (Cadre I, BIC non professionnels)
- * depuis la RFS. Périmètre volontairement restreint (Cycles 41-43) : seule la
- * ligne « Autres locations meublées non professionnelles » est alimentée, et
- * uniquement lorsque fiscalResult.deficitsImputes === 0.
+ * depuis la RFS.
+ *
+ * CORRECTION JALON 1B (audit indépendant, suite JALON 1A) — l'ancien
+ * périmètre restreint (Cycles 41-43 : alimentée uniquement si
+ * `deficitsImputes === 0`) reposait sur une fausse ambiguïté. `I_7A`/`I_7B`
+ * (2031-SD) sont déjà, par construction F-006 (TRF-0031, INCHANGÉ), le
+ * résultat/déficit APRÈS imputation — la ligne "Autres locations meublées
+ * non professionnelles" du Cadre I documente exactement la même grandeur, et
+ * doit donc TOUJOURS lui être égale, sans condition sur `deficitsImputes`.
+ * Voir `map-2031-bis.ts` pour le raisonnement complet.
  * Run: npx tsx --test src/runtime/rfs-2031-bis.test.ts
  */
 import { describe, it } from "node:test";
@@ -10,10 +17,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
+import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
 import { map2031BisFromRfs } from "./capabilities/rfs/projection/map-2031-bis";
 import { map2031FromRfs } from "./capabilities/rfs/projection/map-2031-from-rfs";
 import { assembleLiasseFromRfs } from "./capabilities/rfs/projection/assemble-liasse-from-rfs";
-import type { FiscalResult } from "./capabilities/f006/types";
+import type { FiscalEngineInputs, FiscalResult } from "./capabilities/f006/types";
 import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation } from "./capabilities/rfs/types";
 
@@ -93,41 +101,43 @@ describe("Cycle 44 — TEST 2 : deficitsImputes === 0, déficit", () => {
 });
 
 // =====================================================================
-// TEST 3 — deficitsImputes > 0, bénéfice → bloquée, incoherence_modele
+// TEST 3 — CORRIGÉ (JALON 1B) : deficitsImputes > 0, bénéfice → le Cadre I
+// n'est plus vidé, il reprend resultatFiscal comme I_7A
 // =====================================================================
-describe("Cycle 44 — TEST 3 : deficitsImputes > 0, bénéfice", () => {
-  it("case bloquée, incoherence_modele, aucune valeur produite", () => {
-    const form = map2031BisFromRfs(rfs(fiscalResult({ resultatFiscal: 2000, deficitNouveau: 0, deficitsImputes: 4000 })));
-    assert.equal(findCase(form, "I_AUTRES_LMNP_BENEFICE"), undefined, "aucune valeur ne doit être produite, ni resultatFiscal seul ni resultatFiscal + deficitsImputes");
-    const blocked = findBlocked(form, "I_AUTRES_LMNP_BENEFICE");
-    assert.ok(blocked);
-    assert.equal(blocked?.categorie, "incoherence_modele");
-    assert.match(blocked!.raison, /formule officielle/, "la raison doit expliquer précisément l'ambiguïté, pas un texte générique");
+describe("Cycle 44 / JALON 1B — TEST 3 : deficitsImputes > 0, bénéfice — le Cadre I n'est plus vidé", () => {
+  it("I_AUTRES_LMNP_BENEFICE = resultatFiscal, plus jamais bloquée, aucune trace de casesNonAlimentees", () => {
+    // AVANT correction (Cycles 42-44), ce cas produisait une case bloquée
+    // ("incoherence_modele"). C'était une fausse ambiguïté : resultatFiscal
+    // est déjà le résultat APRÈS imputation (TRF-0031) — voir map-2031-bis.ts.
+    const fr = fiscalResult({ resultatFiscal: 2000, deficitNouveau: 0, deficitsImputes: 4000 });
+    const form = map2031BisFromRfs(rfs(fr));
+    assert.equal(findCase(form, "I_AUTRES_LMNP_BENEFICE")?.value, 2000, "I_AUTRES_LMNP_BENEFICE doit reprendre resultatFiscal, jamais resultatFiscal + deficitsImputes (2000, pas 6000)");
+    assert.equal(findBlocked(form, "I_AUTRES_LMNP_BENEFICE"), undefined, "plus aucune case bloquée pour ce motif — la formule est désormais la même que I_7A");
+    assert.deepEqual(form.casesNonAlimentees, [], "casesNonAlimentees est désormais toujours vide pour ce mapper");
+  });
+
+  it("la formule non prouvée resultatFiscal + deficitsImputes n'a jamais été et n'est toujours pas produite comme valeur", () => {
+    const fr = fiscalResult({ resultatFiscal: 2000, deficitNouveau: 0, deficitsImputes: 4000 });
+    const form = map2031BisFromRfs(rfs(fr));
+    const wouldBeWrongFormula = fr.resultatFiscal + fr.deficitsImputes;
+    for (const c of form.cases) {
+      assert.notEqual(c.value, wouldBeWrongFormula, "resultatFiscal + deficitsImputes ne doit jamais être calculé ni produit comme valeur de case");
+    }
   });
 });
 
 // =====================================================================
-// TEST 4 — aucune valeur inventée pour le cas ambigu (déficit également)
+// TEST 4 — CORRIGÉ (JALON 1B) : deficitsImputes > 0 côté déficit également
 // =====================================================================
-describe("Cycle 44 — TEST 4 : deficitsImputes > 0 côté déficit également — aucune valeur inventée", () => {
-  it("si deficitNouveau > 0 avec deficitsImputes > 0, la case Déficit reste elle aussi bloquée", () => {
+describe("Cycle 44 / JALON 1B — TEST 4 : deficitsImputes > 0 côté déficit également — le Cadre I n'est plus vidé", () => {
+  it("si deficitNouveau > 0 avec deficitsImputes > 0 (cas construit pour la preuve), I_AUTRES_LMNP_DEFICIT = deficitNouveau, jamais bloquée", () => {
     // Cas construit pour la preuve — ne prétend pas être fiscalement typique
     // (l'imputation ne s'applique normalement qu'à un résultat positif),
-    // seul le comportement défensif du mapper est vérifié ici.
+    // seul le comportement du mapper est vérifié ici : deficitsImputes n'est
+    // plus lu du tout par ce mapper.
     const form = map2031BisFromRfs(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 500, deficitsImputes: 4000 })));
-    assert.equal(findCase(form, "I_AUTRES_LMNP_DEFICIT"), undefined);
-    const blocked = findBlocked(form, "I_AUTRES_LMNP_DEFICIT");
-    assert.ok(blocked);
-    assert.equal(blocked?.categorie, "incoherence_modele");
-  });
-
-  it("la formule non prouvée resultatFiscal + deficitsImputes n'apparaît jamais comme valeur produite", () => {
-    const fr = fiscalResult({ resultatFiscal: 2000, deficitNouveau: 0, deficitsImputes: 4000 });
-    const form = map2031BisFromRfs(rfs(fr));
-    const wouldBeHypothesis = fr.resultatFiscal + fr.deficitsImputes;
-    for (const c of form.cases) {
-      assert.notEqual(c.value, wouldBeHypothesis, "la formule non prouvée ne doit jamais être produite comme valeur de case");
-    }
+    assert.equal(findCase(form, "I_AUTRES_LMNP_DEFICIT")?.value, 500);
+    assert.equal(findBlocked(form, "I_AUTRES_LMNP_DEFICIT"), undefined);
   });
 });
 
@@ -173,6 +183,122 @@ describe("Cycle 44 — TEST 6 : non-régression de assembleLiasseFromRfs()", () 
     assert.deepEqual(liasse.formulairesGeneres, ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
     assert.deepEqual(liasse.formulairesManquants, []);
     assert.equal(liasse.formulairesAttendus.includes("2031-Bis-SD" as never), false);
+  });
+});
+
+// =====================================================================
+// JALON 1B — Scénarios R1 à R5 : Cadre I (2031-Bis) toujours égal à 7A/7B
+// (2031-SD), sur le F-006 RÉEL et INCHANGÉ (produceFiscalResult), pas sur des
+// FiscalResult reconstruits à la main — preuve de bout en bout.
+// =====================================================================
+describe("JALON 1B — R1 à R5 : I_AUTRES_LMNP_BENEFICE/DEFICIT === I_7A/I_7B, quel que soit le scénario", () => {
+  const IDENTITE_R: IdentiteDeclarante = { siren: "999999999", denomination: "SCENARIO", exerciceDebut: "01/01/2025", exerciceFin: "31/12/2025" };
+
+  function runScenario(exerciceInput: FiscalEngineInputs) {
+    const { result } = produceFiscalResult(exerciceInput);
+    if (!result) throw new Error("scénario de test invalide : F-006 a bloqué le calcul");
+    const representation = rfs2(result);
+    return {
+      result,
+      form2031: map2031FromRfs(representation),
+      form2031Bis: map2031BisFromRfs(representation),
+    };
+  }
+  function rfs2(fr: FiscalResult): FiscalRepresentation {
+    return {
+      exercice: fr.exercice,
+      identite: IDENTITE_R,
+      fiscalResult: fr,
+      trace: { ksArtifacts: fr.trace.ksArtifacts, assembledAt: "x", sourceFiscalResultAt: fr.trace.computedAt, sources: { identite: "x", fiscalResult: "x" } },
+    };
+  }
+  function assertCadreIEqualsCadre7(form2031: ReturnType<typeof map2031FromRfs>, form2031Bis: ReturnType<typeof map2031BisFromRfs>) {
+    const i7a = form2031.cases.find((c) => c.caseId === "I_7A")?.value;
+    const i7b = form2031.cases.find((c) => c.caseId === "I_7B")?.value;
+    const autresBenefice = form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE")?.value;
+    const autresDeficit = form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_DEFICIT")?.value;
+    assert.equal(autresBenefice, i7a, `I_AUTRES_LMNP_BENEFICE (${autresBenefice}) doit être strictement égal à I_7A (${i7a})`);
+    assert.equal(autresDeficit, i7b, `I_AUTRES_LMNP_DEFICIT (${autresDeficit}) doit être strictement égal à I_7B (${i7b})`);
+  }
+
+  it("R1 — témoin déficitaire : I_7B = I_AUTRES_LMNP_DEFICIT = deficitNouveau = 9862, Cadre I toujours vide côté bénéfice", () => {
+    const { result, form2031, form2031Bis } = runScenario({
+      exerciceFiscal: 2025,
+      activite: { dateMiseEnService: "2025-02-01" },
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 5100 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 14962, totalPreExploitation: 0, totalNonDeductible: 99 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3720, status: "validated" },
+    });
+    assert.equal(result.resultatFiscal, 0);
+    assert.equal(result.deficitNouveau, 9862);
+    assertCadreIEqualsCadre7(form2031, form2031Bis);
+    assert.equal(form2031.cases.find((c) => c.caseId === "I_7B")?.value, 9862);
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_DEFICIT")?.value, 9862);
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE"), undefined);
+  });
+
+  it("R2 — bénéficiaire simple : Cadre I = Cadre 7 côté bénéfice, aucun déficit", () => {
+    const { form2031, form2031Bis } = runScenario({
+      exerciceFiscal: 2025,
+      activite: { dateMiseEnService: "2025-01-01" },
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 4000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3000, status: "validated" },
+    });
+    assertCadreIEqualsCadre7(form2031, form2031Bis);
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE")?.value, 5000);
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_DEFICIT"), undefined);
+  });
+
+  it("R3 — déficit antérieur imputé : résultat avant imputation 5000, déficit antérieur imputé 2000, resultatFiscal=3000, I_7A=I_AUTRES_LMNP_BENEFICE=3000 (chiffres exacts demandés par la mission)", () => {
+    const { result, form2031, form2031Bis } = runScenario({
+      exerciceFiscal: 2026,
+      activite: { dateMiseEnService: "2025-01-01" },
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 4000, totalPreExploitation: 0 },
+      // amortCalcule=0 volontairement : ce scénario isole l'imputation d'un
+      // déficit antérieur (mission §5), sans composante amortissement qui
+      // réduirait resultatFiscal en-deçà des 3 000 € attendus.
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 0, status: "validated" },
+      stockDeficitsAnterieurs: [{ millesime: 2025, montant: 2000 }],
+    });
+    assert.equal(result.resultatAvantAmort, 5000, "résultat avant imputation = 5 000 €");
+    assert.equal(result.deficitsImputes, 2000, "déficit antérieur imputé = 2 000 €");
+    assert.equal(result.resultatFiscal, 3000, "résultat fiscal = 3 000 €");
+    assert.equal(form2031.cases.find((c) => c.caseId === "I_7A")?.value, 3000, "I_7A = 3 000 €");
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE")?.value, 3000, "I_AUTRES_LMNP_BENEFICE = 3 000 € — le Cadre I n'est plus vidé");
+    assertCadreIEqualsCadre7(form2031, form2031Bis);
+  });
+
+  it("R4 — ARD utilisé (stock N-1) : Cadre I = Cadre 7 côté bénéfice, deficitsImputes=0", () => {
+    const { form2031, form2031Bis } = runScenario({
+      exerciceFiscal: 2026,
+      activite: { dateMiseEnService: "2025-01-01" },
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 4000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 3000, status: "validated" },
+      stockAmortissementsReportes: 1500,
+    });
+    assertCadreIEqualsCadre7(form2031, form2031Bis);
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE")?.value, 3500);
+  });
+
+  it("R5 — combiné (déficit antérieur + ARD) : Cadre I = Cadre 7 côté bénéfice, y compris avec deficitsImputes > 0 (c'est exactement le gap corrigé)", () => {
+    const { result, form2031, form2031Bis } = runScenario({
+      exerciceFiscal: 2026,
+      activite: { dateMiseEnService: "2025-01-01" },
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 4000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 3000, status: "validated" },
+      stockDeficitsAnterieurs: [{ millesime: 2025, montant: 1000 }],
+      stockAmortissementsReportes: 800,
+    });
+    assert.ok(result.deficitsImputes > 0, "précondition : ce scénario impute bien un déficit antérieur");
+    // AVANT correction (JALON 1B), ce cas précis (deficitsImputes>0, année
+    // bénéficiaire) laissait I_AUTRES_LMNP_BENEFICE non alimentée — c'est
+    // exactement le gap identifié par l'audit JALON 1A.
+    assert.equal(form2031Bis.cases.find((c) => c.caseId === "I_AUTRES_LMNP_BENEFICE")?.value, 3200, "le Cadre I n'est plus vidé quand deficitsImputes > 0");
+    assertCadreIEqualsCadre7(form2031, form2031Bis);
   });
 });
 
