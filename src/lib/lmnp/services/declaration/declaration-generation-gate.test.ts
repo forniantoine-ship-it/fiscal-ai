@@ -372,19 +372,28 @@ describe("Cycle 24 — gate.fiscalResult === preview.fiscalResult === résultat 
     assert.equal(fiscalResult.deficitNouveau, 0, "un résultat avant amort positif ne crée jamais de déficit, même limité par le 39C");
   });
 
-  it("déficits antérieurs — imputés avant l'amortissement de l'exercice, résultat fiscal net de l'imputation", () => {
+  it("déficits antérieurs — imputés avant l'amortissement de l'exercice, résultat fiscal net de l'imputation (P1-1 : stocks d'ouverture transmis via le paramètre dédié de runDeclarationGeneration, jamais via draft.fiscalResult — cf. FiscalYear.stocksOuverture, persistFiscalYearClosureAndTransition())", () => {
     const draft = {
       ...generationReadyDraft(),
       revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 7000 },
       chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1000, status: "validated" },
-      // Stock antérieur lu par run-declaration-generation.ts depuis draft.fiscalResult.stocks.deficits —
-      // seulement quand `exercice` est strictement antérieur à l'exercice généré (P0-1) : ce stub simule
-      // un FiscalResult d'un exercice 2023 réellement clos, pas une régénération du même exercice 2025.
-      fiscalResult: { exercice: 2023, stocks: { deficits: [{ millesime: 2023, montant: 2000 }] } },
     } as unknown as DeclarationDraft;
 
-    const fiscalResult = assertSameFiscalResult(draft, 2025);
+    // P1-1 — le stock d'ouverture (résolu et persisté sur FiscalYear N+1 à sa
+    // création, jamais dérivé de draft.fiscalResult) est le SEUL vecteur de
+    // continuité inter-exercices : la porte de génération elle-même
+    // (resolveDeclarationGenerationGate, inchangée) n'a pas accès à ce
+    // paramètre — cette assertion vise directement runDeclarationGeneration(),
+    // pas la cohérence gate/génération testée par les cas ci-dessus.
+    const generation = runDeclarationGeneration(draft, 2025, {
+      deficits: [{ millesime: 2023, montant: 2000 }],
+      amortissementsReportes: 0,
+    });
+    assert.equal(generation.status, "generated", "le cas de test doit être un dossier générable");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const fiscalResult = generation.fiscalResult;
+
     assert.equal(fiscalResult.resultatAvantAmort, 5000, "7000 - 2000");
     assert.equal(
       fiscalResult.resultatFiscal,

@@ -86,20 +86,16 @@ export type DeclarationGenerationResult =
 export function runDeclarationGeneration(
   draft: DeclarationDraft | undefined,
   fiscalYear: number,
+  // P1-1 — stocks d'ouverture de CET exercice, résolus et persistés une
+  // seule fois à la création de l'exercice (FiscalYear.stocksOuverture,
+  // voir persistFiscalYearClosureAndTransition() / resolveStocksOuverture())
+  // — jamais dérivés de `draft.fiscalResult`, qui reste exclusivement le
+  // miroir de la DERNIÈRE génération du MÊME exercice (P0-1, régénération
+  // sans double-comptage). Optionnel : absent pour un premier exercice, un
+  // exercice sans continuité disponible, ou tout appelant qui n'en a pas
+  // (ex. l'aperçu de dérive de declaration-generation-gate.ts, inchangé).
+  stocksOuverture?: FiscalEngineOutput["stocks"],
 ): DeclarationGenerationResult {
-  // P0-1 (2026-09-03) — `draft.fiscalResult` est le miroir de la DERNIÈRE
-  // génération, pas un stock d'ouverture indépendant. Régénérer le MÊME
-  // exercice (canRetryAfterPayment) ne doit jamais relire sa propre clôture
-  // comme ouverture (dérive : un déficit/amortissement reporté de l'exercice
-  // courant se réinjecterait dans son propre calcul). Seul un exercice
-  // antérieur constitue une ouverture légitime — inexistant dans l'archi
-  // mono-exercice actuelle (cf. audit P0-1), donc stocksOuverture est vide
-  // tant qu'aucun mécanisme de report inter-exercices n'existe.
-  const stocksOuverture =
-    draft?.fiscalResult && draft.fiscalResult.exercice < fiscalYear
-      ? draft.fiscalResult.stocks
-      : undefined;
-
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
     activite: {

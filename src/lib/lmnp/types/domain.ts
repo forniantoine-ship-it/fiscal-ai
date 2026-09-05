@@ -515,6 +515,21 @@ export interface FiscalYear {
    * (`fiscal-year-cycle.ts`), jamais une écriture directe de ce tableau.
    */
   closures?: import("./dossier").FiscalYearClosure[];
+  /**
+   * P1-1 — stocks d'ouverture résolus depuis la clôture de l'exercice
+   * précédent (`resolveStocksOuverture()`), persistés une seule fois au
+   * moment de la création de CET exercice — jamais recalculés ensuite.
+   * Volontairement distinct de `declarationDraft.fiscalResult` (miroir de la
+   * dernière génération du MÊME exercice, jamais un vecteur de continuité
+   * inter-exercices — cf. `run-declaration-generation.ts`). `undefined` si
+   * aucune continuité n'était disponible à la création (premier exercice,
+   * dossier différent, exercice précédent non clos, etc.) — jamais une
+   * valeur inventée.
+   */
+  stocksOuverture?: {
+    sourceClosureId: string;
+    stocks: FiscalEngineOutput["stocks"];
+  };
 }
 
 export interface CoOwner {

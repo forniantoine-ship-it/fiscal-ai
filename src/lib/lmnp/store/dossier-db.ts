@@ -40,6 +40,7 @@ import {
   createNextFiscalYear,
   extractDossierLevelDataFromWorkspace,
   extractIdentity,
+  resolveStocksOuverture,
 } from "../services/dossier/fiscal-year-cycle";
 
 /**
@@ -267,7 +268,25 @@ export async function persistFiscalYearClosureAndTransition(params: {
 
   const baseDossier = await buildOrLoadDossier(dossierId, workspace, now);
   const { properties, financements } = extractDossierLevelDataFromWorkspace(workspace);
-  const nextFiscalYear = createNextFiscalYear(closedFiscalYear, dossierId, now);
+  const nextFiscalYearBase = createNextFiscalYear(closedFiscalYear, dossierId, now);
+  // P1-1 — branchement réel des stocks N → N+1 : `closedFiscalYear` porte
+  // déjà sa nouvelle closure (closeFiscalYear() vient de l'ajouter
+  // ci-dessus) et `nextFiscalYearBase.previousFiscalYearId` pointe déjà vers
+  // elle (createNextFiscalYear()) — resolveStocksOuverture() revérifie ses 6
+  // conditions sur ces objets réels (jamais présumées). Persisté sur
+  // FiscalYear N+1 lui-même, jamais dans `declarationDraft.fiscalResult`
+  // (réservé au miroir de la dernière génération du MÊME exercice).
+  const stocksOuvertureResult = resolveStocksOuverture(nextFiscalYearBase, closedFiscalYear);
+  const nextFiscalYear: FiscalYear =
+    stocksOuvertureResult.status === "available"
+      ? {
+          ...nextFiscalYearBase,
+          stocksOuverture: {
+            sourceClosureId: stocksOuvertureResult.sourceClosureId,
+            stocks: stocksOuvertureResult.stocks,
+          },
+        }
+      : nextFiscalYearBase;
   const nextFiscalYearRecord: FiscalYearRecord = {
     ...nextFiscalYear,
     documents: [],

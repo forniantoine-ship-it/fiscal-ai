@@ -102,7 +102,11 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   }, []);
 
   const handleGenerationComplete = useCallback(() => {
-    const outcome = runDeclarationGeneration(draft, fiscalYear.year);
+    // P1-1 — stocks d'ouverture réels de CET exercice (persistés à sa
+    // création par persistFiscalYearClosureAndTransition(), jamais
+    // recalculés ici) : absent pour un premier exercice ou une continuité
+    // indisponible, jamais une valeur inventée.
+    const outcome = runDeclarationGeneration(draft, fiscalYear.year, fiscalYear.stocksOuverture?.stocks);
 
     if (outcome.status === "blocked") {
       setPhase("idle");
@@ -155,7 +159,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear.id, fiscalYear.year, paid, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear.id, fiscalYear.stocksOuverture, fiscalYear.year, paid, router, showSuccess]);
 
   if (generated && paid && !gate.canGenerate) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
