@@ -1,0 +1,207 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { colors } from "@/design-system/theme/colors";
+import { radius } from "@/design-system/theme/radius";
+import { spacing } from "@/design-system/theme/spacing";
+import { typography } from "@/design-system/theme/typography";
+import {
+  buildBilanPatrimonial,
+  deriveIntakeStateFromBilanPatrimonial,
+  type PatrimonialIntakeState,
+} from "@/lib/lmnp/services/declaration/patrimonial-intake";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
+
+type PatrimonialIntakeCardProps = {
+  cardStyle: React.CSSProperties;
+  value: BilanInputs | undefined;
+  onChange: (value: BilanInputs | undefined) => void;
+};
+
+/**
+ * G1-P0 — intake patrimonial minimal (2033-A). Composant entièrement
+ * contrôlé par un état local (`PatrimonialIntakeState`) : la logique de
+ * construction/doctrine INCONNU-NUL_CONFIRME-DECLARE vit dans le module pur
+ * `patrimonial-intake.ts` (testé sans React, convention de ce projet) — ce
+ * composant ne fait que refléter les réponses et notifier le parent.
+ *
+ * `value` n'est utilisé qu'à l'initialisation (réhydratation d'un draft déjà
+ * répondu) — les changements ultérieurs de `value` ne réinitialisent jamais
+ * le formulaire en cours de frappe, pour ne pas perdre une saisie locale.
+ */
+export function PatrimonialIntakeCard({ cardStyle, value, onChange }: PatrimonialIntakeCardProps) {
+  const [state, setState] = useState<PatrimonialIntakeState>(() => deriveIntakeStateFromBilanPatrimonial(value));
+
+  const built = useMemo(() => buildBilanPatrimonial(state), [state]);
+
+  // `onChange` via une ref pour ne notifier le parent QUE lorsque `built`
+  // change réellement (dépendance de l'effet), jamais à chaque rendu du
+  // parent qui recréerait une fonction inline — évite toute boucle de
+  // dispatch.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current(built);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [built]);
+
+  function patch(partial: Partial<PatrimonialIntakeState>) {
+    setState((prev) => ({ ...prev, ...partial }));
+  }
+
+  return (
+    <section className="w-full space-y-6" style={cardStyle}>
+      <div>
+        <p style={{ fontFamily: typography.fontFamily.display, fontSize: typography.fontSize.lg, color: colors.text.primary }}>
+          Quelques questions sur votre situation patrimoniale
+        </p>
+        <p className="mt-1" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+          Ces réponses complètent votre bilan simplifié (2033-A). Vous pouvez laisser une question sans
+          réponse si vous ne savez pas — elle restera simplement non renseignée, jamais devinée.
+        </p>
+      </div>
+
+      {/* Q0 — routage */}
+      <Question label="Ce dossier correspond-il à la première activité déclarée, ou reprenez-vous un suivi antérieur (comptable, autre outil) ?">
+        <ChoiceButton
+          selected={state.routage === "NATIF"}
+          onClick={() => patch({ routage: "NATIF" })}
+          label="Première activité — aucun exercice antérieur à reprendre"
+        />
+        <ChoiceButton
+          selected={state.routage === "REPRISE"}
+          onClick={() => patch({ routage: "REPRISE" })}
+          label="Je reprends un dossier déjà suivi ailleurs"
+        />
+      </Question>
+
+      {/* Q_OUV — uniquement si reprise */}
+      {state.routage === "REPRISE" ? (
+        <Question label="Reprise du dossier — éléments de votre dernière clôture">
+          <AmountField
+            label="Solde de votre compte de l'exploitant à la clôture de l'exercice précédent"
+            raw={state.ouvertureRepriseRaw}
+            onChange={(raw) => patch({ ouvertureRepriseRaw: raw })}
+          />
+          <AmountField
+            label="Report à nouveau à reprendre de votre comptabilité antérieure (0 si aucun)"
+            raw={state.ranRepriseRaw}
+            onChange={(raw) => patch({ ranRepriseRaw: raw })}
+          />
+        </Question>
+      ) : null}
+
+      {/* Q1 — trésorerie */}
+      <Question label="Avez-vous un compte bancaire dédié à cette activité de location meublée ?">
+        <ChoiceButton selected={state.bankMode === "DEDIE"} onClick={() => patch({ bankMode: "DEDIE" })} label="Oui" />
+        <ChoiceButton selected={state.bankMode === "MIXTE"} onClick={() => patch({ bankMode: "MIXTE" })} label="Non" />
+      </Question>
+      {state.bankMode === "DEDIE" ? (
+        <AmountField
+          label="Quel est le solde de ce compte au 31/12 ?"
+          raw={state.closingCashRaw}
+          onChange={(raw) => patch({ closingCashRaw: raw })}
+        />
+      ) : null}
+      {state.bankMode === "MIXTE" ? (
+        <AmountField
+          label="Une partie de votre trésorerie personnelle est-elle identifiable comme liée à cette activité à la clôture ? Indiquez le montant (0 si aucune)."
+          raw={state.declaredProfessionalCashRaw}
+          onChange={(raw) => patch({ declaredProfessionalCashRaw: raw })}
+        />
+      ) : null}
+
+      {/* Q2 — compte exploitant */}
+      <Question label="Au cours de l'exercice, avez-vous versé de l'argent personnel pour cette activité, ou en avez-vous prélevé pour votre usage personnel ?">
+        <AmountField label="Apports de l'exercice (0 si aucun)" raw={state.apportsRaw} onChange={(raw) => patch({ apportsRaw: raw })} />
+        <AmountField
+          label="Prélèvements de l'exercice (0 si aucun)"
+          raw={state.prelevementsRaw}
+          onChange={(raw) => patch({ prelevementsRaw: raw })}
+        />
+      </Question>
+
+      {/* Q3 — subventions */}
+      <Question label="Avez-vous perçu une subvention d'investissement pour cette activité cette année ?">
+        <ChoiceButton selected={state.subvention === "NON"} onClick={() => patch({ subvention: "NON" })} label="Non" />
+        <ChoiceButton selected={state.subvention === "OUI"} onClick={() => patch({ subvention: "OUI" })} label="Oui" />
+      </Question>
+      {state.subvention === "OUI" ? (
+        <AmountField label="Montant de la subvention" raw={state.subventionMontantRaw} onChange={(raw) => patch({ subventionMontantRaw: raw })} />
+      ) : null}
+
+      {/* Q4 — catch-all */}
+      <Question label="Possédez-vous, au titre de cette activité, d'autres éléments patrimoniaux que votre bien, votre trésorerie et vos emprunts (dépôts versés à un tiers, titres de placement, créances ou dettes en cours à la clôture) ?">
+        <ChoiceButton
+          selected={state.autresElements === "NON"}
+          onClick={() => patch({ autresElements: "NON" })}
+          label="Non, rien de particulier"
+        />
+        <ChoiceButton selected={state.autresElements === "OUI"} onClick={() => patch({ autresElements: "OUI" })} label="Oui" />
+      </Question>
+      {state.autresElements === "OUI" ? (
+        <p style={{ ...typography.caption.desktop, color: colors.text.tertiary }}>
+          Ces éléments nécessitent une collecte complémentaire, non disponible dans cette version — ils resteront
+          non renseignés dans votre bilan en attendant. Contactez-nous si vous souhaitez les déclarer dès maintenant.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function Question({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-2">
+      <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: 500 }}>{label}</p>
+      <div className="flex flex-wrap gap-2">{children}</div>
+    </div>
+  );
+}
+
+function ChoiceButton({ selected, onClick, label }: { selected: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="min-h-[40px]"
+      style={{
+        borderRadius: radius.md,
+        border: `1px solid ${selected ? colors.border.selected : colors.border.default}`,
+        backgroundColor: selected ? colors.surface.selected : colors.surface.primary,
+        color: selected ? colors.text.accent : colors.text.secondary,
+        padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
+        ...typography.body.desktop,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function AmountField({ label, raw, onChange }: { label: string; raw: string; onChange: (raw: string) => void }) {
+  return (
+    <label className="block space-y-1">
+      <span style={{ ...typography.caption.desktop, color: colors.text.secondary }}>{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={raw}
+        // Volontairement : on ne stocke que la chaîne saisie, jamais un
+        // Number(raw) ici — la conversion (et la distinction "" vs "0")
+        // n'a lieu qu'au moment de construire BilanInputs (parseMontantSaisi).
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Non renseigné"
+        className="block w-48"
+        style={{
+          borderRadius: radius.md,
+          border: `1px solid ${colors.border.default}`,
+          backgroundColor: colors.surface.inset,
+          color: colors.text.primary,
+          padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
+          ...typography.body.desktop,
+        }}
+      />
+    </label>
+  );
+}

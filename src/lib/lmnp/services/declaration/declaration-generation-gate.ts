@@ -130,7 +130,10 @@ export function resolveDeclarationGenerationGate(input: {
   if (input.generated) {
     const stored = input.draft?.fiscalResult;
     if (snapshot.isComplete && !snapshot.isMultiProperty) {
-      const preview = runDeclarationGeneration(input.draft, input.fiscalYear);
+      // G1-P0 — même bilanPatrimonial que la génération réelle (voir plus
+      // bas) : jamais une seconde construction de BilanInputs, jamais un
+      // aperçu qui diverge silencieusement du document réellement produit.
+      const preview = runDeclarationGeneration(input.draft, input.fiscalYear, undefined, input.draft?.bilanPatrimonial);
       if (
         preview.status === "generated" &&
         (stored?.totalRecettes !== preview.fiscalResult.totalRecettes ||
@@ -178,7 +181,8 @@ export function resolveDeclarationGenerationGate(input: {
     };
   }
 
-  const preview = runDeclarationGeneration(input.draft, input.fiscalYear);
+  // G1-P0 — idem : même bilanPatrimonial que la génération réelle.
+  const preview = runDeclarationGeneration(input.draft, input.fiscalYear, undefined, input.draft?.bilanPatrimonial);
   if (preview.status === "blocked") {
     return {
       snapshot,

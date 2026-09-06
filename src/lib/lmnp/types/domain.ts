@@ -788,6 +788,20 @@ export interface DeclarationDraft {
    */
   liasseRfs?: import("@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs").LiasseFromRfs;
   /**
+   * G1-P0 — saisie patrimoniale collectée par l'intake minimal (case 2033-A
+   * Amortissements-Provisions/tiers/compte exploitant/RAN/subventions, voir
+   * audit P1-PDF-02-G/G1). Absent tant que l'utilisateur n'a pas répondu au
+   * routage NATIF/REPRISE (`buildBilanPatrimonial()`,
+   * `services/declaration/patrimonial-intake.ts`) — jamais un objet partiel
+   * fabriqué par défaut. Transmis tel quel en 4e argument de
+   * `runDeclarationGeneration()` ET de l'aperçu du gate
+   * (`declaration-generation-gate.ts`), jamais reconstruit séparément.
+   * Ne couvre PAS la continuité N→N+1 (G1-P1, hors périmètre) : l'ouverture
+   * du compte exploitant et le RAN d'une reprise restent une saisie manuelle
+   * de cet écran, jamais dérivés d'une `FiscalYearClosure`.
+   */
+  bilanPatrimonial?: import("@/runtime/capabilities/bilan/types").BilanInputs;
+  /**
    * P0 — Declaration (thin, stable) : une par FiscalYear aujourd'hui (mono-exercice).
    * Coexiste avec fiscalResult/liasseResult/rfs/liasseRfs ci-dessus, qui restent
    * le miroir de la version courante pour compatibilité — l'historique fait foi.

@@ -15,6 +15,7 @@ import { ValidationGenerateCta } from "@/components/lmnp/validation-workflow/Val
 import { ValidationHero } from "@/components/lmnp/validation-workflow/ValidationHero";
 import { ValidationIncompleteCard } from "@/components/lmnp/validation-workflow/ValidationIncompleteCard";
 import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
+import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
 import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/ValidationPricingBlock";
 import { ValidationStatusCards } from "@/components/lmnp/validation-workflow/ValidationStatusCards";
 import { ValidationSupportFooter } from "@/components/lmnp/validation-workflow/ValidationSupportFooter";
@@ -35,6 +36,7 @@ import {
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 
 // La télétransmission EDI n'est pas encore raccordée à un partenaire (cf. audit
 // F-015) : cette liste n'affiche que des étapes réellement exécutées par
@@ -101,12 +103,30 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     setPhase("generating");
   }, []);
 
+  // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
+  // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
+  // aucune reconstruction, aucun état parallèle.
+  const handleBilanPatrimonialChange = useCallback(
+    (bilanPatrimonial: BilanInputs | undefined) => {
+      dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { bilanPatrimonial } });
+    },
+    [dispatch],
+  );
+
   const handleGenerationComplete = useCallback(() => {
     // P1-1 — stocks d'ouverture réels de CET exercice (persistés à sa
     // création par persistFiscalYearClosureAndTransition(), jamais
     // recalculés ici) : absent pour un premier exercice ou une continuité
     // indisponible, jamais une valeur inventée.
-    const outcome = runDeclarationGeneration(draft, fiscalYear.year, fiscalYear.stocksOuverture?.stocks);
+    // G1-P0 — même bilanPatrimonial que l'aperçu du gate
+    // (declaration-generation-gate.ts) : jamais une seconde construction de
+    // BilanInputs, transmis tel quel depuis le draft.
+    const outcome = runDeclarationGeneration(
+      draft,
+      fiscalYear.year,
+      fiscalYear.stocksOuverture?.stocks,
+      draft?.bilanPatrimonial,
+    );
 
     if (outcome.status === "blocked") {
       setPhase("idle");
@@ -269,6 +289,18 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           />
 
           <ValidationAiValueBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
+
+          {/*
+            G1-P0 — intake patrimonial minimal (2033-A). Volontairement non
+            bloquant : comme le reste du bilan simplifié, une réponse absente
+            laisse les cases concernées non alimentées plutôt que d'empêcher
+            la génération du 2031-SD/2033-B (déjà complets sans ces données).
+          */}
+          <PatrimonialIntakeCard
+            cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+            value={draft?.bilanPatrimonial}
+            onChange={handleBilanPatrimonialChange}
+          />
 
           <p
             className="text-center"

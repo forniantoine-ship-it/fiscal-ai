@@ -983,6 +983,11 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           "siret",
           "dateMiseEnService",
           "activityType",
+          // G1-P0 — désormais lue telle quelle par runDeclarationGeneration()
+          // (4e argument) : une modification de l'intake patrimonial après
+          // génération doit rouvrir canRetryAfterPayment, exactement comme
+          // les sept autres clés ci-dessus.
+          "bilanPatrimonial",
         ] as const
       ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
 
