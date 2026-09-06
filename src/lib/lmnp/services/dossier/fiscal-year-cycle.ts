@@ -21,11 +21,17 @@ import type {
 import type {
   FiscalYearClosure,
   FinancementBase,
+  PatrimoineOuvertureResult,
   PropertyAmortissementBase,
   StocksOuvertureResult,
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
+import type { PatrimonialState, RanSituation } from "@/runtime/capabilities/bilan/types";
+import {
+  reporterRanNPlusUn,
+  resolveOuvertureCompteExploitantNPlusUn,
+} from "@/runtime/capabilities/bilan/resolve-ouverture-n-plus-1";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
 
 /** Champs d'identité — Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) — jamais remis à zéro au passage N → N+1. */
@@ -113,6 +119,14 @@ export function extractIdentity(draft: DeclarationDraft | undefined): Partial<De
 /**
  * Construit une closure — jamais appelée pour remplacer une closure
  * existante, uniquement pour en AJOUTER une nouvelle via `appendClosure()`.
+ *
+ * G1-P1 — `patrimoine`, si fourni, doit porter le `PatrimonialState` complet
+ * de CET exercice ET la `ranSituation` brute (`BilanInputs.ran.situation` —
+ * absente de `RanResolution`, donc transmise séparément par l'appelant). Le
+ * sous-objet `FiscalYearClosure.patrimoine` n'est construit QUE si le compte
+ * de l'exploitant est réellement résolu (`clotureN !== undefined`) — sinon
+ * `undefined` intégralement : jamais une closure patrimoniale partielle,
+ * jamais un 0 inventé pour combler l'absence.
  */
 export function buildFiscalYearClosure(input: {
   fiscalYearId: string;
@@ -121,13 +135,25 @@ export function buildFiscalYearClosure(input: {
   computedAt: string;
   sourceDeclarationVersionId?: string;
   now: string;
+  patrimoine?: { state: PatrimonialState; ranSituation: RanSituation };
 }): FiscalYearClosure {
+  const clotureCompteExploitant = input.patrimoine?.state.compteExploitant.clotureN;
+  const patrimoine =
+    input.patrimoine !== undefined && clotureCompteExploitant !== undefined
+      ? {
+          compteExploitantAvantAffectationResultat: clotureCompteExploitant,
+          resultatComptableExercice: input.patrimoine.state.resultatComptable,
+          ranSituation: input.patrimoine.ranSituation,
+          ranValeur: input.patrimoine.state.ran.valeur,
+        }
+      : undefined;
   return {
     id: crypto.randomUUID(),
     fiscalYearId: input.fiscalYearId,
     dossierId: input.dossierId,
     sourceDeclarationVersionId: input.sourceDeclarationVersionId,
     stocks: input.stocks,
+    patrimoine,
     computedAt: input.computedAt,
     closedAt: input.now,
   };
@@ -238,7 +264,11 @@ export function closeFiscalYear(
   fiscalYear: FiscalYear,
   fiscalResult: FiscalEngineOutput | undefined,
   now: string,
-  options?: { sourceDeclarationVersionId?: string },
+  options?: {
+    sourceDeclarationVersionId?: string;
+    /** G1-P1 — voir `buildFiscalYearClosure()`. Absent ⇒ closure sans continuité patrimoniale, comportement rigoureusement inchangé. */
+    patrimoine?: { state: PatrimonialState; ranSituation: RanSituation };
+  },
 ): FiscalYear {
   if (!fiscalResult) return fiscalYear;
   const closure = buildFiscalYearClosure({
@@ -248,6 +278,7 @@ export function closeFiscalYear(
     computedAt: fiscalResult.computedAt,
     sourceDeclarationVersionId: options?.sourceDeclarationVersionId,
     now,
+    patrimoine: options?.patrimoine,
   });
   return appendClosure(fiscalYear, closure);
 }
@@ -292,6 +323,79 @@ export function resolveStocksOuverture(
     return { status: "unavailable", reason: "Aucune closure exploitable sur l'exercice précédent." };
   }
   return { status: "available", sourceClosureId: closure.id, stocks: closure.stocks };
+}
+
+/**
+ * G1-P1 — miroir exact de `resolveStocksOuverture()` ci-dessus pour la
+ * continuité patrimoniale (compte exploitant / RAN). Mêmes 6 gardes,
+ * délibérément dupliquées plutôt que factorisées (même choix que le fichier
+ * applique déjà entre les deux mécanismes de continuité — une régression
+ * future de l'une ne doit jamais silencieusement affaiblir l'autre via un
+ * helper partagé).
+ *
+ * Garde supplémentaire, spécifique au patrimoine : `closure.patrimoine`
+ * doit exister (l'intake G1-P0 doit avoir été réellement renseigné pour
+ * l'exercice précédent) — sinon `unavailable`, jamais un 0 par défaut.
+ *
+ * Ne recalcule rien elle-même : délègue strictement à
+ * `resolveOuvertureCompteExploitantNPlusUn()` et `reporterRanNPlusUn()`
+ * (déjà écrites, déjà testées en isolation) — cette fonction ne fait que les
+ * appeler avec les bonnes valeurs, lues sur la closure réelle.
+ */
+export function resolvePatrimoineOuvertureNPlusUn(
+  current: FiscalYear,
+  previous: FiscalYear | undefined,
+): PatrimoineOuvertureResult {
+  if (!current.previousFiscalYearId) {
+    return { status: "unavailable", reason: "Aucun previousFiscalYearId défini pour cet exercice." };
+  }
+  if (!previous) {
+    return { status: "unavailable", reason: "L'exercice précédent référencé est introuvable." };
+  }
+  if (previous.id !== current.previousFiscalYearId) {
+    return {
+      status: "unavailable",
+      reason: "L'exercice fourni ne correspond pas au previousFiscalYearId déclaré.",
+    };
+  }
+  if (!current.dossierId || !previous.dossierId || previous.dossierId !== current.dossierId) {
+    return { status: "unavailable", reason: "L'exercice précédent n'appartient pas au même dossier." };
+  }
+  if (previous.year !== current.year - 1) {
+    return {
+      status: "unavailable",
+      reason: `Adjacence non respectée : previous.year=${previous.year}, current.year=${current.year} (attendu ${current.year - 1}).`,
+    };
+  }
+  if (previous.status !== "closed") {
+    return { status: "unavailable", reason: "L'exercice précédent n'est pas clôturé." };
+  }
+  const closure = latestClosure(previous);
+  if (!closure) {
+    return { status: "unavailable", reason: "Aucune closure exploitable sur l'exercice précédent." };
+  }
+  if (!closure.patrimoine) {
+    return {
+      status: "unavailable",
+      reason: "La clôture de l'exercice précédent ne porte aucune donnée patrimoniale (intake G1-P0 non renseigné pour cet exercice) — absence ≠ zéro.",
+    };
+  }
+
+  const ouvertureCompteExploitant = resolveOuvertureCompteExploitantNPlusUn({
+    cloture120N: closure.patrimoine.compteExploitantAvantAffectationResultat,
+    resultatComptableN: closure.patrimoine.resultatComptableExercice,
+  });
+  const ranReporte = reporterRanNPlusUn({
+    situationN: closure.patrimoine.ranSituation,
+    valeurN: closure.patrimoine.ranValeur,
+  });
+
+  return {
+    status: "available",
+    sourceClosureId: closure.id,
+    ouvertureCompteExploitant,
+    ran: { situation: ranReporte.situationNPlusUn, valeur: ranReporte.valeurNPlusUn },
+  };
 }
 
 /**

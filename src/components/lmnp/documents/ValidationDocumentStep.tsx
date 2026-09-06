@@ -295,11 +295,16 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
             bloquant : comme le reste du bilan simplifié, une réponse absente
             laisse les cases concernées non alimentées plutôt que d'empêcher
             la génération du 2031-SD/2033-B (déjà complets sans ces données).
+            G1-P1 — patrimoineOuverture transmis tel quel depuis le FiscalYear
+            (résolu une seule fois à sa création par
+            resolvePatrimoineOuvertureNPlusUn(), jamais recalculé ici) :
+            absent pour un premier exercice ou une continuité indisponible.
           */}
           <PatrimonialIntakeCard
             cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
             value={draft?.bilanPatrimonial}
             onChange={handleBilanPatrimonialChange}
+            patrimoineOuverture={fiscalYear.patrimoineOuverture}
           />
 
           <p

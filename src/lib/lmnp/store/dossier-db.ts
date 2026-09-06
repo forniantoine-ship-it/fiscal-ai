@@ -40,6 +40,7 @@ import {
   createNextFiscalYear,
   extractDossierLevelDataFromWorkspace,
   extractIdentity,
+  resolvePatrimoineOuvertureNPlusUn,
   resolveStocksOuverture,
 } from "../services/dossier/fiscal-year-cycle";
 
@@ -249,11 +250,30 @@ export async function persistFiscalYearClosureAndTransition(params: {
     );
   }
 
+  // G1-P1 — continuité patrimoniale (compte exploitant / RAN), même niveau
+  // architectural que les stocks fiscaux ci-dessous. `patrimoine` (le
+  // PatrimonialState résolu de CET exercice) vit sur `draft.rfs.patrimoine`
+  // (dernière génération) ; `ranSituation` (l'entrée BRUTE, absente de
+  // `RanResolution`) vit séparément sur `draft.bilanPatrimonial.ran.situation`
+  // — les deux sont encore présents sur le draft de N à cet instant (jamais
+  // effacés avant la transition N+1, cf. `createNextDeclarationDraft()` plus
+  // bas). Absent dans les deux cas ⇒ `patrimoineSource: undefined` ⇒
+  // `closeFiscalYear()` ne construit aucune closure patrimoniale partielle.
+  const patrimoineN = workspace.declarationDraft?.rfs?.patrimoine;
+  const ranSituationN = workspace.declarationDraft?.bilanPatrimonial?.ran?.situation;
+  const patrimoineSource =
+    patrimoineN !== undefined && ranSituationN !== undefined
+      ? { state: patrimoineN, ranSituation: ranSituationN }
+      : undefined;
+
   const closedFiscalYearIdentity = closeFiscalYear(
     { ...workspace.fiscalYear, status: "closed", updatedAt: now },
     fiscalResult,
     now,
-    { sourceDeclarationVersionId: workspace.declarationDraft?.declaration?.currentVersionId },
+    {
+      sourceDeclarationVersionId: workspace.declarationDraft?.declaration?.currentVersionId,
+      patrimoine: patrimoineSource,
+    },
   );
 
   const closedFiscalYear: FiscalYearRecord = {
@@ -277,7 +297,7 @@ export async function persistFiscalYearClosureAndTransition(params: {
   // FiscalYear N+1 lui-même, jamais dans `declarationDraft.fiscalResult`
   // (réservé au miroir de la dernière génération du MÊME exercice).
   const stocksOuvertureResult = resolveStocksOuverture(nextFiscalYearBase, closedFiscalYear);
-  const nextFiscalYear: FiscalYear =
+  const nextFiscalYearWithStocks: FiscalYear =
     stocksOuvertureResult.status === "available"
       ? {
           ...nextFiscalYearBase,
@@ -287,6 +307,25 @@ export async function persistFiscalYearClosureAndTransition(params: {
           },
         }
       : nextFiscalYearBase;
+  // G1-P1 — même patron exact que les stocks ci-dessus : `nextFiscalYearBase`
+  // porte déjà `previousFiscalYearId` (createNextFiscalYear()) et
+  // `closedFiscalYear` porte déjà sa nouvelle closure (closeFiscalYear() vient
+  // de l'ajouter ci-dessus) — resolvePatrimoineOuvertureNPlusUn() revérifie
+  // ses propres gardes sur ces objets réels. Persisté sur FiscalYear N+1
+  // lui-même, jamais dans `declarationDraft.bilanPatrimonial` (qui reste
+  // vierge à chaque nouvel exercice, cf. createNextDeclarationDraft()).
+  const patrimoineOuvertureResult = resolvePatrimoineOuvertureNPlusUn(nextFiscalYearBase, closedFiscalYear);
+  const nextFiscalYear: FiscalYear =
+    patrimoineOuvertureResult.status === "available"
+      ? {
+          ...nextFiscalYearWithStocks,
+          patrimoineOuverture: {
+            sourceClosureId: patrimoineOuvertureResult.sourceClosureId,
+            ouvertureCompteExploitant: patrimoineOuvertureResult.ouvertureCompteExploitant,
+            ran: patrimoineOuvertureResult.ran,
+          },
+        }
+      : nextFiscalYearWithStocks;
   const nextFiscalYearRecord: FiscalYearRecord = {
     ...nextFiscalYear,
     documents: [],

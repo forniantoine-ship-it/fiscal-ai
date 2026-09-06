@@ -12,6 +12,7 @@
  */
 
 import type { FiscalEngineOutput, Property } from "./domain";
+import type { RanSituation } from "@/runtime/capabilities/bilan/types";
 
 /**
  * Champs d'identité Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) —
@@ -116,6 +117,39 @@ export interface FiscalYearClosure {
   stocks: FiscalEngineOutput["stocks"];
   computedAt: string;
   closedAt: string;
+  /**
+   * G1-P1 — continuité patrimoniale (compte exploitant / RAN). Bloc
+   * ENTIÈREMENT optionnel : absent pour toute closure produite avant ce
+   * chantier, ou pour un exercice dont l'intake patrimonial (G1-P0) n'a
+   * jamais été renseigné — jamais un bloc partiel ni des valeurs inventées.
+   *
+   * `compteExploitantAvantAffectationResultat` = exactement
+   * `PatrimonialState.compteExploitant.clotureN` (= ouverture + apports −
+   * prélèvements de CET exercice) — n'inclut JAMAIS le résultat comptable de
+   * l'exercice. Le nom évite délibérément le mot seul "clôture", trompeur en
+   * comptabilité générale (où une clôture de compte inclut habituellement le
+   * résultat de la période) — ce n'est PAS le cas ici, par convention EI du
+   * contrat P0 (le résultat ne rejoint le compte de l'exploitant qu'à
+   * l'ouverture de l'exercice SUIVANT).
+   *
+   * `resultatComptableExercice` = `PatrimonialState.resultatComptable`,
+   * conservé SÉPARÉMENT : `resolveOuvertureCompteExploitantNPlusUn()` a
+   * besoin des deux valeurs pour calculer l'ouverture N+1
+   * (cloture120N + resultatComptableN) — ne jamais réutiliser
+   * `compteExploitantAvantAffectationResultat` seul comme ouverture N+1.
+   *
+   * `ranSituation` provient de `BilanInputs.ran.situation` (l'entrée brute,
+   * pas la résolution — `RanResolution` ne porte pas ce champ) : c'est une
+   * métadonnée de provenance du dossier (NATIF/IMPORTE/REPRISE_HISTORIQUE),
+   * pas "quel numéro d'exercice". `ranValeur` est la valeur résolue
+   * (`PatrimonialState.ran.valeur`, 0 pour NATIF, montant importé sinon).
+   */
+  patrimoine?: {
+    compteExploitantAvantAffectationResultat: number;
+    resultatComptableExercice: number;
+    ranSituation: RanSituation;
+    ranValeur?: number;
+  };
 }
 
 /**
@@ -129,6 +163,23 @@ export type StocksOuvertureResult =
       status: "available";
       sourceClosureId: string;
       stocks: FiscalEngineOutput["stocks"];
+    }
+  | {
+      status: "unavailable";
+      reason: string;
+    };
+
+/**
+ * G1-P1 — miroir exact de `StocksOuvertureResult` pour la continuité
+ * patrimoniale. Même doctrine : indisponibilité = état explicite et tracé,
+ * jamais une valeur inventée (0, estimation, ou repli sur un autre exercice).
+ */
+export type PatrimoineOuvertureResult =
+  | {
+      status: "available";
+      sourceClosureId: string;
+      ouvertureCompteExploitant: number;
+      ran: { situation: RanSituation; valeur?: number };
     }
   | {
       status: "unavailable";

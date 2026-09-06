@@ -4,6 +4,7 @@ import type {
   LignePatrimonialeInput,
   LignesSimplesInputs,
   RanInputs,
+  RanSituation,
   TiersInputs,
   TresorerieInputs,
 } from "@/runtime/capabilities/bilan/types";
@@ -27,6 +28,20 @@ export type PatrimonialRoutage = "NATIF" | "REPRISE";
 export type OuiNonReponse = "OUI" | "NON";
 
 /**
+ * G1-P1 — continuité patrimoniale N→N+1, lue depuis
+ * `FiscalYear.patrimoineOuverture` (résolue une seule fois à la création de
+ * CET exercice par `resolvePatrimoineOuvertureNPlusUn()`, jamais recalculée
+ * ici). Sa seule présence dispense l'utilisateur de Q0/Q_OUV : l'ouverture du
+ * compte exploitant et le RAN sont alors `DERIVE`, jamais un `DECLARE`
+ * utilisateur — voir `buildBilanPatrimonial()`.
+ */
+export type PatrimoineContinuite = {
+  sourceClosureId: string;
+  ouvertureCompteExploitant: number;
+  ran: { situation: RanSituation; valeur?: number };
+};
+
+/**
  * État brut du formulaire. Chaque champ `*Raw` est une CHAÎNE, jamais un
  * nombre déjà converti : `""` signifie explicitement "pas encore répondu",
  * jamais 0 — voir `parseMontantSaisi()`, seul point de conversion autorisé.
@@ -34,7 +49,16 @@ export type OuiNonReponse = "OUI" | "NON";
  * signifie "question pas encore tranchée", jamais une valeur par défaut.
  */
 export type PatrimonialIntakeState = {
-  /** Q0 — premier exercice de ce dossier (NATIF) ou reprise d'un suivi antérieur (REPRISE). */
+  /**
+   * G1-P1 — continuité N→N+1 disponible (voir `PatrimoineContinuite`).
+   * Quand définie, `routage`/`ouvertureRepriseRaw`/`ranRepriseRaw` ci-dessous
+   * ne sont plus consultés par `buildBilanPatrimonial()` : l'ouverture du
+   * compte exploitant et le RAN sont construits directement depuis cette
+   * continuité. Jamais construite par ce module lui-même — fournie par
+   * l'appelant (`PatrimonialIntakeCard.tsx`) depuis `FiscalYear.patrimoineOuverture`.
+   */
+  continuite?: PatrimoineContinuite;
+  /** Q0 — premier exercice de ce dossier (NATIF) ou reprise d'un suivi antérieur (REPRISE). Non consultée si `continuite` est définie. */
   routage?: PatrimonialRoutage;
   /** Q1 — compte dédié (DEDIE) ou non (MIXTE). */
   bankMode?: "DEDIE" | "MIXTE";
@@ -122,14 +146,14 @@ const TIERS_NUL_CONFIRME: TiersInputs = {
 /**
  * Construit un `BilanInputs` depuis l'état du formulaire.
  *
- * Retourne `undefined` tant que le routage (Q0, NATIF/REPRISE) n'a pas été
- * explicitement tranché — jamais déduit d'une absence de saisie (contrat
- * G1-A/G1-P0 explicite). Dans ce cas, rien n'est transmis à
- * `assemblePatrimoine()` : c'est rigoureusement équivalent à l'état
- * antérieur à G1 (`bilanPatrimonial` absent du draft).
+ * Retourne `undefined` tant que ni la continuité N→N+1 (`state.continuite`)
+ * ni le routage (Q0, NATIF/REPRISE) n'ont été établis — jamais déduit d'une
+ * absence de saisie (contrat G1-A/G1-P0 explicite). Dans ce cas, rien n'est
+ * transmis à `assemblePatrimoine()` : c'est rigoureusement équivalent à
+ * l'état antérieur à G1 (`bilanPatrimonial` absent du draft).
  */
 export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInputs | undefined {
-  if (state.routage === undefined) return undefined;
+  if (state.continuite === undefined && state.routage === undefined) return undefined;
 
   const tresorerie: TresorerieInputs =
     state.bankMode === "DEDIE"
@@ -138,20 +162,30 @@ export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInput
         ? { bankMode: "MIXTE", declaredProfessionalCash: parseMontantSaisi(state.declaredProfessionalCashRaw) }
         : { bankMode: "INCONNU" };
 
-  // Q0 = NATIF : aucune activité antérieure à ce dossier, donc aucun solde
-  // d'ouverture possible — 0 n'est pas une saisie mais un fait structurel du
-  // dossier (voir G1-A §2-A). Q0 = REPRISE : uniquement ce que Q_OUV a
-  // explicitement recueilli, jamais un 0 par défaut.
+  // G1-P1 — continuité disponible : l'ouverture du compte exploitant et le
+  // RAN sont DÉRIVÉS de la clôture précédente (resolvePatrimoineOuvertureNPlusUn(),
+  // déjà exécutée à la création de l'exercice) — jamais recalculés ici,
+  // jamais présentés comme une saisie utilisateur. Sans continuité : Q0 =
+  // NATIF ⇒ aucune activité antérieure, donc 0 (fait structurel du dossier,
+  // voir G1-A §2-A) ; Q0 = REPRISE ⇒ uniquement ce que Q_OUV a explicitement
+  // recueilli, jamais un 0 par défaut.
   const compteExploitant: CompteExploitantInputs = {
-    ouverture: state.routage === "NATIF" ? 0 : parseMontantSaisi(state.ouvertureRepriseRaw),
+    ouverture:
+      state.continuite !== undefined
+        ? state.continuite.ouvertureCompteExploitant
+        : state.routage === "NATIF"
+          ? 0
+          : parseMontantSaisi(state.ouvertureRepriseRaw),
     apports: parseMontantSaisi(state.apportsRaw),
     prelevements: parseMontantSaisi(state.prelevementsRaw),
   };
 
   const ran: RanInputs =
-    state.routage === "NATIF"
-      ? { situation: "NATIF" }
-      : { situation: "IMPORTE", importedRAN: parseMontantSaisi(state.ranRepriseRaw) };
+    state.continuite !== undefined
+      ? { situation: state.continuite.ran.situation, importedRAN: state.continuite.ran.valeur }
+      : state.routage === "NATIF"
+        ? { situation: "NATIF" }
+        : { situation: "IMPORTE", importedRAN: parseMontantSaisi(state.ranRepriseRaw) };
 
   const subventionMontant = parseMontantSaisi(state.subventionMontantRaw);
   const subventionsInvestissement: LignePatrimonialeInput | undefined =

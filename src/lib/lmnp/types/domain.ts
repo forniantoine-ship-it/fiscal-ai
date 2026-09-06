@@ -530,6 +530,22 @@ export interface FiscalYear {
     sourceClosureId: string;
     stocks: FiscalEngineOutput["stocks"];
   };
+  /**
+   * G1-P1 — miroir exact de `stocksOuverture` ci-dessus, pour la continuité
+   * patrimoniale (compte exploitant / RAN) plutôt que les stocks fiscaux.
+   * Résolu par `resolvePatrimoineOuvertureNPlusUn()`, persisté une seule fois
+   * à la création de CET exercice — jamais recalculé ensuite, jamais injecté
+   * dans `declarationDraft.bilanPatrimonial` (qui reste vierge à chaque
+   * nouvel exercice, cf. `createNextDeclarationDraft()`). `undefined` si
+   * aucune continuité n'était disponible (premier exercice, dossier
+   * différent, exercice précédent non clos, intake patrimonial de N jamais
+   * renseigné, etc.) — jamais une valeur inventée.
+   */
+  patrimoineOuverture?: {
+    sourceClosureId: string;
+    ouvertureCompteExploitant: number;
+    ran: { situation: import("@/runtime/capabilities/bilan/types").RanSituation; valeur?: number };
+  };
 }
 
 export interface CoOwner {

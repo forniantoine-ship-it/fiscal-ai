@@ -9,6 +9,7 @@ import { typography } from "@/design-system/theme/typography";
 import {
   buildBilanPatrimonial,
   deriveIntakeStateFromBilanPatrimonial,
+  type PatrimoineContinuite,
   type PatrimonialIntakeState,
 } from "@/lib/lmnp/services/declaration/patrimonial-intake";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
@@ -17,21 +18,35 @@ type PatrimonialIntakeCardProps = {
   cardStyle: React.CSSProperties;
   value: BilanInputs | undefined;
   onChange: (value: BilanInputs | undefined) => void;
+  /**
+   * G1-P1 — continuité N→N+1, telle que persistée sur
+   * `FiscalYear.patrimoineOuverture` (résolue une seule fois à la création
+   * de CET exercice, jamais recalculée ici). Absente pour un premier
+   * exercice, un dossier repris sans continuité interne, ou tant que
+   * l'exercice précédent n'a pas lui-même renseigné son intake patrimonial
+   * — dans tous ces cas, le comportement G1-P0 (Q0/Q_OUV) reste inchangé.
+   */
+  patrimoineOuverture?: PatrimoineContinuite;
 };
 
 /**
- * G1-P0 — intake patrimonial minimal (2033-A). Composant entièrement
+ * G1-P0/G1-P1 — intake patrimonial minimal (2033-A). Composant entièrement
  * contrôlé par un état local (`PatrimonialIntakeState`) : la logique de
- * construction/doctrine INCONNU-NUL_CONFIRME-DECLARE vit dans le module pur
- * `patrimonial-intake.ts` (testé sans React, convention de ce projet) — ce
- * composant ne fait que refléter les réponses et notifier le parent.
+ * construction/doctrine INCONNU-NUL_CONFIRME-DECLARE-DERIVE vit dans le
+ * module pur `patrimonial-intake.ts` (testé sans React, convention de ce
+ * projet) — ce composant ne fait que refléter les réponses et notifier le
+ * parent.
  *
- * `value` n'est utilisé qu'à l'initialisation (réhydratation d'un draft déjà
- * répondu) — les changements ultérieurs de `value` ne réinitialisent jamais
- * le formulaire en cours de frappe, pour ne pas perdre une saisie locale.
+ * `value`/`patrimoineOuverture` ne sont utilisés qu'à l'initialisation
+ * (réhydratation d'un draft déjà répondu, ou reprise d'une continuité déjà
+ * résolue) — leurs changements ultérieurs ne réinitialisent jamais le
+ * formulaire en cours de frappe, pour ne pas perdre une saisie locale.
  */
-export function PatrimonialIntakeCard({ cardStyle, value, onChange }: PatrimonialIntakeCardProps) {
-  const [state, setState] = useState<PatrimonialIntakeState>(() => deriveIntakeStateFromBilanPatrimonial(value));
+export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOuverture }: PatrimonialIntakeCardProps) {
+  const [state, setState] = useState<PatrimonialIntakeState>(() => ({
+    ...deriveIntakeStateFromBilanPatrimonial(value),
+    continuite: patrimoineOuverture,
+  }));
 
   const built = useMemo(() => buildBilanPatrimonial(state), [state]);
 
@@ -62,35 +77,58 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange }: Patrimonia
         </p>
       </div>
 
-      {/* Q0 — routage */}
-      <Question label="Ce dossier correspond-il à la première activité déclarée, ou reprenez-vous un suivi antérieur (comptable, autre outil) ?">
-        <ChoiceButton
-          selected={state.routage === "NATIF"}
-          onClick={() => patch({ routage: "NATIF" })}
-          label="Première activité — aucun exercice antérieur à reprendre"
-        />
-        <ChoiceButton
-          selected={state.routage === "REPRISE"}
-          onClick={() => patch({ routage: "REPRISE" })}
-          label="Je reprends un dossier déjà suivi ailleurs"
-        />
-      </Question>
+      {/* G1-P1 — continuité disponible : Q0/Q_OUV entièrement sautées, valeurs affichées comme dérivées, jamais comme une nouvelle saisie. */}
+      {state.continuite ? (
+        <div
+          style={{
+            borderRadius: radius.md,
+            border: `1px solid ${colors.border.subtle}`,
+            backgroundColor: colors.surface.inset,
+            padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
+          }}
+        >
+          <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: 500 }}>
+            Données reprises automatiquement de votre exercice précédent
+          </p>
+          <p className="mt-1" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+            Solde du compte de l&apos;exploitant à l&apos;ouverture : {state.continuite.ouvertureCompteExploitant} € — Report à
+            nouveau : {state.continuite.ran.valeur ?? 0} € ({state.continuite.ran.situation}). Ces valeurs proviennent de la
+            clôture de votre exercice précédent, elles ne sont pas à ressaisir.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Q0 — routage */}
+          <Question label="Ce dossier correspond-il à la première activité déclarée, ou reprenez-vous un suivi antérieur (comptable, autre outil) ?">
+            <ChoiceButton
+              selected={state.routage === "NATIF"}
+              onClick={() => patch({ routage: "NATIF" })}
+              label="Première activité — aucun exercice antérieur à reprendre"
+            />
+            <ChoiceButton
+              selected={state.routage === "REPRISE"}
+              onClick={() => patch({ routage: "REPRISE" })}
+              label="Je reprends un dossier déjà suivi ailleurs"
+            />
+          </Question>
 
-      {/* Q_OUV — uniquement si reprise */}
-      {state.routage === "REPRISE" ? (
-        <Question label="Reprise du dossier — éléments de votre dernière clôture">
-          <AmountField
-            label="Solde de votre compte de l'exploitant à la clôture de l'exercice précédent"
-            raw={state.ouvertureRepriseRaw}
-            onChange={(raw) => patch({ ouvertureRepriseRaw: raw })}
-          />
-          <AmountField
-            label="Report à nouveau à reprendre de votre comptabilité antérieure (0 si aucun)"
-            raw={state.ranRepriseRaw}
-            onChange={(raw) => patch({ ranRepriseRaw: raw })}
-          />
-        </Question>
-      ) : null}
+          {/* Q_OUV — uniquement si reprise */}
+          {state.routage === "REPRISE" ? (
+            <Question label="Reprise du dossier — éléments de votre dernière clôture">
+              <AmountField
+                label="Solde de votre compte de l'exploitant à la clôture de l'exercice précédent"
+                raw={state.ouvertureRepriseRaw}
+                onChange={(raw) => patch({ ouvertureRepriseRaw: raw })}
+              />
+              <AmountField
+                label="Report à nouveau à reprendre de votre comptabilité antérieure (0 si aucun)"
+                raw={state.ranRepriseRaw}
+                onChange={(raw) => patch({ ranRepriseRaw: raw })}
+              />
+            </Question>
+          ) : null}
+        </>
+      )}
 
       {/* Q1 — trésorerie */}
       <Question label="Avez-vous un compte bancaire dédié à cette activité de location meublée ?">
