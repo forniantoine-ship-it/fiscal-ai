@@ -1,6 +1,8 @@
 import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
+import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
 
 /**
  * Projection Cerfa 2033-A-SD (bilan simplifié) — consomme UNIQUEMENT la RFS
@@ -94,9 +96,12 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   const cases: CerfaCase[] = [];
   const casesNonAlimentees: CerfaCaseNonAlimentee[] = [];
 
-  // Case 136 — Résultat de l'exercice. Même valeur, même formule que la case
-  // 310 du 2033-B (Cycle 32/33) : référencée, jamais recalculée.
-  const resultatExercice = round2(fr.resultatAvantAmort - fr.amortCalcule - fr.charges.totalNonDeductible);
+  // Case 136 — Résultat de l'exercice. MICRO-JALON socle patrimonial P0 :
+  // source UNIQUE désormais partagée avec la case 310 du 2033-B
+  // (`capabilities/bilan/resultat-comptable.ts`) — même formule qu'avant
+  // (aucun changement de valeur, non-régression vérifiée), jamais recalculée
+  // indépendamment dans deux fichiers.
+  const resultatExercice = resultatComptableCentral(fr);
   cases.push({
     caseId: "136",
     label: "Résultat de l'exercice",
@@ -108,10 +113,32 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     },
   });
 
-  // Case 156 — Emprunts et dettes assimilées. Somme de valeurs déjà produites
-  // par F-011 (capitalRestantDu31_12 par prêt) — projection de présentation,
-  // aucun solde recalculé.
-  if (rfs.emprunts !== undefined) {
+  // Case 156 — Emprunts et dettes assimilées. Correction P0-3 (audit
+  // indépendant) : quand `rfs.patrimoine` est fourni, la source canonique
+  // devient `patrimoine.emprunts` (résolution qui compare F-011 et
+  // BilanInputs.financements.clotureCRD — voir `assemble-patrimoine.ts`).
+  // Si les deux sources divergent, 156 n'est PLUS publiée (avant cette
+  // correction, elle restait sourcée uniquement sur F-011 sans jamais
+  // détecter une seconde source contradictoire). Sans patrimoine,
+  // comportement rigoureusement inchangé : F-011 seul, aucun recalcul.
+  const patrimoinePourEmprunts = rfs.patrimoine;
+  if (patrimoinePourEmprunts !== undefined) {
+    if (patrimoinePourEmprunts.emprunts.etat === "DISPONIBLE") {
+      cases.push({
+        caseId: "156",
+        label: "Emprunts et dettes assimilées",
+        value: patrimoinePourEmprunts.emprunts.totalCRD,
+        trace: { source: "FiscalResult", path: patrimoinePourEmprunts.emprunts.source, ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "156",
+        label: "Emprunts et dettes assimilées",
+        raison: patrimoinePourEmprunts.emprunts.raison,
+        categorie: patrimoinePourEmprunts.emprunts.etat === "DIVERGENT" ? "incoherence_modele" : "donnee_absente",
+      });
+    }
+  } else if (rfs.emprunts !== undefined) {
     const totalEmprunts = round2(rfs.emprunts.reduce((acc, p) => acc + p.capitalRestantDu31_12, 0));
     cases.push({
       caseId: "156",
@@ -153,10 +180,49 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   // nouveau existe sans que son brut soit reflété dans totalBrut) : produire
   // 028/030 depuis F-010 seul sous-évaluerait silencieusement le bilan. Aucun
   // recalcul ici — seule une comparaison entre deux valeurs déjà produites.
+  // MICRO-JALON socle patrimonial P0 : quand `rfs.patrimoine` est fourni, le
+  // registre unifié (`assembleRegistreImmobilisationsPatrimoniales`) prend le
+  // relais pour 028/030 — il sait, en plus de ce qui suit, intégrer le BRUT
+  // des composants nouveaux F-012 (voir ce module pour la preuve). Sans
+  // patrimoine, comportement rigoureusement inchangé (branche ci-dessous,
+  // non modifiée).
+  const patrimoine = rfs.patrimoine;
+
   const amortissementDivergent =
     immo !== undefined && Math.abs(round2(fr.amortCalcule - immo.totalAnnuelExercice)) > 0.01;
 
-  if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
+  if (patrimoine !== undefined) {
+    if (patrimoine.immobilisations.brutTotal !== undefined) {
+      cases.push({
+        caseId: "028",
+        label: "Immobilisations corporelles (brut)",
+        value: patrimoine.immobilisations.brutTotal,
+        trace: { source: "FiscalResult", path: "patrimoine.immobilisations.brutTotal (registre unifié F-010+F-012)", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "028",
+        label: "Immobilisations corporelles (brut)",
+        raison: patrimoine.immobilisations.raisons.join(" ") || "Registre patrimonial d'immobilisations non fiable pour ce dossier.",
+        categorie: "incoherence_modele",
+      });
+    }
+    if (patrimoine.immobilisations.netTotal !== undefined) {
+      cases.push({
+        caseId: "030",
+        label: "Immobilisations corporelles (net)",
+        value: patrimoine.immobilisations.netTotal,
+        trace: { source: "FiscalResult", path: "patrimoine.immobilisations.netTotal (registre unifié F-010+F-012)", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "030",
+        label: "Immobilisations corporelles (net)",
+        raison: patrimoine.immobilisations.raisons.join(" ") || "Registre patrimonial d'immobilisations non fiable pour ce dossier.",
+        categorie: "incoherence_modele",
+      });
+    }
+  } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
     const brut = round2(immo.totalBrut + immo.valeurTerrain);
     const amortissementsCumules = round2(immo.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
     const net = round2(brut - amortissementsCumules);
@@ -212,7 +278,122 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     }
   }
 
-  casesNonAlimentees.push(
+  // ------------------------------------------------------------------
+  // MICRO-JALON socle patrimonial P0 — cases 084/086/120/134 et la case 142
+  // (Total I — Capitaux propres, seul total publiable, voir plus bas),
+  // UNIQUEMENT quand `rfs.patrimoine` est fourni (`assemblePatrimoine()`,
+  // `capabilities/bilan`). Purement additif : sans patrimoine, ces cases
+  // restent bloquées exactement comme avant ce jalon (bulk
+  // `casesNonAlimentees` ci-dessous, non modifié pour ces caseId — voir le
+  // filtrage juste avant le `return`).
+  //
+  // Correction P0-4 (audit indépendant) : 044/048/096/098/110/112/176/180
+  // restent TOUJOURS bloqués, même bilan équilibré — voir le commentaire
+  // détaillé au-dessus du calcul de 142 plus bas. `checkBilanEquilibre()`
+  // reste le SEUL juge de la fiabilité du sous-ensemble suivi par ce module,
+  // jamais une reconstitution locale ici — mais un sous-ensemble équilibré
+  // n'est pas un total Cerfa complet tant que ses catégories non modélisées
+  // (incorporelles, financières, autres tiers) ne sont pas confirmées.
+  // ------------------------------------------------------------------
+  if (patrimoine !== undefined) {
+    // 084/086 — Disponibilités. Toujours tentées indépendamment de
+    // l'équilibre global : une trésorerie connue reste une donnée valide
+    // même si un autre poste bloque le reste du bilan.
+    if (patrimoine.tresorerie.clotureRetenue !== undefined) {
+      for (const caseId of ["084", "086"] as const) {
+        cases.push({
+          caseId,
+          label: "Disponibilités",
+          value: patrimoine.tresorerie.clotureRetenue,
+          trace: { source: "FiscalResult", path: `patrimoine.tresorerie.clotureRetenue (${patrimoine.tresorerie.etat})`, ksArtifacts: ["TRF-0032"] },
+        });
+      }
+    } else {
+      for (const [caseId, suffixe] of [["084", "brut"], ["086", "net"]] as const) {
+        casesNonAlimentees.push({ caseId, label: `Disponibilités (${suffixe})`, raison: patrimoine.tresorerie.raison, categorie: "donnee_absente" });
+      }
+    }
+
+    // 120 — Capital social ou individuel (compte de l'exploitant).
+    if (patrimoine.compteExploitant.disponible && patrimoine.compteExploitant.clotureN !== undefined) {
+      cases.push({
+        caseId: "120",
+        label: "Capital social ou individuel",
+        value: patrimoine.compteExploitant.clotureN,
+        trace: { source: "FiscalResult", path: "patrimoine.compteExploitant.clotureN (ouverture + apports − prélèvements, résultat N jamais inclus)", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({ caseId: "120", label: "Capital social ou individuel", raison: patrimoine.compteExploitant.raison, categorie: "donnee_absente" });
+    }
+
+    // 134 — Report à nouveau.
+    if (patrimoine.ran.disponible && patrimoine.ran.valeur !== undefined) {
+      cases.push({
+        caseId: "134",
+        label: "Report à nouveau",
+        value: patrimoine.ran.valeur,
+        trace: { source: "FiscalResult", path: "patrimoine.ran.valeur", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({ caseId: "134", label: "Report à nouveau", raison: patrimoine.ran.raison, categorie: "donnee_absente" });
+    }
+
+    // Totaux — correction P0-4 (audit indépendant). Avant cette correction,
+    // le fait que le SOUS-ENSEMBLE suivi par ce module (immobilisations
+    // corporelles + trésorerie + tiers, compte de l'exploitant + RAN +
+    // résultat + emprunts) soit intégralement équilibré suffisait à publier
+    // 044/096/110/112/176/180 comme s'ils étaient les totaux OFFICIELS du
+    // Cerfa — alors que ces totaux officiels agrègent aussi des catégories
+    // JAMAIS modélisées par le produit aujourd'hui (immobilisations
+    // incorporelles/financières 014/016/040/042 pour 044/110/112 ; avances,
+    // charges constatées d'avance pour 096/110/112 ; fournisseurs, dettes
+    // fiscales et sociales, autres dettes pour 176/180 — voir
+    // `toujoursBloquees` ci-dessous, catégorie `donnee_absente`, jamais
+    // `non_applicable`). Un total qui traite silencieusement ces catégories
+    // comme nulles est une donnée FAUSSE, pas une donnée manquante : `044`,
+    // `048`, `096`, `098`, `110`, `112`, `176` et `180` ne sont donc PLUS
+    // jamais produits ici, quel que soit le statut de `checkBilanEquilibre`
+    // — ils tombent dans `toujoursBloquees` (même mécanisme que sans
+    // patrimoine), avec leur raison précise (RAISON_TOTAL_*).
+    //
+    // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Ses seules
+    // composantes officielles pour une entreprise individuelle (120, 134,
+    // 136) sont soit alimentées soit structurellement `non_applicable`
+    // (124/126/130/131/132/137/140 — concepts sociétaires, confirmés par le
+    // code existant, pas de lacune de donnée) : c'est le seul total dont
+    // TOUTES les lignes constitutives officielles sont, par nature, soit
+    // connues soit inapplicables à ce régime. `checkBilanEquilibre()` reste
+    // le gate : 142 n'est publiée que si l'ensemble du sous-modèle patrimonial
+    // est par ailleurs équilibré et fiable (même garde conservatrice qu'avant
+    // cette correction, non allégée).
+    const equilibre = checkBilanEquilibre({ patrimoine });
+    if (equilibre.status === "EQUILIBRE") {
+      const total142 = round2((patrimoine.compteExploitant.clotureN ?? 0) + (patrimoine.ran.valeur ?? 0) + patrimoine.resultatComptable);
+      cases.push({
+        caseId: "142",
+        label: "Total I — Capitaux propres",
+        value: total142,
+        trace: { source: "FiscalResult", path: "120 + 134 + 136 (124/126/130/131/132/137/140 non applicables pour une EI)", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "142",
+        label: "Total I — Capitaux propres",
+        raison: `Bilan non intégralement équilibré/fiable (statut : ${equilibre.status}) — ${equilibre.reasons.join(" ")} Aucun total n'est jamais produit partiellement.`,
+        categorie: "incoherence_modele",
+      });
+    }
+  }
+
+  // Liste "toujours bloquées" par nature (hors périmètre, non applicable EI,
+  // ou tiers/totaux jamais couverts au P0) — filtrée pour ne jamais dupliquer
+  // un caseId déjà traité ci-dessus par le socle patrimonial (alimenté OU
+  // explicitement non-alimenté avec sa propre raison, plus précise).
+  const caseIdsDejaTraites = new Set<string>([
+    ...cases.map((c) => c.caseId),
+    ...casesNonAlimentees.map((c) => c.caseId),
+  ]);
+  const toujoursBloquees: CerfaCaseNonAlimentee[] = [
     { caseId: "010", label: "Fonds commercial (brut)", raison: "Un LMNP exploite une location, pas un fonds de commerce — case sans objet par nature, colonne brut.", categorie: "non_applicable" },
     { caseId: "012", label: "Fonds commercial (net)", raison: "Un LMNP exploite une location, pas un fonds de commerce — case sans objet par nature, colonne net.", categorie: "non_applicable" },
     { caseId: "014", label: "Autres immobilisations incorporelles (brut)", raison: "Aucune immobilisation incorporelle n'est modélisée par F-010/F-014 — colonne brut.", categorie: "donnee_absente" },
@@ -266,7 +447,8 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     { caseId: "175", label: "Autres dettes", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
     { caseId: "176", label: "Total III — Dettes", raison: RAISON_TOTAL_DETTES, categorie: "incoherence_modele" },
     { caseId: "180", label: "Total général passif (I + II + III)", raison: RAISON_TOTAL_GENERAL_PASSIF, categorie: "incoherence_modele" },
-  );
+  ];
+  casesNonAlimentees.push(...toujoursBloquees.filter((c) => !caseIdsDejaTraites.has(c.caseId)));
 
   return {
     formId: "2033-A-SD",

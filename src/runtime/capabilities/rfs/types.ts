@@ -17,6 +17,7 @@ import type { IdentiteDeclarante } from "../f007/types";
 import type { AmortissementPlan } from "../f010/types";
 import type { PretFinancementExercice } from "../f011/types";
 import type { ComposantNouveau } from "../f012/types";
+import type { PatrimonialState } from "../bilan/types";
 
 /**
  * Plan d'amortissement (F-010) enrichi de la valeur du terrain — Cycle 35 —
@@ -112,6 +113,16 @@ export type FiscalRepresentation = {
    * pas (ou pas encore) de financement déclaré.
    */
   emprunts?: PretFinancementExercice[];
+
+  /**
+   * Socle patrimonial P0 (`capabilities/bilan`) — champ PUREMENT ADDITIF,
+   * jamais lu par les mappers 2031/2031-bis/2033-B existants. `undefined`
+   * tant qu'`assemblePatrimoine()` n'a pas été appelé pour ce dossier
+   * (aucune donnée de bilan saisie) — jamais une valeur de repli inventée.
+   * Consommé uniquement par `map-2033a.ts` pour enrichir 084/086/120/134/
+   * 142/156/176/180/110/112 au-delà des 4 cases déjà produites sans lui.
+   */
+  patrimoine?: PatrimonialState;
 
   trace: {
     ksArtifacts: string[];
