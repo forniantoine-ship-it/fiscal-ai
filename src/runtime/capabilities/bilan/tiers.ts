@@ -2,21 +2,23 @@ import { round2 } from "../f010/types";
 import type { TiersInputs, TiersPosteInput, TiersPosteResolution, TiersResolution } from "./types";
 
 /**
- * Résout les postes de tiers (créances/dettes, cases 068/072/166/172/175
- * selon la nature) — correction P0-1 (NO SILENT ZERO).
+ * Résout les buckets agrégés P0 `creances` / `dettes` — correction P0-1
+ * (NO SILENT ZERO).
  *
- * Avant cette correction, `tiers?.creances ?? 0` et `tiers?.dettes ?? 0`
- * transformaient silencieusement une absence de saisie en un montant nul,
- * ce qui pouvait produire un bilan déclaré EQUILIBRE alors qu'une créance ou
- * une dette réelle n'avait simplement pas été renseignée. Trois statuts
+ * IMPORTANT (P1-B.3) : ces deux montants sont des AGRÉGATS OPAQUES pour le
+ * contrôle d'équilibre du sous-modèle patrimonial. Ils ne portent AUCUNE
+ * nature économique et ne sont PAS équivalents à une case Cerfa :
+ *   tiers.creances ≠ 068 (ni 064, ni 072, ni 092)
+ *   tiers.dettes   ≠ 175 (ni 164, ni 166, ni 172, ni 174)
+ * La ventilation case-level vit dans `ventilation-tiers.ts`. Ne jamais
+ * projeter silencieusement ces buckets vers le 2033-A.
+ *
+ * Avant P0-1, `tiers?.creances ?? 0` / `tiers?.dettes ?? 0` transformaient
+ * silencieusement une absence de saisie en montant nul. Trois statuts
  * désormais explicites, jamais coalescés :
- *  - DECLARE      : montant fourni par l'utilisateur, retenu tel quel.
- *  - NUL_CONFIRME : l'utilisateur a confirmé l'absence de ce poste — 0 est
- *                   alors une réponse positive à une question posée, pas
- *                   une valeur par défaut.
- *  - INCONNU      : aucune réponse (y compris `tiers` entièrement absent de
- *                   `BilanInputs`, ou `{}`) — bloque la génération, ne
- *                   devient jamais 0.
+ *  - DECLARE      : montant fourni, retenu tel quel (agrégat, pas une case).
+ *  - NUL_CONFIRME : absence confirmée — 0 est une réponse positive.
+ *  - INCONNU      : aucune réponse — bloque, ne devient jamais 0.
  */
 function resolvePoste(input: TiersPosteInput | undefined, label: string): TiersPosteResolution {
   if (input === undefined || input.status === "INCONNU") {

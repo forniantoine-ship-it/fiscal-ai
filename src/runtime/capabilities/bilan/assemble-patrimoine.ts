@@ -4,8 +4,20 @@ import { assembleRegistreImmobilisationsPatrimoniales } from "./assemble-immobil
 import { resolveCompteExploitant } from "./compte-exploitant";
 import { resolveRan } from "./ran";
 import { resultatComptable } from "./resultat-comptable";
+import { resolveLignesSimples } from "./lignes-simples";
+import {
+  appliquerCoherenceInclusionConjointe,
+  resolveReconciliationDecouvertTiers,
+  resolveReconciliationEmpruntsTiers,
+} from "./reconciliation-emprunts-tiers";
+import { resolveSubventionsInvestissement } from "./subventions-investissement";
 import { resolveTiers } from "./tiers";
 import { resolveTresorerie } from "./tresorerie";
+import {
+  appliquerConflitsVentilation,
+  detecterConflitsDoubleComptage,
+  resolveVentilationTiers,
+} from "./ventilation-tiers";
 import type { BilanInputs, EmpruntsResolution, PatrimonialState } from "./types";
 
 const TOLERANCE_RECONCILIATION_CRD = 0.01;
@@ -74,6 +86,39 @@ export function assemblePatrimoine(rfs: FiscalRepresentation, inputs: BilanInput
   const ran = resolveRan(inputs.ran);
   const emprunts = resolveEmprunts(rfs, inputs);
   const tiers = resolveTiers(inputs.tiers);
+  const subventionsInvestissement = resolveSubventionsInvestissement(inputs.subventionsInvestissement);
+  const lignesSimples = resolveLignesSimples(inputs.lignesSimples);
+  const ventilationBrute = resolveVentilationTiers(inputs.ventilationTiers);
+  const ventilationTiers = appliquerConflitsVentilation(
+    ventilationBrute,
+    detecterConflitsDoubleComptage({
+      ventilation: ventilationBrute,
+      tiers,
+      emprunts,
+      tresorerie,
+      lignesSimples,
+    }),
+  );
+  const reconciliationEmpruntsBrute = resolveReconciliationEmpruntsTiers(
+    emprunts,
+    tiers.dettes,
+    inputs.tiers?.reconciliationEmprunts,
+  );
+  const reconciliationDecouvertBrute = resolveReconciliationDecouvertTiers(
+    tresorerie,
+    tiers.dettes,
+    inputs.tiers?.reconciliationDecouvert,
+  );
+  // R-02 : Σ dettes canoniques INCLUS ≤ bucket (jamais des contrôles séparés seuls).
+  const montantEmpruntCanonique = emprunts.etat === "DISPONIBLE" ? emprunts.totalCRD : 0;
+  const montantDecouvertCanonique = tresorerie.decouvertDettePassif ?? 0;
+  const { reconciliationEmpruntsTiers, reconciliationDecouvertTiers } = appliquerCoherenceInclusionConjointe(
+    reconciliationEmpruntsBrute,
+    reconciliationDecouvertBrute,
+    tiers.dettes,
+    montantEmpruntCanonique,
+    montantDecouvertCanonique,
+  );
 
   return {
     exercice: rfs.exercice,
@@ -84,5 +129,10 @@ export function assemblePatrimoine(rfs: FiscalRepresentation, inputs: BilanInput
     ran,
     emprunts,
     tiers,
+    subventionsInvestissement,
+    lignesSimples,
+    ventilationTiers,
+    reconciliationEmpruntsTiers,
+    reconciliationDecouvertTiers,
   };
 }

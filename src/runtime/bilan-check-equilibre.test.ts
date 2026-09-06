@@ -23,6 +23,55 @@ function patrimoineBase(overrides: Partial<PatrimonialState> = {}): PatrimonialS
     ran: { disponible: true, valeur: 0, raison: "ok" },
     emprunts: { etat: "DISPONIBLE", totalCRD: 12000, source: "F-011" },
     tiers: { creances: nulConfirme(), dettes: nulConfirme() },
+    // Correction P1-A / R-01 : subventions lues par checkBilanEquilibre via
+    // montantCapitauxPropresPatrimoniaux (même source que la case 142).
+    subventionsInvestissement: { status: "NUL_CONFIRME", montant: 0, raison: "confirmé nul" },
+    // P1-B.2 : champs obligatoires — checkBilanEquilibre ne les lit pas encore
+    // (limite connue) ; fixture de complétude uniquement.
+    lignesSimples: {
+      autresImmobilisationsIncorporellesBrut: nulConfirme(),
+      autresImmobilisationsIncorporellesNet: nulConfirme(),
+      immobilisationsFinancieresBrut: nulConfirme(),
+      immobilisationsFinancieresNet: nulConfirme(),
+      avancesAcomptesVerses: nulConfirme(),
+      valeursMobilieresPlacementBrut: nulConfirme(),
+      valeursMobilieresPlacementNet: nulConfirme(),
+      chargesConstateesAvance: nulConfirme(),
+      produitsConstatesAvance: nulConfirme(),
+      autresDettes: nulConfirme(),
+    },
+    // P1-B.3 : fixture de complétude — checkBilanEquilibre ne lit pas encore
+    // la ventilation (limite connue, comme lignesSimples).
+    ventilationTiers: {
+      cases: {
+        avancesAcomptesVerses: nulConfirme(),
+        clients: nulConfirme(),
+        autresCreances: nulConfirme(),
+        chargesConstateesAvance: nulConfirme(),
+        avancesAcomptesRecus: nulConfirme(),
+        fournisseurs: nulConfirme(),
+        dettesFiscalesSociales: nulConfirme(),
+        comptesCourantsAssocies: { status: "NON_APPLICABLE", montant: 0, raison: "EI" },
+        produitsConstatesAvance: nulConfirme(),
+        autresDettes: nulConfirme(),
+      },
+      montantsNonVentiles: [],
+      conflits: [],
+      projectionFiable: true,
+    },
+    // P1-B.4 strict : emprunt présent + dettes NUL → séparé (bucket vide).
+    reconciliationEmpruntsTiers: {
+      etat: "EMPRUNT_SEPARE_ET_EXCLU_DU_BUCKET",
+      contributionEmpruntEquilibre: 12000,
+      raison: "fixture : dettes NUL + emprunt",
+      bloquant: false,
+    },
+    reconciliationDecouvertTiers: {
+      etat: "AUCUN_DECOUVERT_CANONIQUE",
+      contributionDecouvertEquilibre: 0,
+      raison: "fixture",
+      bloquant: false,
+    },
     ...overrides,
   };
 }
@@ -152,13 +201,19 @@ describe("checkBilanEquilibre — correction P0-1 (tiers), NO SILENT ZERO", () =
     assert.equal(result.status, "EQUILIBRE");
   });
 
-  it("T5 — créances=1500, dettes=800 déclarées : les valeurs sont réellement intégrées aux totaux, jamais ignorées", () => {
+  it("T5 — créances=1500, dettes=800 déclarées + réconciliation SEPARE emprunt : valeurs intégrées, jamais ignorées", () => {
     const patrimoine = patrimoineBase({
       resultatComptable: 0,
       tiers: { creances: { status: "DECLARE", montant: 1500, raison: "déclaré" }, dettes: { status: "DECLARE", montant: 800, raison: "déclaré" } },
+      reconciliationEmpruntsTiers: {
+        etat: "EMPRUNT_SEPARE_ET_EXCLU_DU_BUCKET",
+        contributionEmpruntEquilibre: 12000,
+        raison: "séparé explicite",
+        bloquant: false,
+      },
     });
     const result = checkBilanEquilibre({ patrimoine });
-    // Actif net = 40000+2000+1500 = 43500 ; Passif = 30000+12000+800 = 42800 → écart réel de 700, PAS équilibré.
+    // Actif net = 40000+2000+1500 = 43500 ; Passif = 30000+12000+800 = 42800 → écart réel de 700
     assert.equal(result.status, "DESEQUILIBRE_REEL");
     assert.equal(result.totalActifNet, 43500);
     assert.equal(result.totalPassif, 42800);
@@ -188,9 +243,78 @@ describe("checkBilanEquilibre — correction P0-2 (découvert bancaire)", () => 
     const patrimoine = patrimoineBase({
       resultatComptable: 0,
       tresorerie: { etat: "TRESORERIE_NULLE_DECLAREE", clotureRetenue: 0, decouvertBancaire: 350, decouvertDettePassif: 350, raison: "découvert reconnu" },
+      // dettes NUL (fixture) ⇒ découvert implicitement séparé du bucket.
+      reconciliationDecouvertTiers: {
+        etat: "DECOUVERT_SEPARE_ET_EXCLU_DU_BUCKET",
+        contributionDecouvertEquilibre: 350,
+        raison: "dettes NUL + découvert",
+        bloquant: false,
+      },
     });
     const result = checkBilanEquilibre({ patrimoine });
     assert.notEqual(result.status, "DONNEE_MANQUANTE", "le découvert a désormais une contrepartie reconnue, il ne doit plus bloquer la génération pour cette raison");
     assert.equal(result.totalPassif, 30000 + 12000 + 350);
+  });
+});
+
+describe("Correction R-01 — check et 142 partagent les capitaux propres (dont 137)", () => {
+  it("R01-1 — 137 NUL_CONFIRME : comportement historique EQUILIBRE conservé", () => {
+    const patrimoine = patrimoineBase({
+      resultatComptable: 0,
+      compteExploitant: { disponible: true, clotureN: 30000, ouvertureManquante: false, raison: "ok" },
+      subventionsInvestissement: { status: "NUL_CONFIRME", montant: 0, raison: "nul" },
+    });
+    const result = checkBilanEquilibre({ patrimoine });
+    assert.equal(result.status, "EQUILIBRE");
+    assert.equal(result.totalPassif, 42000);
+  });
+
+  it("R01-2 — 137 DECLARE 2500 avec actif +2500 : EQUILIBRE, passif intègre 2500", () => {
+    // Actif 40000+4500=44500 ; Passif = (30000+0+0+2500)+12000 = 44500
+    const patrimoine = patrimoineBase({
+      resultatComptable: 0,
+      compteExploitant: { disponible: true, clotureN: 30000, ouvertureManquante: false, raison: "ok" },
+      tresorerie: { etat: "TRESORERIE_COMPLETE", clotureRetenue: 4500, ecart: 0, raison: "ok" },
+      subventionsInvestissement: { status: "DECLARE", montant: 2500, raison: "subvention" },
+    });
+    const result = checkBilanEquilibre({ patrimoine });
+    assert.equal(result.status, "EQUILIBRE");
+    assert.equal(result.totalPassif, 44500);
+    assert.equal(result.totalActifNet, 44500);
+  });
+
+  it("R01-3 — 137 DECLARE 2500 sans actif correspondant : DESEQUILIBRE_REEL (jamais EQUILIBRE artificiel)", () => {
+    const patrimoine = patrimoineBase({
+      resultatComptable: 0,
+      compteExploitant: { disponible: true, clotureN: 30000, ouvertureManquante: false, raison: "ok" },
+      subventionsInvestissement: { status: "DECLARE", montant: 2500, raison: "subvention" },
+    });
+    // Actif 42000 ; Passif 30000+2500+12000 = 44500
+    const result = checkBilanEquilibre({ patrimoine });
+    assert.equal(result.status, "DESEQUILIBRE_REEL");
+    assert.equal(result.totalPassif, 44500);
+    assert.notEqual(result.status, "EQUILIBRE");
+  });
+
+  it("R01-4 — 137 INCONNU : DONNEE_MANQUANTE, jamais faux zéro ni EQUILIBRE", () => {
+    const patrimoine = patrimoineBase({
+      resultatComptable: 0,
+      subventionsInvestissement: { status: "INCONNU", raison: "subventions inconnues" },
+    });
+    const result = checkBilanEquilibre({ patrimoine });
+    assert.equal(result.status, "DONNEE_MANQUANTE");
+    assert.ok(result.reasons.some((r) => r.includes("subventions") || r.includes("INCONNU") || r.includes("aucune")));
+    assert.equal(result.totalPassif, undefined);
+  });
+
+  it("R01-5 — 137 DECLARE 0 : montant nul déclaré distinct de INCONNU, EQUILIBRE possible", () => {
+    const patrimoine = patrimoineBase({
+      resultatComptable: 0,
+      compteExploitant: { disponible: true, clotureN: 30000, ouvertureManquante: false, raison: "ok" },
+      subventionsInvestissement: { status: "DECLARE", montant: 0, raison: "déclaré nul" },
+    });
+    const result = checkBilanEquilibre({ patrimoine });
+    assert.equal(result.status, "EQUILIBRE");
+    assert.equal(result.totalPassif, 42000);
   });
 });

@@ -1,4 +1,6 @@
 import { round2 } from "../f010/types";
+import { resolveContributionTiersEquilibre } from "./contribution-tiers-equilibre";
+import { montantCapitauxPropresPatrimoniaux } from "./total-capitaux-propres";
 import type { BilanEquilibreResult, PatrimonialState } from "./types";
 
 /**
@@ -20,6 +22,13 @@ import type { BilanEquilibreResult, PatrimonialState } from "./types";
  *
  * jamais « 112 = 180 » seul, qui comparerait un total d'amortissements à un
  * total de passif — deux grandeurs sans lien de nature.
+ *
+ * P1-B.4 : contribution tiers unique (bucket ↔ ventilation) + réconciliation
+ * stricte emprunt/découvert ↔ tiers.dettes. Jamais de double comptage.
+ *
+ * Correction R-01 : les capitaux propres du passif vérifié viennent de
+ * `montantCapitauxPropresPatrimoniaux` (120+134+136+137) — même source que
+ * la case 142. Jamais d'EQUILIBRE avec 137 ignoré.
  */
 export function checkBilanEquilibre(input: { patrimoine: PatrimonialState }): BilanEquilibreResult {
   const { patrimoine } = input;
@@ -54,14 +63,33 @@ export function checkBilanEquilibre(input: { patrimoine: PatrimonialState }): Bi
   if (!patrimoine.immobilisations.brutFiable) {
     return { status: "DONNEE_MANQUANTE", reasons: [...patrimoine.immobilisations.raisons] };
   }
-  // Correction P0-1 : une créance ou une dette de tiers non renseignée
-  // (INCONNU) ne devient jamais 0 — elle bloque la génération au même titre
-  // que n'importe quelle autre donnée manquante.
-  if (patrimoine.tiers.creances.status === "INCONNU") {
-    return { status: "DONNEE_MANQUANTE", reasons: [patrimoine.tiers.creances.raison] };
+
+  // P1-B.4 : buckets P0 conservés, mais la contribution équilibre est résolue
+  // contre la ventilation (couverture complète / partielle / incohérente).
+  const contributionTiers = resolveContributionTiersEquilibre(patrimoine.tiers, patrimoine.ventilationTiers);
+  if (!contributionTiers.utilisablePourEquilibre) {
+    const hasDivergence = contributionTiers.creances.etat === "VENTILATION_SUPERIEURE" || contributionTiers.dettes.etat === "VENTILATION_SUPERIEURE";
+    const hasConflitSource = patrimoine.ventilationTiers.conflits.some(
+      (c) => c.code === "LIGNE_SIMPLE_ET_VENTILATION" || c.code === "NATURE_INTERDITE",
+    );
+    return {
+      status: hasDivergence || hasConflitSource ? "DIVERGENCE_SOURCE" : "DONNEE_MANQUANTE",
+      reasons: contributionTiers.raisonsBlocage.length > 0 ? contributionTiers.raisonsBlocage : ["Contribution tiers non utilisable pour l'équilibre."],
+    };
   }
-  if (patrimoine.tiers.dettes.status === "INCONNU") {
-    return { status: "DONNEE_MANQUANTE", reasons: [patrimoine.tiers.dettes.raison] };
+
+  // P1-B.4 strict : réconciliation emprunt / découvert ↔ bucket dettes.
+  if (patrimoine.reconciliationEmpruntsTiers.bloquant) {
+    return {
+      status: "DIVERGENCE_SOURCE",
+      reasons: [patrimoine.reconciliationEmpruntsTiers.raison],
+    };
+  }
+  if (patrimoine.reconciliationDecouvertTiers.bloquant) {
+    return {
+      status: "DIVERGENCE_SOURCE",
+      reasons: [patrimoine.reconciliationDecouvertTiers.raison],
+    };
   }
 
   // --- Divergence de source (deux sources déjà produites qui ne concordent pas) ---
@@ -71,26 +99,27 @@ export function checkBilanEquilibre(input: { patrimoine: PatrimonialState }): Bi
   if (!patrimoine.immobilisations.netFiable) {
     return { status: "DIVERGENCE_SOURCE", reasons: [...patrimoine.immobilisations.raisons] };
   }
-  // Correction P0-3 : deux sources de CRD (F-011 et BilanInputs.financements)
-  // qui ne concordent pas — jamais choisie arbitrairement l'une contre
-  // l'autre, ni moyennée, ni la plus récente retenue par défaut.
   if (patrimoine.emprunts.etat === "DIVERGENT") {
     return { status: "DIVERGENCE_SOURCE", reasons: [patrimoine.emprunts.raison] };
   }
 
-  // --- Toutes les données sont là et fiables : calcul des totaux -------
-  // À ce stade, tiers.creances/dettes sont garantis DECLARE ou NUL_CONFIRME
-  // (jamais INCONNU, exclu ci-dessus) : `montant` est donc toujours défini,
-  // sans qu'aucun `?? 0` ne masque une donnée manquante.
-  const creances = patrimoine.tiers.creances.montant;
-  const dettes = patrimoine.tiers.dettes.montant;
+  // --- Capitaux propres (R-01) : même formule que 142, avant tout EQUILIBRE ---
+  const capitauxPropres = montantCapitauxPropresPatrimoniaux(patrimoine);
+  if (capitauxPropres.status === "INCONNU") {
+    return { status: "DONNEE_MANQUANTE", reasons: [capitauxPropres.raison] };
+  }
+
+  // --- Totaux : une contribution dettes + emprunt/découvert selon réconciliation ---
+  const creances = contributionTiers.creances.montantRetenu as number;
+  const dettes = contributionTiers.dettes.montantRetenu as number;
+  const empruntEquilibre = patrimoine.reconciliationEmpruntsTiers.contributionEmpruntEquilibre ?? 0;
+  const decouvertEquilibre = patrimoine.reconciliationDecouvertTiers.contributionDecouvertEquilibre ?? 0;
+
   const totalActifBrut = round2((patrimoine.immobilisations.brutTotal ?? 0) + (patrimoine.tresorerie.clotureRetenue ?? 0) + creances);
   const totalActifNet = round2((patrimoine.immobilisations.netTotal ?? 0) + (patrimoine.tresorerie.clotureRetenue ?? 0) + creances);
-  // 142 = 120 + 134 + 136 (124/126/130/131/132/137/140 non applicables/non modélisés pour une EI, voir audit normatif §4)
-  const total142 = round2((patrimoine.compteExploitant.clotureN ?? 0) + (patrimoine.ran.valeur ?? 0) + patrimoine.resultatComptable);
-  // 176 = 156 + découvert reconnu au passif + [164/166/172/173/174/175 non modélisés P0]
-  const total176 = round2(patrimoine.emprunts.totalCRD + dettes + (patrimoine.tresorerie.decouvertDettePassif ?? 0));
-  // 180 = 142 + 154(non applicable EI) + 176
+  const total142 = capitauxPropres.montant;
+  // 176 : dettes (hors double) + emprunt réconcilié + découvert réconcilié
+  const total176 = round2(empruntEquilibre + dettes + decouvertEquilibre);
   const totalPassif = round2(total142 + total176);
 
   const ecart = round2(totalActifNet - totalPassif);

@@ -3,6 +3,7 @@ import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
+import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
 
 /**
  * Projection Cerfa 2033-A-SD (bilan simplifié) — consomme UNIQUEMENT la RFS
@@ -338,6 +339,28 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       casesNonAlimentees.push({ caseId: "134", label: "Report à nouveau", raison: patrimoine.ran.raison, categorie: "donnee_absente" });
     }
 
+    // 137 — Subventions d'investissement. Correction P1-A (audit indépendant,
+    // asymétrie 142/137) : contrairement à 124/126/130/131/132/140 (concepts
+    // sociétaires, structurellement hors périmètre EI, restés en dur dans
+    // `toujoursBloquees`), 137 dépend d'une confirmation par dossier — "quasi
+    // inexistant en pratique" n'est jamais une justification pour l'écrire à
+    // 0 sans statut explicite (voir `subventions-investissement.ts`).
+    if (patrimoine.subventionsInvestissement.status !== "INCONNU") {
+      cases.push({
+        caseId: "137",
+        label: "Subventions d'investissement",
+        value: patrimoine.subventionsInvestissement.montant,
+        trace: { source: "FiscalResult", path: "patrimoine.subventionsInvestissement", ksArtifacts: ["TRF-0032"] },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "137",
+        label: "Subventions d'investissement",
+        raison: patrimoine.subventionsInvestissement.raison,
+        categorie: "donnee_absente",
+      });
+    }
+
     // Totaux — correction P0-4 (audit indépendant). Avant cette correction,
     // le fait que le SOUS-ENSEMBLE suivi par ce module (immobilisations
     // corporelles + trésorerie + tiers, compte de l'exploitant + RAN +
@@ -356,30 +379,30 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // — ils tombent dans `toujoursBloquees` (même mécanisme que sans
     // patrimoine), avec leur raison précise (RAISON_TOTAL_*).
     //
-    // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Ses seules
-    // composantes officielles pour une entreprise individuelle (120, 134,
-    // 136) sont soit alimentées soit structurellement `non_applicable`
-    // (124/126/130/131/132/137/140 — concepts sociétaires, confirmés par le
-    // code existant, pas de lacune de donnée) : c'est le seul total dont
-    // TOUTES les lignes constitutives officielles sont, par nature, soit
-    // connues soit inapplicables à ce régime. `checkBilanEquilibre()` reste
-    // le gate : 142 n'est publiée que si l'ensemble du sous-modèle patrimonial
-    // est par ailleurs équilibré et fiable (même garde conservatrice qu'avant
-    // cette correction, non allégée).
+    // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Correction
+    // P1-A (audit indépendant, asymétrie 142/137) : le calcul et le gate de
+    // 142 vivent désormais entièrement dans `total-capitaux-propres.ts`
+    // (couche bilan) — ce mapper se contente de projeter le résultat déjà
+    // résolu, exactement comme pour 084/086/120/134/137 ci-dessus, sans
+    // aucune règle métier propre. 124/126/130/131/132/140 restent
+    // structurellement `non_applicable` pour une EI (inchangé) ; 137 n'en
+    // fait plus partie (voir bloc dédié ci-dessus) — `checkBilanEquilibre()`
+    // reste le premier gate (même garde conservatrice qu'avant cette
+    // correction, non allégée), 137 INCONNU en est un second, nouveau.
     const equilibre = checkBilanEquilibre({ patrimoine });
-    if (equilibre.status === "EQUILIBRE") {
-      const total142 = round2((patrimoine.compteExploitant.clotureN ?? 0) + (patrimoine.ran.valeur ?? 0) + patrimoine.resultatComptable);
+    const totalCapitauxPropres = resolveTotalCapitauxPropres(patrimoine, equilibre.status, equilibre.reasons);
+    if (totalCapitauxPropres.status === "DISPONIBLE") {
       cases.push({
         caseId: "142",
         label: "Total I — Capitaux propres",
-        value: total142,
-        trace: { source: "FiscalResult", path: "120 + 134 + 136 (124/126/130/131/132/137/140 non applicables pour une EI)", ksArtifacts: ["TRF-0032"] },
+        value: totalCapitauxPropres.montant,
+        trace: { source: "FiscalResult", path: "120 + 134 + 136 + 137 (124/126/130/131/132/140 non applicables pour une EI)", ksArtifacts: ["TRF-0032"] },
       });
     } else {
       casesNonAlimentees.push({
         caseId: "142",
         label: "Total I — Capitaux propres",
-        raison: `Bilan non intégralement équilibré/fiable (statut : ${equilibre.status}) — ${equilibre.reasons.join(" ")} Aucun total n'est jamais produit partiellement.`,
+        raison: totalCapitauxPropres.raison,
         categorie: "incoherence_modele",
       });
     }

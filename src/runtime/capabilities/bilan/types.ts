@@ -134,6 +134,18 @@ export type TiersInputs = {
   /** Absent ⇔ `{ status: "INCONNU" }` — jamais interprété comme 0. */
   creances?: TiersPosteInput;
   dettes?: TiersPosteInput;
+  /**
+   * Réconciliation explicite emprunt canonique (F-011 / case 156) ↔ `dettes`.
+   * Absent ⇒ `EMPRUNT_PRESENCE_BUCKET_NON_RECONCILIEE` dès que les deux
+   * coexistent (bucket DECLARE + CRD > 0). Ne JAMAIS déduire depuis une
+   * comparaison de montants.
+   */
+  reconciliationEmprunts?: "EMPRUNT_SEPARE_ET_EXCLU_DU_BUCKET" | "EMPRUNT_INCLUS_DANS_BUCKET";
+  /**
+   * Réconciliation explicite découvert canonique (trésorerie → 156) ↔ `dettes`.
+   * Même doctrine que les emprunts : absence = non réconcilié = blocage.
+   */
+  reconciliationDecouvert?: "DECOUVERT_SEPARE_ET_EXCLU_DU_BUCKET" | "DECOUVERT_INCLUS_DANS_BUCKET";
 };
 
 export type TiersPosteResolution =
@@ -143,6 +155,117 @@ export type TiersPosteResolution =
 export type TiersResolution = {
   creances: TiersPosteResolution;
   dettes: TiersPosteResolution;
+};
+
+// ---------------------------------------------------------------------------
+// Ligne patrimoniale générique (correction P1-A) — abstraction à 4 états,
+// réutilisable au-delà des tiers : DECLARE / NUL_CONFIRME / NON_APPLICABLE /
+// INCONNU. Volontairement SÉPARÉE de `TiersPosteInput`/`TiersPosteResolution`
+// (3 états, pas de `NON_APPLICABLE` pertinent pour un tiers) — ce n'est pas
+// un remplacement ni une migration de l'architecture tiers, seulement un
+// sur-ensemble pour les lignes Cerfa qui, elles, peuvent être structurellement
+// hors périmètre selon le dossier. Premier consommateur : case 137
+// (subventions d'investissement) — voir `subventions-investissement.ts`.
+//
+// `NON_APPLICABLE` reste distinct de `NUL_CONFIRME` : le premier signifie
+// « cette ligne ne concerne pas ce dossier/régime », le second « l'utilisateur
+// a confirmé l'absence pour ce dossier précis » — deux faits différents,
+// jamais fusionnés dans une même trace. Absence de saisie (`undefined`) ⇒
+// TOUJOURS `INCONNU`, jamais l'un des deux autres statuts par défaut.
+// ---------------------------------------------------------------------------
+
+export type LignePatrimonialeInput =
+  | { status: "DECLARE"; montant: number }
+  | { status: "NUL_CONFIRME" }
+  | { status: "NON_APPLICABLE" }
+  | { status: "INCONNU" };
+
+export type LignePatrimonialeResolution =
+  | { status: "DECLARE" | "NUL_CONFIRME" | "NON_APPLICABLE"; montant: number; raison: string }
+  | { status: "INCONNU"; raison: string };
+
+// ---------------------------------------------------------------------------
+// Ventilation économique des tiers (P1-B.3) — nature → case Cerfa
+// ---------------------------------------------------------------------------
+
+/**
+ * Nature économique compréhensible par un non-comptable (ou détectable depuis
+ * des documents). Ce n'est PAS un numéro de case Cerfa : le client décrit la
+ * réalité, Fiscal AI classe ensuite. EMPRUNT et DECOUVERT bancaire sont
+ * volontairement ABSENTS : sources canoniques F-011 / trésorerie → case 156,
+ * jamais un poste de ventilation tiers (anti-double-comptage).
+ */
+export type NatureEconomique =
+  | "LOYER_DU_PAR_LOCATAIRE" // → 068
+  | "ACOMPTE_VERSE_A_FOURNISSEUR" // → 064
+  | "AUTRE_CREANCE_ACTIVITE" // → 072
+  | "CHARGE_CONSTATEE_AVANCE" // → 092
+  | "FOURNISSEUR_NON_PAYE" // → 166
+  | "DETTE_FISCALE_OU_SOCIALE" // → 172
+  | "DEPOT_GARANTIE_LOCATAIRE" // → 175
+  | "LOYER_ENCAISSE_D_AVANCE" // → 174
+  | "ACOMPTE_RECU_SUR_COMMANDE" // → 164
+  | "NATURE_INCONNUE"; // → non ventilé, jamais 0 silencieux
+
+/** Poste économique unitaire — entrée de ventilation, pas une case Cerfa. */
+export type PosteEconomiqueInput = {
+  id?: string;
+  montant: number;
+  nature: NatureEconomique;
+  /** Libellé client (ex. « Loyer de décembre encore dû ») — trace UX future. */
+  libelle?: string;
+  source?: string;
+};
+
+export type VentilationTiersInputs = {
+  /** Liste de faits économiques classifiés. Absent / [] ≠ confirmation de zéro. */
+  postes?: PosteEconomiqueInput[];
+};
+
+export type ConflitVentilation = {
+  code:
+    | "NATURE_INCONNUE_NON_VENTILEE"
+    | "BUCKET_TIERS_ET_VENTILATION"
+    | "LIGNE_SIMPLE_ET_VENTILATION"
+    | "SOURCE_CANONIQUE_EMPRUNT"
+    | "SOURCE_CANONIQUE_DECOUVERT"
+    | "NATURE_INTERDITE";
+  raison: string;
+};
+
+export type VentilationTiersCases = {
+  /** 064 — Avances et acomptes versés. */
+  avancesAcomptesVerses: LignePatrimonialeResolution;
+  /** 068 — Clients et comptes rattachés. */
+  clients: LignePatrimonialeResolution;
+  /** 072 — Autres créances. */
+  autresCreances: LignePatrimonialeResolution;
+  /** 092 — Charges constatées d'avance. */
+  chargesConstateesAvance: LignePatrimonialeResolution;
+  /** 164 — Avances et acomptes reçus. */
+  avancesAcomptesRecus: LignePatrimonialeResolution;
+  /** 166 — Fournisseurs et comptes rattachés. */
+  fournisseurs: LignePatrimonialeResolution;
+  /** 172 — Dettes fiscales et sociales. */
+  dettesFiscalesSociales: LignePatrimonialeResolution;
+  /** 173 — Comptes courants d'associés (NON_APPLICABLE EI selon doctrine). */
+  comptesCourantsAssocies: LignePatrimonialeResolution;
+  /** 174 — Produits constatés d'avance. */
+  produitsConstatesAvance: LignePatrimonialeResolution;
+  /** 175 — Autres dettes (ex. dépôts de garantie). */
+  autresDettes: LignePatrimonialeResolution;
+};
+
+export type VentilationTiersResolution = {
+  cases: VentilationTiersCases;
+  /** Montants à nature inconnue : jamais projetés vers une case, jamais 0. */
+  montantsNonVentiles: Array<{ montant: number; libelle?: string; raison: string }>;
+  conflits: ConflitVentilation[];
+  /**
+   * `false` dès qu'un montant non ventilé ou un conflit de double comptage
+   * empêche une projection Cerfa sûre des composantes concernées.
+   */
+  projectionFiable: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -181,12 +304,77 @@ export type EmpruntsResolution =
 // Bilan Inputs — collecte humaine minimale nécessaire au P0
 // ---------------------------------------------------------------------------
 
+/**
+ * Familles patrimoniales « simples » P1-B.2 — représentation typée à 4 états
+ * via `LignePatrimonialeInput`. Toutes ces lignes PEUVENT exister en LMNP ;
+ * aucune n'est structurellement `NON_APPLICABLE` par régime. Absent ⇔
+ * `INCONNU` (jamais 0 silencieux). Aucune question client systématique
+ * n'est induite par ces champs : la collecte intelligente est hors jalon.
+ *
+ * Cases : 014/016, 040/042, 064, 080/082, 092, 174, 175.
+ */
+export type LignesSimplesInputs = {
+  /** Case 014 — Autres immobilisations incorporelles (brut). */
+  autresImmobilisationsIncorporellesBrut?: LignePatrimonialeInput;
+  /** Case 016 — Autres immobilisations incorporelles (net). */
+  autresImmobilisationsIncorporellesNet?: LignePatrimonialeInput;
+  /** Case 040 — Immobilisations financières (brut). */
+  immobilisationsFinancieresBrut?: LignePatrimonialeInput;
+  /** Case 042 — Immobilisations financières (net). */
+  immobilisationsFinancieresNet?: LignePatrimonialeInput;
+  /** Case 064 — Avances et acomptes versés sur commandes. */
+  avancesAcomptesVerses?: LignePatrimonialeInput;
+  /** Case 080 — Valeurs mobilières de placement (brut). */
+  valeursMobilieresPlacementBrut?: LignePatrimonialeInput;
+  /** Case 082 — Valeurs mobilières de placement (net). */
+  valeursMobilieresPlacementNet?: LignePatrimonialeInput;
+  /** Case 092 — Charges constatées d'avance. */
+  chargesConstateesAvance?: LignePatrimonialeInput;
+  /** Case 174 — Produits constatés d'avance. */
+  produitsConstatesAvance?: LignePatrimonialeInput;
+  /**
+   * Case 175 — Autres dettes (ex. dépôts de garantie). Distinct de
+   * `tiers.dettes` (agrégat P0 pour l'équilibre) : représentation Cerfa
+   * case-level, jamais fusionnée silencieusement.
+   */
+  autresDettes?: LignePatrimonialeInput;
+};
+
+export type LignesSimplesResolution = {
+  autresImmobilisationsIncorporellesBrut: LignePatrimonialeResolution;
+  autresImmobilisationsIncorporellesNet: LignePatrimonialeResolution;
+  immobilisationsFinancieresBrut: LignePatrimonialeResolution;
+  immobilisationsFinancieresNet: LignePatrimonialeResolution;
+  avancesAcomptesVerses: LignePatrimonialeResolution;
+  valeursMobilieresPlacementBrut: LignePatrimonialeResolution;
+  valeursMobilieresPlacementNet: LignePatrimonialeResolution;
+  chargesConstateesAvance: LignePatrimonialeResolution;
+  produitsConstatesAvance: LignePatrimonialeResolution;
+  autresDettes: LignePatrimonialeResolution;
+};
+
 export type BilanInputs = {
   tresorerie: TresorerieInputs;
   compteExploitant: CompteExploitantInputs;
   ran: RanInputs;
   tiers?: TiersInputs;
   financements?: FinancementBilanInputs;
+  /**
+   * Case 137 (Subventions d'investissement) — correction P1-A. Absent ⇔
+   * `{ status: "INCONNU" }` — jamais interprété comme une absence confirmée.
+   */
+  subventionsInvestissement?: LignePatrimonialeInput;
+  /**
+   * Lignes patrimoniales simples P1-B.2. Absent ⇔ chaque ligne résolue en
+   * `INCONNU` — jamais un zéro silencieux ni un `NON_APPLICABLE` inventé.
+   */
+  lignesSimples?: LignesSimplesInputs;
+  /**
+   * Ventilation économique des tiers P1-B.3 — postes classifiés par nature
+   * (pas par case Cerfa). Absent ⇔ toutes les cases ventilables restent
+   * `INCONNU` (sauf 173 NON_APPLICABLE EI). Ne remplace pas `tiers` P0.
+   */
+  ventilationTiers?: VentilationTiersInputs;
 };
 
 // ---------------------------------------------------------------------------
@@ -236,6 +424,29 @@ export type PatrimonialState = {
   emprunts: EmpruntsResolution;
   /** Correction P0-1 : toujours résolu (jamais `undefined`) — voir `TiersResolution`. */
   tiers: TiersResolution;
+  /** Correction P1-A : toujours résolu (jamais `undefined`) — voir `subventions-investissement.ts`. Gate la publication de la case 142 (voir `total-capitaux-propres.ts`). */
+  subventionsInvestissement: LignePatrimonialeResolution;
+  /**
+   * P1-B.2 : toujours résolu (jamais `undefined`) — voir `lignes-simples.ts`.
+   * Chaque ligne absente de `BilanInputs.lignesSimples` reste `INCONNU`.
+   * Ne débloque pas automatiquement les totaux Cerfa 044/096/176/180 : une
+   * composante inconnue parmi celles listées pour un total le bloque.
+   */
+  lignesSimples: LignesSimplesResolution;
+  /**
+   * P1-B.3 : toujours résolu — ventilation nature → case. Les buckets
+   * `tiers.creances` / `tiers.dettes` ne sont jamais projetés ici.
+   */
+  ventilationTiers: VentilationTiersResolution;
+  /**
+   * P1-B.4 strict : réconciliation emprunt canonique ↔ `tiers.dettes`.
+   * Toujours résolu — `bloquant` si coexistence non réconciliée.
+   */
+  reconciliationEmpruntsTiers: ReconciliationEmpruntsTiersResolution;
+  /**
+   * P1-B.4 strict : réconciliation découvert canonique ↔ `tiers.dettes`.
+   */
+  reconciliationDecouvertTiers: ReconciliationDecouvertTiersResolution;
 };
 
 // ---------------------------------------------------------------------------
@@ -256,4 +467,80 @@ export type BilanEquilibreResult = {
   totalActifNet?: number;
   totalPassif?: number;
   ecart?: number;
+};
+
+// ---------------------------------------------------------------------------
+// Contribution tiers à l'équilibre (P1-B.4) — une réalité → une contribution
+// ---------------------------------------------------------------------------
+
+/**
+ * Couverture bucket P0 ↔ ventilation P1-B.3 pour un côté (créances OU dettes).
+ * La ventilation représente UNIQUEMENT les montants classifiés (pas le bucket
+ * entier). Un reste bucket − Σ ventilée est INCONNU, jamais 0 silencieux.
+ */
+export type CouvertureTiersEtat =
+  | "BUCKET_SEUL"
+  | "VENTILATION_COMPLETE"
+  | "VENTILATION_PARTIELLE"
+  | "VENTILATION_SUPERIEURE"
+  | "INCOHERENTE"
+  | "NON_ARBITRABLE";
+
+export type ContributionCoteTiers = {
+  etat: CouvertureTiersEtat;
+  /** Défini uniquement si le côté est utilisable pour l'équilibre. */
+  montantRetenu?: number;
+  /** bucket − Σ ventilée lorsque partiel ; sinon 0 si complet. */
+  resteNonVentile?: number;
+  sommeVentilee: number;
+  source: "BUCKET" | "VENTILATION" | "AUCUNE";
+  raison: string;
+};
+
+export type ContributionTiersEquilibre = {
+  creances: ContributionCoteTiers;
+  dettes: ContributionCoteTiers;
+  /** `false` ⇒ `checkBilanEquilibre` doit bloquer (jamais additionner bucket + ventilation). */
+  utilisablePourEquilibre: boolean;
+  raisonsBlocage: string[];
+};
+
+// ---------------------------------------------------------------------------
+// Réconciliation emprunts / découvert ↔ tiers.dettes (P1-B.4 strict)
+// ---------------------------------------------------------------------------
+
+/**
+ * Statut de réconciliation entre la source canonique des emprunts (F-011 →
+ * case 156) et le bucket opaque `tiers.dettes`. Absence d'information
+ * explicite ≠ « séparés » : c'est `EMPRUNT_PRESENCE_BUCKET_NON_RECONCILIEE`.
+ */
+export type ReconciliationEmpruntsTiersEtat =
+  | "EMPRUNT_SEPARE_ET_EXCLU_DU_BUCKET"
+  | "EMPRUNT_INCLUS_DANS_BUCKET"
+  | "EMPRUNT_PRESENCE_BUCKET_NON_RECONCILIEE"
+  | "AUCUN_EMPRUNT_CANONIQUE";
+
+export type ReconciliationEmpruntsTiersResolution = {
+  etat: ReconciliationEmpruntsTiersEtat;
+  /**
+   * Montant d'emprunt à ajouter dans le total passif d'équilibre EN PLUS de
+   * la contribution `tiers.dettes`. `0` si inclus dans le bucket ; `undefined`
+   * si non réconcilié (blocage).
+   */
+  contributionEmpruntEquilibre?: number;
+  raison: string;
+  bloquant: boolean;
+};
+
+export type ReconciliationDecouvertTiersEtat =
+  | "DECOUVERT_SEPARE_ET_EXCLU_DU_BUCKET"
+  | "DECOUVERT_INCLUS_DANS_BUCKET"
+  | "DECOUVERT_PRESENCE_BUCKET_NON_RECONCILIEE"
+  | "AUCUN_DECOUVERT_CANONIQUE";
+
+export type ReconciliationDecouvertTiersResolution = {
+  etat: ReconciliationDecouvertTiersEtat;
+  contributionDecouvertEquilibre?: number;
+  raison: string;
+  bloquant: boolean;
 };
