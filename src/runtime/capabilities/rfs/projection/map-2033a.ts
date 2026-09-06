@@ -4,6 +4,7 @@ import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
 import { gateTotal048, gateTotal098 } from "../../bilan/lignes-simples";
+import { resolveCaseAvecVentilationPrioritaire } from "../../bilan/ventilation-tiers";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
 import type { LignePatrimonialeResolution } from "../../bilan/types";
 
@@ -533,6 +534,100 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         label: "Charges constatées d'avance (amortissements-provisions)",
         resolution: ls.chargesConstateesAvanceAmort,
         path: "patrimoine.lignesSimples.chargesConstateesAvanceAmort → case 094 (colonne Amortissements-Provisions, ≠ 092 brut)",
+      },
+    ] as const) {
+      const { published, blocked } = projectCaseAmortFeuilleFromLigne(spec.caseId, spec.label, spec.resolution, spec.path);
+      if (published !== undefined) {
+        cases.push(published);
+      } else if (blocked !== undefined) {
+        casesNonAlimentees.push(blocked);
+      }
+    }
+
+    // P1-PDF-02-G2 — cases Brut/tiers résolues en interne (lignesSimples/
+    // ventilationTiers) mais jusqu'ici jamais projetées en case Cerfa
+    // (audit P1-PDF-02-G, Finding transverse #1). Trois familles :
+    //  - source unique lignesSimples (014/040/080) ;
+    //  - source unique ventilationTiers (068/072/164/166/172) ;
+    //  - double source réconciliée par resolveCaseAvecVentilationPrioritaire
+    //    (064/092/174/175 — ventilation prioritaire si DECLARE, repli sur
+    //    lignesSimples sinon, blocage explicite si deux DECLARE divergent).
+    // Aucune règle fiscale nouvelle : réutilise projectCaseAmortFeuilleFromLigne
+    // tel quel pour la publication/blocage, comme F4-A/F4-B. N'affecte aucun
+    // total (044/096/110/112/176/180 restent hors périmètre, toujours bloqués).
+    const vt = patrimoine.ventilationTiers;
+    for (const spec of [
+      {
+        caseId: "014",
+        label: "Autres immobilisations incorporelles (brut)",
+        resolution: ls.autresImmobilisationsIncorporellesBrut,
+        path: "patrimoine.lignesSimples.autresImmobilisationsIncorporellesBrut → case 014 (colonne Brut)",
+      },
+      {
+        caseId: "040",
+        label: "Immobilisations financières (brut)",
+        resolution: ls.immobilisationsFinancieresBrut,
+        path: "patrimoine.lignesSimples.immobilisationsFinancieresBrut → case 040 (colonne Brut)",
+      },
+      {
+        caseId: "080",
+        label: "Valeurs mobilières de placement (brut)",
+        resolution: ls.valeursMobilieresPlacementBrut,
+        path: "patrimoine.lignesSimples.valeursMobilieresPlacementBrut → case 080 (colonne Brut)",
+      },
+      {
+        caseId: "068",
+        label: "Clients et comptes rattachés (brut)",
+        resolution: vt.cases.clients,
+        path: "patrimoine.ventilationTiers.cases.clients (nature LOYER_DU_PAR_LOCATAIRE) → case 068",
+      },
+      {
+        caseId: "072",
+        label: "Autres créances (brut)",
+        resolution: vt.cases.autresCreances,
+        path: "patrimoine.ventilationTiers.cases.autresCreances (nature AUTRE_CREANCE_ACTIVITE) → case 072",
+      },
+      {
+        caseId: "164",
+        label: "Avances et acomptes reçus sur commandes en cours",
+        resolution: vt.cases.avancesAcomptesRecus,
+        path: "patrimoine.ventilationTiers.cases.avancesAcomptesRecus (nature ACOMPTE_RECU_SUR_COMMANDE) → case 164",
+      },
+      {
+        caseId: "166",
+        label: "Fournisseurs et comptes rattachés",
+        resolution: vt.cases.fournisseurs,
+        path: "patrimoine.ventilationTiers.cases.fournisseurs (nature FOURNISSEUR_NON_PAYE) → case 166",
+      },
+      {
+        caseId: "172",
+        label: "Dettes fiscales et sociales",
+        resolution: vt.cases.dettesFiscalesSociales,
+        path: "patrimoine.ventilationTiers.cases.dettesFiscalesSociales (nature DETTE_FISCALE_OU_SOCIALE) → case 172",
+      },
+      {
+        caseId: "064",
+        label: "Avances et acomptes versés sur commandes (brut)",
+        resolution: resolveCaseAvecVentilationPrioritaire("064", ls.avancesAcomptesVerses, vt.cases.avancesAcomptesVerses),
+        path: "resolveCaseAvecVentilationPrioritaire(064, lignesSimples.avancesAcomptesVerses, ventilationTiers.cases.avancesAcomptesVerses) — ventilation prioritaire si DECLARE, repli lignesSimples sinon",
+      },
+      {
+        caseId: "092",
+        label: "Charges constatées d'avance (brut)",
+        resolution: resolveCaseAvecVentilationPrioritaire("092", ls.chargesConstateesAvance, vt.cases.chargesConstateesAvance),
+        path: "resolveCaseAvecVentilationPrioritaire(092, lignesSimples.chargesConstateesAvance, ventilationTiers.cases.chargesConstateesAvance) — ventilation prioritaire si DECLARE, repli lignesSimples sinon",
+      },
+      {
+        caseId: "174",
+        label: "Produits constatés d'avance",
+        resolution: resolveCaseAvecVentilationPrioritaire("174", ls.produitsConstatesAvance, vt.cases.produitsConstatesAvance),
+        path: "resolveCaseAvecVentilationPrioritaire(174, lignesSimples.produitsConstatesAvance, ventilationTiers.cases.produitsConstatesAvance) — ventilation prioritaire si DECLARE, repli lignesSimples sinon",
+      },
+      {
+        caseId: "175",
+        label: "Autres dettes",
+        resolution: resolveCaseAvecVentilationPrioritaire("175", ls.autresDettes, vt.cases.autresDettes),
+        path: "resolveCaseAvecVentilationPrioritaire(175, lignesSimples.autresDettes, ventilationTiers.cases.autresDettes) — ventilation prioritaire si DECLARE, repli lignesSimples sinon",
       },
     ] as const) {
       const { published, blocked } = projectCaseAmortFeuilleFromLigne(spec.caseId, spec.label, spec.resolution, spec.path);

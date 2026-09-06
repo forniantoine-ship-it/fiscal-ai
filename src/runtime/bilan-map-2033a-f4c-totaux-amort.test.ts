@@ -256,7 +256,11 @@ describe("F4-C — pas de double comptage", () => {
     const v048 = form.cases.find((c) => c.caseId === "048")?.value;
     assert.equal(v048, 1800);
     assert.notEqual(v048, 1500 + 1800, "048 ne doit pas additionner 030 avec un sous-total déjà formé");
-    assert.equal(form.cases.find((c) => c.caseId === "014"), undefined, "bruts 014 exclus du total Amort");
+    // G2 — 014/040 (brut) sont désormais publiées (bloc dédié, indépendant de F4-C) avec LEUR
+    // PROPRE valeur ; elles restent exclues du total 048 (colonne Amort.), qui ne change pas.
+    assert.equal(form.cases.find((c) => c.caseId === "014")?.value, 99999);
+    assert.equal(form.cases.find((c) => c.caseId === "040")?.value, 88888);
+    assert.notEqual(v048, 99999 + 88888, "048 (Amort.) ne doit jamais inclure les bruts 014/040");
   });
 });
 

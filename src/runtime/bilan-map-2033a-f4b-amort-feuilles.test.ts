@@ -106,7 +106,7 @@ describe("F4-B — 066/070/074/094 sans saisie amort dédiée", () => {
 });
 
 describe("F4-B — LOYER_DU n'alimente jamais 070", () => {
-  it("068 via ventilation possible en futur ; 070 reste absent sans clientsAmortissementsProvisions", () => {
+  it("070 reste absent sans clientsAmortissementsProvisions, même si 068 (brut, via G2) est publiée", () => {
     const form = mapWithPatrimoine({
       ...BILAN_INPUTS,
       tiers: { creances: { status: "DECLARE", montant: 4000 }, dettes: { status: "NUL_CONFIRME" } },
@@ -115,7 +115,9 @@ describe("F4-B — LOYER_DU n'alimente jamais 070", () => {
       },
     });
     assert.equal(form.cases.find((c) => c.caseId === "070"), undefined);
-    assert.equal(form.cases.find((c) => c.caseId === "068"), undefined, "068 brut non branché mapper — seul 070 testé ici");
+    // G2 — 068 (brut) est désormais publiée depuis ventilationTiers.cases.clients (bloc dédié,
+    // indépendant de F4-B) : LOYER_DU_PAR_LOCATAIRE alimente bien 068, jamais 070 (Amort.-Prov.).
+    assert.equal(form.cases.find((c) => c.caseId === "068")?.value, 4000);
     const blocked070 = form.casesNonAlimentees.find((c) => c.caseId === "070");
     assert.ok(blocked070);
     assert.match(blocked070!.raison, /070|068|LOYER|Clients/i);

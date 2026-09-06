@@ -14,6 +14,7 @@ import {
   detecterConflitsDoubleComptage,
   gateTotal096AvecVentilation,
   gateTotal176AvecVentilation,
+  resolveCaseAvecVentilationPrioritaire,
   resolveVentilationTiers,
 } from "./capabilities/bilan/ventilation-tiers";
 import {
@@ -364,5 +365,40 @@ describe("assemblePatrimoine — ventilation intégrée sans casser P0/P1-A/P1-B
     const patrimoine = assemblePatrimoine(rfs(), inputs);
     assert.equal(patrimoine.ventilationTiers.cases.clients.status, "DECLARE");
     assert.ok(!patrimoine.ventilationTiers.conflits.some((c) => c.code === "BUCKET_TIERS_ET_VENTILATION"));
+  });
+});
+
+describe("resolveCaseAvecVentilationPrioritaire — G2 (réconciliation pour publication individuelle)", () => {
+  it("ventilation DECLARE prioritaire même si lignesSimples DECLARE une valeur différente au-delà de la tolérance", () => {
+    const res = resolveCaseAvecVentilationPrioritaire(
+      "064",
+      { status: "DECLARE", montant: 50, raison: "simple" },
+      { status: "DECLARE", montant: 50.005, raison: "ventilee" },
+    );
+    // écart 0.005 < tolérance 0.01 : pas un conflit, ventilation retenue telle quelle
+    assert.deepEqual(res, { status: "DECLARE", montant: 50.005, raison: "ventilee" });
+  });
+
+  it("repli sur lignesSimples si ventilation INCONNU, quel que soit le statut de lignesSimples", () => {
+    for (const simple of [
+      { status: "DECLARE" as const, montant: 12, raison: "d" },
+      { status: "NUL_CONFIRME" as const, montant: 0, raison: "n" },
+      { status: "INCONNU" as const, raison: "i" },
+    ]) {
+      const res = resolveCaseAvecVentilationPrioritaire("092", simple, { status: "INCONNU", raison: "vide" });
+      assert.deepEqual(res, simple);
+    }
+  });
+
+  it("deux DECLARE divergents (> tolérance) → INCONNU, ni somme ni choix arbitraire", () => {
+    const res = resolveCaseAvecVentilationPrioritaire(
+      "174",
+      { status: "DECLARE", montant: 200, raison: "simple" },
+      { status: "DECLARE", montant: 350, raison: "ventilee" },
+    );
+    assert.equal(res.status, "INCONNU");
+    assert.match(res.raison, /174/);
+    assert.match(res.raison, /200/);
+    assert.match(res.raison, /350/);
   });
 });

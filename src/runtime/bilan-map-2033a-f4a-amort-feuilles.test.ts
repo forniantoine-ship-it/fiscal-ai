@@ -111,7 +111,9 @@ describe("F4-A — immobilisé P1-B.2 (016/042/082)", () => {
     assert.equal(form.cases.find((c) => c.caseId === "016")?.value, 120);
     assert.equal(form.cases.find((c) => c.caseId === "042")?.value, 340);
     assert.equal(form.cases.find((c) => c.caseId === "082")?.value, 560);
-    assert.equal(form.cases.find((c) => c.caseId === "014"), undefined, "014 brut non branché par F4-A");
+    // G2 — 014 (brut) est désormais publiée (bloc dédié, indépendant de F4-A) : elle porte
+    // SA PROPRE valeur (9999), jamais celle de 016 (120) — la distinction colonne reste vérifiée.
+    assert.equal(form.cases.find((c) => c.caseId === "014")?.value, 9999);
     assert.notEqual(form.cases.find((c) => c.caseId === "016")?.value, 9999);
   });
 

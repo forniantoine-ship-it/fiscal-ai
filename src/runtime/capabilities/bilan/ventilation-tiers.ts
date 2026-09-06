@@ -304,6 +304,46 @@ export function appliquerConflitsVentilation(
   };
 }
 
+const TOLERANCE_LIGNE_SIMPLE_VENTILATION = 0.01;
+
+/**
+ * G2 — réconciliation `lignesSimples` ↔ `ventilationTiers` pour la
+ * publication d'une case individuelle (064/092/174/175). Reprend
+ * exactement la doctrine déjà établie par `gateTotal096AvecVentilation` /
+ * `gateTotal176AvecVentilation` (ventilation prioritaire si DECLARE, repli
+ * sur `lignesSimples` sinon) — étendue ici à une case publiée seule plutôt
+ * qu'à un total agrégé, sans changer la règle elle-même.
+ *
+ * Deux DECLARE qui divergent ne sont JAMAIS sommés ni arbitrés : la case
+ * reste `INCONNU` (bloquée), une seule source canonique par case (même
+ * principe que `detecterConflitsDoubleComptage`, code `LIGNE_SIMPLE_ET_VENTILATION`).
+ *
+ * Limite connue, volontairement non traitée ici (hors périmètre G2) : si
+ * `ventilee` est DECLARE et `ligneSimple` est `NUL_CONFIRME` (absence
+ * confirmée), la ventilation reste prioritaire sans détection de
+ * contradiction — même limite déjà présente dans
+ * `detecterConflitsDoubleComptage`, qui ne compare que deux DECLARE.
+ */
+export function resolveCaseAvecVentilationPrioritaire(
+  caseId: string,
+  ligneSimple: LignePatrimonialeResolution,
+  ventilee: LignePatrimonialeResolution,
+): LignePatrimonialeResolution {
+  if (ventilee.status === "DECLARE" && ligneSimple.status === "DECLARE") {
+    const delta = round2(ventilee.montant - ligneSimple.montant);
+    if (Math.abs(delta) > TOLERANCE_LIGNE_SIMPLE_VENTILATION) {
+      return {
+        status: "INCONNU",
+        raison: `Case ${caseId} : lignesSimples DECLARE (${ligneSimple.montant} €) et ventilation DECLARE (${ventilee.montant} €) divergent — une seule source canonique par case, jamais de somme silencieuse ni de choix arbitraire. Publication bloquée tant que l'écart n'est pas résolu.`,
+      };
+    }
+  }
+  if (ventilee.status === "DECLARE") {
+    return ventilee;
+  }
+  return ligneSimple;
+}
+
 /** Gate 096 élargi P1-B.3 : composantes ventilées 064/068/072/080/092 (+ stocks hors jalon). */
 export function gateTotal096AvecVentilation(
   lignesSimples: LignesSimplesResolution,
