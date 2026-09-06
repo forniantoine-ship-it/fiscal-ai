@@ -260,14 +260,11 @@ describe("Cycle 55 — cases 496/576 : dossier réel, garde F-010/F-014 satisfai
     assert.ok(Math.abs(case576 - 3720) < 1, `576 attendu ≈ 3720, obtenu ${case576}`);
   });
 
-  it("576 est cohérente avec la composante amortissement déjà validée pour 2033-A/030", () => {
+  it("576 est cohérente avec la case 030 du 2033-A (Σ amortissements cumulés)", () => {
     const representation = rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE);
     const form2033C = map2033CFromRfs(representation);
     const form2033A = map2033AFromRfs(representation);
-    const case028 = findCase2033A(form2033A, "028");
-    const case030 = findCase2033A(form2033A, "030");
-    const amortCumulesAttendu = round2((case028 as number) - (case030 as number));
-    assert.equal(findCase(form2033C, "576")?.value, amortCumulesAttendu);
+    assert.equal(findCase2033A(form2033A, "030"), findCase(form2033C, "576")?.value);
   });
 });
 
@@ -323,8 +320,8 @@ describe("Cycle 55 — cases 496/576 : divergence F-010/F-014 → bloquées, auc
 // =====================================================================
 // Cases explicitement non alimentées — périmètre strict
 // =====================================================================
-describe("Cycle 55 — cases explicitement laissées absentes (périmètre strict 572/496/576)", () => {
-  it("490/492/494/570/574 (colonnes de mouvement) ne sont jamais alimentées", () => {
+describe("Cycle 55 — cases explicitement laissées absentes (périmètre strict 572/496/576, hors GO-2)", () => {
+  it("490/492/494/570/574 (colonnes de mouvement) ne sont jamais alimentées sans dateMiseEnService (voir describe GO-2 ci-dessous pour le premier exercice)", () => {
     const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE));
     for (const caseId of ["490", "492", "494", "570", "574"]) {
       assert.equal(findCase(form, caseId), undefined, `${caseId} ne doit jamais être alimentée ce cycle`);
@@ -352,6 +349,93 @@ describe("Cycle 55 — cases explicitement laissées absentes (périmètre stric
     const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE));
     const caseIds = form.cases.map((c) => c.caseId).sort();
     assert.deepEqual(caseIds, ["426", "476", "496", "572", "576"]);
+  });
+});
+
+// =====================================================================
+// GO-2 — cases 490/492/570 : premier exercice de mise en service
+// =====================================================================
+describe("GO-2 — cases 490/492/570 : premier exercice de mise en service", () => {
+  it("premier exercice (dateMiseEnService dans l'année de l'exercice) : 490=0, 570=0, 492=496 (brut)", () => {
+    const immoPremierExercice = { ...IMMO_REFERENCE, dateMiseEnService: "2025-03-01" };
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), immoPremierExercice));
+    const case496 = findCase(form, "496")?.value;
+    assert.equal(findCase(form, "490")?.value, 0);
+    assert.equal(findCase(form, "570")?.value, 0);
+    assert.equal(findCase(form, "492")?.value, case496);
+    assert.equal(findBlocked(form, "490"), undefined);
+    assert.equal(findBlocked(form, "492"), undefined);
+    assert.equal(findBlocked(form, "570"), undefined);
+  });
+
+  it("exercice ultérieur (dateMiseEnService une année avant l'exercice) : 490/492/570 restent non alimentées", () => {
+    const immoExerciceUlterieur = { ...IMMO_REFERENCE, dateMiseEnService: "2020-06-15" };
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), immoExerciceUlterieur));
+    for (const caseId of ["490", "492", "570"]) {
+      assert.equal(findCase(form, caseId), undefined, `${caseId} ne doit pas être alimentée pour un exercice ultérieur`);
+      assert.ok(findBlocked(form, caseId), `${caseId} doit être tracée comme non alimentée`);
+      assert.equal(findBlocked(form, caseId)?.categorie, "donnee_absente");
+    }
+    // 496/576 (fin d'exercice), elles, restent alimentées : non-régression.
+    assert.ok(findCase(form, "496"));
+    assert.ok(findCase(form, "576"));
+  });
+
+  it("dateMiseEnService absente : 490/492/570 restent non alimentées (jamais supposé premier exercice par défaut)", () => {
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), IMMO_REFERENCE));
+    for (const caseId of ["490", "492", "570"]) {
+      assert.equal(findCase(form, caseId), undefined);
+      assert.ok(findBlocked(form, caseId));
+    }
+  });
+
+  it("divergence F-010/F-014 en premier exercice : 490/492/570 bloquées exactement comme 496/576 (même garde)", () => {
+    const immoPremierExercice = { ...IMMO_REFERENCE, dateMiseEnService: "2025-03-01" };
+    const representation = rfs(fiscalResult({ amortCalcule: 999999 }), immoPremierExercice);
+    const form = map2033CFromRfs(representation);
+    for (const caseId of ["490", "492", "496", "570", "576"]) {
+      assert.equal(findCase(form, caseId), undefined, `${caseId} doit être bloquée par la divergence F-010/F-014`);
+      assert.equal(findBlocked(form, caseId)?.categorie, "incoherence_modele");
+      assert.equal(findBlocked(form, caseId)?.raison, findBlocked(form, "496")?.raison, `${caseId} doit partager exactement la raison de 496 (même garde)`);
+    }
+  });
+
+  it("valeurTerrain absente en premier exercice : 490/492/570 bloquées comme 496/576 (même raison)", () => {
+    const immoSansTerrain: ImmobilisationsRfs = {
+      lignes: IMMO_REFERENCE.lignes,
+      totalAnnuelExercice: IMMO_REFERENCE.totalAnnuelExercice,
+      totalBrut: IMMO_REFERENCE.totalBrut,
+      dateMiseEnService: "2025-03-01",
+    };
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), immoSansTerrain));
+    for (const caseId of ["490", "492", "570"]) {
+      assert.equal(findCase(form, caseId), undefined);
+      assert.equal(findBlocked(form, caseId)?.raison, findBlocked(form, "496")?.raison);
+    }
+  });
+
+  it("rfs.immobilisations absent : 490/492/570 bloquées comme 496/576 (même raison), 572 reste alimentée", () => {
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: 0 })));
+    for (const caseId of ["490", "492", "570"]) {
+      assert.equal(findCase(form, caseId), undefined);
+      assert.equal(findBlocked(form, caseId)?.raison, findBlocked(form, "496")?.raison);
+    }
+    assert.ok(findCase(form, "572"));
+  });
+
+  it("non-régression : 494/574 (diminutions) restent non alimentées en premier exercice comme en exercice ultérieur", () => {
+    for (const dateMiseEnService of ["2025-03-01", "2020-06-15"]) {
+      const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), { ...IMMO_REFERENCE, dateMiseEnService }));
+      assert.equal(findCase(form, "494"), undefined);
+      assert.equal(findCase(form, "574"), undefined);
+    }
+  });
+
+  it("non-régression : 426/476 restent inchangées par GO-2 (indépendantes de dateMiseEnService)", () => {
+    const immoPremierExercice = { ...IMMO_REFERENCE, dateMiseEnService: "2025-03-01" };
+    const form = map2033CFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), immoPremierExercice));
+    assert.equal(findCase(form, "426")?.value, IMMO_REFERENCE.valeurTerrain);
+    assert.equal(findCase(form, "476")?.value, IMMO_REFERENCE.montantMobilier);
   });
 });
 

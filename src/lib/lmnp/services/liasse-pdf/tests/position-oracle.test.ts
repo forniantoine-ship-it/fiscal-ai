@@ -23,14 +23,25 @@ import assert from "node:assert/strict";
 
 import { assembleForm2031SD } from "@/runtime/capabilities/f007/assemble-form-2031";
 import { map2033BFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033b";
+import { map2033CFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033c";
 
 import { generateCerfaLiassePdf } from "../generator/render-cerfa-liasse";
 import { readAssetBytes } from "../assets/load-asset";
 import { resolveVisualMapping } from "../registry";
 import { extractDrawnTextPositionsForPage } from "./extract-rendered-text";
-import { deriveCase300Boxes, deriveCase330Boxes, deriveCase350Boxes, deriveCase370372Boxes, deriveResultatFiscalColumnBoxes, xInBox, type ColumnBox } from "./independent-grid-oracle";
+import {
+  deriveCase300Boxes,
+  deriveCase330Boxes,
+  deriveCase350Boxes,
+  deriveCase370372Boxes,
+  deriveCase2033CTotalRowBoxes,
+  deriveResultatFiscalColumnBoxes,
+  xInBox,
+  type ColumnBox,
+} from "./independent-grid-oracle";
 import { buildDossierTemoinRfs, DOSSIER_TEMOIN_FISCAL_RESULT, DOSSIER_TEMOIN_IDENTITE } from "./golden-master-technical-pipeline.test";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import { buildScenarioRfs } from "./scenario-beneficiaire.test";
 
 // Tolérance = largeur du trait de grille du Cerfa officiel (mesurée : les
@@ -707,5 +718,157 @@ describe("Vérification PDF réelle — 2033-B-SD, case 244 (MICRO-JALON implém
       return;
     }
     assert.ok(!result.manifest.some((e) => e.caseId === "244"), "244 ne doit jamais apparaître dans le manifeste sans donnée disponible");
+  });
+});
+
+// =====================================================================
+// Oracle de position indépendant — 2033-C-SD (GO-1/GO-2)
+// =====================================================================
+
+// Mêmes valeurs que `IMMO_REFERENCE` (src/runtime/rfs-2033c.test.ts,
+// dossier de référence "Elsa Bouvard") — non importées (non exportées par
+// ce fichier de test), recopiées ici pour rester un fixture autonome.
+// `amortCalcule` du dossier témoin (DOSSIER_TEMOIN_FISCAL_RESULT = 3720)
+// correspond exactement à `totalAnnuelExercice` ci-dessous : aucune
+// divergence F-010/F-014, 496/576 (et 490/492/570 le cas échéant) restent
+// alimentées.
+const IMMO_REFERENCE_2033C: ImmobilisationsRfs = {
+  lignes: [
+    { label: "Gros œuvre", montant: 37186.1, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814.1 },
+    { label: "Toiture", montant: 6610.86, dureeAnnees: 30, dotationExercice: 165, amortissementsCumules: 165, vnc: 6445.86 },
+    { label: "Étanchéité", montant: 5784.5, dureeAnnees: 20, dotationExercice: 217, amortissementsCumules: 217, vnc: 5567.5 },
+    { label: "Installation électrique", montant: 4958.15, dureeAnnees: 25, dotationExercice: 148, amortissementsCumules: 148, vnc: 4810.15 },
+    { label: "Installation et agencement", montant: 47235.9, dureeAnnees: 15, dotationExercice: 2327, amortissementsCumules: 2327, vnc: 44908.9 },
+    { label: "Mobilier - Pack meubles", montant: 5400.1, dureeAnnees: 7, dotationExercice: 491, amortissementsCumules: 491, vnc: 4909.1 },
+  ],
+  totalAnnuelExercice: 3720,
+  totalBrut: 107175.61,
+  valeurTerrain: 17960.39,
+  montantMobilier: 5400.1,
+};
+
+function build2033CRfs(immobilisations?: ImmobilisationsRfs): FiscalRepresentation {
+  return {
+    exercice: DOSSIER_TEMOIN_FISCAL_RESULT.exercice,
+    identite: DOSSIER_TEMOIN_IDENTITE,
+    fiscalResult: DOSSIER_TEMOIN_FISCAL_RESULT,
+    immobilisations,
+    trace: {
+      ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-05-01T00:00:00.000Z",
+      sourceFiscalResultAt: DOSSIER_TEMOIN_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "IdentiteDeclarante (ENT-013)", fiscalResult: "FiscalResult (F-006)" },
+    },
+  };
+}
+
+describe("Oracle de position indépendant — 2033-C-SD (GO-1/GO-2, huit cases)", () => {
+  it("A — sanity check : les 8 boîtes de valeur existent, largeur positive, distinctes de leur zone-numéro (≈14-16pt)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase2033CTotalRowBoxes(bytes);
+    for (const caseId of ["426", "476", "490", "492", "496", "570", "572", "576"] as const) {
+      const valueBox = boxes[`valueBox${caseId}` as keyof typeof boxes] as ColumnBox;
+      const numberZone = boxes[`numberZone${caseId}` as keyof typeof boxes] as ColumnBox;
+      assert.ok(valueBox.xMax > valueBox.xMin, `valueBox${caseId} doit avoir une largeur positive`);
+      assert.ok(valueBox.xMax - valueBox.xMin > 40, `valueBox${caseId} doit être une vraie boîte de valeur, pas une zone-numéro étroite`);
+      assert.ok(numberZone.xMax <= valueBox.xMin + 1, `la zone-numéro de ${caseId} doit précéder sa boîte de valeur`);
+    }
+  });
+
+  it("B — les 8 mappings du registre tombent chacun dans leur boîte de valeur officielle, jamais dans leur zone-numéro", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase2033CTotalRowBoxes(bytes);
+    for (const caseId of ["426", "476", "490", "492", "496", "570", "572", "576"] as const) {
+      const mapping = resolveVisualMapping("2033-C-SD", 2026, caseId);
+      assert.ok(mapping, `${caseId} doit avoir une entrée de registre (GO-1)`);
+      const valueBox = boxes[`valueBox${caseId}` as keyof typeof boxes] as ColumnBox;
+      const numberZone = boxes[`numberZone${caseId}` as keyof typeof boxes] as ColumnBox;
+      assert.ok(
+        xInBox(mapping!.position.x, valueBox, GRID_LINE_TOLERANCE_PT),
+        `x=${mapping!.position.x} (${caseId}) doit être dans sa boîte de valeur [${valueBox.xMin},${valueBox.xMax}]`,
+      );
+      assert.ok(!xInBox(mapping!.position.x, numberZone, GRID_LINE_TOLERANCE_PT), `${caseId} ne doit jamais tomber dans sa zone-numéro`);
+    }
+  });
+
+  it("C — PDF généré, premier exercice (dossier réel + dateMiseEnService dans l'exercice) — 490/492/570 sont réellement dessinées dans leur boîte de valeur", async () => {
+    const rfs = build2033CRfs({ ...IMMO_REFERENCE_2033C, dateMiseEnService: "2025-03-01" });
+    const form2033C = map2033CFromRfs(rfs);
+    assert.ok(form2033C.cases.some((c) => c.caseId === "490" && c.value === 0), "précondition : 490=0 (premier exercice)");
+    assert.ok(form2033C.cases.some((c) => c.caseId === "570" && c.value === 0), "précondition : 570=0 (premier exercice)");
+    const case496Value = form2033C.cases.find((c) => c.caseId === "496")?.value;
+    assert.ok(form2033C.cases.some((c) => c.caseId === "492" && c.value === case496Value), "précondition : 492=496 (premier exercice)");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-C-SD", cases: form2033C.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase2033CTotalRowBoxes(bytes);
+
+    // Positions RÉELLEMENT dessinées, identifiées par case (`result.manifest`,
+    // rempli par le générateur au moment de l'écriture) — plus précis qu'un
+    // filtre par CONTENU du texte dessiné, qui confondrait à tort deux "0"
+    // de lignes différentes (490 et 570 partagent la même page, des zones-X
+    // qui se recoupent entre Cadre I et Cadre II, mais des Y distincts).
+    const manifest490 = result.manifest.find((e) => e.caseId === "490");
+    const manifest570 = result.manifest.find((e) => e.caseId === "570");
+    const manifest492 = result.manifest.find((e) => e.caseId === "492");
+    const manifest496 = result.manifest.find((e) => e.caseId === "496");
+    assert.ok(manifest490, "490=0 doit être réellement dessinée (présente dans le manifeste)");
+    assert.ok(manifest570, "570=0 doit être réellement dessinée (présente dans le manifeste)");
+    assert.ok(manifest492, "492 doit être réellement dessinée (présente dans le manifeste)");
+    assert.ok(manifest496, "496 doit être réellement dessinée (présente dans le manifeste)");
+
+    assert.ok(xInBox(manifest490!.pdfLibX, boxes.valueBox490, GRID_LINE_TOLERANCE_PT), "490 doit être dessinée dans sa boîte de valeur");
+    assert.ok(!xInBox(manifest490!.pdfLibX, boxes.numberZone490, GRID_LINE_TOLERANCE_PT), "490 ne doit jamais tomber dans sa zone-numéro");
+    assert.ok(xInBox(manifest570!.pdfLibX, boxes.valueBox570, GRID_LINE_TOLERANCE_PT), "570 doit être dessinée dans sa boîte de valeur");
+    assert.ok(!xInBox(manifest570!.pdfLibX, boxes.numberZone570, GRID_LINE_TOLERANCE_PT), "570 ne doit jamais tomber dans sa zone-numéro");
+    assert.ok(xInBox(manifest492!.pdfLibX, boxes.valueBox492, GRID_LINE_TOLERANCE_PT), "492 (= brut fin d'exercice) doit être dessinée dans sa propre boîte de valeur");
+    assert.ok(xInBox(manifest496!.pdfLibX, boxes.valueBox496, GRID_LINE_TOLERANCE_PT), "496 doit rester dessinée dans sa propre boîte de valeur (non-régression)");
+    assert.equal(manifest492!.text, manifest496!.text, "492 et 496 doivent afficher le même texte (premier exercice : augmentations = brut fin d'exercice)");
+  });
+
+  it("D — PDF généré, exercice ultérieur (dateMiseEnService avant l'exercice) — 490/492/570 n'apparaissent jamais, 496/576 non affectées", async () => {
+    const rfs = build2033CRfs({ ...IMMO_REFERENCE_2033C, dateMiseEnService: "2020-06-15" });
+    const form2033C = map2033CFromRfs(rfs);
+    assert.equal(form2033C.cases.some((c) => c.caseId === "490"), false);
+    assert.equal(form2033C.cases.some((c) => c.caseId === "492"), false);
+    assert.equal(form2033C.cases.some((c) => c.caseId === "570"), false);
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-C-SD", cases: form2033C.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    assert.ok(!result.manifest.some((e) => e.caseId === "490"), "490 ne doit jamais apparaître dans le manifeste pour un exercice ultérieur");
+    assert.ok(!result.manifest.some((e) => e.caseId === "492"), "492 ne doit jamais apparaître dans le manifeste pour un exercice ultérieur");
+    assert.ok(!result.manifest.some((e) => e.caseId === "570"), "570 ne doit jamais apparaître dans le manifeste pour un exercice ultérieur");
+    assert.ok(result.manifest.some((e) => e.caseId === "496"), "496 doit rester dessinée, non affectée par l'absence de premier exercice");
+    assert.ok(result.manifest.some((e) => e.caseId === "576"), "576 doit rester dessinée, non affectée par l'absence de premier exercice");
+  });
+
+  it("E — non-régression PDF réelle : 426/476/572 sont dessinées dans leurs boîtes de valeur respectives (dossier réel, sans dateMiseEnService)", async () => {
+    const rfs = build2033CRfs(IMMO_REFERENCE_2033C);
+    const form2033C = map2033CFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-C-SD", cases: form2033C.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase2033CTotalRowBoxes(bytes);
+
+    const case426Drawing = positions.find((p) => p.text === "17 960" && xInBox(p.pdfLibX, boxes.valueBox426, GRID_LINE_TOLERANCE_PT));
+    assert.ok(case426Drawing, "426 (valeurTerrain=17960.39 arrondi) doit être dessinée dans sa boîte de valeur");
+    const case476Drawing = positions.find((p) => p.text === "5 400" && xInBox(p.pdfLibX, boxes.valueBox476, GRID_LINE_TOLERANCE_PT));
+    assert.ok(case476Drawing, "476 (montantMobilier=5400.1 arrondi) doit être dessinée dans sa boîte de valeur");
+    const case572Drawing = positions.find((p) => p.text === "3 720" && xInBox(p.pdfLibX, boxes.valueBox572, GRID_LINE_TOLERANCE_PT));
+    assert.ok(case572Drawing, "572 (amortCalcule=3720) doit être dessinée dans sa boîte de valeur");
+
+    assert.ok(!result.manifest.some((e) => e.caseId === "490"), "490 ne doit pas apparaître sans dateMiseEnService");
   });
 });

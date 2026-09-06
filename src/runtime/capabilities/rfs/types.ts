@@ -48,10 +48,15 @@ export type ImmobilisationsRfs = AmortissementPlan & {
    * P3-LIASSE-1B.2 — `draft.dateMiseEnService` (F-009) — transport pur,
    * jamais recalculé. Champ frère de `.plan`, au même titre que
    * `valeurTerrain`/`montantMobilier` ci-dessus : gouverne les colonnes de
-   * mouvement du 2033-C (début d'exercice / augmentations), aujourd'hui
-   * jamais alimentées faute de cette donnée dans la RFS (map-2033c.ts,
-   * `RAISON_MOUVEMENT`). `undefined` si le dossier n'a pas encore de date de
-   * mise en service persistée — jamais une valeur de repli inventée.
+   * mouvement du 2033-C (début d'exercice / augmentations) UNIQUEMENT pour
+   * le premier exercice de mise en service (GO-2, `map-2033c.ts` — 490=0,
+   * 570=0, 492=valeur brute fin d'exercice quand
+   * `dateMiseEnService.getFullYear() === rfs.exercice`). Pour un exercice
+   * ultérieur, ces colonnes restent non alimentées (reconstruire les
+   * augmentations exigerait le détail des `composantsNouveaux` propres à
+   * CET exercice, hors périmètre). `undefined` si le dossier n'a pas encore
+   * de date de mise en service persistée — jamais une valeur de repli
+   * inventée.
    */
   dateMiseEnService?: string;
   /**
@@ -119,6 +124,10 @@ export type FiscalRepresentation = {
    * jamais lu par les mappers 2031/2031-bis/2033-B existants. `undefined`
    * tant qu'`assemblePatrimoine()` n'a pas été appelé pour ce dossier
    * (aucune donnée de bilan saisie) — jamais une valeur de repli inventée.
+   * P1-PDF-02-E : `buildFiscalRepresentation` peut désormais transporter un
+   * `PatrimonialState` déjà assemblé ; `runDeclarationGeneration` ne le
+   * fournit que si des `BilanInputs` réels sont passés (aucun formulaire UI
+   * aujourd'hui — l'absence reste `undefined`).
    * Consommé uniquement par `map-2033a.ts` pour enrichir 084/086/120/134/
    * 142/156/176/180/110/112 au-delà des 4 cases déjà produites sans lui.
    */
@@ -135,6 +144,11 @@ export type FiscalRepresentation = {
       fiscalResult: RfsBlockSource;
       immobilisations?: RfsBlockSource;
       emprunts?: RfsBlockSource;
+      /**
+       * P1-PDF-02-E — présent uniquement si un `PatrimonialState` déjà assemblé
+       * a été transporté. Jamais une source inventée pour masquer une absence.
+       */
+      patrimoine?: RfsBlockSource;
     };
   };
 };

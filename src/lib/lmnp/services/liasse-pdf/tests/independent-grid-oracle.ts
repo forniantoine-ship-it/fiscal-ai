@@ -413,3 +413,124 @@ export async function deriveCase300Boxes(officialAssetBytes: Uint8Array): Promis
 
   return { numberZone300, valueBox300 };
 }
+
+// --- 2033-C-SD — GO-1/GO-2 (page 3 de l'asset partagé) --------------------
+
+/**
+ * Variante multi-textes de `findExactTextOnOfficialPage` : localise
+ * PLUSIEURS chaînes exactes en un seul chargement de page (huit cases sur
+ * la même page 2033-C sinon huit chargements pdfjs-dist redondants).
+ */
+async function findExactTextHits(
+  pdfBytes: Uint8Array,
+  pageNumber1Based: number,
+  needles: readonly string[],
+): Promise<Map<string, TextHit>> {
+  const pdfjsLib = await loadPdfJs();
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes) }).promise;
+  const page = await doc.getPage(pageNumber1Based);
+  const textContent = await page.getTextContent();
+  const remaining = new Set(needles);
+  const found = new Map<string, TextHit>();
+  for (const item of textContent.items as Array<{ str: string; transform: number[]; width: number; height: number }>) {
+    const trimmed = item.str.trim();
+    if (remaining.has(trimmed) && !found.has(trimmed)) {
+      found.set(trimmed, { x: item.transform[4], yBottomLeft: item.transform[5], width: item.width, height: item.height });
+    }
+  }
+  for (const needle of needles) {
+    if (!found.has(needle)) {
+      throw new Error(`Texte "${needle}" introuvable page ${pageNumber1Based} de l'asset officiel — l'oracle ne peut pas localiser la case sans ce repère indépendant du registre.`);
+    }
+  }
+  return found;
+}
+
+export type Case2033CTotalRowBoxes = {
+  numberZone426: ColumnBox; valueBox426: ColumnBox;
+  numberZone476: ColumnBox; valueBox476: ColumnBox;
+  numberZone490: ColumnBox; valueBox490: ColumnBox;
+  numberZone492: ColumnBox; valueBox492: ColumnBox;
+  numberZone496: ColumnBox; valueBox496: ColumnBox;
+  numberZone570: ColumnBox; valueBox570: ColumnBox;
+  numberZone572: ColumnBox; valueBox572: ColumnBox;
+  numberZone576: ColumnBox; valueBox576: ColumnBox;
+};
+
+// "490" est un cas particulier du flux de contenu officiel : la ligne
+// "TOTAL 490" est dessinée par un SEUL opérateur Tj ("TOTAL 490", un bloc
+// texte indivisible), jamais deux opérateurs distincts "TOTAL" et "490" —
+// vérifié par exécution directe (`getTextContent`, avec et sans
+// `disableCombineTextItems`) : les deux renvoient le bloc fusionné pour
+// cette ligne précise, alors que 492/494/496 restent des items séparés sur
+// la même ligne. Impossible d'obtenir le x du seul "490" par ce chemin.
+// On retrouve sa colonne par une ligne SIBLING non ambiguë de la MÊME
+// colonne (Cadre I, colonne "début d'exercice", x constant sur les 9 lignes
+// 400/410/420/430/440/450/460/470/480 juste au-dessus — vérifié sur le
+// dump complet de la page) : "480" partage exactement cette colonne, sans
+// aucune ambiguïté. La bande verticale (y) reste celle de la ligne TOTAL
+// elle-même, dérivée de "492" (même ligne, item non fusionné).
+const CASE_490_COLUMN_SIBLING = "480";
+
+const CASE_IDS_2033C_TOTAL_ROW = ["426", "476", "492", "496", "570", "572", "576"] as const;
+
+/**
+ * Dérive, en lisant `assets/2026/2033-sd.pdf` (page 3 = 2033-C-SD), les
+ * bornes réelles des 8 cases GO-1/GO-2 (Terrains/Mobilier colonne "fin
+ * d'exercice", TOTAL Cadre I et Cadre II) — sans jamais importer
+ * `registry/2033-c`. Même principe que `deriveCase370372Boxes`/
+ * `deriveCase330Boxes` : zone-numéro = intervalle contenant le texte du
+ * numéro de case, boîte de valeur = intervalle suivant à droite.
+ */
+export async function deriveCase2033CTotalRowBoxes(officialAssetBytes: Uint8Array): Promise<Case2033CTotalRowBoxes> {
+  const PAGE_NUMBER = 3; // 2033-C-SD = page 3 de l'asset partagé (asset-manifest.ts) — fait fixe du fichier, jamais une hypothèse de registre.
+  const hits = await findExactTextHits(officialAssetBytes, PAGE_NUMBER, [...CASE_IDS_2033C_TOTAL_ROW, CASE_490_COLUMN_SIBLING]);
+
+  const contentText = await officialPageContentText(officialAssetBytes, PAGE_NUMBER - 1);
+  const segments = parseStrokedLineSegments(contentText);
+
+  const result = {} as Record<string, ColumnBox>;
+  for (const caseId of CASE_IDS_2033C_TOTAL_ROW) {
+    const hit = hits.get(caseId)!;
+    const yMin = hit.yBottomLeft - 1;
+    const yMax = hit.yBottomLeft + hit.height + 1;
+    const xs = verticalSeparatorsSpanningBand(segments, yMin, yMax);
+    if (xs.length < 2) {
+      throw new Error(
+        `Oracle 2033-C : seulement ${xs.length} séparateur(s) vertical(aux) trouvé(s) dans la bande de la case "${caseId}" (attendu ≥2) — l'asset officiel a peut-être changé de structure. xs=${xs.join(",")}`,
+      );
+    }
+    const numberZone = intervalContaining(xs, hit.x);
+    if (!numberZone) {
+      throw new Error(`Oracle 2033-C : impossible de localiser la zone-numéro de la case "${caseId}" dans les séparateurs trouvés.`);
+    }
+    const valueBox = nextIntervalRight(xs, numberZone);
+    if (!valueBox) {
+      throw new Error(`Oracle 2033-C : impossible de dériver la boîte de valeur à droite du numéro de la case "${caseId}".`);
+    }
+    result[`numberZone${caseId}`] = numberZone;
+    result[`valueBox${caseId}`] = valueBox;
+  }
+
+  // "490" — voir le commentaire de `CASE_490_COLUMN_SIBLING` ci-dessus.
+  // Bande verticale de la ligne TOTAL (déjà dérivée pour "492" ci-dessus,
+  // même ligne). Colonne retrouvée via "480", ligne sibling non ambiguë de
+  // la même colonne.
+  const totalRowHit492 = hits.get("492")!;
+  const siblingHit480 = hits.get(CASE_490_COLUMN_SIBLING)!;
+  const totalRowYMin = totalRowHit492.yBottomLeft - 1;
+  const totalRowYMax = totalRowHit492.yBottomLeft + totalRowHit492.height + 1;
+  const totalRowXs = verticalSeparatorsSpanningBand(segments, totalRowYMin, totalRowYMax);
+  const numberZone490 = intervalContaining(totalRowXs, siblingHit480.x);
+  if (!numberZone490) {
+    throw new Error('Oracle 2033-C : impossible de localiser la zone-numéro de "490" via sa colonne sibling "480".');
+  }
+  const valueBox490 = nextIntervalRight(totalRowXs, numberZone490);
+  if (!valueBox490) {
+    throw new Error('Oracle 2033-C : impossible de dériver la boîte de valeur à droite du numéro de "490".');
+  }
+  result.numberZone490 = numberZone490;
+  result.valueBox490 = valueBox490;
+
+  return result as unknown as Case2033CTotalRowBoxes;
+}

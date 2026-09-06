@@ -20,11 +20,9 @@ import { round2 } from "../../f007/types";
  * mapper : la ventilation par catégorie (400-486, 500-566) exigerait de
  * faire correspondre les libellés libres de `PlanLigne`/SAV-007 à des
  * catégories PCG/Cerfa — une heuristique interdite, confirmée fragile même
- * sur le dossier réel (Cycle 46). Les colonnes de mouvement (490/492/494,
- * 570/574) exigeraient de savoir si l'exercice courant est l'année de mise
- * en service, donnée jamais exposée à la RFS (Cycle 38, toujours vrai).
- * Le Cadre III (plus-values/moins-values, cessions) est hors périmètre :
- * aucune notion de cession n'existe nulle part dans F-006/F-010/F-012/F-014.
+ * sur le dossier réel (Cycle 46). Le Cadre III (plus-values/moins-values,
+ * cessions) est hors périmètre : aucune notion de cession n'existe nulle
+ * part dans F-006/F-010/F-012/F-014.
  *
  * Cycle 55 — implémentation. 572 est un pass-through pur de
  * `fiscalResult.amortCalcule`, indépendant de `rfs.immobilisations` — même
@@ -64,6 +62,24 @@ import { round2 } from "../../f007/types";
  * `run-declaration-generation.ts`, sur le modèle exact de `valeurTerrain`
  * (Cycle 35). Sans garde F-010/F-014 : `compose-plan-amortissement.ts` ne
  * reçoit `montantMobilier` en paramètre nulle part — même preuve que 426.
+ *
+ * GO-2 — cases 490/492/570 (Cadre I/II, TOTAL, colonnes "début d'exercice"
+ * et "augmentations"), UNIQUEMENT pour le premier exercice de mise en
+ * service. `rfs.immobilisations.dateMiseEnService` est exposée depuis
+ * P3-LIASSE-1B.2 (`rfs/types.ts`) et propagée en production depuis
+ * `draft.dateMiseEnService` (`run-declaration-generation.ts`) — l'ancienne
+ * affirmation de ce fichier ("jamais exposée à la RFS") ne tenait plus dès
+ * ce jalon. Cette donnée ne résout qu'UNE ambiguïté précise : si l'exercice
+ * courant EST l'année de mise en service, alors par définition comptable
+ * "début d'exercice" = 0 et "augmentations" = la valeur brute déjà connue en
+ * fin d'exercice (490=0, 570=0, 492=496) — aucun calcul nouveau, aucune
+ * lecture de `composantsNouveaux`. Pour un exercice ULTÉRIEUR, reconstruire
+ * ces colonnes exigerait de connaître le détail des acquisitions propres à
+ * CET exercice (`composantsNouveaux` de l'année en cours, montant par
+ * montant) — donnée non traitée par ce jalon (STOP explicite composants
+ * nouveaux) : 490/492/570 restent alors non alimentées, exactement comme
+ * avant GO-2. Même garde F-010/F-014 que 496/576 (Cycle 37) : ces colonnes
+ * ne sont produites que quand 496/576 le sont elles-mêmes.
  */
 
 export type CerfaCaseNonAlimenteeCategorie =
@@ -96,8 +112,18 @@ const RAISON_TERRAIN_ABSENT =
 const RAISON_IMMO_ABSENT =
   "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté).";
 
-const RAISON_MOUVEMENT =
-  "Cette colonne exige de savoir si l'exercice courant est l'année de mise en service (début=0, augmentations=brut) ou un exercice ultérieur (début=brut, augmentations=0) — `dateMiseEnService`/`premiereAnnee` ne sont jamais exposés à la RFS aujourd'hui (audit Cycle 38, confirmé toujours vrai). Seule la colonne « fin d'exercice », indépendante de cette ambiguïté, est alimentée.";
+const RAISON_MOUVEMENT_EXERCICE_ULTERIEUR =
+  "GO-2 n'alimente 490/492/570 que pour le PREMIER exercice de mise en service (rfs.immobilisations.dateMiseEnService), où « début d'exercice »=0 et « augmentations »=brut par définition comptable. Pour un exercice ultérieur, reconstruire ces colonnes exigerait le détail des composantsNouveaux propres à CET exercice (montant par montant) — donnée non traitée par ce jalon (STOP composants nouveaux). Seule la colonne « fin d'exercice », indépendante de cette ambiguïté, reste alimentée.";
+
+const RAISON_MOUVEMENT_DATE_ABSENTE =
+  "rfs.immobilisations.dateMiseEnService est absente — impossible de déterminer si l'exercice courant est le premier exercice de mise en service, condition nécessaire pour alimenter « début d'exercice »/« augmentations » (GO-2). Jamais supposée par défaut.";
+
+// 494/574 (diminutions) restent hors périmètre GO-2, quel que soit
+// l'exercice : aucune notion de cession/sortie d'actif n'existe nulle part
+// dans F-006/F-010/F-012/F-014 (Cycle 54, toujours vrai) — indépendant de
+// dateMiseEnService.
+const RAISON_MOUVEMENT_DIMINUTIONS =
+  "Cette colonne exige une notion de cession/sortie d'actif en cours d'exercice, qui n'existe nulle part dans F-006/F-010/F-012/F-014 aujourd'hui (Cycle 54) — hors périmètre quel que soit l'exercice (Cadre III, cessions : non traité par GO-2).";
 
 const RAISON_426_IMMO_ABSENT =
   "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté), donc aucune valeur de terrain à projeter.";
@@ -192,6 +218,10 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
   const amortissementDivergent =
     immo !== undefined && Math.abs(round2(fr.amortCalcule - immo.totalAnnuelExercice)) > 0.01;
 
+  const LABEL_490 = "Valeur brute des immobilisations au début de l'exercice";
+  const LABEL_492 = "Augmentations (immobilisations)";
+  const LABEL_570 = "Montant des amortissements au début de l'exercice";
+
   if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
     const brut = round2(immo.totalBrut + immo.valeurTerrain);
     const amortissementsCumules = round2(immo.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
@@ -221,37 +251,81 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
         ksArtifacts: ["TRF-0032"],
       },
     });
+
+    // GO-2 — 490/492/570 uniquement pour le premier exercice de mise en
+    // service (voir doc de fichier ci-dessus). `dateMiseEnService` absente
+    // → impossible de trancher, jamais supposé "premier exercice" par défaut.
+    if (immo.dateMiseEnService === undefined) {
+      casesNonAlimentees.push(
+        { caseId: "490", label: LABEL_490, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
+        { caseId: "492", label: LABEL_492, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
+        { caseId: "570", label: LABEL_570, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
+      );
+    } else if (new Date(immo.dateMiseEnService).getFullYear() === rfs.exercice) {
+      cases.push(
+        {
+          caseId: "490",
+          label: LABEL_490,
+          value: 0,
+          trace: { source: "FiscalResult", path: "premier exercice de mise en service (rfs.immobilisations.dateMiseEnService) ⇒ 0 par définition comptable", ksArtifacts: ["TRF-0032"] },
+        },
+        {
+          caseId: "492",
+          label: LABEL_492,
+          value: brut,
+          trace: { source: "FiscalResult", path: "premier exercice de mise en service ⇒ augmentations = valeur brute fin d'exercice (= case 496)", ksArtifacts: ["TRF-0032"] },
+        },
+        {
+          caseId: "570",
+          label: LABEL_570,
+          value: 0,
+          trace: { source: "FiscalResult", path: "premier exercice de mise en service (rfs.immobilisations.dateMiseEnService) ⇒ 0 par définition comptable", ksArtifacts: ["TRF-0032"] },
+        },
+      );
+    } else {
+      casesNonAlimentees.push(
+        { caseId: "490", label: LABEL_490, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
+        { caseId: "492", label: LABEL_492, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
+        { caseId: "570", label: LABEL_570, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
+      );
+    }
   } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && amortissementDivergent) {
     for (const [caseId, label] of [
+      ["490", LABEL_490],
+      ["492", LABEL_492],
       ["496", "Valeur brute des immobilisations à la fin de l'exercice"],
+      ["570", LABEL_570],
       ["576", "Montant des amortissements à la fin de l'exercice"],
     ] as const) {
       casesNonAlimentees.push({ caseId, label, raison: RAISON_DIVERGENCE_F010_F014, categorie: "incoherence_modele" });
     }
   } else if (immo !== undefined) {
     for (const [caseId, label] of [
+      ["490", LABEL_490],
+      ["492", LABEL_492],
       ["496", "Valeur brute des immobilisations à la fin de l'exercice"],
+      ["570", LABEL_570],
       ["576", "Montant des amortissements à la fin de l'exercice"],
     ] as const) {
       casesNonAlimentees.push({ caseId, label, raison: RAISON_TERRAIN_ABSENT, categorie: "donnee_absente" });
     }
   } else {
     for (const [caseId, label] of [
+      ["490", LABEL_490],
+      ["492", LABEL_492],
       ["496", "Valeur brute des immobilisations à la fin de l'exercice"],
+      ["570", LABEL_570],
       ["576", "Montant des amortissements à la fin de l'exercice"],
     ] as const) {
       casesNonAlimentees.push({ caseId, label, raison: RAISON_IMMO_ABSENT, categorie: "donnee_absente" });
     }
   }
 
-  // Colonnes de mouvement (Cadre I et Cadre II, TOTAL) — jamais alimentées,
-  // périmètre strictement limité à 572/496/576 ce cycle (Cycle 55).
+  // Colonnes de mouvement hors périmètre GO-2 : diminutions (494/574),
+  // jamais alimentées quel que soit l'exercice (aucune notion de cession).
   casesNonAlimentees.push(
-    { caseId: "490", label: "Valeur brute des immobilisations au début de l'exercice", raison: RAISON_MOUVEMENT, categorie: "donnee_absente" },
-    { caseId: "492", label: "Augmentations (immobilisations)", raison: RAISON_MOUVEMENT, categorie: "donnee_absente" },
-    { caseId: "494", label: "Diminutions (immobilisations)", raison: RAISON_MOUVEMENT, categorie: "donnee_absente" },
-    { caseId: "570", label: "Montant des amortissements au début de l'exercice", raison: RAISON_MOUVEMENT, categorie: "donnee_absente" },
-    { caseId: "574", label: "Diminutions : amortissements afférents aux éléments sortis de l'actif et reprises", raison: RAISON_MOUVEMENT, categorie: "donnee_absente" },
+    { caseId: "494", label: "Diminutions (immobilisations)", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
+    { caseId: "574", label: "Diminutions : amortissements afférents aux éléments sortis de l'actif et reprises", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
   );
 
   return {
