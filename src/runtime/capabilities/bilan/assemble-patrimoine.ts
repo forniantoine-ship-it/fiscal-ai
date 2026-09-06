@@ -5,6 +5,7 @@ import { resolveCompteExploitant } from "./compte-exploitant";
 import { resolveRan } from "./ran";
 import { resultatComptable } from "./resultat-comptable";
 import { resolveLignesSimples } from "./lignes-simples";
+import { resolveLignePatrimoniale } from "./ligne-patrimoniale";
 import {
   appliquerCoherenceInclusionConjointe,
   resolveReconciliationDecouvertTiers,
@@ -88,6 +89,10 @@ export function assemblePatrimoine(rfs: FiscalRepresentation, inputs: BilanInput
   const tiers = resolveTiers(inputs.tiers);
   const subventionsInvestissement = resolveSubventionsInvestissement(inputs.subventionsInvestissement);
   const lignesSimples = resolveLignesSimples(inputs.lignesSimples);
+  const disponibilitesAmortissementsProvisions = resolveLignePatrimoniale(
+    inputs.tresorerie.provisionsAmortissements,
+    "Disponibilités amortissements-provisions (case 086)",
+  );
   const ventilationBrute = resolveVentilationTiers(inputs.ventilationTiers);
   const ventilationTiers = appliquerConflitsVentilation(
     ventilationBrute,
@@ -131,6 +136,7 @@ export function assemblePatrimoine(rfs: FiscalRepresentation, inputs: BilanInput
     tiers,
     subventionsInvestissement,
     lignesSimples,
+    disponibilitesAmortissementsProvisions,
     ventilationTiers,
     reconciliationEmpruntsTiers,
     reconciliationDecouvertTiers,

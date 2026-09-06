@@ -49,13 +49,20 @@ export type TresorerieInputs = {
    * `TresorerieResolution.decouvertDettePassif`).
    */
   decouvertDetteReconnue?: number;
+  /**
+   * Case 086 — provision ou amortissement sur disponibilités (colonne
+   * Amortissements-Provisions), distinct de `closingCash` / `declaredProfessionalCash`
+   * (084 brut). P1-PDF-02-F4-B : absent ⇔ INCONNU — jamais déduit de 084.
+   * DECLARE / NUL_CONFIRME explicites uniquement.
+   */
+  provisionsAmortissements?: LignePatrimonialeInput;
   source?: string;
 };
 
 export type TresorerieResolution = {
   etat: TresorerieEtat;
   /**
-   * Valeur retenue pour 084/086 — TOUJOURS ≥ 0 (jamais un découvert projeté
+   * Valeur retenue pour 084 (brut) — TOUJOURS ≥ 0 (jamais un découvert projeté
    * en négatif ici, voir `decouvertBancaire`). `undefined` si aucune valeur
    * fiable n'est disponible (INCONNUE ou DIVERGENTE).
    */
@@ -311,25 +318,63 @@ export type EmpruntsResolution =
  * `INCONNU` (jamais 0 silencieux). Aucune question client systématique
  * n'est induite par ces champs : la collecte intelligente est hors jalon.
  *
- * Cases : 014/016, 040/042, 064, 080/082, 092, 174, 175.
+ * Cases brut : 014, 040, 064, 080, 092.
+ * Cases colonne Amortissements-Provisions (P1-PDF-02-B) : 016, 042, 082 —
+ * propriétés `*Net` ci-dessous (suffixe historique trompeur : ce ne sont PAS
+ * des valeurs nettes comptables Brut−Amort, mais le montant explicite de la
+ * colonne Amort du Cerfa lorsque DECLARE/NUL_CONFIRME).
+ * Cases passif : 174, 175.
+ *
+ * F4-B — colonnes Amort circulant : champs `LignePatrimonialeInput` dédiés
+ * (cases 066, 070, 074, 094). Absent ⇔ INCONNU. Ne jamais dériver du brut
+ * voisin (064/068/072/092) ni de la ventilation `LOYER_DU` → 068.
  */
 export type LignesSimplesInputs = {
   /** Case 014 — Autres immobilisations incorporelles (brut). */
   autresImmobilisationsIncorporellesBrut?: LignePatrimonialeInput;
-  /** Case 016 — Autres immobilisations incorporelles (net). */
+  /**
+   * Case 016 — Autres immobilisations incorporelles (colonne
+   * Amortissements-Provisions). Suffixe `Net` = héritage de nommage uniquement.
+   */
   autresImmobilisationsIncorporellesNet?: LignePatrimonialeInput;
   /** Case 040 — Immobilisations financières (brut). */
   immobilisationsFinancieresBrut?: LignePatrimonialeInput;
-  /** Case 042 — Immobilisations financières (net). */
+  /**
+   * Case 042 — Immobilisations financières (colonne Amortissements-Provisions).
+   * Suffixe `Net` = héritage de nommage uniquement.
+   */
   immobilisationsFinancieresNet?: LignePatrimonialeInput;
-  /** Case 064 — Avances et acomptes versés sur commandes. */
+  /** Case 064 — Avances et acomptes versés sur commandes (brut). */
   avancesAcomptesVerses?: LignePatrimonialeInput;
+  /**
+   * Case 066 — Avances et acomptes versés (colonne Amortissements-Provisions).
+   * Distinct de `avancesAcomptesVerses` (064 brut).
+   */
+  avancesAcomptesVersesAmort?: LignePatrimonialeInput;
+  /**
+   * Case 070 — Clients et comptes rattachés (colonne Amortissements-Provisions).
+   * Distinct de la ventilation `LOYER_DU_PAR_LOCATAIRE` → 068 (brut).
+   */
+  clientsAmortissementsProvisions?: LignePatrimonialeInput;
+  /**
+   * Case 074 — Autres créances (colonne Amortissements-Provisions).
+   * Distinct de `ventilationTiers.autresCreances` → 072 (brut).
+   */
+  autresCreancesAmortissementsProvisions?: LignePatrimonialeInput;
   /** Case 080 — Valeurs mobilières de placement (brut). */
   valeursMobilieresPlacementBrut?: LignePatrimonialeInput;
-  /** Case 082 — Valeurs mobilières de placement (net). */
+  /**
+   * Case 082 — Valeurs mobilières de placement (colonne
+   * Amortissements-Provisions). Suffixe `Net` = héritage de nommage uniquement.
+   */
   valeursMobilieresPlacementNet?: LignePatrimonialeInput;
-  /** Case 092 — Charges constatées d'avance. */
+  /** Case 092 — Charges constatées d'avance (brut). */
   chargesConstateesAvance?: LignePatrimonialeInput;
+  /**
+   * Case 094 — Charges constatées d'avance (colonne Amortissements-Provisions).
+   * Distinct de `chargesConstateesAvance` (092 brut).
+   */
+  chargesConstateesAvanceAmort?: LignePatrimonialeInput;
   /** Case 174 — Produits constatés d'avance. */
   produitsConstatesAvance?: LignePatrimonialeInput;
   /**
@@ -346,9 +391,13 @@ export type LignesSimplesResolution = {
   immobilisationsFinancieresBrut: LignePatrimonialeResolution;
   immobilisationsFinancieresNet: LignePatrimonialeResolution;
   avancesAcomptesVerses: LignePatrimonialeResolution;
+  avancesAcomptesVersesAmort: LignePatrimonialeResolution;
+  clientsAmortissementsProvisions: LignePatrimonialeResolution;
+  autresCreancesAmortissementsProvisions: LignePatrimonialeResolution;
   valeursMobilieresPlacementBrut: LignePatrimonialeResolution;
   valeursMobilieresPlacementNet: LignePatrimonialeResolution;
   chargesConstateesAvance: LignePatrimonialeResolution;
+  chargesConstateesAvanceAmort: LignePatrimonialeResolution;
   produitsConstatesAvance: LignePatrimonialeResolution;
   autresDettes: LignePatrimonialeResolution;
 };
@@ -433,6 +482,12 @@ export type PatrimonialState = {
    * composante inconnue parmi celles listées pour un total le bloque.
    */
   lignesSimples: LignesSimplesResolution;
+  /**
+   * P1-PDF-02-F4-B — case 086 (Disponibilités, colonne Amortissements-Provisions).
+   * Résolu depuis `BilanInputs.tresorerie.provisionsAmortissements` — jamais
+   * depuis `tresorerie.clotureRetenue` (084).
+   */
+  disponibilitesAmortissementsProvisions: LignePatrimonialeResolution;
   /**
    * P1-B.3 : toujours résolu — ventilation nature → case. Les buckets
    * `tiers.creances` / `tiers.dettes` ne sont jamais projetés ici.

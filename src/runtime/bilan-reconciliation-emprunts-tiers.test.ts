@@ -40,9 +40,13 @@ function patrimoineBase(overrides: Partial<PatrimonialState> = {}): PatrimonialS
       immobilisationsFinancieresBrut: nul(),
       immobilisationsFinancieresNet: nul(),
       avancesAcomptesVerses: nul(),
+      avancesAcomptesVersesAmort: nul(),
+      clientsAmortissementsProvisions: nul(),
+      autresCreancesAmortissementsProvisions: nul(),
       valeursMobilieresPlacementBrut: nul(),
       valeursMobilieresPlacementNet: nul(),
       chargesConstateesAvance: nul(),
+      chargesConstateesAvanceAmort: nul(),
       produitsConstatesAvance: nul(),
       autresDettes: nul(),
     },
@@ -59,6 +63,7 @@ function patrimoineBase(overrides: Partial<PatrimonialState> = {}): PatrimonialS
       raison: "fixture",
       bloquant: false,
     },
+    disponibilitesAmortissementsProvisions: nul(),
     ...overrides,
   };
 }

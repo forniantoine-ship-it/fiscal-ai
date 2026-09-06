@@ -213,9 +213,13 @@ describe("gates totaux avec ventilation", () => {
       immobilisationsFinancieresBrut: { status: "NUL_CONFIRME" },
       immobilisationsFinancieresNet: { status: "NUL_CONFIRME" },
       avancesAcomptesVerses: { status: "NUL_CONFIRME" },
+      avancesAcomptesVersesAmort: { status: "NUL_CONFIRME" },
+      clientsAmortissementsProvisions: { status: "NUL_CONFIRME" },
+      autresCreancesAmortissementsProvisions: { status: "NUL_CONFIRME" },
       valeursMobilieresPlacementBrut: { status: "NUL_CONFIRME" },
       valeursMobilieresPlacementNet: { status: "NUL_CONFIRME" },
       chargesConstateesAvance: { status: "NUL_CONFIRME" },
+      chargesConstateesAvanceAmort: { status: "NUL_CONFIRME" },
       produitsConstatesAvance: { status: "NUL_CONFIRME" },
       autresDettes: { status: "NUL_CONFIRME" },
     });

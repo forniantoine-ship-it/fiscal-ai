@@ -41,7 +41,7 @@ export function resolveLignesSimples(inputs?: LignesSimplesInputs): LignesSimple
     ),
     autresImmobilisationsIncorporellesNet: resolveLignePatrimonialeOuverte(
       inputs?.autresImmobilisationsIncorporellesNet,
-      "Autres immobilisations incorporelles net (case 016)",
+      "Autres immobilisations incorporelles amortissements-provisions (case 016)",
     ),
     immobilisationsFinancieresBrut: resolveLignePatrimonialeOuverte(
       inputs?.immobilisationsFinancieresBrut,
@@ -49,11 +49,23 @@ export function resolveLignesSimples(inputs?: LignesSimplesInputs): LignesSimple
     ),
     immobilisationsFinancieresNet: resolveLignePatrimonialeOuverte(
       inputs?.immobilisationsFinancieresNet,
-      "Immobilisations financières net (case 042)",
+      "Immobilisations financières amortissements-provisions (case 042)",
     ),
     avancesAcomptesVerses: resolveLignePatrimonialeOuverte(
       inputs?.avancesAcomptesVerses,
       "Avances et acomptes versés (case 064)",
+    ),
+    avancesAcomptesVersesAmort: resolveLignePatrimonialeOuverte(
+      inputs?.avancesAcomptesVersesAmort,
+      "Avances et acomptes versés amortissements-provisions (case 066)",
+    ),
+    clientsAmortissementsProvisions: resolveLignePatrimonialeOuverte(
+      inputs?.clientsAmortissementsProvisions,
+      "Clients amortissements-provisions (case 070)",
+    ),
+    autresCreancesAmortissementsProvisions: resolveLignePatrimonialeOuverte(
+      inputs?.autresCreancesAmortissementsProvisions,
+      "Autres créances amortissements-provisions (case 074)",
     ),
     valeursMobilieresPlacementBrut: resolveLignePatrimonialeOuverte(
       inputs?.valeursMobilieresPlacementBrut,
@@ -61,11 +73,15 @@ export function resolveLignesSimples(inputs?: LignesSimplesInputs): LignesSimple
     ),
     valeursMobilieresPlacementNet: resolveLignePatrimonialeOuverte(
       inputs?.valeursMobilieresPlacementNet,
-      "Valeurs mobilières de placement net (case 082)",
+      "Valeurs mobilières de placement amortissements-provisions (case 082)",
     ),
     chargesConstateesAvance: resolveLignePatrimonialeOuverte(
       inputs?.chargesConstateesAvance,
       "Charges constatées d'avance (case 092)",
+    ),
+    chargesConstateesAvanceAmort: resolveLignePatrimonialeOuverte(
+      inputs?.chargesConstateesAvanceAmort,
+      "Charges constatées d'avance amortissements-provisions (case 094)",
     ),
     produitsConstatesAvance: resolveLignePatrimonialeOuverte(
       inputs?.produitsConstatesAvance,
@@ -126,4 +142,73 @@ export function gateTotal176Dettes(lignes: LignesSimplesResolution): GateTotalCo
     { caseId: "174", resolution: lignes.produitsConstatesAvance },
     { caseId: "175", resolution: lignes.autresDettes },
   ]);
+}
+
+/**
+ * P1-PDF-02-F4-C — gate 048 (colonne Amortissements-Provisions).
+ * Formule Cerfa : `048 = 016 + 030 + 042`.
+ * 030 provient du registre d'immobilisations corporelles (hors P1-B.2) ;
+ * 016/042 proviennent de `lignesSimples`. Ne somme jamais les bruts 014/028/040.
+ */
+export function gateTotal048(
+  lignes: LignesSimplesResolution,
+  case030Published: boolean,
+  case030Raison?: string,
+): GateTotalComposantesResult {
+  const gateLignes = gateTotalSurComposantes("048", "Total I — Actif immobilisé (amortissements-provisions)", [
+    { caseId: "016", resolution: lignes.autresImmobilisationsIncorporellesNet },
+    { caseId: "042", resolution: lignes.immobilisationsFinancieresNet },
+  ]);
+  if (gateLignes.status === "BLOQUE") {
+    return gateLignes;
+  }
+  if (!case030Published) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["030"],
+      raison: `Total 048 (Total I — Actif immobilisé (amortissements-provisions)) non publiable : composante 030 non publiable${case030Raison ? ` — ${case030Raison}` : ""}. Absence de donnée ≠ zéro ; ne jamais sommer les valeurs disponibles partiellement.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
+}
+
+/**
+ * P1-PDF-02-F4-C — gate 098 (colonne Amortissements-Provisions).
+ * Formule Cerfa LMNP : `098 = 066 + 070 + 074 + 082 + 086 + 094`.
+ *
+ * Cases 052/062 (stocks/marchandises, colonne net/amort) : structurellement
+ * `non_applicable` pour un LMNP réel simplifié — preuve explicite dans
+ * `map-2033a.ts` (`toujoursBloquees`, catégorie `non_applicable`, libellé
+ * « aucun stock / aucune marchandise dans une activité de location meublée »).
+ * Elles ne sont donc PAS des composantes de cette gate : aucune donnée métier
+ * n'est requise pour les traiter comme hors périmètre (≠ zéro implicite sur un
+ * poste ouvert).
+ *
+ * 086 provient de `disponibilitesAmortissementsProvisions` ou de la règle F2
+ * (084=0 ⇒ 086=0 publié) — `case086Published` reflète la feuille réellement
+ * publiée par le mapper, pas le brut 084.
+ */
+export function gateTotal098(
+  lignes: LignesSimplesResolution,
+  case086Published: boolean,
+  case086Raison?: string,
+): GateTotalComposantesResult {
+  const gateLignes = gateTotalSurComposantes("098", "Total II — Actif circulant (amortissements-provisions)", [
+    { caseId: "066", resolution: lignes.avancesAcomptesVersesAmort },
+    { caseId: "070", resolution: lignes.clientsAmortissementsProvisions },
+    { caseId: "074", resolution: lignes.autresCreancesAmortissementsProvisions },
+    { caseId: "082", resolution: lignes.valeursMobilieresPlacementNet },
+    { caseId: "094", resolution: lignes.chargesConstateesAvanceAmort },
+  ]);
+  if (gateLignes.status === "BLOQUE") {
+    return gateLignes;
+  }
+  if (!case086Published) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["086"],
+      raison: `Total 098 (Total II — Actif circulant (amortissements-provisions)) non publiable : composante 086 non publiable${case086Raison ? ` — ${case086Raison}` : ""}. La trésorerie brute (084) connue ne suffit pas ; absence de provision ≠ zéro.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
 }

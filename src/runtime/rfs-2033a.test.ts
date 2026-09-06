@@ -106,14 +106,14 @@ const EMPRUNT_REFERENCE: PretFinancementExercice = {
 // TEST 2/3/4 — dossier réel : terrain, brut, net
 // =====================================================================
 describe("Cycle 35 — TEST 2/3/4 : réconciliation dossier réel (Elsa Bouvard)", () => {
-  it("terrain ≈ 17 960,39 € (fixture) ; case 028 (brut) ≈ 125 136 € ; case 030 (net) ≈ 121 416 €", () => {
+  it("terrain ≈ 17 960,39 € (fixture) ; case 028 (brut) ≈ 125 136 € ; case 030 (amortissements) ≈ 3 720 €", () => {
     const form = map2033AFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), { immobilisations: IMMO_REFERENCE }));
     const case028 = findCase(form, "028")?.value as number;
     const case030 = findCase(form, "030")?.value as number;
 
     assert.equal(IMMO_REFERENCE.valeurTerrain, 17960.39);
     assert.ok(Math.abs(case028 - 125136) < 1, `028 attendu ≈ 125136, obtenu ${case028}`);
-    assert.ok(Math.abs(case030 - 121416) < 1, `030 attendu ≈ 121416, obtenu ${case030}`);
+    assert.ok(Math.abs(case030 - 3720) < 1, `030 attendu ≈ 3720, obtenu ${case030}`);
   });
 
   it("case 028 correspond exactement à totalBrut + valeurTerrain (arrondi)", () => {
@@ -122,13 +122,18 @@ describe("Cycle 35 — TEST 2/3/4 : réconciliation dossier réel (Elsa Bouvard)
     assert.equal(case028, round2(IMMO_REFERENCE.totalBrut + (IMMO_REFERENCE.valeurTerrain as number)));
   });
 
-  it("case 030 correspond exactement à (totalBrut + valeurTerrain) − Σ amortissementsCumules", () => {
+  it("case 030 = Σ amortissementsCumules, distincte de la VNC interne", () => {
     const form = map2033AFromRfs(rfs(fiscalResult({ amortCalcule: IMMO_REFERENCE.totalAnnuelExercice }), { immobilisations: IMMO_REFERENCE }));
+    const case028 = findCase(form, "028")?.value as number;
     const case030 = findCase(form, "030")?.value as number;
     const amortCumulesTotal = round2(IMMO_REFERENCE.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
     const brut = round2(IMMO_REFERENCE.totalBrut + (IMMO_REFERENCE.valeurTerrain as number));
-    assert.equal(case030, round2(brut - amortCumulesTotal));
+    const vncInterne = round2(brut - amortCumulesTotal);
+
+    assert.equal(case030, amortCumulesTotal);
     assert.equal(amortCumulesTotal, 3720, "cohérent avec le dossier réel (première année, cumulé = dotation de l'exercice)");
+    assert.notEqual(case030, vncInterne, "030 ≠ VNC : la case 030 porte les amortissements cumulés, pas le net comptable");
+    assert.equal(round2((case028 as number) - case030), vncInterne, "VNC interne = 028 − 030, jamais publiée en case 030");
   });
 });
 

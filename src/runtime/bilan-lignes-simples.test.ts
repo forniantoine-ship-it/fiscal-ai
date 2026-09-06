@@ -33,9 +33,13 @@ function toutesConnues(overrides: Partial<LignesSimplesResolution> = {}): Lignes
     immobilisationsFinancieresBrut: nul,
     immobilisationsFinancieresNet: nul,
     avancesAcomptesVerses: nul,
+    avancesAcomptesVersesAmort: nul,
+    clientsAmortissementsProvisions: nul,
+    autresCreancesAmortissementsProvisions: nul,
     valeursMobilieresPlacementBrut: nul,
     valeursMobilieresPlacementNet: nul,
     chargesConstateesAvance: nul,
+    chargesConstateesAvanceAmort: nul,
     produitsConstatesAvance: nul,
     autresDettes: nul,
     ...overrides,
@@ -100,9 +104,13 @@ describe("resolveLignesSimples — familles P1-B.2", () => {
     assert.ok(res.immobilisationsFinancieresBrut.raison.includes("040"));
     assert.ok(res.immobilisationsFinancieresNet.raison.includes("042"));
     assert.ok(res.avancesAcomptesVerses.raison.includes("064"));
+    assert.ok(res.avancesAcomptesVersesAmort.raison.includes("066"));
+    assert.ok(res.clientsAmortissementsProvisions.raison.includes("070"));
+    assert.ok(res.autresCreancesAmortissementsProvisions.raison.includes("074"));
     assert.ok(res.valeursMobilieresPlacementBrut.raison.includes("080"));
     assert.ok(res.valeursMobilieresPlacementNet.raison.includes("082"));
     assert.ok(res.chargesConstateesAvance.raison.includes("092"));
+    assert.ok(res.chargesConstateesAvanceAmort.raison.includes("094"));
     assert.ok(res.produitsConstatesAvance.raison.includes("174"));
     assert.ok(res.autresDettes.raison.includes("175"));
   });

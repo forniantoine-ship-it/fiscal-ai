@@ -30,9 +30,13 @@ function patrimoineBase(overrides: Partial<PatrimonialState> = {}): PatrimonialS
       immobilisationsFinancieresBrut: { status: "INCONNU", raison: "fixture" },
       immobilisationsFinancieresNet: { status: "INCONNU", raison: "fixture" },
       avancesAcomptesVerses: { status: "INCONNU", raison: "fixture" },
+      avancesAcomptesVersesAmort: { status: "INCONNU", raison: "fixture" },
+      clientsAmortissementsProvisions: { status: "INCONNU", raison: "fixture" },
+      autresCreancesAmortissementsProvisions: { status: "INCONNU", raison: "fixture" },
       valeursMobilieresPlacementBrut: { status: "INCONNU", raison: "fixture" },
       valeursMobilieresPlacementNet: { status: "INCONNU", raison: "fixture" },
       chargesConstateesAvance: { status: "INCONNU", raison: "fixture" },
+      chargesConstateesAvanceAmort: { status: "INCONNU", raison: "fixture" },
       produitsConstatesAvance: { status: "INCONNU", raison: "fixture" },
       autresDettes: { status: "INCONNU", raison: "fixture" },
     },
@@ -66,6 +70,7 @@ function patrimoineBase(overrides: Partial<PatrimonialState> = {}): PatrimonialS
       raison: "fixture",
       bloquant: false,
     },
+    disponibilitesAmortissementsProvisions: { status: "INCONNU", raison: "fixture" },
     ...overrides,
   };
 }

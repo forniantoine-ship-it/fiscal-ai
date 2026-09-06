@@ -98,7 +98,7 @@ function buildRfs(): FiscalRepresentation {
 }
 
 describe("Intégration socle patrimonial P0 — map2033AFromRfs() avec rfs.patrimoine complet", () => {
-  it("bilan intégralement équilibré : les 9 cases patrimoniales publiables sont produites avec les valeurs attendues", () => {
+  it("bilan intégralement équilibré : 8 cases patrimoniales publiables (086 bloquée tant que provision inconnue)", () => {
     const rfsSansPatrimoine = buildRfs();
     const patrimoine = assemblePatrimoine(rfsSansPatrimoine, BILAN_INPUTS);
     const rfsAvecPatrimoine: FiscalRepresentation = { ...rfsSansPatrimoine, patrimoine };
@@ -109,15 +109,20 @@ describe("Intégration socle patrimonial P0 — map2033AFromRfs() avec rfs.patri
     assert.equal(find("136"), 5400, "136 = résultat comptable = resultatAvantAmort − amortCalcule − totalNonDeductible");
     assert.equal(find("156"), 20000);
     assert.equal(find("028"), 60000, "028 = totalBrut(45000) + valeurTerrain(15000)");
-    assert.equal(find("030"), 58500, "030 = 60000 − 1500 (cumulé)");
+    assert.equal(find("030"), 1500, "030 = Σ amortissementsCumules (1500), pas la VNC (58500)");
     assert.equal(find("084"), 3000);
-    assert.equal(find("086"), 3000);
+    assert.equal(find("086"), undefined, "086 bloquée : trésorerie brute connue sans provision explicite");
+    assert.ok(form.casesNonAlimentees.some((c) => c.caseId === "086"), "086 doit être explicitement bloquée");
     assert.equal(find("120"), 36100, "120 = 37100 (ouverture) + 0 (apports) − 1000 (prélèvements)");
     assert.equal(find("134"), 0, "134 = 0, dossier natif (C1)");
     assert.equal(find("142"), 41500, "142 = 120(36100) + 134(0) + 136(5400) — seul total publiable, voir correction P0-4");
 
-    // Aucune de ces 9 cases ne doit apparaître dans casesNonAlimentees.
-    for (const caseId of ["136", "156", "028", "030", "084", "086", "120", "134", "142"]) {
+    const patrimoineNetTotal = patrimoine.immobilisations.netTotal;
+    assert.equal(patrimoineNetTotal, 58500, "netTotal reste disponible pour les calculs internes d'équilibre");
+    assert.notEqual(find("030"), patrimoineNetTotal, "030 ≠ netTotal/VNC publiée");
+
+    // Aucune de ces 8 cases publiées ne doit apparaître dans casesNonAlimentees.
+    for (const caseId of ["136", "156", "028", "030", "084", "120", "134", "142"]) {
       assert.equal(form.casesNonAlimentees.find((c) => c.caseId === caseId), undefined, `${caseId} ne doit pas être dans casesNonAlimentees : elle a été produite`);
     }
   });
@@ -159,6 +164,51 @@ describe("Intégration socle patrimonial P0 — map2033AFromRfs() avec rfs.patri
       assert.equal(form.cases.find((c) => c.caseId === totalId), undefined, `${totalId} ne doit jamais être produit partiellement`);
       assert.ok(form.casesNonAlimentees.some((c) => c.caseId === totalId), `${totalId} doit être explicitement bloqué`);
     }
+  });
+});
+
+describe("F2 — case 086 séparée de 084 (Disponibilités)", () => {
+  it("Cas C — trésorerie brute connue (084=3000), provision inconnue : 086 absente, jamais recopiée", () => {
+    const rfsSansPatrimoine = buildRfs();
+    const patrimoine = assemblePatrimoine(rfsSansPatrimoine, BILAN_INPUTS);
+    const form = map2033AFromRfs({ ...rfsSansPatrimoine, patrimoine });
+    const case084 = form.cases.find((c) => c.caseId === "084")?.value;
+    const case086 = form.cases.find((c) => c.caseId === "086");
+    assert.equal(case084, 3000);
+    assert.equal(case086, undefined);
+    const blocked086 = form.casesNonAlimentees.find((c) => c.caseId === "086");
+    assert.ok(blocked086);
+    assert.match(blocked086!.raison, /provision|amortissement/i);
+  });
+
+  it("Cas A — trésorerie explicitement nulle : 084=0 et 086=0, cases distinctes", () => {
+    const rfsSansPatrimoine = buildRfs();
+    const inputsNulles: BilanInputs = {
+      ...BILAN_INPUTS,
+      tresorerie: { bankMode: "MIXTE", declaredProfessionalCash: 0 },
+    };
+    const patrimoine = assemblePatrimoine(rfsSansPatrimoine, inputsNulles);
+    const form = map2033AFromRfs({ ...rfsSansPatrimoine, patrimoine });
+    assert.equal(form.cases.find((c) => c.caseId === "084")?.value, 0);
+    assert.equal(form.cases.find((c) => c.caseId === "086")?.value, 0);
+    assert.notEqual(
+      form.cases.find((c) => c.caseId === "084")?.trace.path,
+      form.cases.find((c) => c.caseId === "086")?.trace.path,
+      "084 et 086 ont des traces distinctes malgré la même valeur numérique",
+    );
+  });
+
+  it("Cas B — provisionsAmortissements DECLARE : 086 publiée distinctement de 084", () => {
+    const rfsSansPatrimoine = buildRfs();
+    const inputsAvecProvision: BilanInputs = {
+      ...BILAN_INPUTS,
+      tresorerie: { bankMode: "DEDIE", closingCash: 3000, provisionsAmortissements: { status: "DECLARE", montant: 250 } },
+    };
+    const patrimoine = assemblePatrimoine(rfsSansPatrimoine, inputsAvecProvision);
+    const form = map2033AFromRfs({ ...rfsSansPatrimoine, patrimoine });
+    assert.equal(form.cases.find((c) => c.caseId === "084")?.value, 3000);
+    assert.equal(form.cases.find((c) => c.caseId === "086")?.value, 250);
+    assert.notEqual(form.cases.find((c) => c.caseId === "086")?.value, 3000);
   });
 });
 

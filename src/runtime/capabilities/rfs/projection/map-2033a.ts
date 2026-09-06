@@ -3,7 +3,9 @@ import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
+import { gateTotal048, gateTotal098 } from "../../bilan/lignes-simples";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
+import type { LignePatrimonialeResolution } from "../../bilan/types";
 
 /**
  * Projection Cerfa 2033-A-SD (bilan simplifié) — consomme UNIQUEMENT la RFS
@@ -88,6 +90,80 @@ const RAISON_TOTAL_DETTES =
 
 const RAISON_TOTAL_GENERAL_PASSIF =
   "Dépend du Total I (capitaux propres) et du Total III (dettes), tous deux non fiables — voir leurs raisons respectives.";
+
+const RAISON_AMORT_066 =
+  "Aucune source métier de provision ou d'amortissement sur avances versées (case 066, colonne Amortissements-Provisions) — distincte de la case 064 (brut). Le modèle ne collecte aujourd'hui que le brut via `lignesSimples.avancesAcomptesVerses` / ventilation ; absence ou montant brut connu ≠ provision sur avances.";
+
+const RAISON_AMORT_070 =
+  "Aucune source métier de provision ou d'amortissement sur clients (case 070, colonne Amortissements-Provisions) — distincte de la case 068 (brut). La ventilation tiers `LOYER_DU_PAR_LOCATAIRE` alimente uniquement le brut clients ; une créance client brute ne doit jamais être recopiée en provision.";
+
+const RAISON_AMORT_074 =
+  "Aucune source métier de provision ou d'amortissement sur autres créances (case 074, colonne Amortissements-Provisions) — distincte de la case 072 (brut). La ventilation tiers ne projette que le brut ; absence de créance brute ≠ absence de provision.";
+
+const RAISON_AMORT_094 =
+  "Aucune source métier de provision ou d'amortissement sur charges constatées d'avance (case 094, colonne Amortissements-Provisions) — distincte de la case 092 (brut). Le modèle ne collecte aujourd'hui que le brut via `lignesSimples.chargesConstateesAvance` / ventilation ; absence de CCA brute ≠ absence de provision.";
+
+/**
+ * P1-PDF-02-F4-A — projection d'une feuille colonne Amortissements-Provisions
+ * depuis une `LignePatrimonialeResolution` déjà résolue (P1-B.2). Ne publie
+ * que si DECLARE ou NUL_CONFIRME explicite — jamais si INCONNU.
+ */
+function projectCaseAmortFeuilleFromLigne(
+  caseId: string,
+  label: string,
+  resolution: LignePatrimonialeResolution,
+  tracePath: string,
+): { published?: CerfaCase; blocked?: CerfaCaseNonAlimentee } {
+  if (resolution.status === "DECLARE" || resolution.status === "NUL_CONFIRME") {
+    return {
+      published: {
+        caseId,
+        label,
+        value: resolution.montant,
+        trace: { source: "FiscalResult", path: tracePath, ksArtifacts: ["TRF-0032"] },
+      },
+    };
+  }
+  return {
+    blocked: {
+      caseId,
+      label,
+      raison: resolution.raison,
+      categorie: "donnee_absente",
+    },
+  };
+}
+
+function statutFeuillePourTrace(resolution: LignePatrimonialeResolution): string {
+  return resolution.status;
+}
+
+function sommeFeuillesPubliables(cases: CerfaCase[], caseIds: readonly string[]): number {
+  return round2(
+    caseIds.reduce((acc, caseId) => {
+      const feuille = cases.find((c) => c.caseId === caseId);
+      if (feuille === undefined) {
+        throw new Error(`gate COMPOSANTES_CONNUES incohérent : feuille ${caseId} absente des cases publiées`);
+      }
+      return acc + (feuille.value as number);
+    }, 0),
+  );
+}
+
+function traceTotalAmortFeuilles(
+  totalCaseId: string,
+  formule: string,
+  caseIds: readonly string[],
+  cases: CerfaCase[],
+  statuts: Record<string, string>,
+): string {
+  const termes = caseIds.map((id) => {
+    const val = cases.find((c) => c.caseId === id)?.value;
+    const statut = statuts[id] ?? "publié";
+    return `${id}(${val},${statut})`;
+  });
+  return `${totalCaseId} = ${formule} = ${termes.join(" + ")} — somme des feuilles publiables uniquement, jamais de bruts ni sous-totaux`;
+}
 
 export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   const fr = rfs.fiscalResult;
@@ -208,17 +284,17 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         categorie: "incoherence_modele",
       });
     }
-    if (patrimoine.immobilisations.netTotal !== undefined) {
+    if (patrimoine.immobilisations.cumuleTotal !== undefined) {
       cases.push({
         caseId: "030",
-        label: "Immobilisations corporelles (net)",
-        value: patrimoine.immobilisations.netTotal,
-        trace: { source: "FiscalResult", path: "patrimoine.immobilisations.netTotal (registre unifié F-010+F-012)", ksArtifacts: ["TRF-0032"] },
+        label: "Immobilisations corporelles (amortissements-provisions)",
+        value: patrimoine.immobilisations.cumuleTotal,
+        trace: { source: "FiscalResult", path: "patrimoine.immobilisations.cumuleTotal (registre unifié F-010+F-012)", ksArtifacts: ["TRF-0032"] },
       });
     } else {
       casesNonAlimentees.push({
         caseId: "030",
-        label: "Immobilisations corporelles (net)",
+        label: "Immobilisations corporelles (amortissements-provisions)",
         raison: patrimoine.immobilisations.raisons.join(" ") || "Registre patrimonial d'immobilisations non fiable pour ce dossier.",
         categorie: "incoherence_modele",
       });
@@ -226,7 +302,6 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
     const brut = round2(immo.totalBrut + immo.valeurTerrain);
     const amortissementsCumules = round2(immo.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
-    const net = round2(brut - amortissementsCumules);
 
     cases.push({
       caseId: "028",
@@ -240,16 +315,16 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     });
     cases.push({
       caseId: "030",
-      label: "Immobilisations corporelles (net)",
-      value: net,
+      label: "Immobilisations corporelles (amortissements-provisions)",
+      value: amortissementsCumules,
       trace: {
         source: "FiscalResult",
-        path: "(rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain) − Σ rfs.immobilisations.lignes[].amortissementsCumules (projection de présentation ; le terrain n'est jamais amorti)",
+        path: "Σ rfs.immobilisations.lignes[].amortissementsCumules",
         ksArtifacts: ["TRF-0032"],
       },
     });
   } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && amortissementDivergent) {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "net"]] as const) {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
       casesNonAlimentees.push({
         caseId,
         label: `Immobilisations corporelles (${suffixe})`,
@@ -259,7 +334,7 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
   } else if (immo !== undefined) {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "net"]] as const) {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
       casesNonAlimentees.push({
         caseId,
         label: `Immobilisations corporelles (${suffixe})`,
@@ -269,7 +344,7 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
   } else {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "net"]] as const) {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
       casesNonAlimentees.push({
         caseId,
         label: `Immobilisations corporelles (${suffixe})`,
@@ -297,22 +372,58 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   // (incorporelles, financières, autres tiers) ne sont pas confirmées.
   // ------------------------------------------------------------------
   if (patrimoine !== undefined) {
-    // 084/086 — Disponibilités. Toujours tentées indépendamment de
-    // l'équilibre global : une trésorerie connue reste une donnée valide
-    // même si un autre poste bloque le reste du bilan.
+    // 084/086 — Disponibilités. 084 (brut) et 086 (Amortissements-Provisions) sont
+    // résolues indépendamment : aucune recopie de clotureRetenue vers 086.
     if (patrimoine.tresorerie.clotureRetenue !== undefined) {
-      for (const caseId of ["084", "086"] as const) {
+      cases.push({
+        caseId: "084",
+        label: "Disponibilités (brut)",
+        value: patrimoine.tresorerie.clotureRetenue,
+        trace: { source: "FiscalResult", path: `patrimoine.tresorerie.clotureRetenue (${patrimoine.tresorerie.etat})`, ksArtifacts: ["TRF-0032"] },
+      });
+      if (patrimoine.tresorerie.clotureRetenue === 0) {
         cases.push({
-          caseId,
-          label: "Disponibilités",
-          value: patrimoine.tresorerie.clotureRetenue,
-          trace: { source: "FiscalResult", path: `patrimoine.tresorerie.clotureRetenue (${patrimoine.tresorerie.etat})`, ksArtifacts: ["TRF-0032"] },
+          caseId: "086",
+          label: "Disponibilités (amortissements-provisions)",
+          value: 0,
+          trace: {
+            source: "FiscalResult",
+            path: `patrimoine.tresorerie (${patrimoine.tresorerie.etat}) — 086=0 cohérent avec trésorerie brute nulle confirmée ; aucune provision distincte modélisée`,
+            ksArtifacts: ["TRF-0032"],
+          },
         });
+      } else {
+        const prov086 = patrimoine.disponibilitesAmortissementsProvisions;
+        if (prov086.status === "DECLARE" || prov086.status === "NUL_CONFIRME") {
+          cases.push({
+            caseId: "086",
+            label: "Disponibilités (amortissements-provisions)",
+            value: prov086.montant,
+            trace: {
+              source: "FiscalResult",
+              path: "patrimoine.disponibilitesAmortissementsProvisions ← BilanInputs.tresorerie.provisionsAmortissements (086 ≠ 084)",
+              ksArtifacts: ["TRF-0032"],
+            },
+          });
+        } else {
+          casesNonAlimentees.push({
+            caseId: "086",
+            label: "Disponibilités (amortissements-provisions)",
+            raison:
+              prov086.raison +
+              " La trésorerie brute (084) est connue mais ne suffit pas à alimenter 086 — absence de donnée ≠ zéro.",
+            categorie: "donnee_absente",
+          });
+        }
       }
     } else {
-      for (const [caseId, suffixe] of [["084", "brut"], ["086", "net"]] as const) {
-        casesNonAlimentees.push({ caseId, label: `Disponibilités (${suffixe})`, raison: patrimoine.tresorerie.raison, categorie: "donnee_absente" });
-      }
+      casesNonAlimentees.push({ caseId: "084", label: "Disponibilités (brut)", raison: patrimoine.tresorerie.raison, categorie: "donnee_absente" });
+      casesNonAlimentees.push({
+        caseId: "086",
+        label: "Disponibilités (amortissements-provisions)",
+        raison: patrimoine.tresorerie.raison,
+        categorie: "donnee_absente",
+      });
     }
 
     // 120 — Capital social ou individuel (compte de l'exploitant).
@@ -361,6 +472,145 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
 
+    // P1-PDF-02-F4-A — feuilles colonne Amortissements-Provisions (immobilisé,
+    // P1-B.2). Les propriétés `*Net` de `lignesSimples` portent un suffixe
+    // historique trompeur : P1-PDF-02-B a établi que 016/042/082 sont
+    // physiquement en colonne Amort. La saisie DECLARE/NUL_CONFIRME vise le
+    // montant de CETTE colonne Cerfa — jamais une VNC comptable, jamais le
+    // brut de la ligne voisine (014/040/080).
+    const ls = patrimoine.lignesSimples;
+    for (const spec of [
+      {
+        caseId: "016",
+        label: "Autres immobilisations incorporelles (amortissements-provisions)",
+        resolution: ls.autresImmobilisationsIncorporellesNet,
+        path: "patrimoine.lignesSimples.autresImmobilisationsIncorporellesNet → case 016 (colonne Amortissements-Provisions)",
+      },
+      {
+        caseId: "042",
+        label: "Immobilisations financières (amortissements-provisions)",
+        resolution: ls.immobilisationsFinancieresNet,
+        path: "patrimoine.lignesSimples.immobilisationsFinancieresNet → case 042 (colonne Amortissements-Provisions)",
+      },
+      {
+        caseId: "082",
+        label: "Valeurs mobilières de placement (amortissements-provisions)",
+        resolution: ls.valeursMobilieresPlacementNet,
+        path: "patrimoine.lignesSimples.valeursMobilieresPlacementNet → case 082 (colonne Amortissements-Provisions)",
+      },
+    ] as const) {
+      const { published, blocked } = projectCaseAmortFeuilleFromLigne(spec.caseId, spec.label, spec.resolution, spec.path);
+      if (published !== undefined) {
+        cases.push(published);
+      } else if (blocked !== undefined) {
+        casesNonAlimentees.push(blocked);
+      }
+    }
+
+    // P1-PDF-02-F4-B — feuilles circulant colonne Amort (066/070/074/094).
+    // Sources dédiées `lignesSimples.*Amort*` — jamais le brut voisin ni LOYER_DU.
+    for (const spec of [
+      {
+        caseId: "066",
+        label: "Avances et acomptes versés sur commandes (amortissements-provisions)",
+        resolution: ls.avancesAcomptesVersesAmort,
+        path: "patrimoine.lignesSimples.avancesAcomptesVersesAmort → case 066 (colonne Amortissements-Provisions, ≠ 064 brut)",
+      },
+      {
+        caseId: "070",
+        label: "Clients et comptes rattachés (amortissements-provisions)",
+        resolution: ls.clientsAmortissementsProvisions,
+        path: "patrimoine.lignesSimples.clientsAmortissementsProvisions → case 070 (colonne Amortissements-Provisions, ≠ 068/LOYER_DU brut)",
+      },
+      {
+        caseId: "074",
+        label: "Autres créances (amortissements-provisions)",
+        resolution: ls.autresCreancesAmortissementsProvisions,
+        path: "patrimoine.lignesSimples.autresCreancesAmortissementsProvisions → case 074 (colonne Amortissements-Provisions, ≠ 072 brut)",
+      },
+      {
+        caseId: "094",
+        label: "Charges constatées d'avance (amortissements-provisions)",
+        resolution: ls.chargesConstateesAvanceAmort,
+        path: "patrimoine.lignesSimples.chargesConstateesAvanceAmort → case 094 (colonne Amortissements-Provisions, ≠ 092 brut)",
+      },
+    ] as const) {
+      const { published, blocked } = projectCaseAmortFeuilleFromLigne(spec.caseId, spec.label, spec.resolution, spec.path);
+      if (published !== undefined) {
+        cases.push(published);
+      } else if (blocked !== undefined) {
+        casesNonAlimentees.push(blocked);
+      }
+    }
+
+    // P1-PDF-02-F4-C — totaux colonne Amortissements-Provisions (048, 098).
+    // Sources = feuilles déjà publiées dans `cases` — jamais bruts voisins,
+    // jamais somme partielle si une composante est INCONNU.
+    const case030Published = cases.some((c) => c.caseId === "030");
+    const case030Blocked = casesNonAlimentees.find((c) => c.caseId === "030");
+    const gate048 = gateTotal048(ls, case030Published, case030Blocked?.raison);
+    if (gate048.status === "COMPOSANTES_CONNUES") {
+      const composantes048 = ["016", "030", "042"] as const;
+      const total048 = sommeFeuillesPubliables(cases, composantes048);
+      cases.push({
+        caseId: "048",
+        label: "Total I — Actif immobilisé (amortissements-provisions)",
+        value: total048,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalAmortFeuilles("048", "016 + 030 + 042", composantes048, cases, {
+            "016": statutFeuillePourTrace(ls.autresImmobilisationsIncorporellesNet),
+            "030": "publié (registre immobilisations corporelles)",
+            "042": statutFeuillePourTrace(ls.immobilisationsFinancieresNet),
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "048",
+        label: "Total I — Actif immobilisé (amortissements-provisions)",
+        raison: gate048.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
+    const case086Published = cases.some((c) => c.caseId === "086");
+    const case086Blocked = casesNonAlimentees.find((c) => c.caseId === "086");
+    const gate098 = gateTotal098(ls, case086Published, case086Blocked?.raison);
+    if (gate098.status === "COMPOSANTES_CONNUES") {
+      const composantes098 = ["066", "070", "074", "082", "086", "094"] as const;
+      const total098 = sommeFeuillesPubliables(cases, composantes098);
+      cases.push({
+        caseId: "098",
+        label: "Total II — Actif circulant (amortissements-provisions)",
+        value: total098,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalAmortFeuilles("098", "066 + 070 + 074 + 082 + 086 + 094", composantes098, cases, {
+            "066": statutFeuillePourTrace(ls.avancesAcomptesVersesAmort),
+            "070": statutFeuillePourTrace(ls.clientsAmortissementsProvisions),
+            "074": statutFeuillePourTrace(ls.autresCreancesAmortissementsProvisions),
+            "082": statutFeuillePourTrace(ls.valeursMobilieresPlacementNet),
+            "086": case086Published
+              ? patrimoine.tresorerie.clotureRetenue === 0
+                ? "NUL_CONFIRME (F2 : 084=0)"
+                : statutFeuillePourTrace(patrimoine.disponibilitesAmortissementsProvisions)
+              : "INCONNU",
+            "094": statutFeuillePourTrace(ls.chargesConstateesAvanceAmort),
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "098",
+        label: "Total II — Actif circulant (amortissements-provisions)",
+        raison: gate098.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
     // Totaux — correction P0-4 (audit indépendant). Avant cette correction,
     // le fait que le SOUS-ENSEMBLE suivi par ce module (immobilisations
     // corporelles + trésorerie + tiers, compte de l'exploitant + RAN +
@@ -375,9 +625,10 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // `non_applicable`). Un total qui traite silencieusement ces catégories
     // comme nulles est une donnée FAUSSE, pas une donnée manquante : `044`,
     // `048`, `096`, `098`, `110`, `112`, `176` et `180` ne sont donc PLUS
-    // jamais produits ici, quel que soit le statut de `checkBilanEquilibre`
-    // — ils tombent dans `toujoursBloquees` (même mécanisme que sans
-    // patrimoine), avec leur raison précise (RAISON_TOTAL_*).
+    // jamais produits ici à partir d'un sous-ensemble équilibré seul — sauf
+    // 048/098 (P1-PDF-02-F4-C) lorsque TOUTES leurs feuilles Amort sont
+    // publiables via `gateTotal048` / `gateTotal098` (F4-C). 112/110/180 restent
+    // interdits.
     //
     // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Correction
     // P1-A (audit indépendant, asymétrie 142/137) : le calcul et le gate de
@@ -420,31 +671,61 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     { caseId: "010", label: "Fonds commercial (brut)", raison: "Un LMNP exploite une location, pas un fonds de commerce — case sans objet par nature, colonne brut.", categorie: "non_applicable" },
     { caseId: "012", label: "Fonds commercial (net)", raison: "Un LMNP exploite une location, pas un fonds de commerce — case sans objet par nature, colonne net.", categorie: "non_applicable" },
     { caseId: "014", label: "Autres immobilisations incorporelles (brut)", raison: "Aucune immobilisation incorporelle n'est modélisée par F-010/F-014 — colonne brut.", categorie: "donnee_absente" },
-    { caseId: "016", label: "Autres immobilisations incorporelles (net)", raison: "Aucune immobilisation incorporelle n'est modélisée par F-010/F-014 — colonne net.", categorie: "donnee_absente" },
+    {
+      caseId: "016",
+      label: "Autres immobilisations incorporelles (amortissements-provisions)",
+      raison:
+        "Sans `rfs.patrimoine` / `BilanInputs.lignesSimples`, aucune confirmation explicite (DECLARE/NUL_CONFIRME) n'est disponible pour la colonne Amortissements-Provisions — absence ≠ zéro.",
+      categorie: "donnee_absente",
+    },
     { caseId: "040", label: "Immobilisations financières (brut)", raison: "Aucune immobilisation financière n'est modélisée par le produit — colonne brut.", categorie: "donnee_absente" },
-    { caseId: "042", label: "Immobilisations financières (net)", raison: "Aucune immobilisation financière n'est modélisée par le produit — colonne net.", categorie: "donnee_absente" },
+    {
+      caseId: "042",
+      label: "Immobilisations financières (amortissements-provisions)",
+      raison:
+        "Sans `rfs.patrimoine` / `BilanInputs.lignesSimples`, aucune confirmation explicite (DECLARE/NUL_CONFIRME) n'est disponible pour la colonne Amortissements-Provisions — absence ≠ zéro.",
+      categorie: "donnee_absente",
+    },
     { caseId: "044", label: "Total I — Actif immobilisé (brut)", raison: RAISON_TOTAL_ACTIF_IMMOBILISE, categorie: "incoherence_modele" },
-    { caseId: "048", label: "Total I — Actif immobilisé (net)", raison: RAISON_TOTAL_ACTIF_IMMOBILISE, categorie: "incoherence_modele" },
+    {
+      caseId: "048",
+      label: "Total I — Actif immobilisé (amortissements-provisions)",
+      raison:
+        "Sans `rfs.patrimoine` ou sans gate `gateTotal048` (016 + 030 + 042 tous publiables) — jamais une somme partielle des feuilles disponibles.",
+      categorie: "incoherence_modele",
+    },
     { caseId: "050", label: "Stocks — matières premières, approvisionnements, en cours de production (brut)", raison: "Aucun stock dans une activité de location meublée — colonne brut.", categorie: "non_applicable" },
     { caseId: "052", label: "Stocks (net)", raison: "Aucun stock dans une activité de location meublée — colonne net.", categorie: "non_applicable" },
     { caseId: "060", label: "Marchandises (brut)", raison: "Aucune marchandise dans une activité de location meublée — colonne brut.", categorie: "non_applicable" },
     { caseId: "062", label: "Marchandises (net)", raison: "Aucune marchandise dans une activité de location meublée — colonne net.", categorie: "non_applicable" },
     { caseId: "064", label: "Avances et acomptes versés sur commandes (brut)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
-    { caseId: "066", label: "Avances et acomptes versés sur commandes (net)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
+    { caseId: "066", label: "Avances et acomptes versés sur commandes (amortissements-provisions)", raison: RAISON_AMORT_066, categorie: "donnee_absente" },
     { caseId: "068", label: "Clients et comptes rattachés (brut)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
-    { caseId: "070", label: "Clients et comptes rattachés (net)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
+    { caseId: "070", label: "Clients et comptes rattachés (amortissements-provisions)", raison: RAISON_AMORT_070, categorie: "donnee_absente" },
     { caseId: "072", label: "Autres créances (brut)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
-    { caseId: "074", label: "Autres créances (net)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
+    { caseId: "074", label: "Autres créances (amortissements-provisions)", raison: RAISON_AMORT_074, categorie: "donnee_absente" },
     { caseId: "080", label: "Valeurs mobilières de placement (brut)", raison: "Non pertinent pour un LMNP réel simplifié — aucune donnée modélisée, colonne brut.", categorie: "donnee_absente" },
-    { caseId: "082", label: "Valeurs mobilières de placement (net)", raison: "Non pertinent pour un LMNP réel simplifié — aucune donnée modélisée, colonne net.", categorie: "donnee_absente" },
+    {
+      caseId: "082",
+      label: "Valeurs mobilières de placement (amortissements-provisions)",
+      raison:
+        "Sans `rfs.patrimoine` / `BilanInputs.lignesSimples`, aucune confirmation explicite (DECLARE/NUL_CONFIRME) n'est disponible pour la colonne Amortissements-Provisions — absence ≠ zéro.",
+      categorie: "donnee_absente",
+    },
     { caseId: "084", label: "Disponibilités (brut)", raison: RAISON_TRESORERIE, categorie: "donnee_absente" },
-    { caseId: "086", label: "Disponibilités (net)", raison: RAISON_TRESORERIE, categorie: "donnee_absente" },
+    { caseId: "086", label: "Disponibilités (amortissements-provisions)", raison: RAISON_TRESORERIE, categorie: "donnee_absente" },
     { caseId: "092", label: "Charges constatées d'avance (brut)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
-    { caseId: "094", label: "Charges constatées d'avance (net)", raison: RAISON_TIERS_ABSENTS, categorie: "donnee_absente" },
+    { caseId: "094", label: "Charges constatées d'avance (amortissements-provisions)", raison: RAISON_AMORT_094, categorie: "donnee_absente" },
     { caseId: "096", label: "Total II — Actif circulant (brut)", raison: RAISON_TOTAL_ACTIF_CIRCULANT, categorie: "incoherence_modele" },
-    { caseId: "098", label: "Total II — Actif circulant (net)", raison: RAISON_TOTAL_ACTIF_CIRCULANT, categorie: "incoherence_modele" },
+    {
+      caseId: "098",
+      label: "Total II — Actif circulant (amortissements-provisions)",
+      raison:
+        "Sans `rfs.patrimoine` ou sans gate `gateTotal098` (066 + 070 + 074 + 082 + 086 + 094 tous publiables ; 052/062 hors périmètre LMNP non_applicable) — jamais une somme partielle.",
+      categorie: "incoherence_modele",
+    },
     { caseId: "110", label: "Total général actif (I + II) (brut)", raison: RAISON_TOTAL_GENERAL_ACTIF, categorie: "incoherence_modele" },
-    { caseId: "112", label: "Total général actif (I + II) (net)", raison: RAISON_TOTAL_GENERAL_ACTIF, categorie: "incoherence_modele" },
+    { caseId: "112", label: "Total général actif (I + II) (amortissements-provisions)", raison: RAISON_TOTAL_GENERAL_ACTIF, categorie: "incoherence_modele" },
     { caseId: "120", label: "Capital social ou individuel", raison: RAISON_CAPITAL_INDIVIDUEL, categorie: "donnee_absente" },
     { caseId: "124", label: "Écarts de réévaluation", raison: "Régime légal de réévaluation (1976), rarissime et non modélisé.", categorie: "hors_perimetre" },
     { caseId: "126", label: "Réserve légale", raison: "Concept sociétaire (obligation des sociétés de capitaux) — sans objet pour une entreprise individuelle.", categorie: "non_applicable" },
