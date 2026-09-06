@@ -1,0 +1,711 @@
+/**
+ * Run: npx tsx --test src/lib/lmnp/services/liasse-pdf/tests/position-oracle.test.ts
+ *
+ * TEST DE POSITION INDÉPENDANT (section 6 de la mission de correction P0,
+ * réponse directe à l'audit indépendant Cursor/Grok, point A03).
+ *
+ * Avant cette mission, aucun test ne comparait une position du registre à
+ * une référence EXTÉRIEURE au registre lui-même : `coordinates.test.ts` ne
+ * vérifie que l'arithmétique de conversion top-left → pdf-lib, et le golden
+ * master ne vérifie que la PRÉSENCE d'une chaîne sur une page, jamais sa
+ * position. Un `372` écrit dans la mauvaise colonne passait tous les tests
+ * existants — c'est exactement ce que l'audit a démontré.
+ *
+ * Ce fichier utilise `independent-grid-oracle.ts`, qui dérive les bornes
+ * réelles des boîtes de case en lisant DIRECTEMENT les octets du Cerfa
+ * officiel vierge (deux bibliothèques indépendantes : pdfjs-dist pour le
+ * texte, pdf-lib pour les opérateurs vectoriels de la grille) — jamais en
+ * important quoi que ce soit de `registry/`. C'est un oracle, pas un
+ * second calcul du même registre.
+ */
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+
+import { assembleForm2031SD } from "@/runtime/capabilities/f007/assemble-form-2031";
+import { map2033BFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033b";
+
+import { generateCerfaLiassePdf } from "../generator/render-cerfa-liasse";
+import { readAssetBytes } from "../assets/load-asset";
+import { resolveVisualMapping } from "../registry";
+import { extractDrawnTextPositionsForPage } from "./extract-rendered-text";
+import { deriveCase300Boxes, deriveCase330Boxes, deriveCase350Boxes, deriveCase370372Boxes, deriveResultatFiscalColumnBoxes, xInBox, type ColumnBox } from "./independent-grid-oracle";
+import { buildDossierTemoinRfs, DOSSIER_TEMOIN_FISCAL_RESULT, DOSSIER_TEMOIN_IDENTITE } from "./golden-master-technical-pipeline.test";
+import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import { buildScenarioRfs } from "./scenario-beneficiaire.test";
+
+// Tolérance = largeur du trait de grille du Cerfa officiel (mesurée : les
+// séparateurs sont tracés avec une épaisseur de trait de 0.76pt, voir le
+// flux de contenu de l'asset) + une petite marge typographique. Volontairement
+// bien plus petite que la largeur d'une zone-numéro de case (14.3pt sur
+// 2033-B) : ne peut jamais confondre une boîte de VALEUR avec la zone-numéro
+// voisine, seulement absorber l'imprécision de tracé du bord lui-même.
+const GRID_LINE_TOLERANCE_PT = 1.5;
+
+/**
+ * Correction fiscale P0 (audit indépendant Cursor/Grok) — le déficit LMNP
+ * non professionnel n'alimente plus jamais 372/C_L1_COL2 (voir map-2033b.ts,
+ * map-2031-recapitulation.ts) : F-006 garantit `resultatFiscal >= 0` en
+ * toute circonstance (TRF-0031), donc le dossier témoin réel (déficitaire)
+ * n'exerce plus jamais ces deux cases — c'est désormais le comportement
+ * FISCALEMENT CORRECT, pas une régression géométrique. Pour continuer à
+ * prouver la GÉOMÉTRIE de 372/C_L1_COL2 (leur registre reste calibré et
+ * doit rester testé — voir case-372-fiscal-divergence.test.ts, "RÉSOLU"),
+ * ce fixture synthétique force un `resultatFiscal` négatif — un cas que le
+ * F-006 actuel ne produit jamais, mais que le mapper doit continuer à
+ * traiter correctement si cette garantie changeait un jour.
+ */
+function buildSyntheticNegativeResultatFiscalRfs(deficit: number): FiscalRepresentation {
+  return {
+    exercice: DOSSIER_TEMOIN_FISCAL_RESULT.exercice,
+    identite: DOSSIER_TEMOIN_IDENTITE,
+    fiscalResult: { ...DOSSIER_TEMOIN_FISCAL_RESULT, resultatFiscal: -deficit, deficitNouveau: 0 },
+    trace: {
+      ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-05-01T00:00:00.000Z",
+      sourceFiscalResultAt: DOSSIER_TEMOIN_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "synthétique (position-oracle.test.ts)", fiscalResult: "synthétique (position-oracle.test.ts)" },
+    },
+  };
+}
+
+/**
+ * Fixture synthétique pour la case 350 (MICRO-JALON implémentation 350) —
+ * règle fiscale VERROUILLÉE : `350 = deficitsImputes`. Le dossier témoin réel
+ * (deficitsImputes=0) est fiscalement non discriminant pour tester
+ * graphiquement une valeur positive — voir golden-master-technical-pipeline.test.ts
+ * pour la preuve sur le dossier témoin (350=0). Ce fixture construit un
+ * FiscalResult réaliste (bénéfice de l'exercice après imputation d'un
+ * déficit antérieur, même structure que le scénario R3 déjà validé pour le
+ * Cadre I du 2031-bis) — jamais recalculé par F-006 ici, seulement le
+ * mapper 2033-B (INCHANGÉ) est exercé, exactement comme pour les fixtures
+ * synthétiques 372/C_L1_COL2 ci-dessus.
+ */
+function buildSyntheticDeficitsImputesRfs(deficitsImputes: number): FiscalRepresentation {
+  return {
+    exercice: DOSSIER_TEMOIN_FISCAL_RESULT.exercice,
+    identite: DOSSIER_TEMOIN_IDENTITE,
+    fiscalResult: { ...DOSSIER_TEMOIN_FISCAL_RESULT, resultatFiscal: 3000, deficitNouveau: 0, deficitsImputes },
+    trace: {
+      ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-05-01T00:00:00.000Z",
+      sourceFiscalResultAt: DOSSIER_TEMOIN_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "synthétique (position-oracle.test.ts)", fiscalResult: "synthétique (position-oracle.test.ts)" },
+    },
+  };
+}
+
+/**
+ * Fixture synthétique pour la case 300 (MICRO-JALON implémentation 300) —
+ * `300 = fiscalResult.perteExceptionnelle`, pass-through pur (TRF-0027),
+ * inchangé par ce jalon. Le dossier témoin réel (perteExceptionnelle=0) ne
+ * suffit pas pour prouver graphiquement une valeur positive — même principe
+ * que `buildSyntheticDeficitsImputesRfs` pour 350.
+ */
+function buildSyntheticPerteExceptionnelleRfs(perteExceptionnelle: number): FiscalRepresentation {
+  return {
+    exercice: DOSSIER_TEMOIN_FISCAL_RESULT.exercice,
+    identite: DOSSIER_TEMOIN_IDENTITE,
+    fiscalResult: { ...DOSSIER_TEMOIN_FISCAL_RESULT, perteExceptionnelle },
+    trace: {
+      ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-05-01T00:00:00.000Z",
+      sourceFiscalResultAt: DOSSIER_TEMOIN_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "synthétique (position-oracle.test.ts)", fiscalResult: "synthétique (position-oracle.test.ts)" },
+    },
+  };
+}
+
+describe("Oracle de position indépendant — 2033-B-SD, ligne 300 (MICRO-JALON implémentation 300)", () => {
+  // Bandes de référence des lignes voisines de 300, mesurées en LECTURE
+  // SEULE lors du jalon de calibration géométrique dédié (quatre méthodes
+  // convergentes : PyMuPDF, opérateurs vectoriels, pdfjs-dist, raster) —
+  // jamais dérivées du registre. Ligne 294 juste au-dessus, zone grisée du
+  // memo "348" juste en dessous : ni l'une ni l'autre ne doit jamais
+  // recevoir la valeur de 300.
+  const ROW_294_BAND = { yMin: 343.839, yMax: 355.2 };
+  const GREY_ZONE_348_BAND = { yMin: 383.402, yMax: 400.192 };
+
+  it("A — sanity check : valueBox300 existe, largeur positive, cohérente avec les séparateurs officiels", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase300Boxes(bytes);
+    assert.ok(boxes.valueBox300.xMax > boxes.valueBox300.xMin, "valueBox300 doit avoir une largeur positive");
+    assert.ok(boxes.valueBox300.xMax - boxes.valueBox300.xMin > 40, "valueBox300 doit être une vraie boîte de valeur, pas une zone-numéro étroite (14.4pt)");
+    assert.ok(boxes.numberZone300.xMax <= boxes.valueBox300.xMin + 1, "la zone-numéro 300 doit précéder sa boîte de valeur");
+  });
+
+  it("B — le mapping registry de 300 est entièrement contenu dans valueBox300", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase300Boxes(bytes);
+    const mapping300 = resolveVisualMapping("2033-B-SD", 2026, "300");
+    assert.ok(mapping300, "300 doit avoir une entrée de registre (MICRO-JALON implémentation 300)");
+    assert.ok(
+      xInBox(mapping300!.position.x, boxes.valueBox300, GRID_LINE_TOLERANCE_PT),
+      `x=${mapping300!.position.x} doit être dans la boîte de valeur de 300 [${boxes.valueBox300.xMin},${boxes.valueBox300.xMax}]`,
+    );
+  });
+
+  it("C — RÉGRESSION anti-erreur zone-numéro : le mapping ne doit jamais tomber dans numberZone300", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase300Boxes(bytes);
+    const mapping300 = resolveVisualMapping("2033-B-SD", 2026, "300");
+    assert.ok(mapping300);
+    assert.ok(
+      !xInBox(mapping300!.position.x, boxes.numberZone300, GRID_LINE_TOLERANCE_PT),
+      "la position ne doit pas être dans la zone-numéro '300' (répétition de l'erreur historique P0-1 sur 372)",
+    );
+    // Preuve que l'oracle aurait détecté l'erreur : le centre de la
+    // zone-numéro elle-même, testé directement, est bien DANS cette zone.
+    const hypotheticalBuggyX = (boxes.numberZone300.xMin + boxes.numberZone300.xMax) / 2;
+    assert.ok(xInBox(hypotheticalBuggyX, boxes.numberZone300, GRID_LINE_TOLERANCE_PT));
+    assert.ok(!xInBox(hypotheticalBuggyX, boxes.valueBox300, GRID_LINE_TOLERANCE_PT));
+  });
+
+  it("D — RÉGRESSION anti-voisin : la valeur dessinée ne doit chevaucher ni la ligne 294 au-dessus, ni la zone grisée du memo 348 en dessous", async () => {
+    const rfs = buildSyntheticPerteExceptionnelleRfs(1000);
+    const form2033B = map2033BFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case300Drawing = positions.find((p) => p.text === "1 000");
+    assert.ok(case300Drawing, "la valeur '1 000' (300) doit être réellement dessinée");
+
+    const pageHeight = 841.8897705078125;
+    const BBOX_TOP_TO_BASELINE_PT = 9.675;
+    const topLeftYApprox = pageHeight - case300Drawing!.pdfLibY - BBOX_TOP_TO_BASELINE_PT;
+    assert.ok(
+      !(topLeftYApprox >= ROW_294_BAND.yMin && topLeftYApprox <= ROW_294_BAND.yMax),
+      `la valeur dessinée (y≈${topLeftYApprox}) ne doit jamais tomber dans la bande de la ligne 294 [${ROW_294_BAND.yMin},${ROW_294_BAND.yMax}]`,
+    );
+    assert.ok(
+      !(topLeftYApprox >= GREY_ZONE_348_BAND.yMin && topLeftYApprox <= GREY_ZONE_348_BAND.yMax),
+      `la valeur dessinée (y≈${topLeftYApprox}) ne doit jamais tomber dans la zone grisée du memo 348 [${GREY_ZONE_348_BAND.yMin},${GREY_ZONE_348_BAND.yMax}]`,
+    );
+  });
+
+  it("E — PDF généré (fixture synthétique, 300=9862) — la valeur est réellement dessinée dans valueBox300, jamais dans numberZone300", async () => {
+    const rfs = buildSyntheticPerteExceptionnelleRfs(9862);
+    const form2033B = map2033BFromRfs(rfs);
+    assert.ok(form2033B.cases.some((c) => c.caseId === "300" && c.value === 9862), "précondition : le mapper doit produire 300=9862 (perteExceptionnelle, pass-through TRF-0027)");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case300Drawing = positions.find((p) => p.text === "9 862");
+    assert.ok(case300Drawing, "la valeur '9 862' (300) doit être réellement dessinée (extraite des octets du PDF, pas du manifeste)");
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase300Boxes(bytes);
+    assert.ok(
+      xInBox(case300Drawing!.pdfLibX, boxes.valueBox300, GRID_LINE_TOLERANCE_PT),
+      `la valeur dessinée à x=${case300Drawing!.pdfLibX} doit tomber dans la boîte de valeur de 300 [${boxes.valueBox300.xMin},${boxes.valueBox300.xMax}]`,
+    );
+    assert.ok(!xInBox(case300Drawing!.pdfLibX, boxes.numberZone300, GRID_LINE_TOLERANCE_PT), "ne doit jamais chevaucher la zone-numéro imprimée '300'");
+
+    // Non-régression verticale : la valeur doit rester dans la bande de la
+    // ligne démontrée en lecture seule (y top-left ∈ [367.03,383.49]),
+    // reconvertie ici via le même écart que `coordinates.ts`
+    // (BBOX_TOP_TO_BASELINE_PT=9.675), pas une dépendance au registre.
+    const pageHeight = 841.8897705078125;
+    const BBOX_TOP_TO_BASELINE_PT = 9.675;
+    const topLeftYApprox = pageHeight - case300Drawing!.pdfLibY - BBOX_TOP_TO_BASELINE_PT;
+    assert.ok(topLeftYApprox >= 366.0 && topLeftYApprox <= 384.5, `la valeur dessinée doit rester dans la bande verticale de la ligne 300 (mesuré: ${topLeftYApprox})`);
+  });
+
+  it("non-régression — 294/310/312/314/330/350/370/372 restent inchangées après l'ajout de 300 au registre", async () => {
+    // 312/314/370/372 : coordonnées stockées inchangées (comparaison directe
+    // contre les valeurs déjà démontrées et commitées avant ce jalon — cette
+    // entrée de registre n'a pas été touchée par l'ajout de 300).
+    const mapping312 = resolveVisualMapping("2033-B-SD", 2026, "312");
+    const mapping314 = resolveVisualMapping("2033-B-SD", 2026, "314");
+    const mapping370 = resolveVisualMapping("2033-B-SD", 2026, "370");
+    const mapping372 = resolveVisualMapping("2033-B-SD", 2026, "372");
+    assert.deepEqual(mapping312?.position, { space: "top-left", x: 426.0, y: 424.8 });
+    assert.deepEqual(mapping314?.position, { space: "top-left", x: 507.0, y: 424.8 });
+    assert.deepEqual(mapping370?.position, { space: "top-left", x: 426.0, y: 787.8 });
+    assert.deepEqual(mapping372?.position, { space: "top-left", x: 507.0, y: 787.8 });
+
+    // 294/310/330/350 : exercées par le dossier témoin réel, vérifiées de
+    // bout en bout (génération + extraction), pas seulement en statique.
+    const rfs = buildDossierTemoinRfs();
+    const form2033B = map2033BFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const boxes330 = await deriveCase330Boxes(readAssetBytes(2026, "2033-sd.pdf"));
+    const boxes350 = await deriveCase350Boxes(readAssetBytes(2026, "2033-sd.pdf"));
+    const case330Drawing = positions.find((p) => p.text === "9 862" && xInBox(p.pdfLibX, boxes330.valueBox330, GRID_LINE_TOLERANCE_PT));
+    assert.ok(case330Drawing, "330=9862 doit rester dessinée dans sa boîte, non affectée par l'ajout de 300 au registre");
+    const case350Drawing = positions.find((p) => p.text === "0" && xInBox(p.pdfLibX, boxes350.valueBox350, GRID_LINE_TOLERANCE_PT));
+    assert.ok(case350Drawing, "350=0 doit rester dessinée dans sa boîte, non affectée par l'ajout de 300 au registre");
+    const case294Drawing = positions.find((p) => p.text === "4 602");
+    assert.ok(case294Drawing, "294=4602 doit rester dessinée, non affectée par 300");
+    const case310Drawing = positions.find((p) => p.text === "(13 681)");
+    assert.ok(case310Drawing, "310=(13681) doit rester dessinée, non affectée par 300");
+  });
+});
+
+describe("Oracle de position indépendant — 2033-B-SD, ligne 370/372", () => {
+  it("dérive des boîtes cohérentes avec la structure connue du Cerfa officiel (sanity check de l'oracle lui-même)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase370372Boxes(bytes);
+    assert.ok(boxes.beneficeBox.xMax <= boxes.numberZone372.xMin + 1, "la boîte bénéfice doit précéder la zone-numéro 372");
+    assert.ok(boxes.numberZone372.xMax <= boxes.deficitBox.xMin + 1, "la zone-numéro 372 doit précéder la boîte déficit");
+    assert.ok(boxes.deficitBox.xMax - boxes.deficitBox.xMin > 40, "la boîte déficit doit être une vraie boîte de valeur, pas une zone-numéro étroite");
+  });
+
+  it("RÉGRESSION — la position historique buguée (x=426.9) tombe dans la zone-numéro de 372, PAS dans sa boîte de valeur", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase370372Boxes(bytes);
+    const historicalBuggyX = 426.9;
+    assert.ok(
+      xInBox(historicalBuggyX, boxes.numberZone372, GRID_LINE_TOLERANCE_PT),
+      "x=426.9 (valeur des missions précédentes) doit être dans la zone-numéro '372', preuve reproductible du bug P0-1",
+    );
+    assert.ok(
+      !xInBox(historicalBuggyX, boxes.deficitBox, GRID_LINE_TOLERANCE_PT),
+      "x=426.9 ne doit PAS être dans la boîte de valeur déficit — l'oracle aurait dû faire échouer ce test AVANT la correction",
+    );
+  });
+
+  it("la position CORRIGÉE du registre (372) tombe bien dans la boîte de valeur déficit, pas dans la zone-numéro", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase370372Boxes(bytes);
+    const mapping372 = resolveVisualMapping("2033-B-SD", 2026, "372");
+    assert.ok(mapping372, "372 doit avoir une entrée de registre");
+    assert.ok(
+      xInBox(mapping372!.position.x, boxes.deficitBox, GRID_LINE_TOLERANCE_PT),
+      `x=${mapping372!.position.x} doit être dans la boîte de valeur déficit [${boxes.deficitBox.xMin},${boxes.deficitBox.xMax}]`,
+    );
+    assert.ok(
+      !xInBox(mapping372!.position.x, boxes.numberZone372, GRID_LINE_TOLERANCE_PT),
+      "la position corrigée ne doit plus être dans la zone-numéro '372'",
+    );
+  });
+
+  it("PDF généré (résultat fiscal synthétiquement négatif, 372=9862) — la valeur est réellement dessinée dans la boîte déficit, pas seulement présente sur la page", async () => {
+    // CORRIGÉ (audit fiscal P0) : le dossier témoin réel n'exerce plus 372
+    // (F-006 garantit resultatFiscal>=0 — le déficit LMNP passe désormais par
+    // 330, voir case-372-fiscal-divergence.test.ts, "RÉSOLU"). Ce fixture
+    // synthétique continue de prouver que le registre GÉOMÉTRIQUE de 372
+    // reste correct si cette case était un jour exercée.
+    const rfs = buildSyntheticNegativeResultatFiscalRfs(9862);
+    const form2033B = map2033BFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({
+      millesime: 2026,
+      forms: [{ form: "2033-B-SD", cases: form2033B.cases }],
+    });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case372Drawing = positions.find((p) => p.text === "9 862");
+    assert.ok(case372Drawing, "la valeur '9 862' doit être réellement dessinée (extraite des octets du PDF, pas du manifeste)");
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase370372Boxes(bytes);
+    // Seule la colonne X nous intéresse ici (372 est la seule valeur
+    // "9 862" attendue sur cette page synthétique à une seule case).
+    assert.ok(
+      xInBox(case372Drawing!.pdfLibX, boxes.deficitBox, GRID_LINE_TOLERANCE_PT),
+      `la valeur dessinée à x=${case372Drawing!.pdfLibX} doit tomber dans la boîte déficit [${boxes.deficitBox.xMin},${boxes.deficitBox.xMax}] du Cerfa officiel`,
+    );
+    assert.ok(
+      !xInBox(case372Drawing!.pdfLibX, boxes.numberZone372, GRID_LINE_TOLERANCE_PT),
+      "la valeur dessinée ne doit jamais chevaucher la zone-numéro imprimée '372'",
+    );
+  });
+
+  it("PDF généré (scénario bénéficiaire, 370=4200) — la valeur est dessinée dans la boîte bénéfice, distincte de la boîte déficit", async () => {
+    const rfs = buildScenarioRfs();
+    const form2033B = map2033BFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    // Dans ce scénario, "4 200" est aussi la valeur de 310 (résultat
+    // comptable, colonne principale x≈480-507) et de 312 (même colonne
+    // bénéfice que 370, x≈400-426, sur une autre ligne) — on isole les
+    // dessins de la colonne resserrée "RÉINTÉGRATIONS/RÉSULTAT FISCAL"
+    // (x<450, bien en-deçà de la colonne principale) pour ne retenir que
+    // 312/370, jamais 310.
+    const narrowColumnCandidates = positions.filter((p) => p.text === "4 200" && p.pdfLibX < 450);
+    assert.ok(narrowColumnCandidates.length >= 1, "la valeur '4 200' (312 et/ou 370) doit être dessinée dans la colonne resserrée");
+    // 370 (résultat fiscal après imputation) est la ligne la plus BASSE du
+    // formulaire parmi 312/370 → le pdfLibY le plus PETIT (origine bas-gauche).
+    const case370Drawing = [...narrowColumnCandidates].sort((a, b) => a.pdfLibY - b.pdfLibY)[0];
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase370372Boxes(bytes);
+    assert.ok(
+      xInBox(case370Drawing!.pdfLibX, boxes.beneficeBox, GRID_LINE_TOLERANCE_PT),
+      `370 doit être dessinée dans la boîte bénéfice [${boxes.beneficeBox.xMin},${boxes.beneficeBox.xMax}]`,
+    );
+    assert.ok(
+      !xInBox(case370Drawing!.pdfLibX, boxes.deficitBox, GRID_LINE_TOLERANCE_PT),
+      "370 (bénéfice) ne doit jamais tomber dans la boîte déficit",
+    );
+  });
+});
+
+describe("Oracle de position indépendant — 2031-SD, ligne '1. Résultat fiscal' (Col.1/Col.2)", () => {
+  it("dérive deux boîtes distinctes et non chevauchantes pour Col.1 et Col.2 (sanity check de l'oracle)", async () => {
+    const bytes = readAssetBytes(2026, "2031-sd.pdf");
+    const boxes = await deriveResultatFiscalColumnBoxes(bytes);
+    assert.notEqual(boxes.col1Box.xMin, boxes.col2Box.xMin, "Col.1 et Col.2 doivent être des boîtes distinctes");
+    assert.ok(boxes.col1Box.xMax <= boxes.col2Box.xMin + 1, "Col.1 doit précéder Col.2, sans chevauchement");
+  });
+
+  it("RÉGRESSION — la position historique buguée (502.9, 502.9 pour les DEUX colonnes) ne peut pas être dans Col.1 ET Col.2 à la fois", async () => {
+    const bytes = readAssetBytes(2026, "2031-sd.pdf");
+    const boxes = await deriveResultatFiscalColumnBoxes(bytes);
+    const historicalBuggyX = 502.9;
+    const inCol1 = xInBox(historicalBuggyX, boxes.col1Box, GRID_LINE_TOLERANCE_PT);
+    const inCol2 = xInBox(historicalBuggyX, boxes.col2Box, GRID_LINE_TOLERANCE_PT);
+    assert.ok(inCol1 && !inCol2, "x=502.9 est une position valide pour Col.1 SEULEMENT — la réutiliser pour Col.2 était le bug P0-2");
+  });
+
+  it("les positions CORRIGÉES de C_L1_COL1 et C_L1_COL2 sont distinctes et tombent chacune dans leur propre boîte", async () => {
+    const bytes = readAssetBytes(2026, "2031-sd.pdf");
+    const boxes = await deriveResultatFiscalColumnBoxes(bytes);
+    const col1 = resolveVisualMapping("2031-SD", 2026, "C_L1_COL1");
+    const col2 = resolveVisualMapping("2031-SD", 2026, "C_L1_COL2");
+    assert.ok(col1 && col2, "les deux cases doivent avoir une entrée de registre");
+    assert.notEqual(col1!.position.x, col2!.position.x, "C_L1_COL1 et C_L1_COL2 ne doivent plus partager le même x");
+
+    assert.ok(xInBox(col1!.position.x, boxes.col1Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL1 doit tomber dans la boîte Col.1");
+    assert.ok(!xInBox(col1!.position.x, boxes.col2Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL1 ne doit pas tomber dans Col.2");
+
+    assert.ok(xInBox(col2!.position.x, boxes.col2Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL2 doit tomber dans la boîte Col.2");
+    assert.ok(!xInBox(col2!.position.x, boxes.col1Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL2 ne doit pas tomber dans Col.1");
+  });
+
+  it("PDF généré (scénario bénéficiaire, C_L1_COL1=4200) — la valeur est dessinée dans la boîte Col.1", async () => {
+    const rfs = buildScenarioRfs();
+    const { form: form2031SD } = assembleForm2031SD(rfs.fiscalResult, rfs.identite);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2031-SD", cases: form2031SD.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    // I_7A produit également "4 200" ailleurs sur la même page (colonne
+    // différente, x autour de 313.7) — on ne retient que les dessins dans la
+    // moitié droite de la page pour isoler C_L1_COL1.
+    const candidates = positions.filter((p) => p.text === "4 200" && p.pdfLibX > 400);
+    assert.equal(candidates.length, 1, "une seule valeur '4 200' attendue dans la zone Cadre C (C_L1_COL1)");
+
+    const bytes = readAssetBytes(2026, "2031-sd.pdf");
+    const boxes: { col1Box: ColumnBox; col2Box: ColumnBox } = await deriveResultatFiscalColumnBoxes(bytes);
+    assert.ok(xInBox(candidates[0].pdfLibX, boxes.col1Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL1 doit être dessinée dans la boîte Col.1");
+    assert.ok(!xInBox(candidates[0].pdfLibX, boxes.col2Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL1 ne doit pas être dessinée dans Col.2");
+  });
+
+  it("PDF généré (résultat fiscal synthétiquement négatif, C_L1_COL2=9862) — la valeur est dessinée dans la boîte Col.2, jamais superposée à Col.1", async () => {
+    // CORRIGÉ (audit fiscal P0) : le dossier témoin réel n'exerce plus
+    // C_L1_COL2 (F-006 garantit resultatFiscal>=0 — le déficit LMNP passe
+    // désormais par 330 du 2033-B-SD et reste visible via I_7B, voir
+    // case-372-fiscal-divergence.test.ts, "RÉSOLU"). Ce fixture synthétique
+    // continue de prouver que le registre GÉOMÉTRIQUE de C_L1_COL2 reste
+    // correct si cette case était un jour exercée. deficitNouveau=0 dans ce
+    // fixture (voir buildSyntheticNegativeResultatFiscalRfs) : I_7B ne se
+    // déclenche pas non plus ici, C_L1_COL2 est donc la SEULE candidate.
+    const rfs = buildSyntheticNegativeResultatFiscalRfs(9862);
+    const { form: form2031SD } = assembleForm2031SD(rfs.fiscalResult, rfs.identite);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2031-SD", cases: form2031SD.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const candidates = positions.filter((p) => p.text === "9 862");
+    assert.equal(candidates.length, 1, "seule C_L1_COL2 doit produire '9 862' dans ce scénario synthétique (I_7B non déclenchée, deficitNouveau=0)");
+
+    const bytes = readAssetBytes(2026, "2031-sd.pdf");
+    const boxes: { col1Box: ColumnBox; col2Box: ColumnBox } = await deriveResultatFiscalColumnBoxes(bytes);
+    const col2Drawing = candidates[0];
+    assert.ok(xInBox(col2Drawing.pdfLibX, boxes.col2Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL2 doit être dessinée dans la boîte Col.2");
+    assert.ok(!xInBox(col2Drawing.pdfLibX, boxes.col1Box, GRID_LINE_TOLERANCE_PT), "C_L1_COL2 ne doit jamais être dessinée dans Col.1 (superposition P0-2 historique)");
+  });
+});
+
+describe("Oracle de position indépendant — 2033-B-SD, ligne 247/248/330 (MICRO-JALON calibration 330)", () => {
+  it("dérive quatre boîtes cohérentes et mutuellement exclusives (sanity check de l'oracle lui-même)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase330Boxes(bytes);
+    assert.ok(boxes.valueBox247.xMax <= boxes.valueBox248.xMin, "247 doit précéder 248, sans chevauchement");
+    assert.ok(boxes.valueBox248.xMax <= boxes.numberZone330.xMin + 1, "248 doit précéder la zone-numéro 330");
+    assert.ok(boxes.numberZone330.xMax <= boxes.valueBox330.xMin + 1, "la zone-numéro 330 doit précéder sa boîte de valeur");
+    assert.ok(boxes.valueBox330.xMax - boxes.valueBox330.xMin > 40, "la boîte de valeur de 330 doit être une vraie boîte, pas une zone-numéro étroite (14.4pt)");
+  });
+
+  it("RÉGRESSION — une valeur écrite dans la zone-numéro '330' (répétition de l'erreur historique P0-1 sur 372) serait détectée", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase330Boxes(bytes);
+    const hypotheticalBuggyX = (boxes.numberZone330.xMin + boxes.numberZone330.xMax) / 2;
+    assert.ok(xInBox(hypotheticalBuggyX, boxes.numberZone330, GRID_LINE_TOLERANCE_PT), "précondition : ce x est bien dans la zone-numéro");
+    assert.ok(!xInBox(hypotheticalBuggyX, boxes.valueBox330, GRID_LINE_TOLERANCE_PT), "une valeur dans la zone-numéro ne doit jamais être lue comme correctement positionnée");
+  });
+
+  it("la position du registre (330) tombe dans sa boîte de valeur, jamais dans 247, 248, ou sa propre zone-numéro", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase330Boxes(bytes);
+    const mapping330 = resolveVisualMapping("2033-B-SD", 2026, "330");
+    assert.ok(mapping330, "330 doit avoir une entrée de registre (MICRO-JALON calibration 330)");
+    assert.ok(
+      xInBox(mapping330!.position.x, boxes.valueBox330, GRID_LINE_TOLERANCE_PT),
+      `x=${mapping330!.position.x} doit être dans la boîte de valeur de 330 [${boxes.valueBox330.xMin},${boxes.valueBox330.xMax}]`,
+    );
+    assert.ok(!xInBox(mapping330!.position.x, boxes.numberZone330, GRID_LINE_TOLERANCE_PT), "ne doit pas être dans la zone-numéro '330'");
+    assert.ok(!xInBox(mapping330!.position.x, boxes.valueBox247, GRID_LINE_TOLERANCE_PT), "ne doit pas être dans la boîte de valeur de 247");
+    assert.ok(!xInBox(mapping330!.position.x, boxes.valueBox248, GRID_LINE_TOLERANCE_PT), "ne doit pas être dans la boîte de valeur de 248");
+    assert.ok(mapping330!.position.x <= boxes.valueBox330.xMax + GRID_LINE_TOLERANCE_PT, "ne doit pas déborder dans la colonne droite grisée (style déficit, x>426)");
+  });
+
+  it("PDF généré (dossier témoin réel, 330=9862) — la valeur est réellement dessinée dans la boîte de 330, jamais dans 247/248/zone-numéro/colonne grisée", async () => {
+    // Le dossier témoin sert ICI uniquement de validation SECONDAIRE de la
+    // VALEUR (9862) — jamais de source pour la géométrie, qui vient
+    // exclusivement de l'asset officiel (deriveCase330Boxes ci-dessus).
+    const rfs = buildDossierTemoinRfs();
+    const form2033B = map2033BFromRfs(rfs);
+    assert.ok(form2033B.cases.some((c) => c.caseId === "330" && c.value === 9862), "précondition : le mapper doit produire 330=9862 sur le dossier témoin réel");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case330Drawing = positions.find((p) => p.text === "9 862");
+    assert.ok(case330Drawing, "la valeur '9 862' (330) doit être réellement dessinée (extraite des octets du PDF, pas du manifeste)");
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase330Boxes(bytes);
+    assert.ok(
+      xInBox(case330Drawing!.pdfLibX, boxes.valueBox330, GRID_LINE_TOLERANCE_PT),
+      `la valeur dessinée à x=${case330Drawing!.pdfLibX} doit tomber dans la boîte de valeur de 330 [${boxes.valueBox330.xMin},${boxes.valueBox330.xMax}]`,
+    );
+    assert.ok(!xInBox(case330Drawing!.pdfLibX, boxes.numberZone330, GRID_LINE_TOLERANCE_PT), "ne doit jamais chevaucher la zone-numéro imprimée '330'");
+    assert.ok(!xInBox(case330Drawing!.pdfLibX, boxes.valueBox247, GRID_LINE_TOLERANCE_PT), "ne doit jamais être confondue avec la valeur de 247");
+    assert.ok(!xInBox(case330Drawing!.pdfLibX, boxes.valueBox248, GRID_LINE_TOLERANCE_PT), "ne doit jamais être confondue avec la valeur de 248");
+    assert.ok(case330Drawing!.pdfLibX <= boxes.valueBox330.xMax + GRID_LINE_TOLERANCE_PT, "ne doit jamais déborder dans la colonne droite grisée (style déficit)");
+
+    // Non-régression verticale : la valeur ne doit pas tomber en dehors de
+    // la bande de la ligne démontrée en lecture seule (y top-left ∈
+    // [485.248, 504.337]). pdfLibY est une ligne de base (convention
+    // pdf-lib) : reconvertie ici en top-left via le même écart que
+    // `coordinates.ts` (BBOX_TOP_TO_BASELINE_PT=9.675, revalidé par
+    // `coordinates.test.ts`) pour comparer à la bande mesurée en lecture
+    // seule sur l'asset officiel — pas une dépendance au registre.
+    const pageHeight = 841.8897705078125;
+    const BBOX_TOP_TO_BASELINE_PT = 9.675;
+    const topLeftYApprox = pageHeight - case330Drawing!.pdfLibY - BBOX_TOP_TO_BASELINE_PT;
+    assert.ok(topLeftYApprox >= 485.2 && topLeftYApprox <= 504.4, `la valeur dessinée doit rester dans la bande verticale de la ligne 247/248/330 (mesuré: ${topLeftYApprox})`);
+  });
+});
+
+describe("Oracle de position indépendant — 2033-B-SD, ligne 346/350 (MICRO-JALON implémentation 350)", () => {
+  it("A — sanity check : valueBox350 existe, largeur et hauteur positives, cohérente avec les séparateurs officiels", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase350Boxes(bytes);
+    assert.ok(boxes.valueBox350.xMax > boxes.valueBox350.xMin, "valueBox350 doit avoir une largeur positive");
+    assert.ok(boxes.valueBox350.xMax - boxes.valueBox350.xMin > 40, "valueBox350 doit être une vraie boîte de valeur, pas une zone-numéro étroite (14.4pt)");
+    assert.ok(boxes.numberZone350.xMax <= boxes.valueBox350.xMin + 1, "la zone-numéro 350 doit précéder sa boîte de valeur");
+    assert.ok(boxes.valueBox346.xMax <= boxes.numberZone350.xMin + 1, "la boîte de valeur de 346 doit précéder la zone-numéro 350 (colonnes disjointes)");
+  });
+
+  it("B — le mapping registry de 350 est entièrement contenu dans valueBox350", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase350Boxes(bytes);
+    const mapping350 = resolveVisualMapping("2033-B-SD", 2026, "350");
+    assert.ok(mapping350, "350 doit avoir une entrée de registre (MICRO-JALON implémentation 350)");
+    assert.ok(
+      xInBox(mapping350!.position.x, boxes.valueBox350, GRID_LINE_TOLERANCE_PT),
+      `x=${mapping350!.position.x} doit être dans la boîte de valeur de 350 [${boxes.valueBox350.xMin},${boxes.valueBox350.xMax}]`,
+    );
+  });
+
+  it("C — RÉGRESSION anti-erreur zone-numéro : le mapping ne doit jamais tomber dans numberZone350", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase350Boxes(bytes);
+    const mapping350 = resolveVisualMapping("2033-B-SD", 2026, "350");
+    assert.ok(mapping350);
+    assert.ok(
+      !xInBox(mapping350!.position.x, boxes.numberZone350, GRID_LINE_TOLERANCE_PT),
+      "la position ne doit pas être dans la zone-numéro '350' (répétition de l'erreur historique P0-1 sur 372)",
+    );
+    // Preuve que l'oracle aurait détecté l'erreur : le centre de la
+    // zone-numéro elle-même, testé directement, est bien DANS cette zone.
+    const hypotheticalBuggyX = (boxes.numberZone350.xMin + boxes.numberZone350.xMax) / 2;
+    assert.ok(xInBox(hypotheticalBuggyX, boxes.numberZone350, GRID_LINE_TOLERANCE_PT));
+    assert.ok(!xInBox(hypotheticalBuggyX, boxes.valueBox350, GRID_LINE_TOLERANCE_PT));
+  });
+
+  it("D — RÉGRESSION anti-erreur case 346 : le mapping ne doit jamais tomber dans valueBox346", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase350Boxes(bytes);
+    const mapping350 = resolveVisualMapping("2033-B-SD", 2026, "350");
+    assert.ok(mapping350);
+    assert.ok(
+      !xInBox(mapping350!.position.x, boxes.valueBox346, GRID_LINE_TOLERANCE_PT),
+      "350 ne doit jamais être confondue avec la boîte de valeur de 346 (colonne totalement disjointe)",
+    );
+  });
+
+  it("E — PDF généré (fixture synthétique, 350=2000) — la valeur est réellement dessinée dans valueBox350, jamais dans numberZone350 ni valueBox346", async () => {
+    const rfs = buildSyntheticDeficitsImputesRfs(2000);
+    const form2033B = map2033BFromRfs(rfs);
+    assert.ok(form2033B.cases.some((c) => c.caseId === "350" && c.value === 2000), "précondition : le mapper doit produire 350=2000 (deficitsImputes, règle verrouillée)");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case350Drawing = positions.find((p) => p.text === "2 000");
+    assert.ok(case350Drawing, "la valeur '2 000' (350) doit être réellement dessinée (extraite des octets du PDF, pas du manifeste)");
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await deriveCase350Boxes(bytes);
+    assert.ok(
+      xInBox(case350Drawing!.pdfLibX, boxes.valueBox350, GRID_LINE_TOLERANCE_PT),
+      `la valeur dessinée à x=${case350Drawing!.pdfLibX} doit tomber dans la boîte de valeur de 350 [${boxes.valueBox350.xMin},${boxes.valueBox350.xMax}]`,
+    );
+    assert.ok(!xInBox(case350Drawing!.pdfLibX, boxes.numberZone350, GRID_LINE_TOLERANCE_PT), "ne doit jamais chevaucher la zone-numéro imprimée '350'");
+    assert.ok(!xInBox(case350Drawing!.pdfLibX, boxes.valueBox346, GRID_LINE_TOLERANCE_PT), "ne doit jamais être confondue avec la valeur de 346");
+
+    // Non-régression verticale : la valeur ne doit pas tomber en dehors de
+    // la bande de la ligne démontrée en lecture seule (y top-left ∈
+    // [655.71, 666.62]) — reconvertie ici via le même écart que
+    // `coordinates.ts` (BBOX_TOP_TO_BASELINE_PT=9.675), pas une dépendance
+    // au registre.
+    const pageHeight = 841.8897705078125;
+    const BBOX_TOP_TO_BASELINE_PT = 9.675;
+    const topLeftYApprox = pageHeight - case350Drawing!.pdfLibY - BBOX_TOP_TO_BASELINE_PT;
+    // Marge légèrement plus large que la bande imprimée [655.71,666.62] :
+    // le point d'ancrage stocké au registre (haut de bbox, convention
+    // TopLeftPoint) peut se situer quelques dixièmes de point avant le
+    // trait imprimé sans que l'encre réellement visible ne déborde (validé
+    // par inspection raster lors de la calibration, voir registry note) —
+    // à ne pas confondre avec un débordement réel (voir test de régression
+    // C, qui borne strictement la zone-numéro elle-même).
+    assert.ok(topLeftYApprox >= 654.5 && topLeftYApprox <= 667.5, `la valeur dessinée doit rester dans la bande verticale de la ligne 346/350 (mesuré: ${topLeftYApprox})`);
+  });
+
+  it("non-régression — 330/370/372/318 restent inchangées quand 350 est produite dans la même génération", async () => {
+    const rfs = buildDossierTemoinRfs();
+    const form2033B = map2033BFromRfs(rfs);
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const boxes330 = await deriveCase330Boxes(readAssetBytes(2026, "2033-sd.pdf"));
+    const case330Drawing = positions.find((p) => p.text === "9 862");
+    assert.ok(case330Drawing, "330=9862 doit rester dessinée sur le dossier témoin");
+    assert.ok(xInBox(case330Drawing!.pdfLibX, boxes330.valueBox330, GRID_LINE_TOLERANCE_PT), "330 doit rester dans sa boîte, non affectée par l'ajout de 350 au registre");
+    const case318Drawing = positions.find((p) => p.text === "3 720");
+    assert.ok(case318Drawing, "318=3720 (ARD) doit rester dessinée, non affectée par 350");
+  });
+});
+
+/**
+ * Fixture synthétique pour la case 244 (MICRO-JALON implémentation 244) —
+ * `244 = fiscalResult.charges.detailParCategorie.taxe_fonciere`. Le dossier
+ * témoin réel ne renseigne pas `detailParCategorie` (fixture construite à la
+ * main, jamais via F-012) : même principe que les autres fixtures
+ * synthétiques de ce fichier.
+ */
+function buildSyntheticTaxeFonciereRfs(taxeFonciere: number): FiscalRepresentation {
+  return {
+    exercice: DOSSIER_TEMOIN_FISCAL_RESULT.exercice,
+    identite: DOSSIER_TEMOIN_IDENTITE,
+    fiscalResult: {
+      ...DOSSIER_TEMOIN_FISCAL_RESULT,
+      charges: { ...DOSSIER_TEMOIN_FISCAL_RESULT.charges, detailParCategorie: { taxe_fonciere: taxeFonciere } },
+    },
+    trace: {
+      ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-05-01T00:00:00.000Z",
+      sourceFiscalResultAt: DOSSIER_TEMOIN_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "synthétique (position-oracle.test.ts)", fiscalResult: "synthétique (position-oracle.test.ts)" },
+    },
+  };
+}
+
+describe("Vérification PDF réelle — 2033-B-SD, case 244 (MICRO-JALON implémentation 244)", () => {
+  // Bande de la ligne 244 et de sa voisine directe (242, immédiatement
+  // au-dessus), mesurées en LECTURE SEULE sur l'asset officiel ce jalon
+  // (PyMuPDF `get_drawings()`+`get_text()`) — jamais dérivées du registre.
+  // Séparateurs horizontaux à y=233.538 (haut, segmenté à x=440.359 :
+  // numéro/mémo | valeur) et y=245.797 (bas). Boîte de valeur réelle :
+  // x=[440.255,506.446] — jamais [421.5,506.5] (largeur nominale du
+  // registre, ancrée seulement par le bord droit, plus généreuse que la
+  // vraie cellule mais sans risque de débordement pour un montant usuel).
+  const VALUE_BOX_244: ColumnBox = { xMin: 440.255, xMax: 506.446 };
+  const ROW_244_BAND = { yMin: 233.538, yMax: 245.797 };
+  const ROW_242_BAND = { yMin: 221.711, yMax: 233.538 };
+
+  it("1 200 est réellement dessiné dans la boîte de valeur officielle de 244, jamais dans la zone-numéro/mémo, jamais dans la ligne 242", async () => {
+    const rfs = buildSyntheticTaxeFonciereRfs(1200);
+    const form2033B = map2033BFromRfs(rfs);
+    assert.ok(form2033B.cases.some((c) => c.caseId === "244" && c.value === 1200), "précondition : le mapper doit produire 244=1200 (taxe_fonciere)");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    const positions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const case244Drawing = positions.find((p) => p.text === "1 200");
+    assert.ok(case244Drawing, "la valeur '1 200' (244) doit être réellement dessinée (extraite des octets du PDF, pas seulement du manifeste)");
+
+    assert.ok(
+      xInBox(case244Drawing!.pdfLibX, VALUE_BOX_244, GRID_LINE_TOLERANCE_PT),
+      `la valeur dessinée à x=${case244Drawing!.pdfLibX} doit tomber dans la boîte de valeur officielle de 244 [${VALUE_BOX_244.xMin},${VALUE_BOX_244.xMax}]`,
+    );
+
+    const pageHeight = 841.8897705078125;
+    const BBOX_TOP_TO_BASELINE_PT = 9.675;
+    const topLeftYApprox = pageHeight - case244Drawing!.pdfLibY - BBOX_TOP_TO_BASELINE_PT;
+    assert.ok(
+      topLeftYApprox >= ROW_244_BAND.yMin - GRID_LINE_TOLERANCE_PT && topLeftYApprox <= ROW_244_BAND.yMax + GRID_LINE_TOLERANCE_PT,
+      `la valeur dessinée doit rester dans la bande verticale de la ligne 244 [${ROW_244_BAND.yMin},${ROW_244_BAND.yMax}] (mesuré: ${topLeftYApprox})`,
+    );
+    assert.ok(
+      !(topLeftYApprox >= ROW_242_BAND.yMin && topLeftYApprox <= ROW_242_BAND.yMax),
+      `la valeur dessinée (y≈${topLeftYApprox}) ne doit jamais chevaucher la ligne 242 juste au-dessus [${ROW_242_BAND.yMin},${ROW_242_BAND.yMax}]`,
+    );
+  });
+
+  it("absence de taxe_fonciere (dossier témoin réel) — 244 n'apparaît jamais, aucune autre case affectée", async () => {
+    const rfs = buildDossierTemoinRfs();
+    const form2033B = map2033BFromRfs(rfs);
+    assert.equal(form2033B.cases.some((c) => c.caseId === "244"), false, "244 ne doit pas être produite par le mapper : dossier témoin sans detailParCategorie");
+
+    const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases: form2033B.cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    assert.ok(!result.manifest.some((e) => e.caseId === "244"), "244 ne doit jamais apparaître dans le manifeste sans donnée disponible");
+  });
+});

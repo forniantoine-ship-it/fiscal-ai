@@ -108,13 +108,15 @@
     "test:declaration-run-generation": "./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/run-declaration-generation.test.ts",
     "test:validation-profile": "./node_modules/.bin/tsx src/lib/lmnp/services/validation-profile.test.ts",
     "test:declaration": "npm run test:declaration-generation-gate && npm run test:declaration-run-generation && npm run test:validation-profile && ./node_modules/.bin/tsx --test src/lib/lmnp/services/declaration/build-client-summary-document.test.ts",
-    "test:charges-taxe-fonciere": "./node_modules/.bin/tsx src/lib/lmnp/services/charges/parse-taxe-fonciere-document.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/document-reading-mode-resolver.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/taxe-fonciere-field-orchestration.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/classify-charge-document.test.ts"
+    "test:charges-taxe-fonciere": "./node_modules/.bin/tsx src/lib/lmnp/services/charges/parse-taxe-fonciere-document.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/document-reading-mode-resolver.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/charges/taxe-fonciere-field-orchestration.test.ts && ./node_modules/.bin/tsx src/lib/lmnp/services/classify-charge-document.test.ts",
+    "test:liasse-pdf-2033b": "npx tsx --test src/lib/lmnp/services/liasse-pdf/tests/vertical-slice-2033-b.test.ts src/lib/lmnp/services/liasse-pdf/tests/generation-gate.test.ts src/lib/lmnp/services/liasse-pdf/tests/registry-resolution.test.ts src/lib/lmnp/services/liasse-pdf/tests/format-value.test.ts src/lib/lmnp/services/liasse-pdf/tests/coordinates.test.ts src/lib/lmnp/services/liasse-pdf/tests/position-oracle.test.ts src/lib/lmnp/services/liasse-pdf/tests/golden-master-technical-pipeline.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",
     "jspdf": "^4.2.1",
     "next": "16.2.6",
     "openai": "^6.39.1",
+    "pdf-lib": "^1.17.1",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "^5.7.284",
     "react": "19.2.4",
