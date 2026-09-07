@@ -25,6 +25,18 @@ export {
   CERFA_2033C_MILLESIME,
 } from "./generate-cerfa-2033c";
 export type { Cerfa2033CGenerationResult, Cerfa2033CGenerationSuccess } from "./generate-cerfa-2033c";
+export {
+  generateCerfa2031FromRfs,
+  CERFA_2031_FORM_ID,
+  CERFA_2031_MILLESIME,
+} from "./generate-cerfa-2031";
+export type { Cerfa2031GenerationResult, Cerfa2031GenerationSuccess } from "./generate-cerfa-2031";
+export {
+  generateCerfa2031BisFromRfs,
+  CERFA_2031BIS_FORM_ID,
+  CERFA_2031BIS_MILLESIME,
+} from "./generate-cerfa-2031-bis";
+export type { Cerfa2031BisGenerationResult, Cerfa2031BisGenerationSuccess } from "./generate-cerfa-2031-bis";
 export type { FormInput } from "./gate/generation-gate";
 export { runStructuralAndMappingGate, checkOverflow } from "./gate/generation-gate";
 export { createGeneratedLiassePdf } from "./versioning";
