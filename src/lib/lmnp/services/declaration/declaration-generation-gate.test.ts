@@ -498,3 +498,144 @@ describe("P0-1 — TEST 6 : correction d'identité après génération → rég�
     assert.equal(regeneration.rfs.identite.siret, "98765432109876");
   });
 });
+
+/**
+ * P0-1A (2026-09-07) — bug confirmé par l'audit P0-1 : le preview de cette
+ * porte tournait TOUJOURS avec `stocksOuverture: undefined`, même quand la
+ * génération réelle avait été produite avec un stock d'ouverture non nul
+ * (exercice en continuité, déficits antérieurs/amortissements reportés). La
+ * comparaison portait alors sur deux résultats structurellement différents.
+ *
+ * Fixture volontairement choisie pour que la dérive touche `amortDeduct`/
+ * `amortReporte` (les deux champs comparés par cette porte, cf.
+ * declaration-generation-gate.ts) : resultatAvantAmort = 7000 (9000 - 2000),
+ * amortissement calculé = 8000.
+ *  - AVEC le déficit antérieur de 3000 (stock réel) : base disponible après
+ *    imputation = 4000 → amortDeduct = 4000, amortReporte = 4000.
+ *  - SANS ce déficit (bug — preview `undefined`) : base = 7000 →
+ *    amortDeduct = 7000, amortReporte = 1000.
+ * Les deux résultats diffèrent bien sur les champs comparés : avant
+ * correction, ce test aurait échoué (`canGenerate` serait resté `true`).
+ */
+describe("P0-1A — cohérence stocksOuverture entre le preview de la porte et la génération réelle", () => {
+  const STOCKS_OUVERTURE_DEFICIT = {
+    deficits: [{ millesime: 2024, montant: 3000 }],
+    amortissementsReportes: 0,
+  };
+
+  function draftContinuite(): DeclarationDraft {
+    return completeFlags({
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 8000, status: "validated" },
+    } as DeclarationDraft);
+  }
+
+  function genererAvecStock(draft: DeclarationDraft) {
+    const generation = runDeclarationGeneration(draft, 2025, STOCKS_OUVERTURE_DEFICIT);
+    assert.equal(generation.status, "generated", "précondition — le fixture doit être générable");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return generation;
+  }
+
+  it("TEST A (régression) — stocksOuverture non nul, aucune modification → canGenerate === false", () => {
+    const draft = draftContinuite();
+    const generation = genererAvecStock(draft);
+    // Précondition — confirme que le stock d'ouverture a réellement un effet
+    // sur les deux champs comparés (sinon le test ne prouverait rien).
+    assert.equal(generation.fiscalResult.amortDeduct, 4000);
+    assert.equal(generation.fiscalResult.amortReporte, 4000);
+
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftGenere,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+      stocksOuverture: STOCKS_OUVERTURE_DEFICIT,
+    });
+
+    assert.equal(
+      gate.canGenerate,
+      false,
+      "un exercice en continuité sans aucune modification ne doit jamais réclamer de régénération",
+    );
+    assert.equal(gate.canRetryAfterPayment, false);
+  });
+
+  it("TEST B (modification réelle) — même stocksOuverture, recettes corrigées → canGenerate === true", () => {
+    const draft = draftContinuite();
+    const generation = genererAvecStock(draft);
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
+
+    const draftModifie = {
+      ...draftGenere,
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 15000 },
+    } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftModifie,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+      stocksOuverture: STOCKS_OUVERTURE_DEFICIT,
+    });
+
+    assert.equal(
+      gate.canGenerate,
+      true,
+      "une vraie modification fiscale doit rester détectée — la correction ne doit pas rendre la porte 'toujours valide'",
+    );
+  });
+
+  it("TEST C (compatibilité historique) — stocksOuverture absent → comportement inchangé", () => {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftGenere,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+      // stocksOuverture volontairement omis — un exercice sans continuité
+      // doit se comporter exactement comme avant P0-1A.
+    });
+
+    assert.equal(gate.canGenerate, false);
+  });
+
+  it("TEST D (non-mutation) — le preview ne mute ni draft ni stocksOuverture", () => {
+    const draft = draftContinuite();
+    const generation = genererAvecStock(draft);
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
+    const draftSnapshot = JSON.stringify(draftGenere);
+    const stocksSnapshot = JSON.stringify(STOCKS_OUVERTURE_DEFICIT);
+
+    resolveDeclarationGenerationGate({
+      draft: draftGenere,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+      stocksOuverture: STOCKS_OUVERTURE_DEFICIT,
+    });
+
+    assert.equal(JSON.stringify(draftGenere), draftSnapshot, "le draft fourni ne doit jamais être muté par le preview");
+    assert.equal(
+      JSON.stringify(STOCKS_OUVERTURE_DEFICIT),
+      stocksSnapshot,
+      "le stocksOuverture fourni ne doit jamais être muté par le preview",
+    );
+  });
+});

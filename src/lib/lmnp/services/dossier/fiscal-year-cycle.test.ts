@@ -662,4 +662,45 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
     });
     assert.equal(debloque.ok, true, "après régénération, plus aucune dérive détectée");
   });
+
+  /**
+   * P0-1A (2026-09-07) — bug confirmé par l'audit P0-1 : `canCloseFiscalYear`
+   * relayait `resolveDeclarationGenerationGate()` sans jamais lui transmettre
+   * `fiscalYear.stocksOuverture`. Pour un exercice N+1 en continuité réelle
+   * (déficits antérieurs/amortissements reportés non nuls), le preview de la
+   * porte tournait alors sans ce stock alors que la génération réelle en
+   * tenait compte — dérive artificielle, clôture bloquée à tort. Même
+   * fixture que declaration-generation-gate.test.ts (P0-1A) : resultatAvantAmort
+   * = 7000, amortissement calculé = 8000, déficit antérieur = 3000 → change
+   * strictement amortDeduct/amortReporte (les deux champs comparés par la
+   * porte) selon que le stock est pris en compte ou non.
+   */
+  it("R5 — exercice N+1 en continuité (stocksOuverture réel), aucune modification → canCloseFiscalYear === true (pas de blocage artificiel)", () => {
+    const stocksOuverture = { deficits: [{ millesime: 2024, montant: 3000 }], amortissementsReportes: 0 };
+    const draft = generationReadyDraft({
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 8000, status: "validated" },
+    });
+    const generation = runDeclarationGeneration(draft, 2025, stocksOuverture);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    // Précondition — confirme que le stock change bien amortDeduct/amortReporte
+    // (sinon ce test ne prouverait rien face à la version sans correction).
+    assert.equal(generation.fiscalResult.amortDeduct, 4000);
+    assert.equal(generation.fiscalResult.amortReporte, 4000);
+
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear({ stocksOuverture: { sourceClosureId: "closure-n", stocks: stocksOuverture } }),
+      declarationDraft: draftGenere,
+      properties: [PROPERTY],
+    });
+    assert.equal(
+      result.ok,
+      true,
+      "un exercice en continuité, sans aucune modification, ne doit jamais bloquer la clôture",
+    );
+  });
 });

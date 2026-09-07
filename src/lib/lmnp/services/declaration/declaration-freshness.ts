@@ -34,6 +34,11 @@ export function resolveDeclarationOutOfDate(input: {
     fiscalYear: fiscalYear.year,
     paid: Boolean(fiscalYear.paidAt),
     generated: true,
+    // P0-1A — même stocksOuverture que la génération réelle, cf.
+    // declaration-generation-gate.ts : sans ce champ, ce signal pouvait se
+    // déclarer "périmé" à tort pour un exercice en continuité (déficits
+    // antérieurs/amortissements reportés non nuls) sans aucune modification.
+    stocksOuverture: fiscalYear.stocksOuverture?.stocks,
   });
 
   return gate.canGenerate;

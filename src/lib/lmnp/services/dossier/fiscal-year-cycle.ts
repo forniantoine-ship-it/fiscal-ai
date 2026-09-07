@@ -240,6 +240,12 @@ export function canCloseFiscalYear(input: {
     fiscalYear: fiscalYear.year,
     paid: Boolean(fiscalYear.paidAt),
     generated: true,
+    // P0-1A — même stocksOuverture que la génération réelle (déjà résolue et
+    // persistée sur CET exercice, jamais recalculée ici) : sans ce champ, le
+    // preview de la porte tournait sans continuité alors que la génération
+    // réelle en tenait compte pour un exercice N+1, détectant une dérive
+    // artificielle et bloquant une clôture pourtant valide.
+    stocksOuverture: fiscalYear.stocksOuverture?.stocks,
   });
 
   if (gate.canGenerate) {

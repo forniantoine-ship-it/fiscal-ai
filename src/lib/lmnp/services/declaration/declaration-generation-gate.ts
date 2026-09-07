@@ -124,6 +124,20 @@ export function resolveDeclarationGenerationGate(input: {
   fiscalYear: number;
   paid: boolean;
   generated: boolean;
+  /**
+   * P0-1A (2026-09-07) — mêmes stocks d'ouverture que la génération réelle
+   * (`FiscalYear.stocksOuverture?.stocks`, résolus une seule fois à la
+   * création de l'exercice par `resolveStocksOuverture()`, jamais recalculés
+   * ici). Avant ce paramètre, le preview de cette porte tournait TOUJOURS
+   * sans stock d'ouverture alors que la génération réelle en tenait compte
+   * pour un exercice en continuité (déficits antérieurs/amortissements
+   * reportés non nuls) : la comparaison portait alors sur deux résultats
+   * structurellement différents, produisant une dérive artificielle.
+   * Optionnel : absent pour un appelant qui n'a pas cette continuité
+   * (comportement historique inchangé, cf. `runDeclarationGeneration()` qui
+   * traite déjà ce paramètre comme optionnel).
+   */
+  stocksOuverture?: FiscalEngineOutput["stocks"];
 }): DeclarationGenerationGate {
   const snapshot = buildValidationDossierSnapshot(input.draft, input.properties, input.fiscalYear);
 
@@ -133,7 +147,11 @@ export function resolveDeclarationGenerationGate(input: {
       // G1-P0 — même bilanPatrimonial que la génération réelle (voir plus
       // bas) : jamais une seconde construction de BilanInputs, jamais un
       // aperçu qui diverge silencieusement du document réellement produit.
-      const preview = runDeclarationGeneration(input.draft, input.fiscalYear, undefined, input.draft?.bilanPatrimonial);
+      // P0-1A — même stocksOuverture que la génération réelle (voir le
+      // commentaire du paramètre ci-dessus) : jamais `undefined` en dur, qui
+      // désynchronisait ce preview de la génération réelle pour un exercice
+      // en continuité.
+      const preview = runDeclarationGeneration(input.draft, input.fiscalYear, input.stocksOuverture, input.draft?.bilanPatrimonial);
       if (
         preview.status === "generated" &&
         (stored?.totalRecettes !== preview.fiscalResult.totalRecettes ||
@@ -182,7 +200,8 @@ export function resolveDeclarationGenerationGate(input: {
   }
 
   // G1-P0 — idem : même bilanPatrimonial que la génération réelle.
-  const preview = runDeclarationGeneration(input.draft, input.fiscalYear, undefined, input.draft?.bilanPatrimonial);
+  // P0-1A — idem : même stocksOuverture que la génération réelle.
+  const preview = runDeclarationGeneration(input.draft, input.fiscalYear, input.stocksOuverture, input.draft?.bilanPatrimonial);
   if (preview.status === "blocked") {
     return {
       snapshot,
