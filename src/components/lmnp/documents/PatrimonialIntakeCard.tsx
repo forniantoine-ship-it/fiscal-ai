@@ -277,8 +277,20 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
       </Question>
       {state.autresElements === "OUI" ? (
         <p style={{ ...typography.caption.desktop, color: colors.text.tertiary }}>
-          Ces éléments nécessitent une collecte complémentaire, non disponible dans cette version — ils resteront
-          non renseignés dans votre bilan en attendant. Contactez-nous si vous souhaitez les déclarer dès maintenant.
+          {/*
+            B-FAMILY-5 — correction minimale : cette copie affirmait que les
+            avances, titres, créances et dettes en cours restaient
+            non collectables — c'est devenu faux depuis P1-B1 (questions
+            ci-dessus) et B-FAMILY-2/3/4 (section ci-dessous). Seul le texte
+            change ici ; `autresElements`/`lignesSimples`/`tiers` et leur
+            logique de cascade restent strictement inchangés — une refonte
+            conceptuelle de Q4 (fusion avec les questions ci-dessus/dessous,
+            reformulation complète) est hors périmètre de ce chantier,
+            documentée comme réserve.
+          */}
+          Les avances, titres, charges/produits constatés d&apos;avance et autres dettes se déclarent désormais dans
+          les questions ci-dessus, et vos créances/dettes envers des tiers juste en dessous. Si un élément ne
+          correspond à aucune de ces catégories, contactez-nous.
         </p>
       ) : null}
     </section>
