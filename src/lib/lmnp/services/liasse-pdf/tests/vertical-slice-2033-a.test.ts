@@ -1,14 +1,17 @@
 /**
- * P1-PDF-02-C/F1/F2 + Chantier 2B + Chantier 2D-C — Vertical slice 2033-A-SD
- * 2026 (23 cases autorisées : 10 P1-PDF-02-C d'origine + 10 du bloc
- * Amortissements F4-A/B/C/D (016/042/066/070/074/082/094/048/098/112) + 3
- * totaux 044/096/176 (chantier 2D-B/2D-C).
+ * P1-PDF-02-C/F1/F2 + Chantier 2B + Chantier 2D-C + Chantier 2D-E3 —
+ * Vertical slice 2033-A-SD 2026 (25 cases autorisées : 10 P1-PDF-02-C
+ * d'origine + 10 du bloc Amortissements F4-A/B/C/D
+ * (016/042/066/070/074/082/094/048/098/112) + 3 totaux 044/096/176
+ * (chantier 2D-B/2D-C) + 2 totaux généraux 110/180 (chantier 2D-E2/2D-E3).
+ * Plus aucune case n'est structurellement interdite.
  *
  * Run: npm run test:liasse-pdf-2033a
  *
  * Géométrie : P1-PDF-02-B CONFIRMED_VECTOR (10 cases d'origine) + chantier 2A
  * PyMuPDF indépendant (bloc Amortissements) + chantier 2D-A PyMuPDF
- * indépendant (044/096/176). Aucune règle fiscale ajoutée.
+ * indépendant (044/096/176) + chantier 2D-D PyMuPDF indépendant (110/180).
+ * Aucune règle fiscale ajoutée.
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -17,9 +20,15 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
+import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
 import { checkBilanEquilibre } from "@/runtime/capabilities/bilan/check-bilan-equilibre";
 import { resultatComptable } from "@/runtime/capabilities/bilan/resultat-comptable";
 import { map2033AFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033a";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
+import type { FiscalResult } from "@/runtime/capabilities/f006/types";
+import type { IdentiteDeclarante } from "@/runtime/capabilities/f007/types";
+import type { FiscalRepresentation, ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
+import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 
 import {
   CERFA_2033A_FORM_ID,
@@ -85,6 +94,10 @@ const VALUE_BOXES_PYMUPDF: Record<string, { x: number; y: number; w: number; h: 
   "044": { x: 283.74, y: 275.16, w: 90.06, h: 14.79 },
   "096": { x: 283.74, y: 407.77, w: 90.06, h: 14.79 },
   "176": { x: 480.69, y: 733.81, w: 87.41, h: 14.80 },
+  // Chantier 2D-E3 — totaux généraux 110 (Brut) et 180 (NET Passif),
+  // ré-extraits indépendamment (PyMuPDF, chantier 2D-D).
+  "110": { x: 283.74, y: 422.57, w: 90.06, h: 15.86 },
+  "180": { x: 480.69, y: 748.61, w: 87.41, h: 15.86 },
 };
 
 const NUMBER_ZONE = {
@@ -123,6 +136,9 @@ const EXPECTED_REGISTRY: Record<string, { x: number; y: number; width: number; h
   "044": { x: 372.3, y: 278.58, width: 86, height: 9 },
   "096": { x: 372.3, y: 411.17, width: 86, height: 9 },
   "176": { x: 566.6, y: 737.27, width: 84, height: 9 },
+  // Chantier 2D-E3 — totaux généraux 110 (Brut) et 180 (NET Passif).
+  "110": { x: 372.3, y: 426.56, width: 86, height: 9 },
+  "180": { x: 566.6, y: 752.56, width: 84, height: 9 },
 };
 
 /**
@@ -163,6 +179,8 @@ const COMPOSANTE_175 = 50;
  *   044 = 8000(014) + 11111(028) + 9000(040)          = 28111
  *   096 = 1000(064)+2000(068)+3000(072)+4000(080)+0(084)+5000(092) = 15000
  *   176 = 66666(156)+10(164)+20(166)+30(172)+40(174)+50(175) = 66816
+ *   110 = 28111(044) + 15000(096)                      = 43111
+ *   180 = 55555(142) + 66816(176)                       = 122371
  */
 const SLICE_TEST_VALUES: Record<(typeof CERFA_2033A_REGISTRY_CASE_IDS)[number], number> = {
   "028": 11_111,
@@ -188,6 +206,10 @@ const SLICE_TEST_VALUES: Record<(typeof CERFA_2033A_REGISTRY_CASE_IDS)[number], 
   "044": COMPOSANTE_014 + 11_111 + COMPOSANTE_040,
   "096": COMPOSANTE_064 + COMPOSANTE_068 + COMPOSANTE_072 + COMPOSANTE_080 + 0 + COMPOSANTE_092,
   "176": 66_666 + COMPOSANTE_164 + COMPOSANTE_166 + COMPOSANTE_172 + COMPOSANTE_174 + COMPOSANTE_175,
+  // Chantier 2D-E3 — totaux généraux, calculés à partir des totaux déjà
+  // définis ci-dessus (044/096/142/176), jamais une valeur indépendante.
+  "110": (COMPOSANTE_014 + 11_111 + COMPOSANTE_040) + (COMPOSANTE_064 + COMPOSANTE_068 + COMPOSANTE_072 + COMPOSANTE_080 + 0 + COMPOSANTE_092),
+  "180": 55_555 + (66_666 + COMPOSANTE_164 + COMPOSANTE_166 + COMPOSANTE_172 + COMPOSANTE_174 + COMPOSANTE_175),
 };
 
 function cerfaCase(caseId: string, value: number): CerfaCase {
@@ -205,9 +227,9 @@ function numberZoneFor(caseId: string): { xMin: number; xMax: number } {
   return NUMBER_ZONE.passif;
 }
 
-describe("P1-PDF-02-C/2B/2D-C — R1 registry : 23 cases autorisées", () => {
+describe("P1-PDF-02-C/2B/2D-C/2D-E3 — R1 registry : 25 cases autorisées", () => {
   it("chaque case du slice a une entrée calibrée mesure-empirique", () => {
-    assert.equal(CERFA_2033A_REGISTRY_CASE_IDS.length, 23);
+    assert.equal(CERFA_2033A_REGISTRY_CASE_IDS.length, 25);
     for (const caseId of CERFA_2033A_REGISTRY_CASE_IDS) {
       const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, caseId);
       assert.ok(mapping, `${caseId} doit être dans le registre`);
@@ -220,8 +242,9 @@ describe("P1-PDF-02-C/2B/2D-C — R1 registry : 23 cases autorisées", () => {
   });
 });
 
-describe("P1-PDF-02-C — R2 exclusivité : cases interdites absentes", () => {
-  it("aucune case interdite n'a d'entrée de registre", () => {
+describe("P1-PDF-02-C/2D-E3 — R2 exclusivité : cases interdites absentes", () => {
+  it("Chantier 2D-E3 — plus aucune case n'est structurellement interdite (110/180 câblées)", () => {
+    assert.deepEqual(CERFA_2033A_FORBIDDEN_CASE_IDS, []);
     for (const caseId of CERFA_2033A_FORBIDDEN_CASE_IDS) {
       assert.equal(
         resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, caseId),
@@ -230,6 +253,11 @@ describe("P1-PDF-02-C — R2 exclusivité : cases interdites absentes", () => {
       );
       assert.equal(isAuthorized2033ASliceCase(caseId), false);
     }
+  });
+
+  it("une case structurellement non_applicable (154, jamais modélisée) reste absente du registre", () => {
+    assert.equal(resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, "154"), undefined);
+    assert.equal(isAuthorized2033ASliceCase("154"), false);
   });
 
   it("aucune pseudo-case Net actif n'existe", () => {
@@ -270,6 +298,9 @@ describe("P1-PDF-02-C — R4 colonnes officielles", () => {
     assert.equal(CERFA_2033A_SLICE_COLUMNS["044"], "Brut");
     assert.equal(CERFA_2033A_SLICE_COLUMNS["096"], "Brut");
     assert.equal(CERFA_2033A_SLICE_COLUMNS["176"], "NET");
+    // Chantier 2D-E3 — totaux généraux 110 en colonne Brut (jamais Amort., jamais confondu avec 112) ; 180 en colonne NET Passif (jamais Brut ni Amort.).
+    assert.equal(CERFA_2033A_SLICE_COLUMNS["110"], "Brut");
+    assert.equal(CERFA_2033A_SLICE_COLUMNS["180"], "NET");
     for (const caseId of CERFA_2033A_REGISTRY_CASE_IDS) {
       const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, caseId)!;
       assert.ok(mapping.note?.includes(`Colonne ${CERFA_2033A_SLICE_COLUMNS[caseId]}`), `${caseId} note colonne`);
@@ -333,10 +364,24 @@ describe("P1-PDF-02-C — R5 anti-zone-numéro", () => {
     assert.ok(mapping.position.x > AMORT_COLUMN.xMax, "176 ne doit pas être dans la colonne Amort.");
     assert.ok(mapping.position.x > BRUT_COLUMN.xMax, "176 ne doit pas être dans la colonne Brut");
   });
+
+  it("Chantier 2D-E3 — 110 reste dans la colonne Brut (jamais Amort., contrairement à son jumeau 112)", () => {
+    const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, "110")!;
+    assert.equal(mapping.position.x, 372.3, "110 doit utiliser l'ancrage Brut, pas Amort./NET");
+    assert.ok(mapping.position.x < NET_ACTIF.xMin, "110 ne doit pas atteindre le Net actif");
+    assert.ok(mapping.position.x <= BRUT_COLUMN.xMax + 0.2, "110 reste dans la colonne Brut");
+  });
+
+  it("Chantier 2D-E3 — 180 reste dans la colonne NET Passif (jamais Brut ni Amort.)", () => {
+    const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, "180")!;
+    assert.equal(mapping.position.x, 566.6, "180 doit utiliser l'ancrage NET Passif (passifNet), pas brut() ni amort()");
+    assert.ok(mapping.position.x > AMORT_COLUMN.xMax, "180 ne doit pas être dans la colonne Amort.");
+    assert.ok(mapping.position.x > BRUT_COLUMN.xMax, "180 ne doit pas être dans la colonne Brut");
+  });
 });
 
 describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
-  it("injecte 23 valeurs distinctes (bloc Amortissements chantier 2B + totaux 044/096/176 chantier 2D-C), les dessine dans les boîtes de valeur, et bloque un overflow", async () => {
+  it("injecte 25 valeurs distinctes (bloc Amortissements chantier 2B + totaux 044/096/176 chantier 2D-C + totaux généraux 110/180 chantier 2D-E3), les dessine dans les boîtes de valeur, et bloque un overflow", async () => {
     const cases = sliceCases();
     const overflowDoc = await PDFDocument.create();
     const font = await overflowDoc.embedFont(StandardFonts.Helvetica);
@@ -365,7 +410,7 @@ describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
     }
 
     assert.equal(result.forms[0], CERFA_2033A_FORM_ID);
-    assert.equal(result.manifest.length, 23);
+    assert.equal(result.manifest.length, 25);
 
     // Chantier 2B — les 3 relations fiscales du bloc Amortissements, sur les
     // valeurs de TEST injectées ci-dessus (SLICE_TEST_VALUES) — jamais sur une
@@ -396,6 +441,14 @@ describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
       "176 = 156 + 164 + 166 + 172 + 174 + 175",
     );
 
+    // Chantier 2D-E3 — les 2 relations fiscales des totaux généraux, sur les
+    // totaux déjà définis ci-dessus (044/096/142/176), jamais une valeur
+    // indépendante. 110 n'est jamais déduit de 112−180 ; 180 n'est jamais
+    // déduit de 110−112 (voir check-bilan-equilibre.ts : (110−112)=180 est
+    // un contrôle d'équilibre a posteriori, jamais un chemin de calcul).
+    assert.equal(SLICE_TEST_VALUES["110"], SLICE_TEST_VALUES["044"] + SLICE_TEST_VALUES["096"], "110 = 044 + 096");
+    assert.equal(SLICE_TEST_VALUES["180"], SLICE_TEST_VALUES["142"] + SLICE_TEST_VALUES["176"], "180 = 142 + 176");
+
     const drawn = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
     const strings = await extractDrawnStringsForPage(result.pdfBytes, 1);
     const pdf = await PDFDocument.load(result.pdfBytes);
@@ -421,6 +474,9 @@ describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
     assert.ok(strings.includes("28 111"), "044 présent (total Brut, distinct de 048)");
     assert.ok(strings.includes("15 000"), "096 présent (total Brut, distinct de 098)");
     assert.ok(strings.includes("66 816"), "176 présent (total Dettes NET, distinct de 156)");
+    // Chantier 2D-E3 — totaux généraux 110/180, valeurs distinctes de tout le reste.
+    assert.ok(strings.includes("43 111"), "110 présent (total général actif Brut, distinct de 044/096/112)");
+    assert.ok(strings.includes("122 371"), "180 présent (total général passif NET, distinct de 142/176)");
 
     for (const caseId of CERFA_2033A_REGISTRY_CASE_IDS) {
       const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, caseId)!;
@@ -444,16 +500,16 @@ describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
       assert.ok(hit!.pdfLibX >= numberZone.xMax - 0.2, `${caseId} pas dans la zone-numéro (x=${hit!.pdfLibX})`);
       assert.ok(Math.abs(hit!.pdfLibY - baseline.y) < 0.05, `${caseId} y pdf-lib = conversion registry`);
 
-      if (caseId === "028" || caseId === "084" || caseId === "044" || caseId === "096") {
+      if (caseId === "028" || caseId === "084" || caseId === "044" || caseId === "096" || caseId === "110") {
         assert.ok(textRight < NET_ACTIF.xMin, `${caseId} ne doit pas écrire dans le Net actif`);
       }
-      if (caseId === "044" || caseId === "096") {
-        // Chantier 2D-C — totaux Brut : jamais dans la colonne Amort. (celle de leurs jumeaux 048/098).
+      if (caseId === "044" || caseId === "096" || caseId === "110") {
+        // Chantier 2D-C/2D-E3 — totaux Brut : jamais dans la colonne Amort. (celle de leurs jumeaux 048/098/112).
         assert.ok(textRight <= AMORT_COLUMN.xMin + 0.5, `${caseId} ne doit pas écrire dans la colonne Amortissements-Provisions`);
       }
-      if (caseId === "176") {
-        // Chantier 2D-C — total Dettes NET : jamais dans la colonne Brut ni Amort. actif.
-        assert.ok(hit!.pdfLibX >= NET_ACTIF.xMin - 0.5, `176 doit être en colonne NET, jamais Brut/Amort. actif`);
+      if (caseId === "176" || caseId === "180") {
+        // Chantier 2D-C/2D-E3 — totaux Dettes/passif NET : jamais dans la colonne Brut ni Amort. actif.
+        assert.ok(hit!.pdfLibX >= NET_ACTIF.xMin - 0.5, `${caseId} doit être en colonne NET, jamais Brut/Amort. actif`);
       }
       if (caseId === "030" || caseId === "086") {
         assert.ok(hit!.pdfLibX >= AMORT_COLUMN.xMin - 0.5, `${caseId} dans la colonne Amortissements-Provisions`);
@@ -478,17 +534,19 @@ describe("P1-PDF-02-C — R6 renderer + PDF réel", () => {
     console.log(`P1-PDF-02-C output: ${outputPath} (1 page, ${result.pdfBytes.length} bytes)`);
   });
 
-  it("une case interdite passée au renderer bloque la génération", () => {
-    // Chantier 2D-C — 044/096/176 sont désormais autorisées (registry) ;
-    // "110" reste interdite (aucune gate 110 côté moteur, voir
-    // lignes-simples.ts) et sert donc d'exemple de case sans mapping visuel.
-    assert.equal(isAuthorized2033ASliceCase("110"), false);
+  it("une case sans mapping visuel bloque la génération", () => {
+    // Chantier 2D-E3 — 110/180 sont désormais autorisées (registry), comme
+    // 044/096/176 l'étaient déjà depuis 2D-C : plus aucune case numérotée
+    // n'est structurellement interdite. "154" (Provisions pour risques,
+    // jamais modélisée, non_applicable structurel) sert d'exemple de case
+    // sans mapping visuel — jamais calibrée, jamais dans le registre.
+    assert.equal(isAuthorized2033ASliceCase("154"), false);
     const violations = runStructuralAndMappingGate({
       millesime: CERFA_2033A_MILLESIME,
-      forms: [{ form: CERFA_2033A_FORM_ID, cases: [cerfaCase("110", 1)] }],
+      forms: [{ form: CERFA_2033A_FORM_ID, cases: [cerfaCase("154", 1)] }],
     });
     assert.equal(violations[0]?.code, "case-sans-mapping-visuel");
-    assert.equal(violations[0]?.caseId, "110");
+    assert.equal(violations[0]?.caseId, "154");
   });
 });
 
@@ -841,5 +899,188 @@ describe("P1-PDF-02-F2 — 086 Disponibilités, colonne Amortissements-Provision
     }
     assert.ok(result.manifest.some((m) => m.caseId === "084"));
     assert.ok(!result.manifest.some((m) => m.caseId === "086"));
+  });
+});
+
+/**
+ * Chantier 2D-E3 — R7 : 110/180 réellement PRODUITES par le runtime.
+ *
+ * Contrairement à R1-R6 (qui injectent des CerfaCase littérales pour
+ * vérifier le registre/renderer indépendamment du moteur, exactement comme
+ * pour 044/096/112/176 depuis 2D-C), ce bloc construit une vraie RFS
+ * (assemblePatrimoine → map2033AFromRfs → generateCerfa2033AFromRfs) : les
+ * valeurs de 110/180 recherchées dans le PDF sont celles QUE LE MOTEUR A
+ * RÉELLEMENT CALCULÉES, jamais un nombre choisi indépendamment dans ce
+ * fichier. Fixture identique à celle déjà démontrée dans
+ * bilan-map-2033a-2d-totaux-generaux.test.ts (chantier 2D-E2) — mêmes
+ * valeurs, EQUILIBRE réel, 110 = 64800, 180 = 61800.
+ */
+const RUNTIME_TRUTH_FISCAL_RESULT: FiscalResult = {
+  exercice: 2025,
+  recettes: { total: 12000 },
+  charges: { totalDeductible: 4000, chargesExploitation: 4000, chargesFinancement: 0, chargesPreExploitation: 0, totalNonDeductible: 100 },
+  resultatAvantAmort: 7000,
+  amortCalcule: 1500,
+  amortDeduct: 1500,
+  amortReporte: 0,
+  amortReportesUtilises: 0,
+  resultatFiscal: 5500,
+  deficitNouveau: 0,
+  deficitsImputes: 0,
+  perteExceptionnelle: 0,
+  stocks: { deficits: [], amortissementsReportes: 0, deficitsExpires: [] },
+  trace: { ksArtifacts: ["TRF-0032"], computedAt: "2026-08-31T00:00:00.000Z", journal: [] },
+  status: "computed",
+  anomalies: [],
+};
+
+const RUNTIME_TRUTH_IMMOBILISATIONS: ImmobilisationsRfs = {
+  lignes: [{ label: "Composant", montant: 45000, dureeAnnees: 30, dotationExercice: 1500, amortissementsCumules: 1500, vnc: 43500 }],
+  totalAnnuelExercice: 1500,
+  totalBrut: 45000,
+  valeurTerrain: 15000,
+};
+
+const RUNTIME_TRUTH_EMPRUNT: PretFinancementExercice = {
+  pretId: "pret-1",
+  typePret: "amortissable",
+  interetsEmpruntExercice: 800,
+  interetsPreExploitation: 0,
+  assuranceEmpruntExercice: 100,
+  assurancePreExploitation: 0,
+  capitalRembourseExercice: 2000,
+  capitalRestantDu31_12: 20000,
+  fraisDossierDeductibles: 0,
+  garantieDeductible: 0,
+  iraDeductible: 0,
+};
+
+const RUNTIME_TRUTH_IDENTITE: IdentiteDeclarante = {
+  siren: "104545108",
+  siret: "10454510800011",
+  denomination: "Chantier 2D-E3 R7 — 110/180 vérité runtime",
+};
+
+const RUNTIME_TRUTH_BILAN_INPUTS: BilanInputs = {
+  tresorerie: { bankMode: "DEDIE", closingCash: 3000 },
+  compteExploitant: { ouverture: 37100, apports: 0, prelevements: 1000 },
+  ran: { situation: "NATIF" },
+  subventionsInvestissement: { status: "NUL_CONFIRME" },
+  tiers: {
+    creances: { status: "DECLARE", montant: 300 },
+    dettes: { status: "DECLARE", montant: 300 },
+    reconciliationEmprunts: "EMPRUNT_SEPARE_ET_EXCLU_DU_BUCKET",
+  },
+  lignesSimples: {
+    autresImmobilisationsIncorporellesBrut: { status: "DECLARE", montant: 500 }, // 014
+    immobilisationsFinancieresBrut: { status: "DECLARE", montant: 600 }, // 040
+    valeursMobilieresPlacementBrut: { status: "DECLARE", montant: 400 }, // 080
+    avancesAcomptesVerses: { status: "NUL_CONFIRME" }, // 064
+    chargesConstateesAvance: { status: "NUL_CONFIRME" }, // 092
+    produitsConstatesAvance: { status: "NUL_CONFIRME" }, // 174
+    autresDettes: { status: "NUL_CONFIRME" }, // 175
+  },
+  ventilationTiers: {
+    postes: [
+      { nature: "LOYER_DU_PAR_LOCATAIRE", montant: 100 }, // 068
+      { nature: "AUTRE_CREANCE_ACTIVITE", montant: 200 }, // 072 — creances : 300
+      { nature: "ACOMPTE_RECU_SUR_COMMANDE", montant: 100 }, // 164
+      { nature: "FOURNISSEUR_NON_PAYE", montant: 100 }, // 166
+      { nature: "DETTE_FISCALE_OU_SOCIALE", montant: 100 }, // 172 — dettes : 300
+    ],
+  },
+};
+
+function buildRuntimeTruthRfs(): FiscalRepresentation {
+  return {
+    exercice: RUNTIME_TRUTH_FISCAL_RESULT.exercice,
+    identite: RUNTIME_TRUTH_IDENTITE,
+    fiscalResult: RUNTIME_TRUTH_FISCAL_RESULT,
+    immobilisations: RUNTIME_TRUTH_IMMOBILISATIONS,
+    emprunts: [RUNTIME_TRUTH_EMPRUNT],
+    trace: {
+      ksArtifacts: RUNTIME_TRUTH_FISCAL_RESULT.trace.ksArtifacts,
+      assembledAt: "2026-08-31T00:00:00.000Z",
+      sourceFiscalResultAt: RUNTIME_TRUTH_FISCAL_RESULT.trace.computedAt,
+      sources: { identite: "IdentiteDeclarante (ENT-013)", fiscalResult: "FiscalResult (F-006)" },
+    },
+  };
+}
+
+describe("P1-PDF-02-C/2D-E3 — R7 : 110/180 réellement produites par le runtime (pas un calcul local)", () => {
+  it("le moteur calcule bien 110 = 64800 et 180 = 61800 sur cette fixture (préalable, avant toute génération PDF)", () => {
+    const rfsSansPatrimoine = buildRuntimeTruthRfs();
+    const patrimoine = assemblePatrimoine(rfsSansPatrimoine, RUNTIME_TRUTH_BILAN_INPUTS);
+    const equilibre = checkBilanEquilibre({ patrimoine });
+    assert.equal(equilibre.status, "EQUILIBRE", JSON.stringify(equilibre.reasons));
+    const form = map2033AFromRfs({ ...rfsSansPatrimoine, patrimoine });
+    assert.equal(form.cases.find((c) => c.caseId === "044")?.value, 61100);
+    assert.equal(form.cases.find((c) => c.caseId === "096")?.value, 3700);
+    assert.equal(form.cases.find((c) => c.caseId === "110")?.value, 64800);
+    assert.equal(form.cases.find((c) => c.caseId === "142")?.value, 41500);
+    assert.equal(form.cases.find((c) => c.caseId === "176")?.value, 20300);
+    assert.equal(form.cases.find((c) => c.caseId === "180")?.value, 61800);
+  });
+
+  it("le PDF réellement généré porte la valeur RÉELLE (64800/61800) de 110/180, à la position calibrée, colonne correcte, occurrence unique", async () => {
+    const rfsSansPatrimoine = buildRuntimeTruthRfs();
+    const patrimoine = assemblePatrimoine(rfsSansPatrimoine, RUNTIME_TRUTH_BILAN_INPUTS);
+    const rfs = { ...rfsSansPatrimoine, patrimoine };
+    const result = await generateCerfa2033AFromRfs({
+      rfs,
+      declarationVersionId: "decl-version-2033a-r7-runtime-truth",
+      generatedAt: "2026-09-07T00:00:00.000Z",
+    });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée :\n${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+
+    assert.ok(result.manifest.some((m) => m.caseId === "110"));
+    assert.ok(result.manifest.some((m) => m.caseId === "180"));
+
+    const overflowDoc = await PDFDocument.create();
+    const font = await overflowDoc.embedFont(StandardFonts.Helvetica);
+    const strings = await extractDrawnStringsForPage(result.pdfBytes, 1);
+    const drawn = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+    const pdf = await PDFDocument.load(result.pdfBytes);
+    const pageHeight = pdf.getPages()[0].getHeight();
+
+    const text110 = formatCerfaValue(64_800, "eur-arrondi");
+    const text180 = formatCerfaValue(61_800, "eur-arrondi");
+    assert.equal(text110, "64 800");
+    assert.equal(text180, "61 800");
+
+    // Occurrence unique de chaque valeur sur la page entière (aucune autre
+    // case de ce dossier ne partage ces montants).
+    assert.equal(strings.filter((s) => s === text110).length, 1, "64 800 doit apparaître exactement une fois");
+    assert.equal(strings.filter((s) => s === text180).length, 1, "61 800 doit apparaître exactement une fois");
+
+    const mapping110 = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, "110")!;
+    const mapping180 = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, "180")!;
+    assert.equal(mapping110.position.x, 372.3, "110 : ancrage Brut (chantier 2D-D)");
+    assert.equal(mapping110.position.y, 426.56, "110 : y calibré chantier 2D-D");
+    assert.equal(mapping180.position.x, 566.6, "180 : ancrage NET Passif (chantier 2D-D)");
+    assert.equal(mapping180.position.y, 752.56, "180 : y calibré chantier 2D-D");
+
+    const baseline110 = toPdfLibPoint(mapping110.position, pageHeight);
+    const baseline180 = toPdfLibPoint(mapping180.position, pageHeight);
+    const width110 = font.widthOfTextAtSize(text110, 9);
+    const width180 = font.widthOfTextAtSize(text180, 9);
+
+    const hit110 = drawn.find((d) => d.text === text110 && Math.abs(d.pdfLibY - baseline110.y) < 0.05);
+    const hit180 = drawn.find((d) => d.text === text180 && Math.abs(d.pdfLibY - baseline180.y) < 0.05);
+    assert.ok(hit110, "110 introuvable à la position calibrée");
+    assert.ok(hit180, "180 introuvable à la position calibrée");
+
+    // Colonne Brut pour 110 (jamais Net) ; colonne NET pour 180 (jamais Brut/Amort.).
+    assert.ok(hit110!.pdfLibX + width110 < NET_ACTIF.xMin, "110 ne doit pas écrire dans le Net actif");
+    assert.ok(hit110!.pdfLibX <= AMORT_COLUMN.xMin + 0.5, "110 ne doit pas écrire dans la colonne Amort.");
+    assert.ok(hit180!.pdfLibX >= NET_ACTIF.xMin - 0.5, "180 doit être en colonne NET, jamais Brut/Amort. actif");
+
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+    const outputPath = path.join(OUTPUT_DIR, "p1-pdf-02d-e3-2033a-110-180-runtime-truth.pdf");
+    writeFileSync(outputPath, result.pdfBytes);
+    console.log(`Chantier 2D-E3 R7 output: ${outputPath}`);
   });
 });

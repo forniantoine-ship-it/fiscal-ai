@@ -1,5 +1,5 @@
 /**
- * Périmètre du vertical slice P1-PDF-02-C/2B/2D-C — 2033-A-SD / millésime 2026.
+ * Périmètre du vertical slice P1-PDF-02-C/2B/2D-C/2D-E3 — 2033-A-SD / millésime 2026.
  *
  * Aucune règle fiscale : seulement la couverture PDF autorisée.
  *
@@ -12,9 +12,13 @@
  * sortent à leur tour de l'interdiction : câblés côté moteur au chantier
  * 2D-B via `gateTotal044ActifImmobiliseBrut`/`gateTotal096AvecVentilation`/
  * `gateTotal176AvecVentilation` (chantier 2C), calibrés indépendamment
- * (PyMuPDF, chantier 2D-A). Les cases interdites restantes (110/180) restent
- * hors registre et hors publication : aucune gate n'existe encore pour elles
- * côté moteur (voir `lignes-simples.ts`).
+ * (PyMuPDF, chantier 2D-A).
+ *
+ * Chantier 2D-E3 — totaux généraux 110 (Brut) et 180 (NET, total passif)
+ * sortent à leur tour de l'interdiction : câblés côté moteur au chantier
+ * 2D-E2 via `gateTotal110`/`gateTotal180` (chantier 2D-E1), calibrés
+ * indépendamment (PyMuPDF, chantier 2D-D). Plus aucune case n'est
+ * structurellement interdite dans ce registre.
  */
 export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "016",
@@ -32,6 +36,7 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "094",
   "096",
   "098",
+  "110",
   "112",
   "120",
   "134",
@@ -40,14 +45,12 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "142",
   "156",
   "176",
+  "180",
 ] as const;
 
 export type Cerfa2033ARegistryCaseId = (typeof CERFA_2033A_REGISTRY_CASE_IDS)[number];
 
-export const CERFA_2033A_FORBIDDEN_CASE_IDS = [
-  "110",
-  "180",
-] as const;
+export const CERFA_2033A_FORBIDDEN_CASE_IDS = [] as const;
 
 export type Cerfa2033AColumn = "Brut" | "Amortissements-Provisions" | "NET";
 
@@ -67,6 +70,7 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "094": "Amortissements-Provisions",
   "096": "Brut",
   "098": "Amortissements-Provisions",
+  "110": "Brut",
   "112": "Amortissements-Provisions",
   "120": "NET",
   "134": "NET",
@@ -75,6 +79,7 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "142": "NET",
   "156": "NET",
   "176": "NET",
+  "180": "NET",
 };
 
 export function isAuthorized2033ASliceCase(caseId: string): caseId is Cerfa2033ARegistryCaseId {
