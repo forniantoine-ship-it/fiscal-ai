@@ -3,8 +3,12 @@ import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
-import { gateTotal048, gateTotal098, gateTotal112 } from "../../bilan/lignes-simples";
-import { resolveCaseAvecVentilationPrioritaire } from "../../bilan/ventilation-tiers";
+import { gateTotal044ActifImmobiliseBrut, gateTotal048, gateTotal098, gateTotal112 } from "../../bilan/lignes-simples";
+import {
+  gateTotal096AvecVentilation,
+  gateTotal176AvecVentilation,
+  resolveCaseAvecVentilationPrioritaire,
+} from "../../bilan/ventilation-tiers";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
 import type { LignePatrimonialeResolution } from "../../bilan/types";
 
@@ -164,6 +168,29 @@ function traceTotalAmortFeuilles(
     return `${id}(${val},${statut})`;
   });
   return `${totalCaseId} = ${formule} = ${termes.join(" + ")} — somme des feuilles publiables uniquement, jamais de bruts ni sous-totaux`;
+}
+
+/**
+ * Chantier 2D-B — variante colonne-agnostique de `traceTotalAmortFeuilles`,
+ * pour les totaux 044 (Brut) et 176 (Dettes, colonne NET unique) : la garde
+ * "jamais de bruts" de la variante Amort n'a pas de sens pour un total qui
+ * additionne lui-même des feuilles Brut/NET. Même mécanique, formulation
+ * générique. N'affecte pas 048/098/112 (inchangés, utilisent toujours
+ * `traceTotalAmortFeuilles`).
+ */
+function traceTotalFeuilles(
+  totalCaseId: string,
+  formule: string,
+  caseIds: readonly string[],
+  cases: CerfaCase[],
+  statuts: Record<string, string>,
+): string {
+  const termes = caseIds.map((id) => {
+    const val = cases.find((c) => c.caseId === id)?.value;
+    const statut = statuts[id] ?? "publié";
+    return `${id}(${val},${statut})`;
+  });
+  return `${totalCaseId} = ${formule} = ${termes.join(" + ")} — somme des feuilles publiables uniquement, jamais une composante non publiée ni un sous-total partiel`;
 }
 
 export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
@@ -740,6 +767,128 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
 
+    // Chantier 2D-B — total 044 (colonne Brut). Formule Cerfa :
+    // 044 = 010 + 014 + 028 + 040. 010 (Fonds commercial, brut) est
+    // catégoriquement 0 pour un LMNP (`non_applicable`, hors composante de
+    // la gate — voir `gateTotal044ActifImmobiliseBrut`). 014/040 proviennent
+    // de `lignesSimples` (G2, déjà publiées ci-dessus) ; 028 provient du
+    // registre patrimonial (branche 028/030 plus haut) et nécessite un flag
+    // de publication réelle, même doctrine que `case030Published` pour 048.
+    const case028Published = cases.some((c) => c.caseId === "028");
+    const case028Blocked = casesNonAlimentees.find((c) => c.caseId === "028");
+    const gate044 = gateTotal044ActifImmobiliseBrut(ls, case028Published, case028Blocked?.raison);
+    if (gate044.status === "COMPOSANTES_CONNUES") {
+      const composantes044 = ["014", "028", "040"] as const;
+      const total044 = sommeFeuillesPubliables(cases, composantes044);
+      cases.push({
+        caseId: "044",
+        label: "Total I — Actif immobilisé (brut)",
+        value: total044,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalFeuilles("044", "014 + 028 + 040", composantes044, cases, {
+            "014": statutFeuillePourTrace(ls.autresImmobilisationsIncorporellesBrut),
+            "028": "publié (registre immobilisations corporelles)",
+            "040": statutFeuillePourTrace(ls.immobilisationsFinancieresBrut),
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "044",
+        label: "Total I — Actif immobilisé (brut)",
+        raison: gate044.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
+    // Chantier 2D-B — total 096 (colonne Brut). Formule Cerfa :
+    // 096 = 050 + 060 + 064 + 068 + 072 + 080 + 084 + 092. 050/060 (stocks/
+    // marchandises) catégoriquement 0 pour un LMNP, hors composantes. 064/092
+    // réconciliées par `resolveCaseAvecVentilationPrioritaire` — jamais une
+    // logique locale différente (même fonction que celle qui a réellement
+    // publié ces cases ci-dessus, ligne 611/617). 068/072 proviennent de
+    // `ventilationTiers` seul ; 080 de `lignesSimples` seul ; 084
+    // (Disponibilités, brut) provient de `patrimoine.tresorerie`, mécanisme
+    // entièrement séparé — nécessite un flag de publication réelle.
+    const resolution064PourTrace = resolveCaseAvecVentilationPrioritaire("064", ls.avancesAcomptesVerses, vt.cases.avancesAcomptesVerses);
+    const resolution092PourTrace = resolveCaseAvecVentilationPrioritaire("092", ls.chargesConstateesAvance, vt.cases.chargesConstateesAvance);
+    const case084Published = cases.some((c) => c.caseId === "084");
+    const case084Blocked = casesNonAlimentees.find((c) => c.caseId === "084");
+    const gate096 = gateTotal096AvecVentilation(ls, vt, case084Published, case084Blocked?.raison);
+    if (gate096.status === "COMPOSANTES_CONNUES") {
+      const composantes096 = ["064", "068", "072", "080", "084", "092"] as const;
+      const total096 = sommeFeuillesPubliables(cases, composantes096);
+      cases.push({
+        caseId: "096",
+        label: "Total II — Actif circulant (brut)",
+        value: total096,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalFeuilles("096", "064 + 068 + 072 + 080 + 084 + 092", composantes096, cases, {
+            "064": statutFeuillePourTrace(resolution064PourTrace),
+            "068": statutFeuillePourTrace(vt.cases.clients),
+            "072": statutFeuillePourTrace(vt.cases.autresCreances),
+            "080": statutFeuillePourTrace(ls.valeursMobilieresPlacementBrut),
+            "084": "publié (patrimoine.tresorerie)",
+            "092": statutFeuillePourTrace(resolution092PourTrace),
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "096",
+        label: "Total II — Actif circulant (brut)",
+        raison: gate096.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
+    // Chantier 2D-B — total 176 (colonne NET, Dettes). Formule Cerfa :
+    // 176 = 156 + 164 + 166 + 172 + 173 + 174 + 175. 173 (comptes courants
+    // d'associés) catégoriquement 0 pour une EI, hors composante. 174/175
+    // réconciliées par `resolveCaseAvecVentilationPrioritaire` (même fonction
+    // qui a publié ces cases ci-dessus). 164/166/172 proviennent de
+    // `ventilationTiers` seul. 156 (Emprunts) provient de F-011/
+    // `patrimoine.emprunts`, peut être `DIVERGENT` — nécessite un flag de
+    // publication réelle ; une divergence bloque 176 comme n'importe quelle
+    // composante non publiée, jamais silencieusement ignorée.
+    const resolution174PourTrace = resolveCaseAvecVentilationPrioritaire("174", ls.produitsConstatesAvance, vt.cases.produitsConstatesAvance);
+    const resolution175PourTrace = resolveCaseAvecVentilationPrioritaire("175", ls.autresDettes, vt.cases.autresDettes);
+    const case156Published = cases.some((c) => c.caseId === "156");
+    const case156Blocked = casesNonAlimentees.find((c) => c.caseId === "156");
+    const gate176 = gateTotal176AvecVentilation(ls, vt, case156Published, case156Blocked?.raison);
+    if (gate176.status === "COMPOSANTES_CONNUES") {
+      const composantes176 = ["156", "164", "166", "172", "174", "175"] as const;
+      const total176 = sommeFeuillesPubliables(cases, composantes176);
+      cases.push({
+        caseId: "176",
+        label: "Total III — Dettes",
+        value: total176,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalFeuilles("176", "156 + 164 + 166 + 172 + 174 + 175", composantes176, cases, {
+            "156": "publié (F-011/patrimoine.emprunts)",
+            "164": statutFeuillePourTrace(vt.cases.avancesAcomptesRecus),
+            "166": statutFeuillePourTrace(vt.cases.fournisseurs),
+            "172": statutFeuillePourTrace(vt.cases.dettesFiscalesSociales),
+            "174": statutFeuillePourTrace(resolution174PourTrace),
+            "175": statutFeuillePourTrace(resolution175PourTrace),
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "176",
+        label: "Total III — Dettes",
+        raison: gate176.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
     // Totaux — correction P0-4 (audit indépendant). Avant cette correction,
     // le fait que le SOUS-ENSEMBLE suivi par ce module (immobilisations
     // corporelles + trésorerie + tiers, compte de l'exploitant + RAN +
@@ -755,11 +904,12 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // comme nulles est une donnée FAUSSE, pas une donnée manquante : `044`,
     // `048`, `096`, `098`, `110`, `112`, `176` et `180` ne sont donc PLUS
     // jamais produits ici à partir d'un sous-ensemble équilibré seul — sauf
-    // 048/098 (P1-PDF-02-F4-C) lorsque TOUTES leurs feuilles Amort sont
-    // publiables via `gateTotal048` / `gateTotal098` (F4-C), et sauf 112
-    // (P1-PDF-02-F4-D) lorsque 048 ET 098 sont réellement publiées via
-    // `gateTotal112` (F4-D). 110/180 (colonne Brut / total passif) restent
-    // interdits — aucune gate équivalente n'existe pour eux.
+    // 048/098 (P1-PDF-02-F4-C), 112 (P1-PDF-02-F4-D), et 044/096/176
+    // (chantier 2D-B) lorsque TOUTES leurs composantes réelles sont
+    // publiables via leurs gates respectives (`gateTotal044ActifImmobiliseBrut`,
+    // `gateTotal096AvecVentilation`, `gateTotal176AvecVentilation`, chantier
+    // 2C). 110/180 (total général Brut / total général passif) restent seuls
+    // interdits — aucune gate équivalente n'existe encore pour eux.
     //
     // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Correction
     // P1-A (audit indépendant, asymétrie 142/137) : le calcul et le gate de
