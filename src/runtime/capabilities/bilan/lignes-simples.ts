@@ -5,6 +5,7 @@ import type {
   LignesSimplesInputs,
   LignesSimplesResolution,
 } from "./types";
+import type { TotalCapitauxPropresResolution } from "./total-capitaux-propres";
 
 /**
  * Résout une ligne patrimoniale « ouverte » P1-B.2 : peut exister en LMNP,
@@ -301,6 +302,118 @@ export function gateTotal112(
       status: "BLOQUE",
       casesInconnues: ["098"],
       raison: `Total 112 (Total général actif (I + II) (amortissements-provisions)) non publiable : composante 098 non publiable — ${raison098} Absence de donnée ≠ zéro ; 112 ne peut jamais être déduit de 110 − 180.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
+}
+
+/**
+ * Chantier 2D-E1 — gate 110 (colonne Brut).
+ * Formule Cerfa : `110 = 044 + 096` (Total général actif = Total I + Total
+ * II, colonne Brut — symétrique de 112 côté Amortissements-Provisions).
+ * Jamais déduit de 112/180 : `(110 − 112) = 180` n'est qu'un contrôle
+ * d'équilibre a posteriori (`check-bilan-equilibre.ts`), jamais un chemin de
+ * calcul — et `checkBilanEquilibre().totalActifBrut` n'est JAMAIS une source
+ * pour 110 : cette valeur appartient exclusivement au mécanisme de contrôle
+ * (reconstruction locale distincte, composantes différentes), jamais à la
+ * production d'une case Cerfa.
+ *
+ * Ne recalcule PAS 044/096 : consomme leur gate déjà résolue par l'appelant
+ * ET un flag de publication réelle (`case044Published`/`case096Published`),
+ * même doctrine que `case048Published`/`case098Published` pour 112. 110
+ * n'est publiable que si les DEUX totaux sont réellement publiables —
+ * jamais une somme partielle.
+ */
+export function gateTotal110(
+  gate044: GateTotalComposantesResult,
+  gate096: GateTotalComposantesResult,
+  case044Published: boolean,
+  case096Published: boolean,
+): GateTotalComposantesResult {
+  const raison044 =
+    gate044.status === "BLOQUE" ? gate044.raison : !case044Published ? "composante 044 non publiée par le mapper." : undefined;
+  const raison096 =
+    gate096.status === "BLOQUE" ? gate096.raison : !case096Published ? "composante 096 non publiée par le mapper." : undefined;
+
+  if (raison044 !== undefined && raison096 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["044", "096"],
+      raison: `Total 110 (Total général actif (I + II) (brut)) non publiable : composantes 044 et 096 non publiables — ${raison044} ${raison096} Absence de donnée ≠ zéro ; 110 ne peut jamais être déduit de 112/180.`,
+    };
+  }
+  if (raison044 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["044"],
+      raison: `Total 110 (Total général actif (I + II) (brut)) non publiable : composante 044 non publiable — ${raison044} Absence de donnée ≠ zéro ; 110 ne peut jamais être déduit de 112/180.`,
+    };
+  }
+  if (raison096 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["096"],
+      raison: `Total 110 (Total général actif (I + II) (brut)) non publiable : composante 096 non publiable — ${raison096} Absence de donnée ≠ zéro ; 110 ne peut jamais être déduit de 112/180.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
+}
+
+/**
+ * Chantier 2D-E1 — gate 180 (colonne NET, Total général passif).
+ * Formule Cerfa : `180 = 142 + 154 + 176`. 154 (Provisions pour risques et
+ * charges) est catégoriquement 0 pour le produit actuel (aucune provision
+ * modélisée, `non_applicable` structurel — voir `map-2033a.ts`,
+ * `toujoursBloquees`) : jamais une composante calculée, jamais un faux 0
+ * publié — simplement hors de la somme opérationnelle, exactement comme
+ * 010/050/060 le sont déjà pour 044/096 et 173 pour 176.
+ *
+ * 142 (Total I — Capitaux propres) ne provient pas d'une
+ * `GateTotalComposantesResult` mais de `resolveTotalCapitauxPropres()`
+ * (total-capitaux-propres.ts, correction P1-A) — statut
+ * `TotalCapitauxPropresResolution` distinct (`DISPONIBLE`/`BLOQUE`),
+ * consommé tel quel, jamais recalculé ici. `checkBilanEquilibre().totalPassif`
+ * n'est JAMAIS une source pour 180, pour la même raison que pour 110 :
+ * reconstruction locale distincte réservée au contrôle d'équilibre.
+ *
+ * Ne recalcule PAS 142/176 : consomme leur résolution déjà faite par
+ * l'appelant ET un flag de publication réelle (`case142Published`/
+ * `case176Published`), même doctrine que pour 048/098/110/112.
+ */
+export function gateTotal180(
+  totalCapitauxPropres: TotalCapitauxPropresResolution,
+  gate176: GateTotalComposantesResult,
+  case142Published: boolean,
+  case176Published: boolean,
+): GateTotalComposantesResult {
+  const raison142 =
+    totalCapitauxPropres.status === "BLOQUE"
+      ? totalCapitauxPropres.raison
+      : !case142Published
+        ? "composante 142 non publiée par le mapper."
+        : undefined;
+  const raison176 =
+    gate176.status === "BLOQUE" ? gate176.raison : !case176Published ? "composante 176 non publiée par le mapper." : undefined;
+
+  if (raison142 !== undefined && raison176 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["142", "176"],
+      raison: `Total 180 (Total général passif (I + II + III)) non publiable : composantes 142 et 176 non publiables — ${raison142} ${raison176} Absence de donnée ≠ zéro.`,
+    };
+  }
+  if (raison142 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["142"],
+      raison: `Total 180 (Total général passif (I + II + III)) non publiable : composante 142 non publiable — ${raison142} Absence de donnée ≠ zéro.`,
+    };
+  }
+  if (raison176 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["176"],
+      raison: `Total 180 (Total général passif (I + II + III)) non publiable : composante 176 non publiable — ${raison176} Absence de donnée ≠ zéro.`,
     };
   }
   return { status: "COMPOSANTES_CONNUES" };

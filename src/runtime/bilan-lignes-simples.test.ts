@@ -11,11 +11,15 @@ import { assemblePatrimoine } from "./capabilities/bilan/assemble-patrimoine";
 import {
   gateTotal044ActifImmobiliseBrut,
   gateTotal096ActifCirculantBrut,
+  gateTotal110,
   gateTotal176Dettes,
+  gateTotal180,
   resolveLignePatrimonialeOuverte,
   resolveLignesSimples,
 } from "./capabilities/bilan/lignes-simples";
 import { resolveSubventionsInvestissement } from "./capabilities/bilan/subventions-investissement";
+import type { GateTotalComposantesResult } from "./capabilities/bilan/lignes-simples";
+import type { TotalCapitauxPropresResolution } from "./capabilities/bilan/total-capitaux-propres";
 import type { BilanInputs, LignesSimplesResolution } from "./capabilities/bilan/types";
 import type { FiscalResult } from "./capabilities/f006/types";
 import type { IdentiteDeclarante } from "./capabilities/f007/types";
@@ -180,6 +184,91 @@ describe("Chantier 2C — gateTotal044ActifImmobiliseBrut corrigée (composante 
     const sans028 = gateTotal044ActifImmobiliseBrut(toutesConnues(), false);
     assert.equal(connu.status, "COMPOSANTES_CONNUES");
     assert.equal(sans028.status, "BLOQUE");
+  });
+});
+
+const GATE_CONNUE: GateTotalComposantesResult = { status: "COMPOSANTES_CONNUES" };
+function gateBloquee(raison: string, casesInconnues: string[]): GateTotalComposantesResult {
+  return { status: "BLOQUE", raison, casesInconnues };
+}
+
+describe("Chantier 2D-E1 — gateTotal110 (110 = 044 + 096, colonne Brut)", () => {
+  it("A — 044 et 096 publiées → COMPOSANTES_CONNUES", () => {
+    const gate = gateTotal110(GATE_CONNUE, GATE_CONNUE, true, true);
+    assert.equal(gate.status, "COMPOSANTES_CONNUES");
+  });
+
+  it("B — 044 bloquée (gate BLOQUE) → 110 bloqué en mentionnant 044", () => {
+    const gate = gateTotal110(gateBloquee("014 INCONNU", ["014"]), GATE_CONNUE, false, true);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("044"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composante 044 non publiable.*014 INCONNU/);
+  });
+
+  it("C — 096 bloquée (gate BLOQUE) → 110 bloqué en mentionnant 096", () => {
+    const gate = gateTotal110(GATE_CONNUE, gateBloquee("084 non publiable", ["084"]), true, false);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("096"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composante 096 non publiable.*084 non publiable/);
+  });
+
+  it("D — 044 ET 096 bloquées → 110 bloqué en mentionnant les deux, raison cohérente", () => {
+    const gate = gateTotal110(gateBloquee("014 INCONNU", ["014"]), gateBloquee("084 non publiable", ["084"]), false, false);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("044") && gate.casesInconnues.includes("096"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composantes 044 et 096 non publiables/);
+  });
+
+  it("Divergence gate/publication — gate044 COMPOSANTES_CONNUES mais case044Published=false → 110 bloqué (une gate seule ne suffit jamais)", () => {
+    const gate = gateTotal110(GATE_CONNUE, GATE_CONNUE, false, true);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("044"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /044 non publiée par le mapper/);
+  });
+});
+
+describe("Chantier 2D-E1 — gateTotal180 (180 = 142 + 176, 154 non_applicable, colonne NET Passif)", () => {
+  const CAPITAUX_DISPONIBLE: TotalCapitauxPropresResolution = { status: "DISPONIBLE", montant: 41500 };
+  const CAPITAUX_BLOQUE: TotalCapitauxPropresResolution = { status: "BLOQUE", raison: "137 INCONNU" };
+
+  it("A — 142 et 176 publiées → COMPOSANTES_CONNUES", () => {
+    const gate = gateTotal180(CAPITAUX_DISPONIBLE, GATE_CONNUE, true, true);
+    assert.equal(gate.status, "COMPOSANTES_CONNUES");
+  });
+
+  it("B — 142 bloquée (totalCapitauxPropres BLOQUE) → 180 bloqué en mentionnant 142", () => {
+    const gate = gateTotal180(CAPITAUX_BLOQUE, GATE_CONNUE, false, true);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("142"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composante 142 non publiable.*137 INCONNU/);
+  });
+
+  it("C — 176 bloquée (gate BLOQUE) → 180 bloqué en mentionnant 176", () => {
+    const gate = gateTotal180(CAPITAUX_DISPONIBLE, gateBloquee("156 non publiable", ["156"]), true, false);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("176"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composante 176 non publiable.*156 non publiable/);
+  });
+
+  it("D — 142 ET 176 bloquées → 180 bloqué en mentionnant les deux", () => {
+    const gate = gateTotal180(CAPITAUX_BLOQUE, gateBloquee("156 non publiable", ["156"]), false, false);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("142") && gate.casesInconnues.includes("176"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /composantes 142 et 176 non publiables/);
+  });
+
+  it("Divergence gate/publication — 142 DISPONIBLE mais case142Published=false → 180 bloqué (une résolution seule ne suffit jamais)", () => {
+    const gate = gateTotal180(CAPITAUX_DISPONIBLE, GATE_CONNUE, false, true);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("142"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /142 non publiée par le mapper/);
+  });
+
+  it("154 n'est jamais une composante vérifiée — un total 176 seul, sans aucune référence à 154, suffit à publier 180", () => {
+    const gate = gateTotal180(CAPITAUX_DISPONIBLE, GATE_CONNUE, true, true);
+    assert.equal(gate.status, "COMPOSANTES_CONNUES");
+    // Aucune trace de "154" dans un éventuel blocage : le forcer bloqué le prouverait déjà,
+    // mais on vérifie ici l'absence de toute dépendance à 154 dans le cas nominal.
   });
 });
 
