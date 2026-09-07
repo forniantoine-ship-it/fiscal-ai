@@ -29,10 +29,17 @@
  * d'audit 2A). Même colonne Amort. que 030/086 déjà calibrées : x=479.19
  * (ancrage colonne, inchangé), seul y varie par ligne.
  *
- * INTERDIT dans ce registre : 110, 180, 044, 096, 176, et toute pseudo-case
- * pour la colonne Net de l'actif (non numérotée). 048/098/112 ne sont plus
- * interdites (chantier 2B) — leurs gates moteur (`gateTotal048/098/112`)
- * sont câblées et testées (F4-C/F4-D).
+ * Chantier 2D-C — totaux 044 (Brut, même colonne que 028/084, x=372.3) et
+ * 096 (Brut, idem) et 176 (NET Passif, même colonne que 120/134/136/137/
+ * 142/156, x=566.6) : positions ré-extraites indépendamment (PyMuPDF,
+ * chantier 2D-A), même méthode que le chantier 2A.
+ *
+ * INTERDIT dans ce registre : 110, 180, et toute pseudo-case pour la colonne
+ * Net de l'actif (non numérotée). 048/098/112 (chantier 2B) et 044/096/176
+ * (chantier 2D-C) ne sont plus interdites — leurs gates moteur
+ * (`gateTotal048/098/112` F4-C/F4-D ; `gateTotal044ActifImmobiliseBrut`/
+ * `gateTotal096AvecVentilation`/`gateTotal176AvecVentilation` chantier 2C)
+ * sont câblées et testées.
  */
 import type { CerfaVisualMapping } from "../../types";
 import { topLeft } from "../../types";
@@ -117,6 +124,11 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     278.58,
     "Colonne Amortissements-Provisions. Total I — Actif immobilisé (= 016+030+042). Boîte valeur [389.98,480.69]×[275.16,289.96] (chantier 2A, PyMuPDF). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
   ),
+  brut(
+    "044",
+    278.58,
+    "Colonne Brut. Total I — Actif immobilisé (= 014+028+040, 010 non applicable). Boîte valeur [283.74,373.80]×[275.16,289.96] (chantier 2D-A, PyMuPDF, même ligne que 048). y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
+  ),
   amort(
     "066",
     322.97,
@@ -157,6 +169,11 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     411.17,
     "Colonne Amortissements-Provisions. Total II — Actif circulant (= 066+070+074+082+086+094). Boîte valeur [389.98,480.69]×[407.77,422.57] (chantier 2A, PyMuPDF, confirmé par ligne de grille). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
   ),
+  brut(
+    "096",
+    411.17,
+    "Colonne Brut. Total II — Actif circulant (= 064+068+072+080+084+092, 050/060 non applicables). Boîte valeur [283.74,373.80]×[407.77,422.57] (chantier 2D-A, PyMuPDF, confirmé par ligne de grille, même ligne que 098). y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
+  ),
   amort(
     "112",
     426.56,
@@ -191,5 +208,10 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     "156",
     631.06,
     "Colonne NET. Emprunts et dettes assimilées. Boîte valeur P1-PDF-02-B [480.69,568.10]×[627.59,642.38]. y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "176",
+    737.27,
+    "Colonne NET. Total III — Dettes (= 156+164+166+172+174+175, 173 non applicable). Boîte valeur [480.69,568.10]×[733.81,748.61] (chantier 2D-A, PyMuPDF, confirmé par ligne de grille). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
   ),
 ];
