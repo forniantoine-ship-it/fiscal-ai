@@ -898,15 +898,16 @@ describe("Oracle de position indépendant — 2033-C-SD (GO-1/GO-2, huit cases)"
 // "Amortissements – Provisions" / "NET"), et bande de ligne (par mi-distance
 // avec les cases voisines de la même colonne, jamais une constante à part).
 
-// Les 25 cases actuellement rendues — recopiées ici (jamais importées de
+// Les 30 cases actuellement rendues — recopiées ici (jamais importées de
 // `scope/2033-a-2026`) pour que ce fichier reste un oracle autonome, comme
-// les listes 2033-C ci-dessus.
+// les listes 2033-C ci-dessus. 064/080/092/174/175 ajoutées au chantier
+// P1-B2 (5 lignes Brut/NET collectées par P1-B1).
 const CASE_IDS_2033A_ORACLE = [
   "016", "028", "030", "042", "044", "048",
-  "066", "070", "074", "082", "084", "086", "094", "096", "098",
+  "064", "066", "070", "074", "080", "082", "084", "086", "092", "094", "096", "098",
   "110", "112",
   "120", "134", "136", "137", "142",
-  "156", "176", "180",
+  "156", "174", "175", "176", "180",
 ] as const;
 
 // Doctrine de colonne attendue, établie à partir de la lecture du Cerfa
@@ -939,6 +940,11 @@ const EXPECTED_COLUMN_2033A: Record<(typeof CASE_IDS_2033A_ORACLE)[number], "Bru
   "156": "NET",
   "176": "NET",
   "180": "NET",
+  "064": "Brut",
+  "080": "Brut",
+  "092": "Brut",
+  "174": "NET",
+  "175": "NET",
 };
 
 function cerfaCase2033AOracle(caseId: string, value: number): CerfaCase {
@@ -956,13 +962,14 @@ const ORACLE_TEST_VALUES: Record<(typeof CASE_IDS_2033A_ORACLE)[number], number>
   "094": 13_013, "096": 14_014, "098": 15_015, "110": 16_016, "112": 17_017,
   "120": -18_018, "134": 1_901_919, "136": 20_020, "137": 21_021, "142": 22_022,
   "156": 23_023, "176": 24_024, "180": 25_025,
+  "064": 26_026, "080": 27_027, "092": 28_028, "174": 29_029, "175": 30_030,
 };
 
-describe("Oracle de position indépendant — 2033-A-SD (25 cases, CHANTIER P0 post-E3)", () => {
-  it("A — sanity check : les 25 boîtes de valeur existent, largeur positive, disjointes de leur zone-numéro, colonne cohérente avec les en-têtes officiels", async () => {
+describe("Oracle de position indépendant — 2033-A-SD (30 cases, CHANTIER P0 post-E3 + P1-B2)", () => {
+  it("A — sanity check : les 30 boîtes de valeur existent, largeur positive, disjointes de leur zone-numéro, colonne cohérente avec les en-têtes officiels", async () => {
     const bytes = readAssetBytes(2026, "2033-sd.pdf");
     const boxes = await derive2033ACaseBoxes(bytes);
-    assert.equal(boxes.size, 25, "les 25 cases actuellement rendues doivent toutes être calibrables indépendamment");
+    assert.equal(boxes.size, 30, "les 30 cases actuellement rendues doivent toutes être calibrables indépendamment");
 
     for (const caseId of CASE_IDS_2033A_ORACLE) {
       const box = boxes.get(caseId);
@@ -982,7 +989,7 @@ describe("Oracle de position indépendant — 2033-A-SD (25 cases, CHANTIER P0 p
     assert.ok(families["Amortissements-Provisions"].xMax <= families.NET.xMin + 0.1, "Amortissements-Provisions doit se terminer avant NET");
   });
 
-  it("A ter — dans chaque colonne, les bandes de ligne des 25 cases ne se chevauchent jamais (aucune ambiguïté ligne-à-ligne possible)", async () => {
+  it("A ter — dans chaque colonne, les bandes de ligne des 30 cases ne se chevauchent jamais (aucune ambiguïté ligne-à-ligne possible)", async () => {
     const bytes = readAssetBytes(2026, "2033-sd.pdf");
     const boxes = await derive2033ACaseBoxes(bytes);
     const byColumn = new Map<string, { caseId: string; yMin: number; yMax: number }[]>();
@@ -1017,7 +1024,7 @@ describe("Oracle de position indépendant — 2033-A-SD (25 cases, CHANTIER P0 p
     }
   });
 
-  it("C — PDF réellement généré : les 25 valeurs synthétiques distinctes sont chacune dessinée dans SA cellule indépendante (bonne colonne, bonne ligne), jamais dans une case voisine, jamais dupliquée", async () => {
+  it("C — PDF réellement généré : les 30 valeurs synthétiques distinctes sont chacune dessinée dans SA cellule indépendante (bonne colonne, bonne ligne), jamais dans une case voisine, jamais dupliquée", async () => {
     const cases: CerfaCase[] = CASE_IDS_2033A_ORACLE.map((caseId) => cerfaCase2033AOracle(caseId, ORACLE_TEST_VALUES[caseId]));
 
     const result = await generateCerfaLiassePdf({ millesime: CERFA_2033A_MILLESIME, forms: [{ form: CERFA_2033A_FORM_ID, cases }] });
@@ -1025,7 +1032,7 @@ describe("Oracle de position indépendant — 2033-A-SD (25 cases, CHANTIER P0 p
       assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
       return;
     }
-    assert.equal(result.manifest.length, 25, "les 25 cases doivent être publiées par ce fixture");
+    assert.equal(result.manifest.length, 30, "les 30 cases doivent être publiées par ce fixture");
 
     const bytes = readAssetBytes(2026, "2033-sd.pdf");
     const boxes = await derive2033ACaseBoxes(bytes);

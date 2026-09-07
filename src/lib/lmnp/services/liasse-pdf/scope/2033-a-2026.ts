@@ -19,6 +19,14 @@
  * 2D-E2 via `gateTotal110`/`gateTotal180` (chantier 2D-E1), calibrés
  * indépendamment (PyMuPDF, chantier 2D-D). Plus aucune case n'est
  * structurellement interdite dans ce registre.
+ *
+ * Chantier P1-B2 — 5 lignes Brut/NET collectées par P1-B1 (064/080/092/174/
+ * 175) sortent à leur tour de l'interdiction : le runtime les projetait déjà
+ * dans `Form2033A.cases` depuis le chantier G2 (`projectCaseAmortFeuilleFromLigne`),
+ * seule cette liste les empêchait d'atteindre le PDF. Calibrées
+ * indépendamment (pdfjs+pdf-lib, `independent-grid-oracle.ts`), voir le
+ * commentaire du registre `registry/2033-a/2026.ts` pour le détail de la
+ * méthode. Aucune modification du runtime ni des gates 096/176.
  */
 export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "016",
@@ -27,12 +35,15 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "042",
   "044",
   "048",
+  "064",
   "066",
   "070",
   "074",
+  "080",
   "082",
   "084",
   "086",
+  "092",
   "094",
   "096",
   "098",
@@ -44,6 +55,8 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "137",
   "142",
   "156",
+  "174",
+  "175",
   "176",
   "180",
 ] as const;
@@ -61,12 +74,15 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "042": "Amortissements-Provisions",
   "044": "Brut",
   "048": "Amortissements-Provisions",
+  "064": "Brut",
   "066": "Amortissements-Provisions",
   "070": "Amortissements-Provisions",
   "074": "Amortissements-Provisions",
+  "080": "Brut",
   "082": "Amortissements-Provisions",
   "084": "Brut",
   "086": "Amortissements-Provisions",
+  "092": "Brut",
   "094": "Amortissements-Provisions",
   "096": "Brut",
   "098": "Amortissements-Provisions",
@@ -78,6 +94,8 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "137": "NET",
   "142": "NET",
   "156": "NET",
+  "174": "NET",
+  "175": "NET",
   "176": "NET",
   "180": "NET",
 };

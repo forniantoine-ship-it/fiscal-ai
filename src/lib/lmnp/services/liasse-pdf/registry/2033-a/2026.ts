@@ -39,6 +39,26 @@
  * 156/176, x=566.6) : positions ré-extraites indépendamment (PyMuPDF,
  * chantier 2D-D), même méthode que le chantier 2A.
  *
+ * Chantier P1-B2 — 5 lignes Brut/NET collectées par P1-B1 (064/080/092/174/
+ * 175), calibrées indépendamment via `independent-grid-oracle.ts`
+ * (`derive2033ACaseBoxes`, pdfjs-dist + pdf-lib, jamais recopié d'un registre
+ * ou d'un ancien test) :
+ *   - 064/080/092 (Brut) partagent EXACTEMENT la même ligne physique que
+ *     066/082/094 (Amort.-Prov.) respectivement déjà calibrées — preuve
+ *     directe : les coordonnées Y natives extraites par pdfjs sont
+ *     rigoureusement identiques entre chaque paire (064≡066, 080≡082,
+ *     092≡094), donc leur `position.y` réutilise SANS AUCUN calcul
+ *     supplémentaire celui déjà validé de leur jumelle Amort.-Prov.
+ *   - 174/175 (NET, Passif) n'ont aucune jumelle déjà calibrée sur leur
+ *     ligne (colonne à une seule case). Leur `position.y` est dérivé par
+ *     différence de coordonnées natives (pdfjs) avec 176 (déjà calibrée),
+ *     la constante additive (page_height − 9.675) s'annulant exactement
+ *     dans une différence entre deux points mesurés par le même outil —
+ *     cross-vérifié indépendamment avec 180 comme second point d'ancrage :
+ *     les deux chemins de calcul convergent à 0.006 pt près, largement
+ *     sous la tolérance de trait de grille (1.5 pt) déjà utilisée par
+ *     l'oracle indépendant.
+ *
  * INTERDIT dans ce registre : toute pseudo-case pour la colonne Net de
  * l'actif (non numérotée). Aucune case numérotée n'est plus structurellement
  * interdite — toutes les gates moteur existent et sont câblées
@@ -134,6 +154,11 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     278.58,
     "Colonne Brut. Total I — Actif immobilisé (= 014+028+040, 010 non applicable). Boîte valeur [283.74,373.80]×[275.16,289.96] (chantier 2D-A, PyMuPDF, même ligne que 048). y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
   ),
+  brut(
+    "064",
+    322.97,
+    "Colonne Brut. Avances et acomptes versés sur commandes. Même ligne physique que 066 (Amort.-Prov., déjà calibrée) — coordonnées Y natives identiques (pdfjs, chantier P1-B2, independent-grid-oracle.ts), aucun calcul supplémentaire nécessaire. Boîte valeur [283.74,373.80]×[319.54,334.33]. y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
+  ),
   amort(
     "066",
     322.97,
@@ -149,10 +174,20 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     352.08,
     "Colonne Amortissements-Provisions. Autres créances. Boîte valeur [389.98,480.69]×[348.60,363.40] (chantier 2A, PyMuPDF). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
   ),
+  brut(
+    "092",
+    366.87,
+    "Colonne Brut. Charges constatées d'avance. Même ligne physique que 094 (Amort.-Prov., déjà calibrée) — coordonnées Y natives identiques (pdfjs, chantier P1-B2, independent-grid-oracle.ts), aucun calcul supplémentaire nécessaire. Boîte valeur [283.74,373.80]×[363.40,378.19]. y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
+  ),
   amort(
     "094",
     366.87,
     "Colonne Amortissements-Provisions. Charges constatées d'avance. Boîte valeur [389.98,480.69]×[363.40,378.19] (chantier 2A, PyMuPDF). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
+  ),
+  brut(
+    "080",
+    381.58,
+    "Colonne Brut. Valeurs mobilières de placement. Même ligne physique que 082 (Amort.-Prov., déjà calibrée) — coordonnées Y natives identiques (pdfjs, chantier P1-B2, independent-grid-oracle.ts), aucun calcul supplémentaire nécessaire. Boîte valeur [283.74,373.80]×[378.19,392.98]. y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
   ),
   amort(
     "082",
@@ -218,6 +253,16 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     "156",
     631.06,
     "Colonne NET. Emprunts et dettes assimilées. Boîte valeur P1-PDF-02-B [480.69,568.10]×[627.59,642.38]. y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "174",
+    722.48,
+    "Colonne NET. Produits constatés d'avance. Position dérivée par différence de coordonnées Y natives (pdfjs) avec 176 (déjà calibrée) : native(176)=98.194, native(174)=112.986, delta=−14.792 pt reporté directement sur position.y(176)=737.27 → 722.478, arrondi 722.48. Cross-vérifié avec 180 comme second point d'ancrage (accord à 0.006 pt près). Boîte valeur [480.69,568.10]×[721.50,736.30] (chantier P1-B2, pdfjs+pdf-lib, independent-grid-oracle.ts). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "175",
+    707.67,
+    "Colonne NET. Autres dettes (couvre notamment le dépôt de garantie locataire — aucun champ dédié séparé, voir P1-B1). Position dérivée par différence de coordonnées Y natives (pdfjs) avec 176 (déjà calibrée) : native(176)=98.194, native(175)=127.799, delta=−29.605 pt reporté directement sur position.y(176)=737.27 → 707.665, arrondi 707.67. Cross-vérifié avec 180 comme second point d'ancrage (accord à 0.006 pt près). Boîte valeur [480.69,568.10]×[675.79,721.50] (chantier P1-B2, pdfjs+pdf-lib, independent-grid-oracle.ts). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
   ),
   passifNet(
     "176",

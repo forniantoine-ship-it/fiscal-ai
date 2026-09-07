@@ -169,6 +169,103 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
         <AmountField label="Montant de la subvention" raw={state.subventionMontantRaw} onChange={(raw) => patch({ subventionMontantRaw: raw })} />
       ) : null}
 
+      {/* P1-B1 — case 064 */}
+      <Question label="Avez-vous versé un acompte à un fournisseur pour cette activité, encore non soldé au 31/12 ?">
+        <ChoiceButton
+          selected={state.avancesAcomptesVerses === "NON"}
+          onClick={() => patch({ avancesAcomptesVerses: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.avancesAcomptesVerses === "OUI"}
+          onClick={() => patch({ avancesAcomptesVerses: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.avancesAcomptesVerses === "OUI" ? (
+        <AmountField
+          label="Montant de l'acompte versé"
+          raw={state.avancesAcomptesVersesMontantRaw}
+          onChange={(raw) => patch({ avancesAcomptesVersesMontantRaw: raw })}
+        />
+      ) : null}
+
+      {/* P1-B1 — case 080 */}
+      <Question label="Détenez-vous des titres ou placements financiers au titre de cette activité ?">
+        <ChoiceButton
+          selected={state.valeursMobilieresPlacementBrut === "NON"}
+          onClick={() => patch({ valeursMobilieresPlacementBrut: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.valeursMobilieresPlacementBrut === "OUI"}
+          onClick={() => patch({ valeursMobilieresPlacementBrut: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.valeursMobilieresPlacementBrut === "OUI" ? (
+        <AmountField
+          label="Montant des titres/placements détenus"
+          raw={state.valeursMobilieresPlacementBrutMontantRaw}
+          onChange={(raw) => patch({ valeursMobilieresPlacementBrutMontantRaw: raw })}
+        />
+      ) : null}
+
+      {/* P1-B1 — case 092 */}
+      <Question label="Avez-vous payé d'avance une charge qui concerne l'exercice suivant (ex. assurance) ?">
+        <ChoiceButton
+          selected={state.chargesConstateesAvance === "NON"}
+          onClick={() => patch({ chargesConstateesAvance: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.chargesConstateesAvance === "OUI"}
+          onClick={() => patch({ chargesConstateesAvance: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.chargesConstateesAvance === "OUI" ? (
+        <AmountField
+          label="Montant payé d'avance"
+          raw={state.chargesConstateesAvanceMontantRaw}
+          onChange={(raw) => patch({ chargesConstateesAvanceMontantRaw: raw })}
+        />
+      ) : null}
+
+      {/* P1-B1 — case 174 */}
+      <Question label="Avez-vous encaissé un loyer qui concerne en réalité l'exercice suivant ?">
+        <ChoiceButton
+          selected={state.produitsConstatesAvance === "NON"}
+          onClick={() => patch({ produitsConstatesAvance: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.produitsConstatesAvance === "OUI"}
+          onClick={() => patch({ produitsConstatesAvance: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.produitsConstatesAvance === "OUI" ? (
+        <AmountField
+          label="Montant du loyer encaissé d'avance"
+          raw={state.produitsConstatesAvanceMontantRaw}
+          onChange={(raw) => patch({ produitsConstatesAvanceMontantRaw: raw })}
+        />
+      ) : null}
+
+      {/* P1-B1 — case 175 */}
+      <Question label="Détenez-vous un dépôt de garantie versé par votre locataire, ou une autre dette envers un tiers ?">
+        <ChoiceButton selected={state.autresDettes === "NON"} onClick={() => patch({ autresDettes: "NON" })} label="Non" />
+        <ChoiceButton selected={state.autresDettes === "OUI"} onClick={() => patch({ autresDettes: "OUI" })} label="Oui" />
+      </Question>
+      {state.autresDettes === "OUI" ? (
+        <AmountField
+          label="Montant du dépôt de garantie ou de l'autre dette"
+          raw={state.autresDettesMontantRaw}
+          onChange={(raw) => patch({ autresDettesMontantRaw: raw })}
+        />
+      ) : null}
+
       {/* Q4 — catch-all */}
       <Question label="Possédez-vous, au titre de cette activité, d'autres éléments patrimoniaux que votre bien, votre trésorerie et vos emprunts (dépôts versés à un tiers, titres de placement, créances ou dettes en cours à la clôture) ?">
         <ChoiceButton

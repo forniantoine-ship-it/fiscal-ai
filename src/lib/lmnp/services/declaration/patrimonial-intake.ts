@@ -80,6 +80,26 @@ export type PatrimonialIntakeState = {
   subventionMontantRaw: string;
   /** Q4 — catch-all autres éléments patrimoniaux (immobilisations incorporelles/financières, VMP, avances, créances, CCA). */
   autresElements?: OuiNonReponse;
+  /** P1-B1 — case 064, acompte versé à un fournisseur non soldé au 31/12. */
+  avancesAcomptesVerses?: OuiNonReponse;
+  /** P1-B1, si OUI — montant de l'acompte versé (case 064). */
+  avancesAcomptesVersesMontantRaw: string;
+  /** P1-B1 — case 080, titres/placements détenus au titre de l'activité. */
+  valeursMobilieresPlacementBrut?: OuiNonReponse;
+  /** P1-B1, si OUI — montant des titres/placements (case 080). */
+  valeursMobilieresPlacementBrutMontantRaw: string;
+  /** P1-B1 — case 092, charge payée d'avance concernant l'exercice suivant. */
+  chargesConstateesAvance?: OuiNonReponse;
+  /** P1-B1, si OUI — montant de la charge constatée d'avance (case 092). */
+  chargesConstateesAvanceMontantRaw: string;
+  /** P1-B1 — case 174, loyer encaissé d'avance concernant l'exercice suivant. */
+  produitsConstatesAvance?: OuiNonReponse;
+  /** P1-B1, si OUI — montant du produit constaté d'avance (case 174). */
+  produitsConstatesAvanceMontantRaw: string;
+  /** P1-B1 — case 175, dépôt de garantie locataire ou autre dette envers un tiers. */
+  autresDettes?: OuiNonReponse;
+  /** P1-B1, si OUI — montant de l'autre dette (case 175). */
+  autresDettesMontantRaw: string;
 };
 
 export const EMPTY_PATRIMONIAL_INTAKE_STATE: PatrimonialIntakeState = {
@@ -90,6 +110,11 @@ export const EMPTY_PATRIMONIAL_INTAKE_STATE: PatrimonialIntakeState = {
   ouvertureRepriseRaw: "",
   ranRepriseRaw: "",
   subventionMontantRaw: "",
+  avancesAcomptesVersesMontantRaw: "",
+  valeursMobilieresPlacementBrutMontantRaw: "",
+  chargesConstateesAvanceMontantRaw: "",
+  produitsConstatesAvanceMontantRaw: "",
+  autresDettesMontantRaw: "",
 };
 
 /**
@@ -144,6 +169,22 @@ const TIERS_NUL_CONFIRME: TiersInputs = {
 };
 
 /**
+ * P1-B1 — traduit une réponse Oui/Non + montant brut en `LignePatrimonialeInput`,
+ * même doctrine que Q3 (subvention) : NON → NUL_CONFIRME (absence confirmée,
+ * jamais un défaut silencieux) ; OUI + montant saisi → DECLARE ; OUI sans
+ * montant encore saisi, ou question jamais tranchée → `undefined` (la case
+ * reste INCONNU côté moteur, jamais un montant inventé).
+ */
+function resolveLignePatrimonialeReponse(reponse: OuiNonReponse | undefined, montantRaw: string): LignePatrimonialeInput | undefined {
+  if (reponse === "NON") return { status: "NUL_CONFIRME" };
+  if (reponse === "OUI") {
+    const montant = parseMontantSaisi(montantRaw);
+    return montant !== undefined ? { status: "DECLARE", montant } : undefined;
+  }
+  return undefined;
+}
+
+/**
  * Construit un `BilanInputs` depuis l'état du formulaire.
  *
  * Retourne `undefined` tant que ni la continuité N→N+1 (`state.continuite`)
@@ -195,10 +236,35 @@ export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInput
         ? { status: "DECLARE", montant: subventionMontant }
         : undefined;
 
+  // P1-B1 — les 5 questions dédiées (064/080/092/174/175) sont indépendantes
+  // de Q4 : chacune ne renseigne QUE sa propre clé de `LignesSimplesInputs`,
+  // jamais les 4 autres. `resolveLignePatrimonialeReponse()` reproduit
+  // exactement la doctrine déjà éprouvée par Q3 (subvention) : NON confirmé
+  // → NUL_CONFIRME ; OUI + montant → DECLARE ; OUI sans montant encore saisi,
+  // ou question jamais tranchée → absente (INCONNU), jamais un 0 inventé.
+  const lignesSimplesReponsesDediees: LignesSimplesInputs = {};
+  const avancesAcomptesVerses = resolveLignePatrimonialeReponse(state.avancesAcomptesVerses, state.avancesAcomptesVersesMontantRaw);
+  if (avancesAcomptesVerses !== undefined) lignesSimplesReponsesDediees.avancesAcomptesVerses = avancesAcomptesVerses;
+  const valeursMobilieresPlacementBrut = resolveLignePatrimonialeReponse(
+    state.valeursMobilieresPlacementBrut,
+    state.valeursMobilieresPlacementBrutMontantRaw,
+  );
+  if (valeursMobilieresPlacementBrut !== undefined) lignesSimplesReponsesDediees.valeursMobilieresPlacementBrut = valeursMobilieresPlacementBrut;
+  const chargesConstateesAvance = resolveLignePatrimonialeReponse(state.chargesConstateesAvance, state.chargesConstateesAvanceMontantRaw);
+  if (chargesConstateesAvance !== undefined) lignesSimplesReponsesDediees.chargesConstateesAvance = chargesConstateesAvance;
+  const produitsConstatesAvance = resolveLignePatrimonialeReponse(state.produitsConstatesAvance, state.produitsConstatesAvanceMontantRaw);
+  if (produitsConstatesAvance !== undefined) lignesSimplesReponsesDediees.produitsConstatesAvance = produitsConstatesAvance;
+  const autresDettes = resolveLignePatrimonialeReponse(state.autresDettes, state.autresDettesMontantRaw);
+  if (autresDettes !== undefined) lignesSimplesReponsesDediees.autresDettes = autresDettes;
+
   // Q4 = OUI : jamais de montant inventé — les postes concernés restent
   // absents (INCONNU) ; l'UI doit afficher un message de collecte différée.
+  const lignesSimplesFusionnees: LignesSimplesInputs = {
+    ...(state.autresElements === "NON" ? LIGNES_SIMPLES_NUL_CONFIRME : {}),
+    ...lignesSimplesReponsesDediees,
+  };
   const lignesSimples: LignesSimplesInputs | undefined =
-    state.autresElements === "NON" ? LIGNES_SIMPLES_NUL_CONFIRME : undefined;
+    Object.keys(lignesSimplesFusionnees).length > 0 ? lignesSimplesFusionnees : undefined;
 
   // Voir le commentaire de TIERS_NUL_CONFIRME : même réponse Q4, deuxième
   // représentation exigée par checkBilanEquilibre().
@@ -240,6 +306,16 @@ export function deriveIntakeStateFromBilanPatrimonial(value: BilanInputs | undef
   const autresElements: OuiNonReponse | undefined =
     value.lignesSimples?.autresImmobilisationsIncorporellesNet?.status === "NUL_CONFIRME" ? "NON" : undefined;
 
+  // P1-B1 — reconstruction des 5 réponses dédiées (064/080/092/174/175),
+  // chacune lue depuis sa propre clé `lignesSimples`, indépendamment des
+  // 4 autres et de Q4 (`autresElements` ci-dessus, qui ne couvre jamais ces
+  // 5 clés — cf. `LIGNES_SIMPLES_NUL_CONFIRME`).
+  const avancesAcomptesVerses = deriveOuiNonReponse(value.lignesSimples?.avancesAcomptesVerses);
+  const valeursMobilieresPlacementBrut = deriveOuiNonReponse(value.lignesSimples?.valeursMobilieresPlacementBrut);
+  const chargesConstateesAvance = deriveOuiNonReponse(value.lignesSimples?.chargesConstateesAvance);
+  const produitsConstatesAvance = deriveOuiNonReponse(value.lignesSimples?.produitsConstatesAvance);
+  const autresDettes = deriveOuiNonReponse(value.lignesSimples?.autresDettes);
+
   return {
     routage,
     bankMode,
@@ -263,5 +339,26 @@ export function deriveIntakeStateFromBilanPatrimonial(value: BilanInputs | undef
     subventionMontantRaw:
       value.subventionsInvestissement?.status === "DECLARE" ? String(value.subventionsInvestissement.montant) : "",
     autresElements,
+    avancesAcomptesVerses,
+    avancesAcomptesVersesMontantRaw: deriveMontantRaw(value.lignesSimples?.avancesAcomptesVerses),
+    valeursMobilieresPlacementBrut,
+    valeursMobilieresPlacementBrutMontantRaw: deriveMontantRaw(value.lignesSimples?.valeursMobilieresPlacementBrut),
+    chargesConstateesAvance,
+    chargesConstateesAvanceMontantRaw: deriveMontantRaw(value.lignesSimples?.chargesConstateesAvance),
+    produitsConstatesAvance,
+    produitsConstatesAvanceMontantRaw: deriveMontantRaw(value.lignesSimples?.produitsConstatesAvance),
+    autresDettes,
+    autresDettesMontantRaw: deriveMontantRaw(value.lignesSimples?.autresDettes),
   };
+}
+
+/** P1-B1 — même doctrine que `subvention`/`autresElements` ci-dessus, factorisée pour les 5 champs dédiés. */
+function deriveOuiNonReponse(resolution: LignePatrimonialeInput | undefined): OuiNonReponse | undefined {
+  if (resolution?.status === "NUL_CONFIRME") return "NON";
+  if (resolution?.status === "DECLARE") return "OUI";
+  return undefined;
+}
+
+function deriveMontantRaw(resolution: LignePatrimonialeInput | undefined): string {
+  return resolution?.status === "DECLARE" ? String(resolution.montant) : "";
 }
