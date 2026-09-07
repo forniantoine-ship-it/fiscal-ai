@@ -266,6 +266,48 @@ function touchFiscalYear(
 }
 
 /**
+ * P0-1C (2026-09-07, audit) — `computedAt` est un horodatage technique
+ * ("quand cet assistant a produit cette sortie"), jamais une valeur fiscale
+ * — même doctrine déjà appliquée ailleurs dans ce projet pour exclure les
+ * timestamps d'une comparaison de correction (`withoutTimestamps()`,
+ * declaration-generation-gate.test.ts). Chemin réel confirmé où il varie
+ * SANS aucun changement fiscal : `RevenusDocumentStep.tsx` (`handleConfirm`)
+ * appelle `buildRevenusAssistantFromSession()` — dont `computedAt` est
+ * `new Date().toISOString()` (revenus-upload-to-assistant-bridge.ts) —  et
+ * dispatch `revenusAssistant` via DECLARATION_PATCH_DRAFT à CHAQUE clic sur
+ * « Confirmer », y compris une reconfirmation sans aucune donnée modifiée ;
+ * même schéma tracé pour `financementCharges` (F011FinancementAssistantPanel.tsx,
+ * `persistCompletion` : `now = new Date().toISOString()` à chaque complétion).
+ * Sans cette exclusion, revisiter et reconfirmer un assistant après une
+ * génération effacerait `declarationGeneratedAt` sans qu'aucune donnée
+ * fiscale n'ait changé. Exclusion nommée et unique — jamais une
+ * normalisation générique de toutes les métadonnées techniques (voir audit
+ * P0-1C : aucun autre champ de ce type n'a été démontré comme un faux
+ * positif réel dans les 8 clés contributives).
+ */
+const CLES_NON_FISCALES_IGNOREES = new Set(["computedAt"]);
+
+/**
+ * P0-1C (2026-09-07, audit) — clés dont la valeur est `undefined`, en excluant
+ * celles ci-dessus. Une clé présente avec la valeur `undefined` et une clé
+ * absente sont traitées comme équivalentes : c'est déjà la sémantique réelle
+ * de la persistance de ce draft (IndexedDB/Supabase sérialisent en JSON, où
+ * `JSON.stringify({ foo: undefined })` === `JSON.stringify({})` — une clé
+ * `undefined` ne survit jamais à un aller-retour de stockage). Ne PAS aligner
+ * le comparateur sur cette réalité créerait un faux positif démontré : le
+ * round-trip `deriveVentilationTiersIntakeState()` → `buildVentilationTiersInputs()`
+ * (ventilation-tiers-intake.ts, B-FAMILY, lu mais non modifié ici) reconstruit
+ * `libelle: undefined` explicitement pour un poste sans libellé
+ * (`versPosteEconomiqueInput`), alors que le poste d'origine — construit une
+ * seule fois par le même chemin — n'a jamais porté cette clé avant sa
+ * première réhydratation. Sans cette équivalence, consulter puis quitter
+ * l'écran patrimonial sans rien éditer effacerait `declarationGeneratedAt`.
+ */
+function definedKeys(record: Record<string, unknown>): string[] {
+  return Object.keys(record).filter((key) => record[key] !== undefined && !CLES_NON_FISCALES_IGNOREES.has(key));
+}
+
+/**
  * P2-2 — égalité structurelle pour les valeurs de DeclarationDraft comparées
  * dans DECLARATION_PATCH_DRAFT (financementCharges/revenusAssistant/
  * amortissementAssistant : objets JSON-plats, jamais de fonction ni de Date).
@@ -278,14 +320,12 @@ function isDeepEqualDraftValue(a: unknown, b: unknown): boolean {
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((item, i) => isDeepEqualDraftValue(item, b[i]));
   }
-  const aKeys = Object.keys(a as Record<string, unknown>);
-  const bKeys = Object.keys(b as Record<string, unknown>);
-  if (aKeys.length !== bKeys.length) return false;
-  return aKeys.every(
-    (key) =>
-      Object.prototype.hasOwnProperty.call(b, key) &&
-      isDeepEqualDraftValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
-  );
+  const aRecord = a as Record<string, unknown>;
+  const bRecord = b as Record<string, unknown>;
+  const aKeys = definedKeys(aRecord);
+  const bKeys = new Set(definedKeys(bRecord));
+  if (aKeys.length !== bKeys.size) return false;
+  return aKeys.every((key) => bKeys.has(key) && isDeepEqualDraftValue(aRecord[key], bRecord[key]));
 }
 
 function extractionLabel(extraction: Extraction): string {
