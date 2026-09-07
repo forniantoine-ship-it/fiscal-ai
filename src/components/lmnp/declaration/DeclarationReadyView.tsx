@@ -22,6 +22,10 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
+import {
+  buildCerfaPdfRequestPayload,
+  downloadOfficialCerfaPdf,
+} from "@/lib/lmnp/services/declaration/download-cerfa-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
 import { resolveFormulairesManquants } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
@@ -35,7 +39,7 @@ export function DeclarationReadyView() {
   const router = useRouter();
   const { workspace, closeFiscalYearAndCreateNext, closeFiscalYearError } = useLmnp();
   const { fiscalYear } = workspace;
-  const { fiscalResult, liasseResult, rfs, liasseRfs, activityStartDate } = workspace.declarationDraft ?? {};
+  const { fiscalResult, liasseResult, rfs, liasseRfs, activityStartDate, declaration } = workspace.declarationDraft ?? {};
 
   // Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
   // "Clôturer et continuer". Précondition affichage = précondition métier
@@ -102,6 +106,33 @@ export function DeclarationReadyView() {
     await closeFiscalYearAndCreateNext();
     setClosingFiscalYear(false);
     setCloseConfirmOpen(false);
+  };
+
+  // P1-2 — bouton PDF CERFA officiel (route serveur P1-1). N'est rendu que
+  // si !declarationOutOfDate (voir plus bas) : jamais de contournement de la
+  // fraîcheur P0-2, jamais un ancien PDF officiel présenté comme actuel. La
+  // RFS transmise est exactement celle de la génération affichée
+  // (`workspace.declarationDraft.rfs`) — jamais reconstruite, jamais une
+  // version historique.
+  const [cerfaDownloading, setCerfaDownloading] = useState(false);
+  const [cerfaDownloadError, setCerfaDownloadError] = useState<string | undefined>(undefined);
+  const declarationVersionId = declaration?.currentVersionId;
+
+  const handleDownloadOfficialCerfaPdf = async () => {
+    if (cerfaDownloading || !rfs || !declarationVersionId) return;
+    setCerfaDownloading(true);
+    setCerfaDownloadError(undefined);
+    try {
+      await downloadOfficialCerfaPdf(buildCerfaPdfRequestPayload(rfs, declarationVersionId), fiscalYear.year);
+    } catch (err) {
+      setCerfaDownloadError(
+        err && typeof err === "object" && "message" in err && typeof err.message === "string"
+          ? err.message
+          : "Le PDF officiel n'a pas pu être généré. Réessayez dans quelques instants.",
+      );
+    } finally {
+      setCerfaDownloading(false);
+    }
   };
   // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
   // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
@@ -260,6 +291,17 @@ export function DeclarationReadyView() {
             Télécharger la liasse
           </Button>
         </div>
+
+        {!declarationOutOfDate && rfs && declarationVersionId ? (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <Button variant="ghost" onClick={handleDownloadOfficialCerfaPdf} disabled={cerfaDownloading}>
+              {cerfaDownloading ? "Génération en cours…" : "Télécharger le PDF officiel"}
+            </Button>
+            {cerfaDownloadError ? (
+              <p style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>{cerfaDownloadError}</p>
+            ) : null}
+          </div>
+        ) : null}
         {formulairesManquants.length > 0 ? (
           <p className="mt-3 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             Formulaires non encore générés : {formulairesManquants.join(", ")}
