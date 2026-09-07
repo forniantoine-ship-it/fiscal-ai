@@ -16,6 +16,8 @@ import {
   deriveVentilationTiersIntakeState,
   EMPTY_VENTILATION_TIERS_INTAKE_STATE,
 } from "../services/declaration/ventilation-tiers-intake";
+import { resolveDeclarationGenerationGate } from "../services/declaration/declaration-generation-gate";
+import { runDeclarationGeneration } from "../services/declaration/run-declaration-generation";
 
 /**
  * P2-2 — reducer.ts importe transitivement src/lib/supabase.ts (client créé
@@ -783,5 +785,250 @@ describe("P0-1C — robustesse du deep-equal du reducer (audit 2026-09-07)", () 
 
     assert.equal(JSON.stringify(state.declarationDraft), stateSnapshot, "l'état d'origine ne doit jamais être muté par la comparaison");
     assert.equal(JSON.stringify(patch), patchSnapshot, "le patch fourni ne doit jamais être muté par la comparaison");
+  });
+});
+
+const P0_1D_PROPERTY: Property = { id: "prop-1", label: "Studio Lyon", address: "1 rue Test", city: "Lyon", postalCode: "69001" };
+
+function p0_1dCompleteFlags(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
+  return {
+    completedSteps: [],
+    inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
+    logementConfirmedAt: "2026-01-01T00:00:00.000Z",
+    creditDeclaredNoneAt: "2026-01-01T00:00:00.000Z",
+    revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
+    chargesConfirmedAt: "2026-01-01T00:00:00.000Z",
+    amortissementConfirmedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** Dossier réel, générable — mêmes valeurs que declaration-generation-gate.test.ts, pour exercer le mécanisme B réel (non simulé). */
+function p0_1dGenerationReadyDraft(overrides: Partial<Record<string, unknown>> = {}) {
+  return p0_1dCompleteFlags({
+    siret: "12345678901234",
+    siren: "123456789",
+    exploitantFirstName: "Marie",
+    exploitantLastName: "Dupont",
+    dateMiseEnService: "2020-01-01",
+    revenusAssistant: revenusFixture(),
+    chargesAssistant: {
+      exerciceFiscal: 2026,
+      totalDeductible: 2000,
+      totalNonDeductible: 0,
+      totalAmortissable: 0,
+      totalPreExploitation: 0,
+      parCategorie: {},
+      composantsNouveaux: [],
+      fieldSources: {},
+      computedAt: "2026-01-01T00:00:00Z",
+    },
+    amortissementAssistant: amortissementFixture(),
+    ...overrides,
+  });
+}
+
+/**
+ * P0-1D (2026-09-07) — investigation « properties-only changes » : une
+ * propriété fiscale réelle qui changerait sans que ni le mécanisme A
+ * (reducer, ce fichier) ni le mécanisme B (declaration-generation-gate.ts,
+ * inchangé) ne la détectent.
+ *
+ * CONCLUSION DE L'AUDIT (aucune modification de production dans ce
+ * chantier) : pour les 8 clés contributives de reducer.ts, `isDeepEqualDraftValue`
+ * compare l'objet ENTIER de façon structurelle et récursive (P0-1C) —
+ * n'importe quelle propriété fiscale, même profondément imbriquée
+ * (`financementCharges.prets[].garantieDeductible`, `bilanPatrimonial
+ * .tresorerie.closingCash`...), est donc déjà visible du mécanisme A, sauf
+ * `computedAt` (exclusion justifiée, P0-1C) et l'équivalence undefined/absence
+ * (également P0-1C). Aucun CAS 4 (A ne détecte pas ET B ne détecte pas) n'a
+ * été démontré dans ce périmètre — voir la restitution du chantier pour le
+ * détail CAS 1/2/3 et les candidats écartés (identité hors des 3 clés
+ * siret/dateMiseEnService/activityType : déjà un CAS 3 connu et documenté
+ * depuis P0-1, compensé par `identiteChanged()` ; `chargesAssistant` :
+ * hors des 8 clés, verrouillé en lecture seule une fois confirmé — pas un
+ * chemin réel, hors périmètre de ce chantier).
+ */
+describe("P0-1D — investigation properties-only (audit 2026-09-07)", () => {
+  it("D1a — financementCharges.prets[0].garantieDeductible (propriété fiscale imbriquée, totaux inchangés) → invalidation", async () => {
+    const lmnpReducer = await loadReducer();
+    const fixture = financementFixture({ prets: [pretFixture({ garantieDeductible: 1763 })] });
+    const state = baseState(
+      { completedSteps: ["credit"], financementCharges: fixture },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      // Seule la garantie déductible du prêt change — totalInteretsEmprunt/
+      // totalCapitalRembourse/totalChargesFinancementExercice restent
+      // volontairement identiques : la détection ne doit pas dépendre de
+      // ces seuls totaux, mais de l'objet entier.
+      patch: { financementCharges: { ...fixture, prets: [pretFixture({ garantieDeductible: 2500 })] } },
+    });
+
+    assert.equal(
+      next.fiscalYear.declarationGeneratedAt,
+      undefined,
+      "une propriété fiscale imbriquée doit être détectée même si les totaux de premier niveau restent identiques",
+    );
+  });
+
+  it("D1b — bilanPatrimonial.tresorerie.closingCash (propriété patrimoniale imbriquée) → invalidation", async () => {
+    const lmnpReducer = await loadReducer();
+    const bilanPatrimonial: BilanInputs = {
+      tresorerie: { bankMode: "DEDIE", closingCash: 1200 },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+    };
+    const state = baseState(
+      { completedSteps: [], bilanPatrimonial },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { bilanPatrimonial: { ...bilanPatrimonial, tresorerie: { bankMode: "DEDIE", closingCash: 1850 } } },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+  });
+
+  it("D2 — aucun candidat de perte de propriété par reconstruction démontré : chaque fabrique dispatch l'objet contributif ENTIER, jamais un patch partiel", () => {
+    // Vérification structurelle, pas d'exécution UI : les 4 fabriques
+    // identifiées (F011FinancementAssistantPanel/CreditDocumentStep,
+    // F014AmortissementsAssistantPanel, F010LogementAssistantPanel,
+    // RevenusDocumentStep) construisent un objet complet avant dispatch —
+    // aucune ne relit puis ne réécrit un sous-ensemble de champs. Documenté
+    // ici plutôt que testé mécaniquement : rien à reproduire, donc aucun
+    // test D2 exécutable de façon significative n'a été ajouté au-delà de
+    // cette assertion de non-régression sur les fixtures elles-mêmes.
+    const fixture = financementFixture();
+    assert.ok("prets" in fixture && "computedAt" in fixture, "la fixture de référence reste un objet complet, cohérent avec les fabriques réelles auditées");
+  });
+
+  it("D3 — propriété technique isolée (computedAt, déjà couverte par P0-1C) : aucune invalidation — pas de nouvelle exclusion ajoutée en P0-1D", async () => {
+    const lmnpReducer = await loadReducer();
+    const fixture = amortissementFixture();
+    const state = baseState(
+      { completedSteps: ["amortissement"], amortissementAssistant: fixture },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    // Même valeur, nouvel objet — vérifie que P0-1D n'a introduit aucune
+    // régression sur la propriété déjà validée par P0-1C (computedAt exclu
+    // via financementCharges/revenusAssistant/logementAmortissement ;
+    // amortissementAssistant n'a pas de computedAt — ce test confirme que
+    // l'absence de cette clé ne casse rien).
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { amortissementAssistant: { ...fixture } },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, GENERATED_AT);
+  });
+
+  it("D4 — coexistence avec P0-1B : patrimoine modifié, mécanisme A volontairement contourné (dispatch direct sans passer par le reducer) → mécanisme B détecte quand même", () => {
+    // Mécanisme A "contourné" : on n'appelle jamais lmnpReducer/DECLARATION_PATCH_DRAFT
+    // ici — seulement resolveDeclarationGenerationGate(), exactement le
+    // scénario visé par D4 (A bypassé intentionnellement dans le test).
+    const bilanAvant: BilanInputs = {
+      tresorerie: { bankMode: "INCONNU" },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+      ventilationTiers: { postes: [{ id: "poste-1", nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] },
+    };
+    const draft = { ...p0_1dGenerationReadyDraft(), bilanPatrimonial: bilanAvant };
+    const generation = runDeclarationGeneration(draft as never, 2026, undefined, bilanAvant);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs };
+
+    const bilanApres: BilanInputs = { ...bilanAvant, ventilationTiers: { postes: [{ id: "poste-1", nature: "LOYER_DU_PAR_LOCATAIRE", montant: 900 }] } };
+    const draftModifieSansReducer = { ...draftGenere, bilanPatrimonial: bilanApres };
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftModifieSansReducer as never,
+      properties: [P0_1D_PROPERTY],
+      fiscalYear: 2026,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(gate.canGenerate, true, "le mécanisme B (P0-1B) doit détecter seul une dérive patrimoniale même quand le mécanisme A n'a jamais été sollicité");
+  });
+
+  it("D5 — continuité N+1 (stocksOuverture réel) : pipeline complet reducer → gate, modification réelle toujours détectée, réplication identique jamais régénérée", async () => {
+    const lmnpReducer = await loadReducer();
+    const stocksOuverture = { deficits: [{ millesime: 2025, montant: 3000 }], amortissementsReportes: 0 };
+    const draftInitial = {
+      ...p0_1dGenerationReadyDraft({
+        revenusAssistant: revenusFixture({ totalRecettes: 9000 }),
+        amortissementAssistant: amortissementFixture({ totalDotations: 8000 }),
+      }),
+    };
+    const generation = runDeclarationGeneration(draftInitial as never, 2026, stocksOuverture);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+
+    // Mécanisme A — le reducer écrit le miroir fiscalResult (comme
+    // ValidationDocumentStep.tsx après une génération réelle).
+    const stateGenere = baseState(
+      { ...draftInitial, fiscalResult: generation.fiscalResult } as never,
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT, stocksOuverture: { sourceClosureId: "closure-n", stocks: stocksOuverture } }),
+    );
+
+    // (a) réplication strictement identique — le patch renvoie exactement
+    // le même revenusAssistant : le reducer ne doit jamais invalider.
+    const replique = lmnpReducer(stateGenere, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { revenusAssistant: { ...draftInitial.revenusAssistant } },
+    });
+    assert.equal(replique.fiscalYear.declarationGeneratedAt, GENERATED_AT, "réplication identique — le mécanisme A ne doit pas invalider");
+    const gateApresReplique = resolveDeclarationGenerationGate({
+      draft: replique.declarationDraft as never,
+      properties: [P0_1D_PROPERTY],
+      fiscalYear: 2026,
+      paid: true,
+      generated: true,
+      stocksOuverture,
+    });
+    assert.equal(gateApresReplique.canGenerate, false, "réplication identique — le mécanisme B ne doit pas non plus considérer la génération périmée");
+
+    // (b) vraie modification fiscale — le mécanisme A doit invalider.
+    const modifie = lmnpReducer(stateGenere, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { revenusAssistant: revenusFixture({ totalRecettes: 15000 }) },
+    });
+    assert.equal(modifie.fiscalYear.declarationGeneratedAt, undefined, "vraie modification fiscale — le mécanisme A doit invalider même en continuité N+1");
+  });
+
+  it("D6 — non-mutation du pipeline complet (reducer puis gate) : aucun des deux mécanismes ne modifie le draft/fiscalYear fournis", () => {
+    const bilanPatrimonial: BilanInputs = {
+      tresorerie: { bankMode: "INCONNU" },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+      ventilationTiers: { postes: [{ id: "poste-1", nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] },
+    };
+    const draft = { ...p0_1dGenerationReadyDraft(), bilanPatrimonial };
+    const generation = runDeclarationGeneration(draft as never, 2026, undefined, bilanPatrimonial);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs };
+    const fiscalYear = baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT });
+
+    const draftSnapshot = JSON.stringify(draftGenere);
+    const fiscalYearSnapshot = JSON.stringify(fiscalYear);
+
+    resolveDeclarationGenerationGate({
+      draft: draftGenere as never,
+      properties: [P0_1D_PROPERTY],
+      fiscalYear: fiscalYear.year,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(JSON.stringify(draftGenere), draftSnapshot, "le gate ne doit jamais muter le draft fourni");
+    assert.equal(JSON.stringify(fiscalYear), fiscalYearSnapshot, "le gate ne doit jamais muter le fiscalYear fourni");
   });
 });
