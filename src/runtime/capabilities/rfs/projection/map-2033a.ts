@@ -3,7 +3,14 @@ import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
-import { gateTotal044ActifImmobiliseBrut, gateTotal048, gateTotal098, gateTotal112 } from "../../bilan/lignes-simples";
+import {
+  gateTotal044ActifImmobiliseBrut,
+  gateTotal048,
+  gateTotal098,
+  gateTotal110,
+  gateTotal112,
+  gateTotal180,
+} from "../../bilan/lignes-simples";
 import {
   gateTotal096AvecVentilation,
   gateTotal176AvecVentilation,
@@ -846,6 +853,43 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
 
+    // Chantier 2D-E2 — total 110 (colonne Brut). Formule Cerfa :
+    // 110 = 044 + 096 (Total général actif = Total I + Total II, même
+    // colonne — symétrique de 112 côté Amortissements-Provisions). Consomme
+    // les gates 044/096 déjà résolues ci-dessus + le fait qu'elles aient
+    // RÉELLEMENT été publiées dans `cases` (jamais une gate seule). 110
+    // n'est jamais déduit de 112/180 (contrôle d'équilibre croisé distinct,
+    // voir check-bilan-equilibre.ts) — uniquement une somme de feuilles
+    // publiées, jamais les totaux reconstruits localement par
+    // `checkBilanEquilibre()`.
+    const case044Published = cases.some((c) => c.caseId === "044");
+    const case096Published = cases.some((c) => c.caseId === "096");
+    const gate110 = gateTotal110(gate044, gate096, case044Published, case096Published);
+    if (gate110.status === "COMPOSANTES_CONNUES") {
+      const composantes110 = ["044", "096"] as const;
+      const total110 = sommeFeuillesPubliables(cases, composantes110);
+      cases.push({
+        caseId: "110",
+        label: "Total général actif (I + II) (brut)",
+        value: total110,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalFeuilles("110", "044 + 096", composantes110, cases, {
+            "044": "publié (gateTotal044ActifImmobiliseBrut)",
+            "096": "publié (gateTotal096AvecVentilation)",
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "110",
+        label: "Total général actif (I + II) (brut)",
+        raison: gate110.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
     // Chantier 2D-B — total 176 (colonne NET, Dettes). Formule Cerfa :
     // 176 = 156 + 164 + 166 + 172 + 173 + 174 + 175. 173 (comptes courants
     // d'associés) catégoriquement 0 pour une EI, hors composante. 174/175
@@ -904,12 +948,14 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // comme nulles est une donnée FAUSSE, pas une donnée manquante : `044`,
     // `048`, `096`, `098`, `110`, `112`, `176` et `180` ne sont donc PLUS
     // jamais produits ici à partir d'un sous-ensemble équilibré seul — sauf
-    // 048/098 (P1-PDF-02-F4-C), 112 (P1-PDF-02-F4-D), et 044/096/176
-    // (chantier 2D-B) lorsque TOUTES leurs composantes réelles sont
-    // publiables via leurs gates respectives (`gateTotal044ActifImmobiliseBrut`,
-    // `gateTotal096AvecVentilation`, `gateTotal176AvecVentilation`, chantier
-    // 2C). 110/180 (total général Brut / total général passif) restent seuls
-    // interdits — aucune gate équivalente n'existe encore pour eux.
+    // 048/098 (P1-PDF-02-F4-C), 112 (P1-PDF-02-F4-D), 044/096/176 (chantier
+    // 2D-B) et 110/180 (chantier 2D-E2) lorsque TOUTES leurs composantes
+    // réelles sont publiables via leurs gates respectives
+    // (`gateTotal044ActifImmobiliseBrut`, `gateTotal096AvecVentilation`,
+    // `gateTotal176AvecVentilation` chantier 2C ; `gateTotal110`/
+    // `gateTotal180` chantier 2D-E1). Plus aucun total général n'est
+    // structurellement interdit — chacun dépend uniquement de la
+    // publication réelle de ses propres composantes.
     //
     // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Correction
     // P1-A (audit indépendant, asymétrie 142/137) : le calcul et le gate de
@@ -935,6 +981,45 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         caseId: "142",
         label: "Total I — Capitaux propres",
         raison: totalCapitauxPropres.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
+    // Chantier 2D-E2 — total 180 (colonne NET, Total général passif).
+    // Formule Cerfa : 180 = 142 + 154 + 176. 154 (Provisions pour risques et
+    // charges) catégoriquement 0 pour le produit actuel (aucune provision
+    // modélisée, `non_applicable` structurel) — hors composante, jamais
+    // introduite dans la somme, exactement comme 010/050/060/173 le sont
+    // déjà pour 044/096/176. Consomme la résolution réelle de 142
+    // (`totalCapitauxPropres`, calculée juste au-dessus) et la gate 176 déjà
+    // résolue plus haut + leur publication réelle dans `cases`. Ne recalcule
+    // JAMAIS depuis `checkBilanEquilibre()` (`equilibre`/ses totaux locaux
+    // ci-dessus servent uniquement de contrôle, jamais de source de
+    // production) — uniquement une somme de feuilles publiées.
+    const case142Published = cases.some((c) => c.caseId === "142");
+    const case176Published = cases.some((c) => c.caseId === "176");
+    const gate180 = gateTotal180(totalCapitauxPropres, gate176, case142Published, case176Published);
+    if (gate180.status === "COMPOSANTES_CONNUES") {
+      const composantes180 = ["142", "176"] as const;
+      const total180 = sommeFeuillesPubliables(cases, composantes180);
+      cases.push({
+        caseId: "180",
+        label: "Total général passif (I + II + III)",
+        value: total180,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalFeuilles("180", "142 + 176", composantes180, cases, {
+            "142": "publié (resolveTotalCapitauxPropres)",
+            "176": "publié (gateTotal176AvecVentilation)",
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "180",
+        label: "Total général passif (I + II + III)",
+        raison: gate180.raison,
         categorie: "incoherence_modele",
       });
     }

@@ -265,15 +265,24 @@ describe("Chantier 2D-B — 176 = 156 + 164 + 166 + 172 + 174 + 175", () => {
 });
 
 describe("Chantier 2D-B — non-régression 048/098/112/110/180", () => {
-  it("048/098/112 restent bloquées dans ce scénario (016/042/066/070/074/082/094 jamais saisies) ; 110/180 toujours interdites", () => {
+  it("048/098/112 restent bloquées dans ce scénario (016/042/066/070/074/082/094 jamais saisies) ; 180 reste bloqué (142 non résolu, bilan non EQUILIBRE)", () => {
     const form = mapWithPatrimoine(inputsToutesComposantesConnues());
     for (const id of ["048", "098", "112"] as const) {
       assert.equal(findCase(form, id), undefined, `${id} ne doit pas être inventée par ce chantier`);
     }
-    for (const id of ["110", "180"] as const) {
-      assert.equal(findCase(form, id), undefined, `${id} reste toujours interdite`);
-      assert.ok(findBlocked(form, id), `${id} doit être explicitement bloquée`);
-    }
+    // Chantier 2D-E2 — 110 = 044 + 096 est désormais câblée : cette fixture
+    // publie 044/096, donc 110 doit l'être aussi (63465), plus "toujours
+    // interdite" comme avant le chantier E2. 180, en revanche, reste
+    // bloquée ici : tiers.dettes NUL_CONFIRME + ventilation dettes non nulle
+    // (postes de cette fixture) rend la contribution tiers INCOHERENTE,
+    // donc checkBilanEquilibre() ne peut jamais atteindre EQUILIBRE — 142
+    // reste bloquée, donc 180 aussi (voir bilan-map-2033a-2d-totaux-generaux.test.ts
+    // pour un scénario où 142 est réellement résolu et 180 se publie).
+    const case110 = findCase(form, "110");
+    assert.ok(case110, "110 doit désormais être publiée (044 et 096 sont toutes deux publiables ici)");
+    assert.equal(case110!.value, 63465, "110 = 044 (60300) + 096 (3165)");
+    assert.equal(findCase(form, "180"), undefined, "180 reste bloquée : 142 non résolu dans cette fixture");
+    assert.ok(findBlocked(form, "180"));
   });
 
   it("patrimoine === undefined (legacy) → 044/096/176 restent bloquées comme avant", () => {
