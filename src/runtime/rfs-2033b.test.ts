@@ -16,6 +16,7 @@ import { round2 } from "./capabilities/f007/types";
 import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation } from "./capabilities/rfs/types";
 import type { PretFinancementExercice } from "./capabilities/f011/types";
+import { applyAmortissementStocks } from "./capabilities/f006/apply-amortissement-stocks";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
   return {
@@ -187,6 +188,130 @@ describe("Audit fiscal ciblé (case 300) — perte exceptionnelle", () => {
     }
     assert.equal(findCase(sansPerte, "300")?.value, 0);
     assert.equal(findCase(avecPerte, "300")?.value, 2500);
+  });
+});
+
+describe("MICRO-JALON implémentation 244 — impôts, taxes et versements assimilés (taxe foncière)", () => {
+  it("R1 — taxe_fonciere non nulle (1200) → 244 = 1200, sans recalcul de totalDeductible ni resultatFiscal", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+        detailParCategorie: { taxe_fonciere: 1200 },
+      },
+      resultatFiscal: 5500,
+    });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "244")?.value, 1200);
+    // Non-recalcul : totalDeductible et resultatFiscal du FiscalResult source
+    // ne sont jamais lus/modifiés par cette projection (le mapper n'importe
+    // aucune fonction de calcul, garde d'architecture déjà vérifiée par
+    // ailleurs — ici on vérifie seulement que 244 n'entre dans aucune autre
+    // formule du mapper lui-même).
+    assert.equal(fr.charges.totalDeductible, 2000, "totalDeductible du FiscalResult source reste inchangé");
+    assert.equal(fr.resultatFiscal, 5500, "resultatFiscal du FiscalResult source reste inchangé");
+  });
+
+  it("R2 — taxe_fonciere absente (detailParCategorie undefined, fixture par défaut) → 244 absente, jamais un montant inventé", () => {
+    const fr = fiscalResult();
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "244"), undefined, "244 ne doit pas apparaître sans donnée disponible — jamais 0 inventé");
+  });
+
+  it("R2bis — detailParCategorie présent mais sans la clé taxe_fonciere (autres catégories saisies) → 244 absente", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+        detailParCategorie: { assurance_pno: 300, copropriete: 800 },
+      },
+    });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "244"), undefined, "l'absence de la clé taxe_fonciere précisément (pas de detailParCategorie en général) doit aussi laisser 244 absente");
+  });
+
+  it("R3 — taxe_fonciere = 0 explicite (clé présente) → 244 = 0, distincte de l'absence de la clé", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+        detailParCategorie: { taxe_fonciere: 0 },
+      },
+    });
+    const form = map2033BFromRfs(rfs(fr));
+    const case244 = findCase(form, "244");
+    assert.notEqual(case244, undefined, "une clé taxe_fonciere PRÉSENTE à 0 doit produire une case 244 réelle (=0), pas une absence");
+    assert.equal(case244?.value, 0);
+  });
+
+  it("R4 — non-double-comptage : 244 ne contient jamais totalDeductible, seulement la composante taxe_fonciere", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 8000,
+        chargesExploitation: 8000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+        detailParCategorie: { taxe_fonciere: 1200 },
+      },
+    });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "244")?.value, 1200);
+    assert.notEqual(findCase(form, "244")?.value, 8000, "244 ne doit jamais recevoir totalDeductible");
+    // 264 (Total des charges d'exploitation) doit rester la formule composite
+    // habituelle, sans jamais soustraire ni dupliquer la part taxe_fonciere.
+    assert.equal(findCase(form, "264")?.value, round2(8000 + fr.amortCalcule + 0));
+  });
+
+  it("R5 — non-régression : 242/294/300/310/312/314/318/330/350/370/372 identiques avec ou sans 244", () => {
+    const base = {
+      recettes: { total: 9000 },
+      chargesFinancement: 500,
+      amortCalcule: 1500,
+    };
+    const sans244 = map2033BFromRfs(
+      rfs(
+        fiscalResult({
+          recettes: base.recettes,
+          charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: base.chargesFinancement, chargesPreExploitation: 0, totalNonDeductible: 0 },
+          amortCalcule: base.amortCalcule,
+        }),
+      ),
+    );
+    const avec244 = map2033BFromRfs(
+      rfs(
+        fiscalResult({
+          recettes: base.recettes,
+          charges: {
+            totalDeductible: 2000,
+            chargesExploitation: 2000,
+            chargesFinancement: base.chargesFinancement,
+            chargesPreExploitation: 0,
+            totalNonDeductible: 0,
+            detailParCategorie: { taxe_fonciere: 1200 },
+          },
+          amortCalcule: base.amortCalcule,
+        }),
+      ),
+    );
+    for (const caseId of ["242", "294", "300", "310", "312", "314", "318", "330", "350", "370", "372"]) {
+      assert.equal(
+        findCase(avec244, caseId)?.value,
+        findCase(sans244, caseId)?.value,
+        `${caseId} ne doit pas varier selon la présence de detailParCategorie.taxe_fonciere — seule 244 le doit`,
+      );
+    }
+    assert.equal(findCase(sans244, "244"), undefined);
+    assert.equal(findCase(avec244, "244")?.value, 1200);
   });
 });
 
@@ -876,5 +1001,82 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     for (const caseId of untouched) {
       assert.equal(findCase(form, caseId), undefined, `${caseId} ne doit pas être alimentée par ce cycle`);
     }
+  });
+});
+
+/**
+ * MICRO-JALON R5 — vérifie que les cases 2033-B déjà validées (318/330/350/
+ * 370/372) sont correctement alimentées à partir d'une sortie RÉELLE de
+ * `applyAmortissementStocks()` (jamais une valeur retapée à la main) dans le
+ * scénario R5-B (déficit antérieur + amortissement de l'exercice + ARD tous
+ * consommés — voir f006.test.ts pour la preuve détaillée des valeurs
+ * intermédiaires). Aucune règle fiscale modifiée : ce test ferme uniquement
+ * l'angle mort identifié par l'audit de couverture 2033-B précédent.
+ */
+describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sortie F-006 réelle (déficit antérieur + ARD)", () => {
+  it("scénario R5-B (2000/600 déficit/800 amort/500 ARD) : 318=0, 350=600, 370=100, 330 et 372 absentes", () => {
+    const application = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 2000,
+      amortCalcule: 800,
+      stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
+      stockAmortissementsReportes: 500,
+    });
+    // Précondition : reprend exactement les valeurs déjà verrouillées par
+    // f006.test.ts (R5-B) — pas un second calcul indépendant.
+    assert.equal(application.resultatFiscal, 100);
+    assert.equal(application.deficitsImputes, 600);
+    assert.equal(application.deficitNouveau, 0);
+    assert.equal(application.amortReporte, 0);
+
+    const fr = fiscalResult({
+      resultatAvantAmort: 2000,
+      amortCalcule: 800,
+      amortDeduct: application.amortDeduct,
+      amortReporte: application.amortReporte,
+      amortReportesUtilises: application.amortReportesUtilises,
+      resultatFiscal: application.resultatFiscal,
+      deficitNouveau: application.deficitNouveau,
+      deficitsImputes: application.deficitsImputes,
+    });
+    const form = map2033BFromRfs(rfs(fr));
+
+    assert.equal(findCase(form, "318")?.value, 0, "318 = amortReporte = 0 (ARD intégralement consommé)");
+    assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
+    assert.equal(findCase(form, "370")?.value, 100, "370 = resultatFiscal = 100 (>0)");
+    assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0, pas de déficit LMNP cette année");
+    assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal > 0, jamais < 0");
+  });
+
+  it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=900, 350=600, 330/370/372 absentes", () => {
+    const application = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 1000,
+      amortCalcule: 800,
+      stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
+      stockAmortissementsReportes: 500,
+    });
+    assert.equal(application.resultatFiscal, 0);
+    assert.equal(application.deficitsImputes, 600);
+    assert.equal(application.amortReporte, 900);
+    assert.equal(application.amortReportesUtilises, 0);
+
+    const fr = fiscalResult({
+      resultatAvantAmort: 1000,
+      amortCalcule: 800,
+      amortDeduct: application.amortDeduct,
+      amortReporte: application.amortReporte,
+      amortReportesUtilises: application.amortReportesUtilises,
+      resultatFiscal: application.resultatFiscal,
+      deficitNouveau: application.deficitNouveau,
+      deficitsImputes: application.deficitsImputes,
+    });
+    const form = map2033BFromRfs(rfs(fr));
+
+    assert.equal(findCase(form, "318")?.value, 900, "318 = amortReporte = 900 (400 amortissement non déduit + 500 ARD intact)");
+    assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
+    assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0 (résultat avant amort positif)");
+    assert.equal(findCase(form, "370"), undefined, "370 absente : resultatFiscal = 0, pas > 0");
+    assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal = 0, pas < 0");
   });
 });

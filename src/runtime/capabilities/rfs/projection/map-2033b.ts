@@ -1,6 +1,7 @@
 import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 
 /**
  * Projection Cerfa 2033-B-SD — consomme UNIQUEMENT la RFS (`rfs.fiscalResult`).
@@ -78,25 +79,34 @@ import { round2 } from "../../f007/types";
  * `resultatFiscal` (case 370) et documentée séparément sur le 2042-C-PRO
  * (cases 5GA-5GJ).
  *
- * Audit fiscal ciblé (case 350) — pour les entreprises à l'IR, la notice
- * 2033-NOT-SD indique explicitement qu'à la place du Cadre II du 2033-D-SD
- * (réservé à l'IS), le montant de déficit imputé sur le bénéfice catégoriel
- * doit être mentionné en case 350 « Divers à déduire ». 218/254 exceptées,
- * 350 est la première case du groupe 209-350 sortie du statut « non
- * traitée » : projection informative pure de `fiscalResult.deficitsImputes`
- * — elle ne participe à aucun calcul de 352/354/370/372, qui restent des
- * lectures indépendantes de `resultatFiscal`/`deficitNouveau`.
+ * Règle fiscale VERROUILLÉE (jalon dédié, après audit indépendant primaire de
+ * la notice 2033-NOT-SD 2026) — pour le périmètre produit actuel de Fiscal AI
+ * (entreprise individuelle LMNP, IR, activité non professionnelle unique,
+ * aucun autre mécanisme "divers" traité) : la case 350 « Divers à déduire »
+ * porte la mention IR de l'imputation d'un déficit catégoriel ANTÉRIEUR sur
+ * le bénéfice de l'exercice — projection informative pure de
+ * `fiscalResult.deficitsImputes` (déjà calculé par TRF-0031), qui ne
+ * participe à aucun calcul de 352/354/370/372 (lectures indépendantes de
+ * `resultatFiscal`/`deficitNouveau`), ne reçoit jamais `deficitNouveau`, et
+ * ne reçoit jamais `amortReporte`/ARD (voir case 318, flux totalement
+ * distinct). 218/254 exceptées, 350 est la première case du groupe 209-350
+ * sortie du statut « non traitée ».
  *
- * La case 350 « Divers à déduire » n'a, à ce jour, qu'UN SEUL cas d'usage
- * spécifié par ce mapper : le déficit LMNP antérieur imputé sur le bénéfice
- * de l'exercice (`fiscalResult.deficitsImputes`), sur la base de la notice
- * 2033-NOT-SD. D'autres usages existent sur le formulaire officiel (bénéfice
- * non professionnel, report en arrière pour les entreprises à l'IS — hors
- * périmètre LMNP réel simplifié à l'IR) mais ne sont projetés par aucune
- * donnée de ce mapper : ce n'est pas un oubli, c'est l'absence de source
- * fiscale suffisamment établie pour les représenter sans les inventer (voir
- * `src/lib/lmnp/services/liasse-pdf/excluded-cases.ts` pour l'arbitrage
- * géométrique correspondant, distinct de cet arbitrage de mapping).
+ * Correction documentaire (audit indépendant, ce même jalon) — l'ancienne
+ * justification de ce commentaire ("à la place du Cadre II du 2033-D-SD")
+ * était inexacte : le Cadre II "Déficits reportables" du 2033-D-SD (réservé
+ * à l'IS) se sert de la case **360** du 2033-B-SD (notice 2033-NOT-SD 2026,
+ * p.14 : "Montant porté ligne 360 du tableau n° 2033-B-SD"), jamais de la
+ * case 350 — 360 reste `non_applicable` ci-dessous, à raison, comme mécanisme
+ * IS distinct. La case 350 « Divers à déduire » a par ailleurs, sur le
+ * formulaire officiel, un usage explicitement documenté pour le bénéfice non
+ * professionnel (art. 156-I-1° bis, symétrique de la case 330 pour le
+ * déficit) — usage volontairement HORS PÉRIMÈTRE de ce mapper (aucune donnée
+ * ne le projette ici), le produit actuel ne traitant que l'imputation d'un
+ * déficit antérieur pour cette case. Voir
+ * `src/lib/lmnp/services/liasse-pdf/excluded-cases.ts` pour le statut PDF
+ * correspondant (calibrage géométrique en attente, question fiscale
+ * verrouillée).
  *
  * Correction P0 fiscale (audit indépendant Cursor/Grok, confirmée) — case
  * 330 « Divers* » (bloc RÉINTÉGRATIONS, notice 2033-NOT-SD 2026 : inclut le
@@ -130,6 +140,19 @@ import { round2 } from "../../f007/types";
  * qui ne se déclenche jamais avec le F-006 actuel (garanti ≥0 par
  * TRF-0031) — cohérent avec le fait qu'un déficit LMNP non professionnel
  * n'apparaît jamais sur cette ligne.
+ *
+ * MICRO-JALON implémentation 244 — audit dédié : « Impôts, taxes et
+ * versements assimilés » était classée à tort `incoherence_modele`/MODÈLE
+ * GAP par un audit antérieur (302,352,354 confondues) alors que la donnée
+ * (taxe foncière, TRF-0020 : "Totalisation des charges déductibles", sortie
+ * détail_par_catégorie) est déjà transportée sans recalcul jusque dans
+ * `FiscalResult.charges.detailParCategorie` — un pur MAPPER GAP. Pass-through
+ * conditionnel (voir `taxeFonciere244` ci-dessous), même principe que 242 :
+ * absente si aucune ligne "taxe_fonciere" n'a été saisie, jamais un 0
+ * inventé. Couvre uniquement la composante taxe foncière — CFE et CVAE,
+ * mentionnées dans le libellé officiel de cette case, ne sont pas des
+ * catégories du moteur actuel (voir `family-ux.ts`) et restent hors
+ * périmètre de cette implémentation.
  */
 
 /** Pourquoi une case Cerfa n'est volontairement pas alimentée. */
@@ -209,6 +232,32 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       : round2(fr.charges.chargesFinancement);
   const empruntsTrace: Omit<CaseTrace, "path"> = { source: "Emprunts", ksArtifacts: ["TRF-0016", "TRF-0032"] };
 
+  // Case 244 — MICRO-JALON implémentation 244 : « Impôts, taxes et
+  // versements assimilés ». Pass-through pur de
+  // fiscalResult.charges.detailParCategorie.taxe_fonciere (F-012, TRF-0020 :
+  // "Totalisation des charges déductibles", sortie détail_par_catégorie —
+  // déjà transportée telle quelle par F-006 dans FiscalResult, jamais
+  // recalculée ici). `taxe_fonciere` est un SOUS-ENSEMBLE des lignes qui
+  // alimentent déjà `totalDeductible`/`chargesExploitation` (donc déjà compté
+  // dans 264/270) — cette case ne fait que le rendre visible séparément,
+  // jamais une seconde fois dans un total.
+  //
+  // `detailParCategorie` est un `Partial<Record<...>>` : une clé ABSENTE
+  // (`undefined`, aucune ligne de cette catégorie saisie) est distincte d'une
+  // clé PRÉSENTE à 0 (une ligne de charge existe, montant nul) — le type le
+  // permet nativement, aucune distinction inventée. Seule l'absence donne
+  // `undefined` ci-dessous ; en pratique, un enregistrement à 0 franc n'a
+  // aucune raison métier d'exister mais serait néanmoins projeté fidèlement.
+  //
+  // RÉSERVE (audit dédié) : seule la taxe foncière est une catégorie du
+  // moteur (F-012, `ChargeCategorie`). CFE et CVAE — mentionnées dans le
+  // libellé officiel de cette case — ne sont PAS distinguées comme
+  // catégories autonomes dans le modèle actuel (confirmé par
+  // `family-ux.ts` : "CFE n'est pas une catégorie moteur"). Cette
+  // implémentation ne couvre donc que la composante taxe foncière, jamais
+  // une prétention de couverture complète de la case 244.
+  const taxeFonciere244 = fr.charges.detailParCategorie?.taxe_fonciere;
+
   // Case 264 — Total des charges d'exploitation (II). Formule établie et
   // vérifiée par l'audit FEC (grand livre comptable réel du dossier de
   // référence, reconciliation au centime près) : les charges d'exploitation
@@ -237,13 +286,15 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // Case 270 — Résultat d'exploitation (I − II). Différence entre deux cases
   // déjà projetées (232 et 264) — présentation Cerfa, pas un calcul fiscal.
   const resultat270 = round2(fr.recettes.total - charges264);
-  // Cases 310/312/314 — résultat comptable. Même formule et même preuve que
-  // pour 264 : resultatAvantAmort (déjà net des charges non déductibles, par
-  // construction F-012) moins l'amortissement comptable complet moins les
-  // charges non déductibles réintègre exactement le résultat comptable réel
-  // (vérifié : -9862 - 3720 - 99 = -13681, valeur exacte du dossier de
-  // référence).
-  const resultatComptable = round2(fr.resultatAvantAmort - fr.amortCalcule - fr.charges.totalNonDeductible);
+  // Cases 310/312/314 — résultat comptable. MICRO-JALON socle patrimonial P0
+  // : source UNIQUE désormais partagée avec la case 136 du 2033-A
+  // (`capabilities/bilan/resultat-comptable.ts`) — même formule qu'avant
+  // (aucun changement de valeur, non-régression vérifiée), mais plus jamais
+  // recalculée indépendamment dans deux fichiers (risque de divergence
+  // silencieuse identifié par l'audit normatif 2033-A). Preuve historique
+  // conservée : -9862 - 3720 - 99 = -13681, valeur exacte du dossier de
+  // référence.
+  const resultatComptable = resultatComptableCentral(fr);
 
   const cases: CerfaCase[] = [
     {
@@ -309,14 +360,14 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       trace: { ...baseTrace, path: "fiscalResult.perteExceptionnelle", ksArtifacts: ["TRF-0027", "TRF-0032"] },
     },
     {
-      // Audit fiscal ciblé (déficits LMNP) — la notice 2033-NOT-SD indique
-      // explicitement que les entreprises à l'IR doivent mentionner sur cette
-      // ligne le montant de déficit imputé sur le bénéfice catégoriel (à la
-      // place du Cadre II du 2033-D-SD, réservé à l'IS). Projection
-      // informative pure de fiscalResult.deficitsImputes, déjà calculé par
-      // TRF-0031 — ne participe à aucun calcul de 352/354/370/372. Seul cas
-      // d'usage spécifié pour cette case dans ce mapper — voir le commentaire
-      // d'en-tête du fichier pour les autres usages notice non couverts ici.
+      // Règle fiscale VERROUILLÉE (voir commentaire d'en-tête du fichier) :
+      // pour le périmètre LMNP-IR actuel, 350 porte la mention IR de
+      // l'imputation d'un déficit catégoriel antérieur sur le bénéfice de
+      // l'exercice. Projection informative pure de fiscalResult.deficitsImputes,
+      // déjà calculé par TRF-0031 — ne participe à aucun calcul de
+      // 352/354/370/372. Seul cas d'usage spécifié pour cette case dans ce
+      // mapper — voir le commentaire d'en-tête du fichier pour les autres
+      // usages notice (bénéfice non professionnel, etc.) non couverts ici.
       caseId: "350",
       label: "Divers à déduire",
       value: round2(fr.deficitsImputes),
@@ -354,6 +405,24 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       trace: {
         ...empruntsTrace,
         path: "Σ rfs.emprunts[].(assuranceEmpruntExercice + assurancePreExploitation + fraisDossierDeductibles + garantieDeductible)",
+      },
+    });
+  }
+
+  // Case 244 — MICRO-JALON implémentation 244 : uniquement quand la
+  // catégorie "taxe_fonciere" est présente dans le détail par catégorie
+  // (voir commentaire de `taxeFonciere244` ci-dessus). Même principe que 242 :
+  // jamais une valeur à 0 inventée en son absence — une clé absente signifie
+  // "aucune ligne de cette catégorie saisie", pas "montant nul confirmé".
+  if (taxeFonciere244 !== undefined) {
+    cases.push({
+      caseId: "244",
+      label: "Impôts, taxes et versements assimilés",
+      value: round2(taxeFonciere244),
+      trace: {
+        ...baseTrace,
+        path: "fiscalResult.charges.detailParCategorie.taxe_fonciere",
+        ksArtifacts: ["TRF-0020", "TRF-0032"],
       },
     });
   }
