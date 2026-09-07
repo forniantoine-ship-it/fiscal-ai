@@ -1,6 +1,8 @@
 import type { Anomaly } from "@/runtime";
 import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { produceLiasse } from "@/runtime/capabilities/f007/produce-liasse";
+import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import {
@@ -95,6 +97,14 @@ export function runDeclarationGeneration(
   // exercice sans continuité disponible, ou tout appelant qui n'en a pas
   // (ex. l'aperçu de dérive de declaration-generation-gate.ts, inchangé).
   stocksOuverture?: FiscalEngineOutput["stocks"],
+  /**
+   * P1-PDF-02-E — saisie patrimoniale déjà collectée. Absente aujourd'hui
+   * du draft (aucun formulaire UI). Fournie uniquement par un appelant qui
+   * dispose réellement des `BilanInputs` : alors `assemblePatrimoine()`
+   * produit le `PatrimonialState` transporté dans la RFS. Jamais inventée
+   * ici, jamais remplacée par des zéros.
+   */
+  bilanInputs?: BilanInputs,
 ): DeclarationGenerationResult {
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
@@ -147,20 +157,35 @@ export function runDeclarationGeneration(
   // pas se perdre en route vers la RFS. `composantsNouveaux` est transporté
   // PAR RÉFÉRENCE (même tableau que `draft.chargesAssistant.composantsNouveaux`,
   // jamais recopié), sur le même modèle que `emprunts` ci-dessous.
-  const rfs = buildFiscalRepresentation({
+  const immobilisations = draft?.logementAmortissement
+    ? {
+        ...draft.logementAmortissement.plan,
+        valeurTerrain: draft.logementAmortissement.valeurTerrain,
+        montantMobilier: draft.logementAmortissement.montantMobilier,
+        dateMiseEnService: draft.dateMiseEnService,
+        composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
+      }
+    : undefined;
+  const emprunts = draft?.financementCharges?.prets;
+  const rfsSansPatrimoine = buildFiscalRepresentation({
     fiscalResult,
     identite,
-    immobilisations: draft?.logementAmortissement
-      ? {
-          ...draft.logementAmortissement.plan,
-          valeurTerrain: draft.logementAmortissement.valeurTerrain,
-          montantMobilier: draft.logementAmortissement.montantMobilier,
-          dateMiseEnService: draft.dateMiseEnService,
-          composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
-        }
-      : undefined,
-    emprunts: draft?.financementCharges?.prets,
+    immobilisations,
+    emprunts,
   });
+  // Transport uniquement : si aucun BilanInputs réel n'est fourni, le
+  // patrimoine reste `undefined` — le mapper 2033-A laisse alors 084/120/
+  // 134/137/142 bloqués. Aucune saisie n'est inventée depuis le draft.
+  const rfs =
+    bilanInputs !== undefined
+      ? buildFiscalRepresentation({
+          fiscalResult,
+          identite,
+          immobilisations,
+          emprunts,
+          patrimoine: assemblePatrimoine(rfsSansPatrimoine, bilanInputs),
+        })
+      : rfsSansPatrimoine;
 
   // Assemblage additif — appelle uniquement les mappers déjà testés
   // (map2031FromRfs/map2033BFromRfs/map2033AFromRfs/map2033CFromRfs), aucun

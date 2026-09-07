@@ -13,6 +13,12 @@ export {
   CERFA_2033B_MILLESIME,
 } from "./generate-cerfa-2033b";
 export type { Cerfa2033BGenerationResult, Cerfa2033BGenerationSuccess } from "./generate-cerfa-2033b";
+export {
+  generateCerfa2033AFromRfs,
+  CERFA_2033A_FORM_ID,
+  CERFA_2033A_MILLESIME,
+} from "./generate-cerfa-2033a";
+export type { Cerfa2033AGenerationResult, Cerfa2033AGenerationSuccess } from "./generate-cerfa-2033a";
 export type { FormInput } from "./gate/generation-gate";
 export { runStructuralAndMappingGate, checkOverflow } from "./gate/generation-gate";
 export { createGeneratedLiassePdf } from "./versioning";
@@ -27,4 +33,11 @@ export {
   scopeStatusFor2033BCase,
 } from "./scope/2033-b-2026";
 export type { Cerfa2033BScopeEntry, CerfaCaseScopeStatus } from "./scope/2033-b-2026";
+export {
+  CERFA_2033A_REGISTRY_CASE_IDS,
+  CERFA_2033A_FORBIDDEN_CASE_IDS,
+  CERFA_2033A_SLICE_COLUMNS,
+  isAuthorized2033ASliceCase,
+} from "./scope/2033-a-2026";
+export type { Cerfa2033ARegistryCaseId, Cerfa2033AColumn } from "./scope/2033-a-2026";
 export * from "./types";
