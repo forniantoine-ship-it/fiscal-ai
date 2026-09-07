@@ -277,7 +277,7 @@ describe("F4-C — non-régression F1/F2 et totaux interdits", () => {
     assert.equal(form.cases.find((c) => c.caseId === "098"), undefined);
   });
 
-  it("112/110/180 restent bloqués même si 048 et 098 publiables", () => {
+  it("112 = 048 + 098 = 1500 quand 048 et 098 publiables (F4-D) ; 110/180 restent bloqués (aucune gate)", () => {
     const form = mapWithPatrimoine({
       ...BILAN_INPUTS,
       tresorerie: { bankMode: "DEDIE", closingCash: 3000, provisionsAmortissements: { status: "NUL_CONFIRME" } },
@@ -289,7 +289,15 @@ describe("F4-C — non-régression F1/F2 et totaux interdits", () => {
     });
     assert.equal(form.cases.find((c) => c.caseId === "048")?.value, 1500);
     assert.equal(form.cases.find((c) => c.caseId === "098")?.value, 0);
-    for (const id of ["112", "110", "180"] as const) {
+
+    // F4-D (e0a25de) — 048 et 098 sont tous deux réellement publiés : 112 doit
+    // désormais l'être aussi. Ancien contrat (112 toujours bloquée) révolu.
+    const case112 = form.cases.find((c) => c.caseId === "112");
+    assert.ok(case112, "112 doit être publiée : 048 et 098 sont tous deux publiables");
+    assert.equal(case112!.value, 1500, "112 = 048 (1500) + 098 (0)");
+    assert.match(case112!.trace.path, /112 = 048 \+ 098/);
+
+    for (const id of ["110", "180"] as const) {
       assert.equal(form.cases.find((c) => c.caseId === id), undefined);
       assert.ok(form.casesNonAlimentees.some((c) => c.caseId === id));
     }

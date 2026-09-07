@@ -178,8 +178,8 @@ describe("F4-B — 086 provisions (F2 préservé + Cas B)", () => {
   });
 });
 
-describe("F4-B — totaux interdits (112/110/180 ; 048/098 = F4-C)", () => {
-  it("112/110/180 restent bloqués même si toutes feuilles amort connues", () => {
+describe("F4-B — 112 correcte quand toutes feuilles amort connues (048/098 = F4-C, 112 = F4-D) ; 110/180 restent interdits", () => {
+  it("112 = 048 + 098 = 1500 (048=1500, 098=0) quand toutes feuilles amort connues ; 110/180 restent bloqués (aucune gate)", () => {
     const form = mapWithPatrimoine({
       ...BILAN_INPUTS,
       tresorerie: { bankMode: "DEDIE", closingCash: 3000, provisionsAmortissements: { status: "NUL_CONFIRME" } },
@@ -193,7 +193,20 @@ describe("F4-B — totaux interdits (112/110/180 ; 048/098 = F4-C)", () => {
         chargesConstateesAvanceAmort: { status: "NUL_CONFIRME" },
       },
     });
-    for (const id of ["112", "110", "180"] as const) {
+    const v048 = form.cases.find((c) => c.caseId === "048")?.value;
+    const v098 = form.cases.find((c) => c.caseId === "098")?.value;
+    assert.equal(v048, 1500);
+    assert.equal(v098, 0);
+
+    // F4-D — 048 et 098 sont tous deux réellement publiés : 112 doit l'être aussi,
+    // jamais rester bloquée par un ancien contrat révolu (avant e0a25de).
+    const case112 = form.cases.find((c) => c.caseId === "112");
+    assert.ok(case112, "112 doit être publiée : 048 et 098 sont tous deux publiables");
+    assert.equal(case112!.value, (v048 as number) + (v098 as number), "112 = 048 + 098");
+    assert.equal(case112!.value, 1500);
+    assert.match(case112!.trace.path, /112 = 048 \+ 098/);
+
+    for (const id of ["110", "180"] as const) {
       assert.equal(form.cases.find((c) => c.caseId === id), undefined);
       assert.ok(form.casesNonAlimentees.some((c) => c.caseId === id));
     }
