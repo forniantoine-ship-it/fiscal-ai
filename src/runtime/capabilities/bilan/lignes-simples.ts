@@ -212,3 +212,52 @@ export function gateTotal098(
   }
   return { status: "COMPOSANTES_CONNUES" };
 }
+
+/**
+ * P1-PDF-02-F4-D — gate 112 (colonne Amortissements-Provisions).
+ * Formule Cerfa : `112 = 048 + 098` (Total général actif = Total I + Total
+ * II, même colonne). Jamais `112 = 110 − 180` — cette relation n'est qu'un
+ * contrôle d'équilibre croisé a posteriori (`check-bilan-equilibre.ts`),
+ * jamais un chemin de calcul.
+ *
+ * Ne recalcule PAS 048/098 : consomme leur gate déjà résolue par l'appelant
+ * ET un flag de publication réelle (`case048Published`/`case098Published`,
+ * même doctrine que `case030Published`/`case086Published` pour 048/098 —
+ * une gate `COMPOSANTES_CONNUES` ne suffit jamais seule, il faut que la case
+ * ait réellement été produite par le mapper). 112 n'est publiable que si les
+ * DEUX totaux sont réellement publiables — jamais une somme partielle.
+ */
+export function gateTotal112(
+  gate048: GateTotalComposantesResult,
+  gate098: GateTotalComposantesResult,
+  case048Published: boolean,
+  case098Published: boolean,
+): GateTotalComposantesResult {
+  const raison048 =
+    gate048.status === "BLOQUE" ? gate048.raison : !case048Published ? "composante 048 non publiée par le mapper." : undefined;
+  const raison098 =
+    gate098.status === "BLOQUE" ? gate098.raison : !case098Published ? "composante 098 non publiée par le mapper." : undefined;
+
+  if (raison048 !== undefined && raison098 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["048", "098"],
+      raison: `Total 112 (Total général actif (I + II) (amortissements-provisions)) non publiable : composantes 048 et 098 non publiables — ${raison048} ${raison098} Absence de donnée ≠ zéro ; 112 ne peut jamais être déduit de 110 − 180.`,
+    };
+  }
+  if (raison048 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["048"],
+      raison: `Total 112 (Total général actif (I + II) (amortissements-provisions)) non publiable : composante 048 non publiable — ${raison048} Absence de donnée ≠ zéro ; 112 ne peut jamais être déduit de 110 − 180.`,
+    };
+  }
+  if (raison098 !== undefined) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["098"],
+      raison: `Total 112 (Total général actif (I + II) (amortissements-provisions)) non publiable : composante 098 non publiable — ${raison098} Absence de donnée ≠ zéro ; 112 ne peut jamais être déduit de 110 − 180.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
+}

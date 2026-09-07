@@ -3,7 +3,7 @@ import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { checkBilanEquilibre } from "../../bilan/check-bilan-equilibre";
-import { gateTotal048, gateTotal098 } from "../../bilan/lignes-simples";
+import { gateTotal048, gateTotal098, gateTotal112 } from "../../bilan/lignes-simples";
 import { resolveCaseAvecVentilationPrioritaire } from "../../bilan/ventilation-tiers";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
 import type { LignePatrimonialeResolution } from "../../bilan/types";
@@ -706,6 +706,40 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
       });
     }
 
+    // P1-PDF-02-F4-D — total général actif (112 = 048 + 098), colonne
+    // Amortissements-Provisions uniquement. Consomme les gates 048/098 déjà
+    // résolues ci-dessus + le fait qu'elles aient RÉELLEMENT été publiées
+    // dans `cases` (jamais une gate seule). 112 n'est jamais déduit de
+    // 110 − 180 (contrôle d'équilibre croisé distinct, voir
+    // check-bilan-equilibre.ts) — uniquement une somme de feuilles publiées.
+    const case048Published = cases.some((c) => c.caseId === "048");
+    const case098Published = cases.some((c) => c.caseId === "098");
+    const gate112 = gateTotal112(gate048, gate098, case048Published, case098Published);
+    if (gate112.status === "COMPOSANTES_CONNUES") {
+      const composantes112 = ["048", "098"] as const;
+      const total112 = sommeFeuillesPubliables(cases, composantes112);
+      cases.push({
+        caseId: "112",
+        label: "Total général actif (I + II) (amortissements-provisions)",
+        value: total112,
+        trace: {
+          source: "FiscalResult",
+          path: traceTotalAmortFeuilles("112", "048 + 098", composantes112, cases, {
+            "048": "publié (gateTotal048)",
+            "098": "publié (gateTotal098)",
+          }),
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    } else {
+      casesNonAlimentees.push({
+        caseId: "112",
+        label: "Total général actif (I + II) (amortissements-provisions)",
+        raison: gate112.raison,
+        categorie: "incoherence_modele",
+      });
+    }
+
     // Totaux — correction P0-4 (audit indépendant). Avant cette correction,
     // le fait que le SOUS-ENSEMBLE suivi par ce module (immobilisations
     // corporelles + trésorerie + tiers, compte de l'exploitant + RAN +
@@ -722,8 +756,10 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // `048`, `096`, `098`, `110`, `112`, `176` et `180` ne sont donc PLUS
     // jamais produits ici à partir d'un sous-ensemble équilibré seul — sauf
     // 048/098 (P1-PDF-02-F4-C) lorsque TOUTES leurs feuilles Amort sont
-    // publiables via `gateTotal048` / `gateTotal098` (F4-C). 112/110/180 restent
-    // interdits.
+    // publiables via `gateTotal048` / `gateTotal098` (F4-C), et sauf 112
+    // (P1-PDF-02-F4-D) lorsque 048 ET 098 sont réellement publiées via
+    // `gateTotal112` (F4-D). 110/180 (colonne Brut / total passif) restent
+    // interdits — aucune gate équivalente n'existe pour eux.
     //
     // Seule EXCEPTION : la case 142 (Total I — Capitaux propres). Correction
     // P1-A (audit indépendant, asymétrie 142/137) : le calcul et le gate de
