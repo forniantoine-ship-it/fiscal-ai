@@ -227,6 +227,18 @@ export type PosteEconomiqueInput = {
 export type VentilationTiersInputs = {
   /** Liste de faits économiques classifiés. Absent / [] ≠ confirmation de zéro. */
   postes?: PosteEconomiqueInput[];
+  /**
+   * B-FAMILY-1 — natures explicitement confirmées SANS AUCUN poste par
+   * l'utilisateur (ex. « je confirme n'avoir aucune créance client »).
+   * Distinct de l'absence de réponse : une nature absente de cette liste ET
+   * sans poste reste INCONNU (jamais un 0 par défaut). Une nature présente
+   * ici ET sans poste devient NUL_CONFIRME. `NATURE_INCONNUE` n'a pas sa
+   * place dans cette liste (elle ne correspond à aucune case ventilable) —
+   * si elle y figurait, elle serait simplement ignorée (voir `caseOrInconnu`).
+   * Un poste réel prime toujours sur une confirmation vide pour la même
+   * nature (voir `resolveVentilationTiers`).
+   */
+  naturesConfirmeesVides?: NatureEconomique[];
 };
 
 export type ConflitVentilation = {

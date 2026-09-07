@@ -68,6 +68,19 @@ function inconnu(label: string): LignePatrimonialeResolution {
   };
 }
 
+/**
+ * B-FAMILY-1 — l'utilisateur a explicitement confirmé n'avoir AUCUN poste de
+ * cette nature (jamais déduit d'une simple absence de saisie — voir
+ * `naturesConfirmeesVides` dans `types.ts`).
+ */
+function nulConfirme(label: string): LignePatrimonialeResolution {
+  return {
+    status: "NUL_CONFIRME",
+    montant: 0,
+    raison: `${label} : absence de poste explicitement confirmée par l'utilisateur.`,
+  };
+}
+
 function declareSum(label: string, montant: number, nbPostes: number): LignePatrimonialeResolution {
   return {
     status: "DECLARE",
@@ -87,6 +100,9 @@ function estDeclare(res: LignePatrimonialeResolution): res is { status: "DECLARE
  * - `NATURE_INCONNUE` reste non ventilée (jamais 072/175 par défaut).
  * - Case 173 = `NON_APPLICABLE` pour EI (doctrine déjà établie).
  * - EMPRUNT / DECOUVERT refusés (source canonique 156).
+ * - B-FAMILY-1 : une case ventilable sans poste est `NUL_CONFIRME` si sa
+ *   nature figure dans `inputs.naturesConfirmeesVides`, sinon `INCONNU` —
+ *   un poste réel prime toujours sur une confirmation vide de même nature.
  */
 export function resolveVentilationTiers(inputs?: VentilationTiersInputs): VentilationTiersResolution {
   const sommes: Partial<Record<CaseVentilableKey, { montant: number; count: number }>> = {};
@@ -131,10 +147,23 @@ export function resolveVentilationTiers(inputs?: VentilationTiersInputs): Ventil
     sommes[caseKey] = { montant: round2(prev.montant + montant), count: prev.count + 1 };
   }
 
+  // B-FAMILY-1 — natures confirmées vides, traduites en clés de case
+  // ventilable via la même table `NATURE_VERS_CASE` (jamais une seconde
+  // correspondance qui pourrait diverger). `NATURE_INCONNUE` et les natures
+  // interdites (EMPRUNT/DECOUVERT) n'ont pas d'entrée dans cette table :
+  // si elles figuraient ici par erreur, elles seraient silencieusement
+  // ignorées, jamais transformées en confirmation d'une case existante.
+  const casesConfirmeesVides = new Set<CaseVentilableKey>();
+  for (const nature of inputs?.naturesConfirmeesVides ?? []) {
+    const key = NATURE_VERS_CASE[nature];
+    if (key) casesConfirmeesVides.add(key);
+  }
+
   const caseOrInconnu = (key: CaseVentilableKey): LignePatrimonialeResolution => {
     const s = sommes[key];
-    if (!s) return inconnu(CASE_LABEL[key]);
-    return declareSum(CASE_LABEL[key], s.montant, s.count);
+    if (s) return declareSum(CASE_LABEL[key], s.montant, s.count);
+    if (casesConfirmeesVides.has(key)) return nulConfirme(CASE_LABEL[key]);
+    return inconnu(CASE_LABEL[key]);
   };
 
   const cases: VentilationTiersCases = {
