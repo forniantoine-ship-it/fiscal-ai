@@ -36,6 +36,8 @@ import {
   deriveCase370372Boxes,
   deriveCase2033CTotalRowBoxes,
   deriveResultatFiscalColumnBoxes,
+  derive2033ACaseBoxes,
+  derive2033AColumnFamilies,
   xInBox,
   type ColumnBox,
 } from "./independent-grid-oracle";
@@ -43,6 +45,8 @@ import { buildDossierTemoinRfs, DOSSIER_TEMOIN_FISCAL_RESULT, DOSSIER_TEMOIN_IDE
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import { buildScenarioRfs } from "./scenario-beneficiaire.test";
+import { CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME } from "../generate-cerfa-2033a";
+import type { CerfaCase } from "../types";
 
 // Tolérance = largeur du trait de grille du Cerfa officiel (mesurée : les
 // séparateurs sont tracés avec une épaisseur de trait de 0.76pt, voir le
@@ -870,5 +874,237 @@ describe("Oracle de position indépendant — 2033-C-SD (GO-1/GO-2, huit cases)"
     assert.ok(case572Drawing, "572 (amortCalcule=3720) doit être dessinée dans sa boîte de valeur");
 
     assert.ok(!result.manifest.some((e) => e.caseId === "490"), "490 ne doit pas apparaître sans dateMiseEnService");
+  });
+});
+
+// =====================================================================
+// Oracle de position indépendant — 2033-A-SD (bilan simplifié, 25 cases)
+// =====================================================================
+//
+// CHANTIER P0 (audit post-E3) — avant ce chantier, la seule vérification de
+// position du 2033-A était `vertical-slice-2033-a.test.ts` : elle compare le
+// PDF généré à un dictionnaire `VALUE_BOXES_PYMUPDF` recopié à la main dans
+// LE MÊME fichier de test que celui qui exerce le registre — jamais une
+// source indépendante du registre lui-même. Une erreur de colonne introduite
+// simultanément dans `registry/2033-a/2026.ts` et recopiée par erreur dans
+// `VALUE_BOXES_PYMUPDF` ne serait pas détectée par cette vérification.
+//
+// Ici, comme pour 2033-B/2031/2033-C ci-dessus, la référence de vérité est
+// dérivée en lisant DIRECTEMENT les octets du Cerfa officiel (`derive2033A*`
+// dans `independent-grid-oracle.ts`) — jamais en important `registry/2033-a`
+// ni `scope/2033-a-2026`. Les 25 cases actuellement rendues (Chantiers
+// P1-PDF-02-C, 2B, 2D-C, 2D-E3) sont recalibrées de zéro : zone-numéro,
+// boîte de valeur, colonne (via les en-têtes RÉELLEMENT imprimés "Brut" /
+// "Amortissements – Provisions" / "NET"), et bande de ligne (par mi-distance
+// avec les cases voisines de la même colonne, jamais une constante à part).
+
+// Les 25 cases actuellement rendues — recopiées ici (jamais importées de
+// `scope/2033-a-2026`) pour que ce fichier reste un oracle autonome, comme
+// les listes 2033-C ci-dessus.
+const CASE_IDS_2033A_ORACLE = [
+  "016", "028", "030", "042", "044", "048",
+  "066", "070", "074", "082", "084", "086", "094", "096", "098",
+  "110", "112",
+  "120", "134", "136", "137", "142",
+  "156", "176", "180",
+] as const;
+
+// Doctrine de colonne attendue, établie à partir de la lecture du Cerfa
+// officiel (voir `derive2033AColumnFamilies`), PAS du registre — sert
+// uniquement à vérifier que l'oracle lui-même n'a pas mal identifié une
+// colonne, avant de l'utiliser pour vérifier le registre.
+const EXPECTED_COLUMN_2033A: Record<(typeof CASE_IDS_2033A_ORACLE)[number], "Brut" | "Amortissements-Provisions" | "NET"> = {
+  "016": "Amortissements-Provisions",
+  "028": "Brut",
+  "030": "Amortissements-Provisions",
+  "042": "Amortissements-Provisions",
+  "044": "Brut",
+  "048": "Amortissements-Provisions",
+  "066": "Amortissements-Provisions",
+  "070": "Amortissements-Provisions",
+  "074": "Amortissements-Provisions",
+  "082": "Amortissements-Provisions",
+  "084": "Brut",
+  "086": "Amortissements-Provisions",
+  "094": "Amortissements-Provisions",
+  "096": "Brut",
+  "098": "Amortissements-Provisions",
+  "110": "Brut",
+  "112": "Amortissements-Provisions",
+  "120": "NET",
+  "134": "NET",
+  "136": "NET",
+  "137": "NET",
+  "142": "NET",
+  "156": "NET",
+  "176": "NET",
+  "180": "NET",
+};
+
+function cerfaCase2033AOracle(caseId: string, value: number): CerfaCase {
+  return { caseId, label: caseId, value, trace: { source: "FiscalResult", path: "oracle-2033a-test", ksArtifacts: [] } };
+}
+
+// Valeurs synthétiques distinctes (jamais deux identiques, jamais uniquement
+// des zéros) — indépendantes de `SLICE_TEST_VALUES` (vertical-slice-2033-a),
+// pour que ce test ne dépende d'aucune valeur définie ailleurs. Aucune
+// relation arithmétique n'est vérifiée ici (déjà couvert par
+// `vertical-slice-2033-a.test.ts`) : seule la GÉOMÉTRIE nous intéresse.
+const ORACLE_TEST_VALUES: Record<(typeof CASE_IDS_2033A_ORACLE)[number], number> = {
+  "016": 1_001, "028": 2_002, "030": 3_003, "042": 4_004, "044": 5_005, "048": 6_006,
+  "066": 7_007, "070": 8_008, "074": 9_009, "082": 10_010, "084": 11_011, "086": 12_012,
+  "094": 13_013, "096": 14_014, "098": 15_015, "110": 16_016, "112": 17_017,
+  "120": -18_018, "134": 1_901_919, "136": 20_020, "137": 21_021, "142": 22_022,
+  "156": 23_023, "176": 24_024, "180": 25_025,
+};
+
+describe("Oracle de position indépendant — 2033-A-SD (25 cases, CHANTIER P0 post-E3)", () => {
+  it("A — sanity check : les 25 boîtes de valeur existent, largeur positive, disjointes de leur zone-numéro, colonne cohérente avec les en-têtes officiels", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await derive2033ACaseBoxes(bytes);
+    assert.equal(boxes.size, 25, "les 25 cases actuellement rendues doivent toutes être calibrables indépendamment");
+
+    for (const caseId of CASE_IDS_2033A_ORACLE) {
+      const box = boxes.get(caseId);
+      assert.ok(box, `case ${caseId} doit être calibrée par l'oracle indépendant`);
+      assert.ok(box!.valueBox.xMax > box!.valueBox.xMin, `valueBox ${caseId} doit avoir une largeur positive`);
+      assert.ok(box!.valueBox.xMax - box!.valueBox.xMin > 60, `valueBox ${caseId} doit être une vraie boîte de valeur, pas une zone-numéro étroite`);
+      assert.ok(box!.numberZone.xMax <= box!.valueBox.xMin + 0.1, `la zone-numéro de ${caseId} doit précéder immédiatement sa boîte de valeur`);
+      assert.ok(box!.rowBand.yMax > box!.rowBand.yMin, `rowBand ${caseId} doit avoir une hauteur positive`);
+      assert.equal(box!.column, EXPECTED_COLUMN_2033A[caseId], `colonne dérivée de ${caseId} doit correspondre à la doctrine du Cerfa officiel`);
+    }
+  });
+
+  it("A bis — les trois familles de colonnes dérivées des en-têtes officiels sont mutuellement disjointes (Brut < Amortissements-Provisions < NET, aucun chevauchement)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const families = await derive2033AColumnFamilies(bytes);
+    assert.ok(families.Brut.xMax <= families["Amortissements-Provisions"].xMin + 0.1, "Brut doit se terminer avant Amortissements-Provisions");
+    assert.ok(families["Amortissements-Provisions"].xMax <= families.NET.xMin + 0.1, "Amortissements-Provisions doit se terminer avant NET");
+  });
+
+  it("A ter — dans chaque colonne, les bandes de ligne des 25 cases ne se chevauchent jamais (aucune ambiguïté ligne-à-ligne possible)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await derive2033ACaseBoxes(bytes);
+    const byColumn = new Map<string, { caseId: string; yMin: number; yMax: number }[]>();
+    for (const caseId of CASE_IDS_2033A_ORACLE) {
+      const box = boxes.get(caseId)!;
+      if (!byColumn.has(box.column)) byColumn.set(box.column, []);
+      byColumn.get(box.column)!.push({ caseId, yMin: box.rowBand.yMin, yMax: box.rowBand.yMax });
+    }
+    for (const [column, rows] of byColumn) {
+      rows.sort((a, b) => b.yMax - a.yMax);
+      for (let i = 0; i < rows.length - 1; i += 1) {
+        assert.ok(
+          rows[i].yMin >= rows[i + 1].yMax - 0.01,
+          `colonne ${column} : la bande de ${rows[i].caseId} [${rows[i].yMin},${rows[i].yMax}] chevauche celle de ${rows[i + 1].caseId} [${rows[i + 1].yMin},${rows[i + 1].yMax}]`,
+        );
+      }
+    }
+  });
+
+  it("B — chaque mapping du registre tombe dans sa boîte de valeur officielle indépendante, jamais dans sa zone-numéro (la discrimination ligne-à-ligne, elle, est couverte par A ter et par le PDF réellement généré au test C)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await derive2033ACaseBoxes(bytes);
+    for (const caseId of CASE_IDS_2033A_ORACLE) {
+      const mapping = resolveVisualMapping(CERFA_2033A_FORM_ID, CERFA_2033A_MILLESIME, caseId);
+      assert.ok(mapping, `${caseId} doit avoir une entrée de registre`);
+      const box = boxes.get(caseId)!;
+      assert.ok(
+        xInBox(mapping!.position.x, box.valueBox, GRID_LINE_TOLERANCE_PT),
+        `x=${mapping!.position.x} (${caseId}) doit tomber dans sa boîte de valeur officielle indépendante [${box.valueBox.xMin},${box.valueBox.xMax}]`,
+      );
+      assert.ok(!xInBox(mapping!.position.x, box.numberZone, GRID_LINE_TOLERANCE_PT), `${caseId} ne doit jamais tomber dans sa zone-numéro`);
+    }
+  });
+
+  it("C — PDF réellement généré : les 25 valeurs synthétiques distinctes sont chacune dessinée dans SA cellule indépendante (bonne colonne, bonne ligne), jamais dans une case voisine, jamais dupliquée", async () => {
+    const cases: CerfaCase[] = CASE_IDS_2033A_ORACLE.map((caseId) => cerfaCase2033AOracle(caseId, ORACLE_TEST_VALUES[caseId]));
+
+    const result = await generateCerfaLiassePdf({ millesime: CERFA_2033A_MILLESIME, forms: [{ form: CERFA_2033A_FORM_ID, cases }] });
+    if (result.status === "blocked") {
+      assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+      return;
+    }
+    assert.equal(result.manifest.length, 25, "les 25 cases doivent être publiées par ce fixture");
+
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await derive2033ACaseBoxes(bytes);
+    const drawnPositions = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+
+    const usedValueBoxes = new Set<string>();
+    for (const caseId of CASE_IDS_2033A_ORACLE) {
+      const box = boxes.get(caseId)!;
+      const manifestEntry = result.manifest.find((m) => m.caseId === caseId);
+      assert.ok(manifestEntry, `${caseId} doit être réellement dessinée (présente dans le manifeste)`);
+
+      // Position réellement dessinée dans les octets du PDF final — jamais
+      // seulement ce que le générateur PENSE avoir écrit (`manifest`).
+      const drawing = drawnPositions.find(
+        (p) => p.text === manifestEntry!.text && Math.abs(p.pdfLibX - manifestEntry!.pdfLibX) < 0.01 && Math.abs(p.pdfLibY - manifestEntry!.pdfLibY) < 0.01,
+      );
+      assert.ok(drawing, `${caseId} : la position rapportée par le manifeste doit correspondre à un texte réellement dessiné dans les octets du PDF`);
+
+      assert.ok(
+        xInBox(drawing!.pdfLibX, box.valueBox, GRID_LINE_TOLERANCE_PT),
+        `${caseId} : x=${drawing!.pdfLibX} doit tomber dans sa boîte de valeur officielle indépendante [${box.valueBox.xMin},${box.valueBox.xMax}]`,
+      );
+      assert.ok(!xInBox(drawing!.pdfLibX, box.numberZone, GRID_LINE_TOLERANCE_PT), `${caseId} ne doit jamais être dessinée dans sa zone-numéro`);
+      assert.ok(
+        drawing!.pdfLibY >= box.rowBand.yMin - GRID_LINE_TOLERANCE_PT && drawing!.pdfLibY <= box.rowBand.yMax + GRID_LINE_TOLERANCE_PT,
+        `${caseId} : y=${drawing!.pdfLibY} doit rester dans la bande de ligne indépendante [${box.rowBand.yMin},${box.rowBand.yMax}] (jamais la ligne voisine)`,
+      );
+
+      // Unicité de la cellule : deux cases distinctes ne doivent jamais
+      // partager exactement le même point de dessin (x,y) — une case
+      // dupliquée sur la position d'une autre serait indétectable autrement.
+      const key = `${drawing!.pdfLibX.toFixed(2)}|${drawing!.pdfLibY.toFixed(2)}`;
+      assert.ok(!usedValueBoxes.has(key), `${caseId} : position (${key}) déjà utilisée par une autre case — cellule non unique`);
+      usedValueBoxes.add(key);
+    }
+  });
+
+  it("D — démonstration conceptuelle de la capacité de détection : les bandes de ligne et les familles de colonnes sont strictement non chevauchantes, donc une valeur déplacée de Brut vers NET, ou d'une ligne vers la ligne voisine, tomberait NÉCESSAIREMENT hors de sa boîte attendue", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const boxes = await derive2033ACaseBoxes(bytes);
+
+    // 016 (Amortissements-Provisions) vs 030 (Amortissements-Provisions,
+    // ligne immédiatement suivante) : même colonne, lignes voisines — un
+    // décalage d'une ligne doit être détectable par la bande de ligne seule.
+    const box016 = boxes.get("016")!;
+    const box030 = boxes.get("030")!;
+    assert.notEqual(box016.rowBand.yMin, box030.rowBand.yMin, "016 et 030 doivent avoir des bandes de ligne distinctes");
+    const box030CenterY = (box030.rowBand.yMin + box030.rowBand.yMax) / 2;
+    assert.ok(
+      !(box030CenterY >= box016.rowBand.yMin && box030CenterY <= box016.rowBand.yMax),
+      "si la valeur de 016 était dessinée au centre de la ligne de 030 (décalage d'une ligne), la vérification rowBand de 016 échouerait — c'est la propriété recherchée",
+    );
+
+    // 044 (Brut) vs 048 (Amortissements-Provisions, même ligne visuelle
+    // "Total I") : colonnes voisines — un décalage de colonne doit être
+    // détectable par la boîte de valeur seule, indépendamment de la ligne.
+    const box044 = boxes.get("044")!;
+    const box048 = boxes.get("048")!;
+    assert.ok(!xInBox((box048.valueBox.xMin + box048.valueBox.xMax) / 2, box044.valueBox), "si la valeur de 048 (Amort.) était dessinée dans la colonne Brut de 044, la vérification valueBox de 044 échouerait — c'est la propriété recherchée");
+    assert.ok(!xInBox((box044.valueBox.xMin + box044.valueBox.xMax) / 2, box048.valueBox), "réciproquement pour 044 dessinée en colonne Amortissements-Provisions");
+
+    // 176 (NET, Dettes) vs 110 (Brut, Total général actif) : deux totaux,
+    // colonnes disjointes — même vérification, cas concret des chantiers
+    // 2D-C/2D-E3 (E3 est précisément le chantier qui a ajouté 110/180).
+    const box176 = boxes.get("176")!;
+    const box110 = boxes.get("110")!;
+    assert.ok(!xInBox((box176.valueBox.xMin + box176.valueBox.xMax) / 2, box110.valueBox), "176 (NET) ne doit jamais être confondue avec la colonne Brut de 110");
+  });
+
+  it("E — cohérence de contrôle : les boîtes de valeur dérivées de l'oracle concordent (à la tolérance de trait de grille près) avec les ancrages du registre déjà publiés pour les trois colonnes (bord droit − inset 1.5pt)", async () => {
+    const bytes = readAssetBytes(2026, "2033-sd.pdf");
+    const families = await derive2033AColumnFamilies(bytes);
+    // Ancrages documentés dans `registry/2033-a/2026.ts` (commentaire d'en-tête) :
+    // Brut x=372.3, Amortissements-Provisions x=479.19, NET x=566.6 — utilisés
+    // ICI UNIQUEMENT comme contrôle de cohérence a posteriori, jamais comme
+    // source des boîtes dérivées ci-dessus (qui viennent exclusivement de
+    // `derive2033ACaseBoxes`/`derive2033AColumnFamilies`).
+    assert.ok(Math.abs(families.Brut.xMax - 1.5 - 372.3) < GRID_LINE_TOLERANCE_PT, `ancrage Brut attendu ≈372.3, dérivé ${families.Brut.xMax - 1.5}`);
+    assert.ok(Math.abs(families["Amortissements-Provisions"].xMax - 1.5 - 479.19) < GRID_LINE_TOLERANCE_PT, `ancrage Amortissements-Provisions attendu ≈479.19, dérivé ${families["Amortissements-Provisions"].xMax - 1.5}`);
+    assert.ok(Math.abs(families.NET.xMax - 1.5 - 566.6) < GRID_LINE_TOLERANCE_PT, `ancrage NET attendu ≈566.6, dérivé ${families.NET.xMax - 1.5}`);
   });
 });

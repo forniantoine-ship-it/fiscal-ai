@@ -534,3 +534,178 @@ export async function deriveCase2033CTotalRowBoxes(officialAssetBytes: Uint8Arra
 
   return result as unknown as Case2033CTotalRowBoxes;
 }
+
+// --- 2033-A-SD — bilan simplifié, 25 cases (page 1 de l'asset partagé) ----
+
+/**
+ * Les trois familles de colonnes du 2033-A-SD, telles qu'elles apparaissent
+ * RÉELLEMENT sur le Cerfa officiel — jamais une hypothèse de registre.
+ *
+ * "NET" ici désigne exclusivement l'en-tête (majuscules) du bloc PASSIF,
+ * seul à porter des numéros de case (120…180) : le bloc ACTIF affiche aussi
+ * un intitulé "Net" (minuscule), mais c'est une colonne CALCULÉE sans numéro
+ * de case propre — aucune des 25 cases du registre ne s'y trouve, donc elle
+ * n'a pas besoin d'être dérivée ici.
+ */
+export type Cerfa2033AColumnLabel = "Brut" | "Amortissements-Provisions" | "NET";
+
+const COLUMN_HEADER_TEXT_2033A: Record<Cerfa2033AColumnLabel, string> = {
+  Brut: "Brut",
+  "Amortissements-Provisions": "Amortissements – Provisions",
+  NET: "NET",
+};
+
+const CASE_IDS_2033A = [
+  "016", "028", "030", "042", "044", "048",
+  "066", "070", "074", "082", "084", "086", "094", "096", "098",
+  "110", "112",
+  "120", "134", "136", "137", "142",
+  "156", "176", "180",
+] as const;
+
+/**
+ * Dérive, en lisant `assets/2026/2033-sd.pdf` (page 1 = 2033-A-SD), les
+ * bornes réelles des TROIS familles de colonnes (zone-numéro + boîte de
+ * valeur fusionnées) en repérant les intitulés de colonne effectivement
+ * imprimés ("Brut", "Amortissements – Provisions", "NET") — jamais en
+ * important `registry/2033-a` ni `scope/2033-a-2026`.
+ */
+export async function derive2033AColumnFamilies(officialAssetBytes: Uint8Array): Promise<Record<Cerfa2033AColumnLabel, ColumnBox>> {
+  const PAGE_NUMBER = 1;
+  const needles = Object.values(COLUMN_HEADER_TEXT_2033A);
+  const hits = await findExactTextHits(officialAssetBytes, PAGE_NUMBER, needles);
+  const contentText = await officialPageContentText(officialAssetBytes, PAGE_NUMBER - 1);
+  const segments = parseStrokedLineSegments(contentText);
+
+  const result = {} as Record<Cerfa2033AColumnLabel, ColumnBox>;
+  for (const [column, needle] of Object.entries(COLUMN_HEADER_TEXT_2033A) as [Cerfa2033AColumnLabel, string][]) {
+    const hit = hits.get(needle)!;
+    const yMin = hit.yBottomLeft - 1;
+    const yMax = hit.yBottomLeft + hit.height + 1;
+    const xs = verticalSeparatorsSpanningBand(segments, yMin, yMax);
+    // L'intitulé de colonne est un texte large, centré sur toute la famille
+    // (zone-numéro + boîte de valeur réunies : le trait qui sépare les deux
+    // sous-zones n'existe qu'au niveau des LIGNES de cases, jamais au niveau
+    // de la ligne d'en-tête elle-même) — `intervalContaining` avec la
+    // tolérance par défaut suffit, vérifié par exécution directe.
+    const family = intervalContaining(xs, hit.x);
+    if (!family) {
+      throw new Error(
+        `Oracle 2033-A : impossible de localiser la famille de colonne "${column}" (en-tête "${needle}") dans les séparateurs officiels — xs=${xs.join(",")}`,
+      );
+    }
+    result[column] = family;
+  }
+  return result;
+}
+
+export type Case2033ABox = {
+  readonly caseId: string;
+  readonly column: Cerfa2033AColumnLabel;
+  /** Zone où est imprimé le numéro de case — écrire une valeur ici répéterait l'erreur historique P0-1 (case 372 du 2033-B). */
+  readonly numberZone: ColumnBox;
+  /** Boîte VALEUR réelle de la case. */
+  readonly valueBox: ColumnBox;
+  /**
+   * Bande verticale (espace PDF natif, bas-gauche) de la ligne portant cette
+   * case, dérivée par MI-DISTANCE avec les cases voisines de la MÊME colonne
+   * (jamais une valeur mesurée à part, jamais une constante recopiée) —
+   * détecte un décalage d'une valeur vers la ligne du dessus ou du dessous,
+   * dans la même colonne.
+   */
+  readonly rowBand: { readonly yMin: number; readonly yMax: number };
+};
+
+/**
+ * Dérive, en lisant `assets/2026/2033-sd.pdf` (page 1 = 2033-A-SD), les
+ * bornes réelles des 25 cases actuellement rendues (colonne + zone-numéro +
+ * boîte de valeur + bande de ligne) — sans jamais importer `registry/2033-a`
+ * ni `scope/2033-a-2026`.
+ *
+ * Principe, identique à `deriveCase370372Boxes`/`deriveCase330Boxes` : pour
+ * chaque case, son numéro imprimé est localisé par `pdfjs-dist` (texte exact,
+ * position réelle) ; la zone-numéro est l'intervalle des séparateurs
+ * vectoriels qui le contient ; la boîte de valeur est l'intervalle suivant
+ * à droite. La colonne (Brut / Amortissements-Provisions / NET) est ensuite
+ * identifiée en comparant cette paire zone-numéro/boîte-de-valeur aux trois
+ * familles dérivées indépendamment par `derive2033AColumnFamilies` (elles-
+ * mêmes dérivées des en-têtes officiels, jamais du registre).
+ */
+export async function derive2033ACaseBoxes(officialAssetBytes: Uint8Array): Promise<ReadonlyMap<string, Case2033ABox>> {
+  const PAGE_NUMBER = 1;
+  const columnFamilies = await derive2033AColumnFamilies(officialAssetBytes);
+  const hits = await findExactTextHits(officialAssetBytes, PAGE_NUMBER, CASE_IDS_2033A);
+  const contentText = await officialPageContentText(officialAssetBytes, PAGE_NUMBER - 1);
+  const segments = parseStrokedLineSegments(contentText);
+
+  type RawCase = { caseId: string; numberZone: ColumnBox; valueBox: ColumnBox; column: Cerfa2033AColumnLabel; y: number };
+  const raw: RawCase[] = [];
+
+  for (const caseId of CASE_IDS_2033A) {
+    const hit = hits.get(caseId)!;
+    const yMin = hit.yBottomLeft - 1;
+    const yMax = hit.yBottomLeft + hit.height + 1;
+    const xs = verticalSeparatorsSpanningBand(segments, yMin, yMax);
+    if (xs.length < 2) {
+      throw new Error(
+        `Oracle 2033-A : seulement ${xs.length} séparateur(s) vertical(aux) trouvé(s) dans la bande de la case "${caseId}" (attendu ≥2) — xs=${xs.join(",")}`,
+      );
+    }
+    const numberZone = intervalContaining(xs, hit.x);
+    if (!numberZone) {
+      throw new Error(`Oracle 2033-A : impossible de localiser la zone-numéro de la case "${caseId}" — xs=${xs.join(",")}`);
+    }
+    const valueBox = nextIntervalRight(xs, numberZone);
+    if (!valueBox) {
+      throw new Error(`Oracle 2033-A : impossible de dériver la boîte de valeur à droite du numéro de la case "${caseId}".`);
+    }
+
+    // Comparaison sur la seule boîte de VALEUR (jamais la zone-numéro) : les
+    // familles dérivées des en-têtes ne couvrent que la portion de la grille
+    // effectivement sous-tendue par le texte de l'intitulé, qui ne remonte
+    // pas toujours jusqu'à la zone-numéro (vérifié empiriquement pour "NET",
+    // bloc PASSIF : famille=[480.7,568.1], alors que la zone-numéro réelle de
+    // 120…180, mesurée ligne par ligne, commence dès 464.5) — la boîte de
+    // valeur, elle, coïncide toujours exactement.
+    const columnEntry = (Object.entries(columnFamilies) as [Cerfa2033AColumnLabel, ColumnBox][]).find(
+      ([, family]) => valueBox.xMin >= family.xMin - 1 && valueBox.xMax <= family.xMax + 1,
+    );
+    if (!columnEntry) {
+      throw new Error(
+        `Oracle 2033-A : impossible d'identifier la colonne de la case "${caseId}" (boîte de valeur [${valueBox.xMin},${valueBox.xMax}]) parmi les familles d'en-tête officielles ${JSON.stringify(columnFamilies)}.`,
+      );
+    }
+
+    raw.push({ caseId, numberZone, valueBox, column: columnEntry[0], y: hit.yBottomLeft });
+  }
+
+  const byColumn = new Map<Cerfa2033AColumnLabel, RawCase[]>();
+  for (const r of raw) {
+    if (!byColumn.has(r.column)) byColumn.set(r.column, []);
+    byColumn.get(r.column)!.push(r);
+  }
+
+  const result = new Map<string, Case2033ABox>();
+  for (const group of byColumn.values()) {
+    group.sort((a, b) => b.y - a.y); // haut de page → bas de page (y natif décroissant)
+    for (let i = 0; i < group.length; i += 1) {
+      const current = group[i];
+      const above = group[i - 1];
+      const below = group[i + 1];
+      // Pas de voisine (première/dernière ligne d'une colonne) : marge large
+      // et arbitraire (200pt, très supérieure au pas de ligne réel ~15pt) —
+      // seule une comparaison MI-DISTANCE avec une vraie voisine a une valeur
+      // de preuve ; ce cas ne sert qu'à ne jamais laisser `rowBand` indéfini.
+      const yMax = above ? (current.y + above.y) / 2 : current.y + 200;
+      const yMin = below ? (current.y + below.y) / 2 : current.y - 200;
+      result.set(current.caseId, {
+        caseId: current.caseId,
+        column: current.column,
+        numberZone: current.numberZone,
+        valueBox: current.valueBox,
+        rowBand: { yMin, yMax },
+      });
+    }
+  }
+  return result;
+}
