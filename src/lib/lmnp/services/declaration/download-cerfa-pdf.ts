@@ -11,8 +11,21 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 
 export const CERFA_PDF_ROUTE = "/api/lmnp/declaration/cerfa-pdf";
 
-/** 2033-C reste hors périmètre (P1-1/P1-2) — jamais ajouté ici sans un chantier dédié. */
-export const CERFA_PDF_FORMS = ["2033-A-SD", "2033-B-SD"] as const;
+/**
+ * P1-6C — liasse LMNP réel simplifié complète, dans l'ordre canonique
+ * (`ALL_CERFA_FORM_IDS`, `src/lib/lmnp/services/liasse-pdf/types.ts`) :
+ * 2031-SD, 2031-bis-SD, puis 2033-A/B/C/D-SD. Sélection par défaut du
+ * téléchargement utilisateur — la route reste capable d'accepter un
+ * sous-ensemble si un futur appelant le demande explicitement.
+ */
+export const CERFA_PDF_FORMS = [
+  "2031-SD",
+  "2031-bis-SD",
+  "2033-A-SD",
+  "2033-B-SD",
+  "2033-C-SD",
+  "2033-D-SD",
+] as const;
 
 export type CerfaPdfRequestPayload = {
   rfs: FiscalRepresentation;

@@ -19,9 +19,12 @@ import {
   cerfaPdfFileName,
   describeCerfaPdfErrorBody,
 } from "./download-cerfa-pdf";
+import { ALL_CERFA_FORM_IDS } from "@/lib/lmnp/services/liasse-pdf";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 
 const FAKE_RFS = { fiscalResult: { exercice: 2025 } } as unknown as FiscalRepresentation;
+
+const EXPECTED_SIX_FORMS = ["2031-SD", "2031-bis-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"] as const;
 
 describe("buildCerfaPdfRequestPayload", () => {
   it("transporte la RFS et le declarationVersionId tels quels, jamais transformés", () => {
@@ -30,10 +33,18 @@ describe("buildCerfaPdfRequestPayload", () => {
     assert.equal(payload.declarationVersionId, "version-1");
   });
 
-  it("forms est toujours exactement 2033-A-SD + 2033-B-SD — 2033-C hors périmètre P1-2", () => {
+  it("P1-6C — forms est toujours la liasse complète (6 formulaires), dans l'ordre canonique", () => {
     const payload = buildCerfaPdfRequestPayload(FAKE_RFS, "version-1");
-    assert.deepEqual(payload.forms, ["2033-A-SD", "2033-B-SD"]);
-    assert.deepEqual(CERFA_PDF_FORMS, ["2033-A-SD", "2033-B-SD"]);
+    assert.deepEqual(payload.forms, EXPECTED_SIX_FORMS);
+    assert.deepEqual(CERFA_PDF_FORMS, EXPECTED_SIX_FORMS);
+  });
+
+  it("P1-6C — CERFA_PDF_FORMS respecte l'ordre canonique du projet (ALL_CERFA_FORM_IDS), jamais un second ordre inventé", () => {
+    // Ne recrée pas une deuxième liste canonique : compare directement à la
+    // source unique déjà utilisée par le pipeline PDF (types.ts).
+    const canonicalPositions = CERFA_PDF_FORMS.map((form) => ALL_CERFA_FORM_IDS.indexOf(form));
+    const sorted = [...canonicalPositions].sort((a, b) => a - b);
+    assert.deepEqual(canonicalPositions, sorted, "CERFA_PDF_FORMS doit déjà être dans l'ordre canonique de ALL_CERFA_FORM_IDS");
   });
 });
 
