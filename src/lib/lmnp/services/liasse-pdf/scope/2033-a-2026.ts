@@ -27,6 +27,15 @@
  * indépendamment (pdfjs+pdf-lib, `independent-grid-oracle.ts`), voir le
  * commentaire du registre `registry/2033-a/2026.ts` pour le détail de la
  * méthode. Aucune modification du runtime ni des gates 096/176.
+ *
+ * Chantier B-FAMILY-4 — 5 lignes famille B collectées par B-FAMILY-2/3
+ * (068/072/164/166/172) sortent à leur tour de l'interdiction : le runtime
+ * les résolvait déjà via `resolveVentilationTiers`/`map-2033a.ts` (source
+ * unique `ventilationTiers`, jamais de repli `lignesSimples` — voir l'audit
+ * P1-B), seule cette liste les empêchait d'atteindre le PDF. Calibrées
+ * indépendamment (pdfjs+pdf-lib, `independent-grid-oracle.ts`), voir le
+ * commentaire du registre `registry/2033-a/2026.ts` pour le détail de la
+ * méthode. Aucune modification du runtime ni des gates 096/176.
  */
 export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "016",
@@ -37,7 +46,9 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "048",
   "064",
   "066",
+  "068",
   "070",
+  "072",
   "074",
   "080",
   "082",
@@ -55,6 +66,9 @@ export const CERFA_2033A_REGISTRY_CASE_IDS = [
   "137",
   "142",
   "156",
+  "164",
+  "166",
+  "172",
   "174",
   "175",
   "176",
@@ -76,7 +90,9 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "048": "Amortissements-Provisions",
   "064": "Brut",
   "066": "Amortissements-Provisions",
+  "068": "Brut",
   "070": "Amortissements-Provisions",
+  "072": "Brut",
   "074": "Amortissements-Provisions",
   "080": "Brut",
   "082": "Amortissements-Provisions",
@@ -94,6 +110,9 @@ export const CERFA_2033A_SLICE_COLUMNS: Readonly<Record<Cerfa2033ARegistryCaseId
   "137": "NET",
   "142": "NET",
   "156": "NET",
+  "164": "NET",
+  "166": "NET",
+  "172": "NET",
   "174": "NET",
   "175": "NET",
   "176": "NET",

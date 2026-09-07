@@ -59,6 +59,19 @@
  *     sous la tolérance de trait de grille (1.5 pt) déjà utilisée par
  *     l'oracle indépendant.
  *
+ * Chantier B-FAMILY-4 — 5 lignes famille B collectées par B-FAMILY-2/3
+ * (068/072/164/166/172), calibrées indépendamment via
+ * `independent-grid-oracle.ts` (`derive2033ACaseBoxes`), même méthode que
+ * P1-B2 :
+ *   - 068/072 (Brut) partagent EXACTEMENT la même ligne physique que 070/074
+ *     (Amort.-Prov.) respectivement déjà calibrées (native(068)=native(070)
+ *     =497.996, native(072)=native(074)=483.385) — leur `position.y`
+ *     réutilise sans aucun calcul celui déjà validé de leur jumelle.
+ *   - 164/166/172 (NET, Passif) n'ont aucune jumelle sur leur ligne. Leur
+ *     `position.y` est dérivé par différence de coordonnées natives (pdfjs)
+ *     avec 156 (déjà calibrée), cross-vérifié indépendamment avec 176 et 180
+ *     comme seconds points d'ancrage : convergence à 0.006 pt près.
+ *
  * INTERDIT dans ce registre : toute pseudo-case pour la colonne Net de
  * l'actif (non numérotée). Aucune case numérotée n'est plus structurellement
  * interdite — toutes les gates moteur existent et sont câblées
@@ -164,10 +177,20 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     322.97,
     "Colonne Amortissements-Provisions. Avances et acomptes versés sur commandes. Boîte valeur [389.98,480.69]×[319.54,334.33] (chantier 2A, PyMuPDF). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
   ),
+  brut(
+    "068",
+    337.46,
+    "Colonne Brut. Clients et comptes rattachés. Même ligne physique que 070 (Amort.-Prov., déjà calibrée) — coordonnées Y natives identiques (pdfjs, chantier B-FAMILY-4, independent-grid-oracle.ts : native(068)=native(070)=497.996), aucun calcul supplémentaire nécessaire. Boîte valeur [283.74,373.80]×[334.33,348.60]. y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
+  ),
   amort(
     "070",
     337.46,
     "Colonne Amortissements-Provisions. Clients et comptes rattachés. Boîte valeur [389.98,480.69]×[334.33,348.60] (chantier 2A, PyMuPDF). y = haut du numéro imprimé (hors zone-numéro [373.80,389.98]).",
+  ),
+  brut(
+    "072",
+    352.08,
+    "Colonne Brut. Autres créances. Même ligne physique que 074 (Amort.-Prov., déjà calibrée) — coordonnées Y natives identiques (pdfjs, chantier B-FAMILY-4, independent-grid-oracle.ts : native(072)=native(074)=483.385), aucun calcul supplémentaire nécessaire. Boîte valeur [283.74,373.80]×[348.60,363.40]. y = haut du numéro imprimé (hors zone-numéro [268.66,283.74]).",
   ),
   amort(
     "074",
@@ -253,6 +276,21 @@ export const registry2033A2026: readonly CerfaVisualMapping[] = [
     "156",
     631.06,
     "Colonne NET. Emprunts et dettes assimilées. Boîte valeur P1-PDF-02-B [480.69,568.10]×[627.59,642.38]. y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "164",
+    645.77,
+    "Colonne NET. Avances et acomptes reçus sur commandes en cours. Position dérivée par différence de coordonnées Y natives (pdfjs) avec 156 (déjà calibrée) : native(156)=204.398, native(164)=189.686, delta=−14.712 pt reporté sur position.y(156)=631.06 → 645.772, arrondi 645.77. Cross-vérifié avec 176 et 180 comme second/troisième points d'ancrage (accord à 0.006 pt près). Boîte valeur [480.69,568.10]×[642.30,657.09] (chantier B-FAMILY-4, pdfjs+pdf-lib, independent-grid-oracle.ts). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "166",
+    660.36,
+    "Colonne NET. Fournisseurs et comptes rattachés. Position dérivée par différence de coordonnées Y natives (pdfjs) avec 156 (déjà calibrée) : native(156)=204.398, native(166)=175.095, delta=−29.303 pt reporté sur position.y(156)=631.06 → 660.363, arrondi 660.36. Cross-vérifié avec 176 et 180 (accord à 0.006 pt près). Boîte valeur [480.69,568.10]×[656.89,671.68] (chantier B-FAMILY-4, pdfjs+pdf-lib, independent-grid-oracle.ts). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
+  ),
+  passifNet(
+    "172",
+    676.46,
+    "Colonne NET. Dettes fiscales et sociales. Position dérivée par différence de coordonnées Y natives (pdfjs) avec 156 (déjà calibrée) : native(156)=204.398, native(172)=158.994, delta=−45.404 pt reporté sur position.y(156)=631.06 → 676.464, arrondi 676.46. Cross-vérifié avec 176 et 180 (accord à 0.006 pt près). Boîte valeur [480.69,568.10]×[672.99,687.78] (chantier B-FAMILY-4, pdfjs+pdf-lib, independent-grid-oracle.ts ; hauteur de ligne approximée au pas standard, aucune case déjà calibrée n'existe immédiatement sous 172 pour la borner exactement — sans conséquence : la bande de ligne réellement utilisée par l'oracle indépendant, plus large, est celle qui protège les tests). y = haut du numéro imprimé (hors zone-numéro [464.51,480.69]).",
   ),
   passifNet(
     "174",
