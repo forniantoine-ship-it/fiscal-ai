@@ -8,6 +8,16 @@ import type {
   TiersInputs,
   TresorerieInputs,
 } from "@/runtime/capabilities/bilan/types";
+import { parseMontantSaisi } from "./parse-montant-saisi";
+import {
+  EMPTY_VENTILATION_TIERS_INTAKE_STATE,
+  buildVentilationTiersInputs,
+  deriveVentilationTiersIntakeState,
+  type VentilationTiersIntakeState,
+} from "./ventilation-tiers-intake";
+
+/** Ré-export historique — voir `parse-montant-saisi.ts` pour l'implémentation et la raison de l'extraction (B-FAMILY-3). */
+export { parseMontantSaisi } from "./parse-montant-saisi";
 
 /**
  * G1-P0 — construction pure de `BilanInputs` (capabilities/bilan/types.ts,
@@ -100,6 +110,14 @@ export type PatrimonialIntakeState = {
   autresDettes?: OuiNonReponse;
   /** P1-B1, si OUI — montant de l'autre dette (case 175). */
   autresDettesMontantRaw: string;
+  /**
+   * B-FAMILY-3 — état de collecte des 5 natures famille B (068/072/164/166/172),
+   * géré par `ventilation-tiers-intake.ts`/`VentilationTiersIntakeCard`.
+   * Toujours présent (jamais optionnel) : un état vide (`EMPTY_VENTILATION_TIERS_INTAKE_STATE`)
+   * ne construit aucune donnée (voir `buildVentilationTiersInputs`), exactement
+   * comme les autres champs `Raw` vides de cet état.
+   */
+  ventilationTiersIntake: VentilationTiersIntakeState;
 };
 
 export const EMPTY_PATRIMONIAL_INTAKE_STATE: PatrimonialIntakeState = {
@@ -115,27 +133,8 @@ export const EMPTY_PATRIMONIAL_INTAKE_STATE: PatrimonialIntakeState = {
   chargesConstateesAvanceMontantRaw: "",
   produitsConstatesAvanceMontantRaw: "",
   autresDettesMontantRaw: "",
+  ventilationTiersIntake: EMPTY_VENTILATION_TIERS_INTAKE_STATE,
 };
-
-/**
- * Convertit une saisie utilisateur en montant explicite.
- *
- * `""` (ou uniquement des espaces) → `undefined` (INCONNU, jamais 0).
- * Une chaîne non numérique → `undefined` également (saisie invalide traitée
- * comme non renseignée, jamais une valeur inventée).
- *
- * INTERDIT partout où une déclaration utilisateur est construite :
- * `Number(raw)` seul, ou `Number(raw) || 0` — `Number("")` vaut `0` en
- * JavaScript, ce qui transformerait silencieusement un champ jamais rempli
- * en déclaration explicite de zéro. Ce point est le seul endroit du module
- * où cette conversion doit avoir lieu.
- */
-export function parseMontantSaisi(raw: string): number | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === "") return undefined;
-  const value = Number(trimmed);
-  return Number.isFinite(value) ? value : undefined;
-}
 
 /**
  * Q4 = NON confirmé — cascade vers les 7 cases Amort.-Prov. concernées
@@ -270,6 +269,14 @@ export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInput
   // représentation exigée par checkBilanEquilibre().
   const tiers: TiersInputs | undefined = state.autresElements === "NON" ? TIERS_NUL_CONFIRME : undefined;
 
+  // B-FAMILY-3 — famille B (068/072/164/166/172), entièrement indépendante
+  // de Q4/lignesSimples/tiers ci-dessus : sa propre transformation pure vit
+  // dans `ventilation-tiers-intake.ts` (jamais dupliquée ici). Clé omise
+  // (jamais `ventilationTiers: undefined`) quand rien n'a été renseigné —
+  // préserve exactement la forme historique de l'objet retourné (voir les
+  // tests `patrimonial-intake.test.ts` existants, non modifiés).
+  const ventilationTiers = buildVentilationTiersInputs(state.ventilationTiersIntake);
+
   return {
     tresorerie,
     compteExploitant,
@@ -277,6 +284,7 @@ export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInput
     subventionsInvestissement,
     lignesSimples,
     tiers,
+    ...(ventilationTiers !== undefined ? { ventilationTiers } : {}),
   };
 }
 
@@ -349,6 +357,7 @@ export function deriveIntakeStateFromBilanPatrimonial(value: BilanInputs | undef
     produitsConstatesAvanceMontantRaw: deriveMontantRaw(value.lignesSimples?.produitsConstatesAvance),
     autresDettes,
     autresDettesMontantRaw: deriveMontantRaw(value.lignesSimples?.autresDettes),
+    ventilationTiersIntake: deriveVentilationTiersIntakeState(value.ventilationTiers),
   };
 }
 

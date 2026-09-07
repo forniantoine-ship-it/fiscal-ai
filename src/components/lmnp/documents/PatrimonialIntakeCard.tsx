@@ -12,6 +12,7 @@ import {
   type PatrimoineContinuite,
   type PatrimonialIntakeState,
 } from "@/lib/lmnp/services/declaration/patrimonial-intake";
+import { VentilationTiersIntakeCard } from "./VentilationTiersIntakeCard";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 
 type PatrimonialIntakeCardProps = {
@@ -293,6 +294,16 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
           correspond à aucune de ces catégories, contactez-nous.
         </p>
       ) : null}
+
+      {/*
+        B-FAMILY-3 — collecte des 5 natures famille B (068/072/164/166/172),
+        désormais connectée à `state`/`buildBilanPatrimonial` comme le reste
+        du formulaire.
+      */}
+      <VentilationTiersIntakeCard
+        value={state.ventilationTiersIntake}
+        onChange={(ventilationTiersIntake) => patch({ ventilationTiersIntake })}
+      />
     </section>
   );
 }
