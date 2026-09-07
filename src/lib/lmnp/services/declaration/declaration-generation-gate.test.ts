@@ -11,6 +11,7 @@ import { resolveDeclarationGenerationGate } from "./declaration-generation-gate"
 import { runDeclarationGeneration } from "./run-declaration-generation";
 import { LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, Property } from "../../types";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 
 const PROPERTY: Property = {
   id: "prop-1",
@@ -637,5 +638,228 @@ describe("P0-1A — cohérence stocksOuverture entre le preview de la porte et l
       stocksSnapshot,
       "le stocksOuverture fourni ne doit jamais être muté par le preview",
     );
+  });
+});
+
+/**
+ * P0-1B (2026-09-07) — audit P0-1 : le mécanisme B (cette porte) ne compare
+ * que 4 scalaires de FiscalEngineOutput (totalRecettes/totalCharges/
+ * amortDeduct/amortReporte) + l'identité. Le patrimoine (068/072/164/166/
+ * 172, tresorerie.provisionsAmortissements, compte exploitant, RAN...) vit
+ * entièrement dans `rfs.patrimoine` (assemblePatrimoine()) et peut changer
+ * SANS toucher aucun de ces scalaires — une correction patrimoniale seule
+ * pouvait donc échapper à ce mécanisme si le mécanisme A (reducer) était
+ * contourné ou incomplet. Chaque test ci-dessous vérifie explicitement en
+ * précondition que les 4 scalaires restent identiques, pour prouver que la
+ * détection vient bien de `patrimoineChanged()` et non d'un effet de bord.
+ */
+describe("P0-1B — patrimoine (rfs.patrimoine) comme défense indépendante du mécanisme B", () => {
+  function bilanInputsDeBase(overrides: Partial<BilanInputs> = {}): BilanInputs {
+    return {
+      tresorerie: { bankMode: "INCONNU" },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+      ...overrides,
+    };
+  }
+
+  function genererAvecPatrimoine(bilanPatrimonial: BilanInputs) {
+    const draft = { ...generationReadyDraft(), bilanPatrimonial } as DeclarationDraft;
+    const generation = runDeclarationGeneration(draft, 2025, undefined, bilanPatrimonial);
+    assert.equal(generation.status, "generated", "précondition — le fixture doit être générable");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+    return { draftGenere, generation };
+  }
+
+  /** Vérifie qu'une correction patrimoniale ne modifie aucun des 4 scalaires historiquement comparés — sinon le test ne prouverait rien de spécifique au patrimoine. */
+  function assertScalairesInchanges(
+    draftCorrige: DeclarationDraft,
+    bilanCorrige: BilanInputs,
+    reference: { fiscalResult: { totalRecettes: number; totalCharges: number; amortDeduct: number; amortReporte: number } },
+  ) {
+    const previewScalaires = runDeclarationGeneration(draftCorrige, 2025, undefined, bilanCorrige);
+    assert.equal(previewScalaires.status, "generated");
+    if (previewScalaires.status !== "generated") throw new Error("unreachable");
+    assert.equal(previewScalaires.fiscalResult.totalRecettes, reference.fiscalResult.totalRecettes);
+    assert.equal(previewScalaires.fiscalResult.totalCharges, reference.fiscalResult.totalCharges);
+    assert.equal(previewScalaires.fiscalResult.amortDeduct, reference.fiscalResult.amortDeduct);
+    assert.equal(previewScalaires.fiscalResult.amortReporte, reference.fiscalResult.amortReporte);
+  }
+
+  it("P0-1B-1 — correction 068/072 (créances : LOYER_DU_PAR_LOCATAIRE/AUTRE_CREANCE_ACTIVITE) → canGenerate === true", () => {
+    const { draftGenere, generation } = genererAvecPatrimoine(
+      bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] } }),
+    );
+    const bilanCorrige = bilanInputsDeBase({
+      ventilationTiers: {
+        postes: [
+          { nature: "LOYER_DU_PAR_LOCATAIRE", montant: 800 },
+          { nature: "AUTRE_CREANCE_ACTIVITE", montant: 200 },
+        ],
+      },
+    });
+    const draftCorrige = { ...draftGenere, bilanPatrimonial: bilanCorrige } as DeclarationDraft;
+    assertScalairesInchanges(draftCorrige, bilanCorrige, generation);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, true, "une correction 068/072 doit être détectée même sans dérive des 4 scalaires");
+  });
+
+  it("P0-1B-2 — correction 164/166/172 (dettes : ACOMPTE_RECU_SUR_COMMANDE/FOURNISSEUR_NON_PAYE/DETTE_FISCALE_OU_SOCIALE) → canGenerate === true", () => {
+    const { draftGenere, generation } = genererAvecPatrimoine(
+      bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "FOURNISSEUR_NON_PAYE", montant: 300 }] } }),
+    );
+    const bilanCorrige = bilanInputsDeBase({
+      ventilationTiers: {
+        postes: [
+          { nature: "FOURNISSEUR_NON_PAYE", montant: 300 },
+          { nature: "DETTE_FISCALE_OU_SOCIALE", montant: 150 },
+          { nature: "ACOMPTE_RECU_SUR_COMMANDE", montant: 90 },
+        ],
+      },
+    });
+    const draftCorrige = { ...draftGenere, bilanPatrimonial: bilanCorrige } as DeclarationDraft;
+    assertScalairesInchanges(draftCorrige, bilanCorrige, generation);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, true, "une correction 164/166/172 doit être détectée même sans dérive des 4 scalaires");
+  });
+
+  it("P0-1B-3 — correction d'une composante amortissements/provisions patrimoniale (tresorerie.provisionsAmortissements, case 086) → canGenerate === true", () => {
+    const { draftGenere, generation } = genererAvecPatrimoine(
+      bilanInputsDeBase({ tresorerie: { bankMode: "INCONNU", provisionsAmortissements: { status: "DECLARE", montant: 400 } } }),
+    );
+    const bilanCorrige = bilanInputsDeBase({
+      tresorerie: { bankMode: "INCONNU", provisionsAmortissements: { status: "DECLARE", montant: 650 } },
+    });
+    const draftCorrige = { ...draftGenere, bilanPatrimonial: bilanCorrige } as DeclarationDraft;
+    assertScalairesInchanges(draftCorrige, bilanCorrige, generation);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, true, "une correction des provisions-amortissements patrimoniales (086) doit être détectée");
+  });
+
+  it("P0-1B-4 — correction du compte exploitant (apports) → canGenerate === true", () => {
+    const { draftGenere, generation } = genererAvecPatrimoine(
+      bilanInputsDeBase({ compteExploitant: { ouverture: 1000, apports: 0, prelevements: 0 } }),
+    );
+    const bilanCorrige = bilanInputsDeBase({ compteExploitant: { ouverture: 1000, apports: 500, prelevements: 0 } });
+    const draftCorrige = { ...draftGenere, bilanPatrimonial: bilanCorrige } as DeclarationDraft;
+    assertScalairesInchanges(draftCorrige, bilanCorrige, generation);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftCorrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(
+      gate.canGenerate,
+      true,
+      "une correction du compte exploitant (apports, contributif à 120/compte exploitant) doit être détectée",
+    );
+  });
+
+  it("P0-1B-5 — dossier généré, patrimoine strictement inchangé → canGenerate === false", () => {
+    const bilan = bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] } });
+    const { draftGenere } = genererAvecPatrimoine(bilan);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftGenere,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, false, "aucune modification patrimoniale ne doit jamais réclamer de régénération");
+  });
+
+  it("P0-1B-6 — patrimoine inchangé, modification réellement non contributive (progression UI) → canGenerate reste false", () => {
+    const bilan = bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] } });
+    const { draftGenere } = genererAvecPatrimoine(bilan);
+    // `completedSteps` est un marqueur de progression du parcours, jamais lu
+    // par runDeclarationGeneration()/identiteFromDeclarationDraft() ni par la
+    // liste des 8 clés contributives du reducer — ne doit produire aucune
+    // dérive, patrimoniale ou non.
+    const draftNonContributif = { ...draftGenere, completedSteps: [...draftGenere.completedSteps, "extra-marker"] } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftNonContributif,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.canGenerate, false, "une donnée non contributive ne doit jamais déclencher de fausse dérive");
+  });
+
+  it("P0-1B-7 — continuité N+1 (stocksOuverture réel) + patrimoine inchangé → canGenerate reste false (P0-1A intact)", () => {
+    const stocksOuverture = { deficits: [{ millesime: 2024, montant: 3000 }], amortissementsReportes: 0 };
+    const bilan = bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] } });
+    const draft = { ...generationReadyDraft(), bilanPatrimonial: bilan } as DeclarationDraft;
+    const generation = runDeclarationGeneration(draft, 2025, stocksOuverture, bilan);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: draftGenere,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+      stocksOuverture,
+    });
+    assert.equal(
+      gate.canGenerate,
+      false,
+      "la combinaison stocksOuverture (P0-1A) + patrimoine (P0-1B) ne doit jamais produire de fausse dérive quand rien n'a changé",
+    );
+  });
+
+  it("P0-1B-9 — non-mutation : le preview ne mute ni draft, ni patrimoine, ni historique de versions", () => {
+    const bilan = bilanInputsDeBase({ ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] } });
+    const { draftGenere } = genererAvecPatrimoine(bilan);
+    const draftAvecHistorique = {
+      ...draftGenere,
+      declarationVersions: [{ id: "v1", createdAt: "2026-01-01T00:00:00.000Z", fiscalResult: draftGenere.fiscalResult }],
+    } as DeclarationDraft;
+    const draftSnapshot = JSON.stringify(draftAvecHistorique);
+    const bilanSnapshot = JSON.stringify(bilan);
+
+    resolveDeclarationGenerationGate({
+      draft: draftAvecHistorique,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+
+    assert.equal(
+      JSON.stringify(draftAvecHistorique),
+      draftSnapshot,
+      "le draft fourni (fiscalResult/rfs/patrimoine/declarationVersions) ne doit jamais être muté par le preview",
+    );
+    assert.equal(JSON.stringify(bilan), bilanSnapshot, "le bilanPatrimonial fourni ne doit jamais être muté par le preview");
   });
 });

@@ -26,6 +26,7 @@ import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain"
 import type { PersistedWorkspace } from "../../store/persistence";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
 import { runDeclarationGeneration } from "../declaration/run-declaration-generation";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 
 const NOW = "2026-09-04T00:00:00.000Z";
 
@@ -702,5 +703,33 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
       true,
       "un exercice en continuité, sans aucune modification, ne doit jamais bloquer la clôture",
     );
+  });
+
+  /**
+   * P0-1B (2026-09-07) — TEST P0-1B-8. `canCloseFiscalYear` relaie
+   * `resolveDeclarationGenerationGate()` sans transformation propre : cette
+   * assertion vérifie que le renforcement patrimonial de la porte (comparaison
+   * de `rfs.patrimoine`) n'introduit aucune fausse dérive quand le patrimoine
+   * est réellement inchangé — la clôture doit rester autorisée.
+   */
+  it("R6 (P0-1B-8) — patrimoine inchangé après génération → canCloseFiscalYear reste autorisé", () => {
+    const bilanPatrimonial: BilanInputs = {
+      tresorerie: { bankMode: "INCONNU" },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+      ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] },
+    };
+    const draft = { ...generationReadyDraft(), bilanPatrimonial } as DeclarationDraft;
+    const generation = runDeclarationGeneration(draft, 2025, undefined, bilanPatrimonial);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: draftGenere,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, true, "un patrimoine inchangé ne doit jamais bloquer une clôture par ailleurs valide");
   });
 });

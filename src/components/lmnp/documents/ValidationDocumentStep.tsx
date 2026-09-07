@@ -69,8 +69,17 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         fiscalYear: fiscalYear.year,
         paid,
         generated,
+        // P0-1B (audit du call site, 2026-09-07) — même stocksOuverture que la
+        // génération réelle et que les deux autres call sites (canCloseFiscalYear,
+        // resolveDeclarationOutOfDate, tous deux corrigés en P0-1A) : sans ce
+        // champ, cet écran reproduisait le même faux positif pour un exercice
+        // N+1 en continuité réelle (déficits antérieurs/amortissements reportés
+        // non nuls), directement visible ici via gate.canGenerate → CTA de
+        // régénération. Valeur déjà résolue et persistée sur `fiscalYear`,
+        // jamais recalculée ici.
+        stocksOuverture: fiscalYear.stocksOuverture?.stocks,
       }),
-    [draft, fiscalYear.year, generated, paid, workspace.properties],
+    [draft, fiscalYear.stocksOuverture, fiscalYear.year, generated, paid, workspace.properties],
   );
   const snapshot = gate.snapshot;
 

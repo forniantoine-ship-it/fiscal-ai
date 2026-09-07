@@ -3,6 +3,7 @@ import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration } from "./run-declaration-generation";
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
+import type { PatrimonialState } from "@/runtime/capabilities/bilan/types";
 import {
   buildValidationDossierSnapshot,
   type MissingDossierItem,
@@ -113,6 +114,72 @@ function identiteChanged(draft: DeclarationDraft | undefined, fiscalYear: number
 }
 
 /**
+ * Égalité structurelle locale à ce fichier — même principe que
+ * `isDeepEqualDraftValue` (reducer.ts, store/), volontairement NON réutilisée
+ * telle quelle : ce module (services/) ne doit dépendre d'aucun utilitaire du
+ * store, direction de dépendance inverse de celle déjà établie dans ce
+ * projet. Réservée à des valeurs JSON-plates (nombres/chaînes/booléens/
+ * tableaux/objets) — `PatrimonialState` ne contient ni `Date` ni fonction ni
+ * identifiant généré à chaque calcul (vérifié par lecture de
+ * `assemble-patrimoine.ts` et de ses dépendances : aucun `computedAt`, aucun
+ * `crypto.randomUUID()`).
+ */
+function isDeepEqualPlainValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, i) => isDeepEqualPlainValue(item, b[i]));
+  }
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(b, key) &&
+      isDeepEqualPlainValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]),
+  );
+}
+
+/**
+ * P0-1B (2026-09-07) — le drift fiscal (recettes/charges/amortissement) et
+ * l'identité (ci-dessus) ne couvrent pas le patrimoine (068/072/164/166/172,
+ * amortissements-provisions patrimoniaux, tiers, compte exploitant, RAN...) :
+ * ces données vivent entièrement dans `rfs.patrimoine` (assemblePatrimoine(),
+ * audit P0-1), jamais dans les 4 scalaires de `FiscalEngineOutput` comparés
+ * ci-dessus. Sans ce contrôle, une correction patrimoniale seule pouvait
+ * échapper à cette porte si le mécanisme A (reducer, DECLARATION_PATCH_DRAFT)
+ * était contourné ou incomplet — ce mécanisme B doit rester une défense
+ * indépendante et suffisante à lui seul.
+ *
+ * Compare le patrimoine qui a servi à la DERNIÈRE génération
+ * (`draft.rfs.patrimoine`, déjà persistée — pas de nouveau champ) à celui
+ * recalculé depuis le draft courant (même `assemblePatrimoine()` que la
+ * génération réelle, déjà calculé par le preview de cette porte — jamais un
+ * second appel).
+ *
+ * Comparaison structurelle de la sortie déjà résolue plutôt qu'une liste de
+ * champs source (068/072/164/166/172 + immobilisations + tiers + compte
+ * exploitant + RAN + ... — une telle liste n'est jamais garantie exhaustive,
+ * cf. audit P0-1 §"faux négatifs") : `PatrimonialState` est entièrement
+ * déterministe, et ses composantes fiscalement significatives sont déjà des
+ * sommes/statuts résolus par nature — intrinsèquement indépendants de
+ * l'ordre de saisie des postes sources. Une composante patrimoniale future
+ * entrera automatiquement dans cette comparaison sans modification de cette
+ * porte. `liasseRfs` n'ajoute aucune information patrimoniale
+ * supplémentaire (pure projection additive de `rfs`, sans second calcul
+ * fiscal — cf. `assemble-liasse-from-rfs.ts`) : comparer `rfs.patrimoine`
+ * est donc suffisant, une comparaison redondante de `liasseRfs` n'apporterait
+ * aucun pouvoir de détection supplémentaire.
+ */
+function patrimoineChanged(
+  stored: PatrimonialState | undefined,
+  preview: PatrimonialState | undefined,
+): boolean {
+  return !isDeepEqualPlainValue(stored, preview);
+}
+
+/**
  * Porte unique entre l'écran de validation et F-006/F-007.
  * Ne change aucune règle fiscale : elle refuse le paiement si la génération
  * serait bloquée, et autorise un nouvel essai si le paiement a déjà été
@@ -158,7 +225,8 @@ export function resolveDeclarationGenerationGate(input: {
           stored?.totalCharges !== preview.fiscalResult.totalCharges ||
           stored?.amortDeduct !== preview.fiscalResult.amortDeduct ||
           stored?.amortReporte !== preview.fiscalResult.amortReporte ||
-          identiteChanged(input.draft, input.fiscalYear))
+          identiteChanged(input.draft, input.fiscalYear) ||
+          patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine))
       ) {
         return {
           snapshot,
