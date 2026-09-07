@@ -344,41 +344,98 @@ export function resolveCaseAvecVentilationPrioritaire(
   return ligneSimple;
 }
 
-/** Gate 096 élargi P1-B.3 : composantes ventilées 064/068/072/080/092 (+ stocks hors jalon). */
+/**
+ * Chantier 2C — gate 096 élargi (colonne Brut), corrigée.
+ * Formule Cerfa : `096 = 050 + 060 + 064 + 068 + 072 + 080 + 084 + 092`.
+ * 050/060 (stocks/marchandises) catégoriquement 0 pour un LMNP —
+ * `non_applicable` structurel, hors composantes (comme 052/062 pour 098).
+ *
+ * Correction 1 — 064/092 utilisaient une réconciliation locale (`estDeclare`
+ * ternaire) qui NE reproduisait PAS la détection de divergence de
+ * `resolveCaseAvecVentilationPrioritaire` (deux DECLARE contradictoires →
+ * INCONNU, bloqué) : la gate pouvait donc considérer publiable une valeur
+ * que le mapper (`map-2033a.ts`) aurait en réalité bloquée. Corrigé en
+ * appelant directement `resolveCaseAvecVentilationPrioritaire` — même
+ * fonction, même résultat que ce que le mapper publie réellement, jamais
+ * une seconde implémentation qui pourrait diverger.
+ *
+ * Correction 2 — 084 (Disponibilités, brut) était totalement absente de
+ * cette gate : elle ne provient ni de `lignesSimples` ni de
+ * `ventilationTiers`, mais de `patrimoine.tresorerie` (mécanisme
+ * entièrement séparé, voir `map-2033a.ts`). Nécessite donc un flag de
+ * publication réelle (`case084Published`), même doctrine que
+ * `case030Published`/`case086Published`/`case028Published`.
+ */
 export function gateTotal096AvecVentilation(
   lignesSimples: LignesSimplesResolution,
   ventilation: VentilationTiersResolution,
+  case084Published: boolean,
+  case084Raison?: string,
 ): GateTotalComposantesResult {
-  // 064/092 : préférence ventilation si DECLARE, sinon lignesSimples.
-  const case064 = estDeclare(ventilation.cases.avancesAcomptesVerses)
-    ? ventilation.cases.avancesAcomptesVerses
-    : lignesSimples.avancesAcomptesVerses;
-  const case092 = estDeclare(ventilation.cases.chargesConstateesAvance)
-    ? ventilation.cases.chargesConstateesAvance
-    : lignesSimples.chargesConstateesAvance;
+  const case064 = resolveCaseAvecVentilationPrioritaire(
+    "064",
+    lignesSimples.avancesAcomptesVerses,
+    ventilation.cases.avancesAcomptesVerses,
+  );
+  const case092 = resolveCaseAvecVentilationPrioritaire(
+    "092",
+    lignesSimples.chargesConstateesAvance,
+    ventilation.cases.chargesConstateesAvance,
+  );
 
-  return gateTotalSurComposantes("096", "Total II — Actif circulant (brut)", [
+  const gateComposantes = gateTotalSurComposantes("096", "Total II — Actif circulant (brut)", [
     { caseId: "064", resolution: case064 },
     { caseId: "068", resolution: ventilation.cases.clients },
     { caseId: "072", resolution: ventilation.cases.autresCreances },
     { caseId: "080", resolution: lignesSimples.valeursMobilieresPlacementBrut },
     { caseId: "092", resolution: case092 },
   ]);
+  if (gateComposantes.status === "BLOQUE") {
+    return gateComposantes;
+  }
+  if (!case084Published) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["084"],
+      raison: `Total 096 (Total II — Actif circulant (brut)) non publiable : composante 084 non publiable${case084Raison ? ` — ${case084Raison}` : ""}. Absence de donnée ≠ zéro ; ne jamais sommer les valeurs disponibles partiellement.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
 }
 
-/** Gate 176 élargi P1-B.3 : 164/166/172/173/174/175 (+ 156 hors gate composantes). */
+/**
+ * Chantier 2C — gate 176 élargi (colonne Dettes), corrigée.
+ * Formule Cerfa : `176 = 156 + 164 + 166 + 172 + 173 + 174 + 175`.
+ *
+ * Correction 1 — 174/175 utilisaient la même réconciliation locale
+ * incomplète que 064/092 ci-dessus (voir gateTotal096AvecVentilation) :
+ * corrigé en appelant `resolveCaseAvecVentilationPrioritaire`.
+ *
+ * Correction 2 — 156 (Emprunts et dettes assimilées) était totalement
+ * absente de cette gate : elle ne provient ni de `lignesSimples` ni de
+ * `ventilationTiers`, mais de F-011/`patrimoine.emprunts` (peut être
+ * `DIVERGENT` et donc bloquée, voir `map-2033a.ts`). Nécessite un flag de
+ * publication réelle (`case156Published`) — composante la plus lourde de ce
+ * total, jamais vérifiée jusqu'ici.
+ */
 export function gateTotal176AvecVentilation(
   lignesSimples: LignesSimplesResolution,
   ventilation: VentilationTiersResolution,
+  case156Published: boolean,
+  case156Raison?: string,
 ): GateTotalComposantesResult {
-  const case174 = estDeclare(ventilation.cases.produitsConstatesAvance)
-    ? ventilation.cases.produitsConstatesAvance
-    : lignesSimples.produitsConstatesAvance;
-  const case175 = estDeclare(ventilation.cases.autresDettes)
-    ? ventilation.cases.autresDettes
-    : lignesSimples.autresDettes;
+  const case174 = resolveCaseAvecVentilationPrioritaire(
+    "174",
+    lignesSimples.produitsConstatesAvance,
+    ventilation.cases.produitsConstatesAvance,
+  );
+  const case175 = resolveCaseAvecVentilationPrioritaire(
+    "175",
+    lignesSimples.autresDettes,
+    ventilation.cases.autresDettes,
+  );
 
-  return gateTotalSurComposantes("176", "Total III — Dettes", [
+  const gateComposantes = gateTotalSurComposantes("176", "Total III — Dettes", [
     { caseId: "164", resolution: ventilation.cases.avancesAcomptesRecus },
     { caseId: "166", resolution: ventilation.cases.fournisseurs },
     { caseId: "172", resolution: ventilation.cases.dettesFiscalesSociales },
@@ -386,6 +443,17 @@ export function gateTotal176AvecVentilation(
     { caseId: "174", resolution: case174 },
     { caseId: "175", resolution: case175 },
   ]);
+  if (gateComposantes.status === "BLOQUE") {
+    return gateComposantes;
+  }
+  if (!case156Published) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["156"],
+      raison: `Total 176 (Total III — Dettes) non publiable : composante 156 non publiable${case156Raison ? ` — ${case156Raison}` : ""}. Absence de donnée ≠ zéro ; ne jamais sommer les valeurs disponibles partiellement.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
 }
 
 /** Helpers exportés pour tests / UX future. */

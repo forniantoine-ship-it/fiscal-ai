@@ -232,7 +232,7 @@ describe("gates totaux avec ventilation", () => {
       postes: [{ nature: "ACOMPTE_VERSE_A_FOURNISSEUR", montant: 10 }],
     });
     // 068/072 restent INCONNU
-    const gate = gateTotal096AvecVentilation(lignes, ventilation);
+    const gate = gateTotal096AvecVentilation(lignes, ventilation, true);
     assert.equal(gate.status, "BLOQUE");
     assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("068"));
   });
@@ -242,12 +242,12 @@ describe("gates totaux avec ventilation", () => {
     const ventilation = resolveVentilationTiers({
       postes: [{ nature: "DEPOT_GARANTIE_LOCATAIRE", montant: 1500 }],
     });
-    const gate = gateTotal176AvecVentilation(lignes, ventilation);
+    const gate = gateTotal176AvecVentilation(lignes, ventilation, true);
     assert.equal(gate.status, "BLOQUE");
     assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("166"));
   });
 
-  it("11c — toutes composantes ventilées connues → COMPOSANTES_CONNUES (ne publie pas le Cerfa)", () => {
+  it("11c — toutes composantes ventilées connues + 084/156 publiées → COMPOSANTES_CONNUES (ne publie pas le Cerfa)", () => {
     const lignes = toutesLignesConnues();
     const ventilation = resolveVentilationTiers({
       postes: [
@@ -263,8 +263,88 @@ describe("gates totaux avec ventilation", () => {
       ],
     });
     // For 096 we need 064,068,072,080,092 — 080 from lignes NUL_CONFIRME
-    assert.equal(gateTotal096AvecVentilation(lignes, ventilation).status, "COMPOSANTES_CONNUES");
-    assert.equal(gateTotal176AvecVentilation(lignes, ventilation).status, "COMPOSANTES_CONNUES");
+    assert.equal(gateTotal096AvecVentilation(lignes, ventilation, true).status, "COMPOSANTES_CONNUES");
+    assert.equal(gateTotal176AvecVentilation(lignes, ventilation, true).status, "COMPOSANTES_CONNUES");
+  });
+
+  it("11d — Chantier 2C, B — composantes connues mais 084 non publiable → 096 BLOQUE (jamais une somme partielle)", () => {
+    const lignes = toutesLignesConnues();
+    const ventilation = resolveVentilationTiers({
+      postes: [
+        { nature: "ACOMPTE_VERSE_A_FOURNISSEUR", montant: 10 },
+        { nature: "LOYER_DU_PAR_LOCATAIRE", montant: 1 },
+        { nature: "AUTRE_CREANCE_ACTIVITE", montant: 1 },
+        { nature: "CHARGE_CONSTATEE_AVANCE", montant: 1 },
+      ],
+    });
+    const gate = gateTotal096AvecVentilation(lignes, ventilation, false, "trésorerie non renseignée");
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("084"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /084 non publiable.*trésorerie non renseignée/);
+  });
+
+  it("11e — Chantier 2C, B — composantes connues mais 156 non publiable → 176 BLOQUE (jamais une somme partielle)", () => {
+    const lignes = toutesLignesConnues();
+    const ventilation = resolveVentilationTiers({
+      postes: [
+        { nature: "ACOMPTE_RECU_SUR_COMMANDE", montant: 1 },
+        { nature: "FOURNISSEUR_NON_PAYE", montant: 1 },
+        { nature: "DETTE_FISCALE_OU_SOCIALE", montant: 1 },
+        { nature: "LOYER_ENCAISSE_D_AVANCE", montant: 1 },
+        { nature: "DEPOT_GARANTIE_LOCATAIRE", montant: 1 },
+      ],
+    });
+    const gate = gateTotal176AvecVentilation(lignes, ventilation, false, "emprunt DIVERGENT F-011/patrimoine");
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("156"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /156 non publiable.*emprunt DIVERGENT/);
+  });
+
+  it("11f — Chantier 2C, D — 084/156 publiées (true) vs non publiées (false) : jamais confondues", () => {
+    const lignes = toutesLignesConnues();
+    const ventilation = resolveVentilationTiers({
+      postes: [
+        { nature: "ACOMPTE_VERSE_A_FOURNISSEUR", montant: 10 },
+        { nature: "LOYER_DU_PAR_LOCATAIRE", montant: 1 },
+        { nature: "AUTRE_CREANCE_ACTIVITE", montant: 1 },
+        { nature: "CHARGE_CONSTATEE_AVANCE", montant: 1 },
+        { nature: "ACOMPTE_RECU_SUR_COMMANDE", montant: 1 },
+        { nature: "FOURNISSEUR_NON_PAYE", montant: 1 },
+        { nature: "DETTE_FISCALE_OU_SOCIALE", montant: 1 },
+        { nature: "LOYER_ENCAISSE_D_AVANCE", montant: 1 },
+        { nature: "DEPOT_GARANTIE_LOCATAIRE", montant: 1 },
+      ],
+    });
+    assert.equal(gateTotal096AvecVentilation(lignes, ventilation, true).status, "COMPOSANTES_CONNUES");
+    assert.equal(gateTotal096AvecVentilation(lignes, ventilation, false).status, "BLOQUE");
+    assert.equal(gateTotal176AvecVentilation(lignes, ventilation, true).status, "COMPOSANTES_CONNUES");
+    assert.equal(gateTotal176AvecVentilation(lignes, ventilation, false).status, "BLOQUE");
+  });
+
+  it("11g — Chantier 2C, correction anti-divergence : 064 lignesSimples DECLARE ≠ ventilation DECLARE → 096 BLOQUE (jamais un choix arbitraire résumé en COMPOSANTES_CONNUES)", () => {
+    const lignes: LignesSimplesResolution = {
+      ...toutesLignesConnues(),
+      avancesAcomptesVerses: { status: "DECLARE", montant: 500, raison: "déclaré par l'utilisateur" },
+    };
+    const ventilation = resolveVentilationTiers({
+      postes: [
+        { nature: "ACOMPTE_VERSE_A_FOURNISSEUR", montant: 999 }, // diverge de 500 au-delà de la tolérance
+        { nature: "LOYER_DU_PAR_LOCATAIRE", montant: 1 },
+        { nature: "AUTRE_CREANCE_ACTIVITE", montant: 1 },
+        { nature: "CHARGE_CONSTATEE_AVANCE", montant: 1 },
+      ],
+    });
+    // Preuve indépendante : c'est exactement ce que resolveCaseAvecVentilationPrioritaire
+    // (utilisée par map-2033a.ts) produirait pour 064 dans ce même scénario.
+    const case064ReelDuMapper = resolveCaseAvecVentilationPrioritaire(
+      "064",
+      lignes.avancesAcomptesVerses,
+      ventilation.cases.avancesAcomptesVerses,
+    );
+    assert.equal(case064ReelDuMapper.status, "INCONNU", "divergence > tolérance → 064 bloquée par le mapper");
+    const gate = gateTotal096AvecVentilation(lignes, ventilation, true);
+    assert.equal(gate.status, "BLOQUE", "la gate doit refléter le même blocage que le mapper, jamais choisir une valeur arbitrairement");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("064"));
   });
 });
 

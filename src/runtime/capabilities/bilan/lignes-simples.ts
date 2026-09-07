@@ -119,15 +119,53 @@ export function gateTotalSurComposantes(
   };
 }
 
-/** Composantes P1-B.2 du total 044 (= 010 + 014 + 028 + 040) — hors 010/028. */
-export function gateTotal044ActifImmobiliseBrut(lignes: LignesSimplesResolution): GateTotalComposantesResult {
-  return gateTotalSurComposantes("044", "Total I — Actif immobilisé (brut)", [
+/**
+ * Chantier 2C — gate 044 (colonne Brut).
+ * Formule Cerfa : `044 = 010 + 014 + 028 + 040`. 010 (Fonds commercial, brut)
+ * est catégoriquement 0 pour un LMNP (`non_applicable` structurel dans
+ * `map-2033a.ts`, jamais une absence de donnée) — hors composantes de cette
+ * gate, comme 052/062 le sont pour `gateTotal098`. 014/040 proviennent de
+ * `lignesSimples` (G2). 028 (immobilisations corporelles, brut) provient du
+ * registre patrimonial/legacy (`map-2033a.ts`, même mécanisme que 030 pour
+ * 048) — jamais une composante `lignesSimples` : nécessite un flag de
+ * publication réelle (`case028Published`), même doctrine que
+ * `case030Published`/`case086Published` pour 048/098. Avant cette
+ * correction, cette gate ignorait totalement 028 : un dossier où 028 est
+ * bloquée (divergence F-010/F-014, absence de `valeurTerrain`) aurait pu
+ * être déclaré `COMPOSANTES_CONNUES` alors qu'une composante réelle du
+ * total est absente.
+ */
+export function gateTotal044ActifImmobiliseBrut(
+  lignes: LignesSimplesResolution,
+  case028Published: boolean,
+  case028Raison?: string,
+): GateTotalComposantesResult {
+  const gateLignes = gateTotalSurComposantes("044", "Total I — Actif immobilisé (brut)", [
     { caseId: "014", resolution: lignes.autresImmobilisationsIncorporellesBrut },
     { caseId: "040", resolution: lignes.immobilisationsFinancieresBrut },
   ]);
+  if (gateLignes.status === "BLOQUE") {
+    return gateLignes;
+  }
+  if (!case028Published) {
+    return {
+      status: "BLOQUE",
+      casesInconnues: ["028"],
+      raison: `Total 044 (Total I — Actif immobilisé (brut)) non publiable : composante 028 non publiable${case028Raison ? ` — ${case028Raison}` : ""}. Absence de donnée ≠ zéro ; ne jamais sommer les valeurs disponibles partiellement.`,
+    };
+  }
+  return { status: "COMPOSANTES_CONNUES" };
 }
 
-/** Composantes P1-B.2 du total 096 (= 050 + 060 + 064 + 068 + 072 + 080 + 084 + 092) — hors stocks/clients/dispo. */
+/**
+ * @deprecated Superseded par `gateTotal096AvecVentilation` (ventilation-tiers.ts,
+ * chantier 2C), qui couvre en plus 068/072 (ventilationTiers, publiées
+ * depuis G2) et applique la réconciliation `resolveCaseAvecVentilationPrioritaire`
+ * pour 064/092 — cette version ignore 068/072 et n'utilise que la résolution
+ * brute `lignesSimples`, jamais la valeur réellement publiée par le mapper
+ * quand une ventilation existe. Conservée pour compatibilité de ses propres
+ * tests unitaires, ne pas réutiliser pour un nouveau câblage.
+ */
 export function gateTotal096ActifCirculantBrut(lignes: LignesSimplesResolution): GateTotalComposantesResult {
   return gateTotalSurComposantes("096", "Total II — Actif circulant (brut)", [
     { caseId: "064", resolution: lignes.avancesAcomptesVerses },
@@ -136,7 +174,13 @@ export function gateTotal096ActifCirculantBrut(lignes: LignesSimplesResolution):
   ]);
 }
 
-/** Composantes P1-B.2 du total 176 (= 156 + 164 + 166 + 172 + 173 + 174 + 175) — hors emprunts/fournisseurs. */
+/**
+ * @deprecated Superseded par `gateTotal176AvecVentilation` (ventilation-tiers.ts,
+ * chantier 2C), qui couvre en plus 164/166/172/173 (ventilationTiers, publiées
+ * depuis G2) et applique la réconciliation `resolveCaseAvecVentilationPrioritaire`
+ * pour 174/175. Conservée pour compatibilité de ses propres tests unitaires,
+ * ne pas réutiliser pour un nouveau câblage.
+ */
 export function gateTotal176Dettes(lignes: LignesSimplesResolution): GateTotalComposantesResult {
   return gateTotalSurComposantes("176", "Total III — Dettes", [
     { caseId: "174", resolution: lignes.produitsConstatesAvance },

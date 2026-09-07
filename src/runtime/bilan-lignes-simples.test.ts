@@ -155,6 +155,34 @@ describe("gate totaux — une ligne INCONNU bloque le total correspondant", () =
   });
 });
 
+describe("Chantier 2C — gateTotal044ActifImmobiliseBrut corrigée (composante 028)", () => {
+  it("A — 014/040 connues ET 028 publiée → COMPOSANTES_CONNUES", () => {
+    const gate = gateTotal044ActifImmobiliseBrut(toutesConnues(), true);
+    assert.equal(gate.status, "COMPOSANTES_CONNUES");
+  });
+
+  it("B — 014/040 connues MAIS 028 non publiable → BLOQUE (jamais une somme partielle)", () => {
+    const gate = gateTotal044ActifImmobiliseBrut(toutesConnues(), false, "divergence F-010/F-014");
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("028"));
+    assert.match(gate.status === "BLOQUE" ? gate.raison : "", /028 non publiable.*divergence F-010\/F-014/);
+  });
+
+  it("C — 014 INCONNU bloque 044 même si 028 est publiée (la composante lignesSimples prime, testée avant 028)", () => {
+    const lignes = toutesConnues({ autresImmobilisationsIncorporellesBrut: { status: "INCONNU", raison: "inconnu" } });
+    const gate = gateTotal044ActifImmobiliseBrut(lignes, true);
+    assert.equal(gate.status, "BLOQUE");
+    assert.ok(gate.status === "BLOQUE" && gate.casesInconnues.includes("014"));
+  });
+
+  it("D — 014/040 NUL_CONFIRME (zéro explicite) + 028 publiée → COMPOSANTES_CONNUES, distinct d'une absence de 028", () => {
+    const connu = gateTotal044ActifImmobiliseBrut(toutesConnues(), true);
+    const sans028 = gateTotal044ActifImmobiliseBrut(toutesConnues(), false);
+    assert.equal(connu.status, "COMPOSANTES_CONNUES");
+    assert.equal(sans028.status, "BLOQUE");
+  });
+});
+
 describe("assemblePatrimoine — intégration minimale P1-B.2 sans perturber P1-A", () => {
   const FISCAL_RESULT: FiscalResult = {
     exercice: 2025,
