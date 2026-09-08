@@ -5,10 +5,11 @@
  *
  * Couche UI UNIQUEMENT : ouvre/ferme un panneau d'aide, affiche des
  * suggestions dérivées du contexte déjà construit (Phase 4.5.1), permet une
- * saisie libre, classe localement l'intention, puis affiche la réponse
- * déterministe de `buildInpiCompanionChatReply`. Aucun appel réseau, aucun
- * LLM, aucune persistance : les messages vivent uniquement en `useState`
- * local, perdus à la fermeture/navigation.
+ * saisie libre, classe localement l'intention, affiche la réponse
+ * déterministe (4.5.3), et n'appelle une route serveur que pour
+ * `free_question` / `field_help`. Session via `supabase.auth.getSession()`
+ * (même jeton que extract/delete) — jamais la clé OpenAI. Échec LLM ou
+ * session absente → fallback déterministe. Aucun SDK IA, aucune persistance.
  *
  * Ne modifie jamais `inpiCompanionState`, `Dossier.inpiStatus`, ni aucune
  * donnée métier — ce composant ne reçoit d'ailleurs aucun moyen de le faire
@@ -24,9 +25,11 @@ import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import { supabase } from "@/lib/supabase";
 
 import type { InpiCompanionChatContext } from "./inpi-companion-chat-context";
 import { classifyInpiCompanionIntent } from "./inpi-companion-chat-intent";
+import { INPI_COMPANION_CHAT_LLM_ROUTE, shouldUseInpiCompanionLlm } from "./inpi-companion-chat-llm";
 import { buildInpiCompanionChatReply } from "./inpi-companion-chat-response";
 import { buildInpiCompanionChatSuggestions } from "./inpi-companion-chat-suggestions";
 
@@ -47,13 +50,51 @@ export function InpiCompanionChat({ context }: { context: InpiCompanionChatConte
       const trimmed = text.trim();
       if (!trimmed) return;
       const intent = classifyInpiCompanionIntent(trimmed, context);
-      const reply = buildInpiCompanionChatReply({ message: trimmed, intent, context });
-      setMessages((previous) => [
-        ...previous,
-        { role: "user", text: trimmed },
-        { role: "assistant", text: reply.text },
-      ]);
-      setDraft("");
+      const deterministic = buildInpiCompanionChatReply({ message: trimmed, intent, context });
+
+      const commit = (assistantText: string) => {
+        setMessages((previous) => [
+          ...previous,
+          { role: "user", text: trimmed },
+          { role: "assistant", text: assistantText },
+        ]);
+        setDraft("");
+      };
+
+      if (!shouldUseInpiCompanionLlm(intent)) {
+        commit(deterministic.text);
+        return;
+      }
+
+      void (async () => {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          const authToken = session?.access_token;
+          if (!authToken) {
+            commit(deterministic.text);
+            return;
+          }
+          const response = await fetch(INPI_COMPANION_CHAT_LLM_ROUTE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: trimmed, context, authToken }),
+          });
+          if (!response.ok) {
+            commit(deterministic.text);
+            return;
+          }
+          const payload = (await response.json()) as { text?: unknown };
+          if (typeof payload.text !== "string" || !payload.text.trim()) {
+            commit(deterministic.text);
+            return;
+          }
+          commit(payload.text.trim());
+        } catch {
+          commit(deterministic.text);
+        }
+      })();
     },
     [context],
   );

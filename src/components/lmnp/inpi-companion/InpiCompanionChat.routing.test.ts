@@ -11,6 +11,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { INPI_COMPANION_CHAT_LLM_ROUTE } from "./inpi-companion-chat-llm";
+
 const CHAT_SOURCE = readFileSync(
   fileURLToPath(new URL("./InpiCompanionChat.tsx", import.meta.url)),
   "utf8",
@@ -80,10 +82,20 @@ describe("Non-mutation — le chat ne peut structurellement rien écrire", () =>
     assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /inpiCompanionState/);
   });
 
-  it("aucun appel réseau/LLM : pas de fetch, pas d'API, pas de SDK IA", () => {
-    assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /fetch\(/);
-    assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /\/api\//);
+  it("aucun secret ni SDK IA côté client ; fetch limité à la route Companion", () => {
+    assert.equal(INPI_COMPANION_CHAT_LLM_ROUTE, "/api/lmnp/inpi-companion/chat");
+    assert.match(FUNCTIONAL_CHAT_SOURCE, /shouldUseInpiCompanionLlm\(intent\)/);
+    assert.match(FUNCTIONAL_CHAT_SOURCE, /fetch\(INPI_COMPANION_CHAT_LLM_ROUTE/);
+    assert.match(FUNCTIONAL_CHAT_SOURCE, /supabase\.auth\.getSession\(\)/);
+    assert.match(FUNCTIONAL_CHAT_SOURCE, /authToken/);
     assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /openai|OpenAI|EventSource|WebSocket/i);
+    assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /OPENAI_API_KEY/);
+    assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /window\.open/);
+  });
+
+  it("échec LLM → fallback déterministe, jamais le message d'erreur serveur", () => {
+    assert.match(FUNCTIONAL_CHAT_SOURCE, /commit\(deterministic\.text\)/);
+    assert.doesNotMatch(FUNCTIONAL_CHAT_SOURCE, /payload\.error|json\.error|OpenAI API error/);
   });
 
   it("aucune persistance : les messages ne vivent que dans useState local", () => {
