@@ -17,6 +17,8 @@ export const LMNP_ROUTES = {
   depenses: "/documents?step=charges",
   amortissements: "/documents?step=amortissements",
   declarations: "/declarations",
+  /** P1 — liste "Mes déclarations" (exercice en cours + exercices clôturés). */
+  declarationsHistorique: "/declarations/historique",
   validation: "/documents?step=validation",
   login: "/login",
   signup: "/signup",
@@ -52,6 +54,11 @@ export function lmnpTabRoute(tab: string): string {
 export function documentJourneyRoute(stepId?: DocumentJourneyStepId | string): string {
   if (!stepId) return LMNP_ROUTES.documents;
   return `${LMNP_ROUTES.documents}?step=${encodeURIComponent(stepId)}`;
+}
+
+/** P1 — vue read-only d'un exercice clôturé (`/declarations/[fiscalYearId]`). */
+export function archivedDeclarationRoute(fiscalYearId: string): string {
+  return `${LMNP_ROUTES.declarations}/${encodeURIComponent(fiscalYearId)}`;
 }
 
 /** Map declaration-flow suffix paths (e.g. /recettes) to flat routes. */

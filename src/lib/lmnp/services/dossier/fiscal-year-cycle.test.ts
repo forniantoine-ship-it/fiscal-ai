@@ -20,6 +20,7 @@ import {
   extractFinancementBases,
   extractIdentity,
   latestClosure,
+  resolveArchivedFiscalYearAccess,
   resolveStocksOuverture,
 } from "./fiscal-year-cycle";
 import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
@@ -731,5 +732,39 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
       properties: [PROPERTY],
     });
     assert.equal(result.ok, true, "un patrimoine inchangé ne doit jamais bloquer une clôture par ailleurs valide");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1 — Historique des exercices clôturés : précondition d'accès read-only.
+// ---------------------------------------------------------------------------
+describe("resolveArchivedFiscalYearAccess — précondition d'accès à l'historique", () => {
+  it("3/10 — exercice clôturé d'un AUTRE dossier → refusé (isolation multi-dossier)", () => {
+    const record = baseFiscalYear({ status: "closed", dossierId: "dossier-1" });
+    const result = resolveArchivedFiscalYearAccess(record, "dossier-2");
+    assert.equal(result.ok, false);
+  });
+
+  it("9 — exercice introuvable (record undefined) → refusé proprement", () => {
+    const result = resolveArchivedFiscalYearAccess(undefined, "dossier-1");
+    assert.equal(result.ok, false);
+  });
+
+  it("exercice ACTIF (non clôturé) du même dossier → refusé (jamais consultable via ce parcours)", () => {
+    const record = baseFiscalYear({ status: "ready_to_close", dossierId: "dossier-1" });
+    const result = resolveArchivedFiscalYearAccess(record, "dossier-1");
+    assert.equal(result.ok, false, "un exercice non clôturé ne doit jamais être servi par la vue historique");
+  });
+
+  it("exercice clôturé du bon dossier → autorisé", () => {
+    const record = baseFiscalYear({ status: "closed", dossierId: "dossier-1" });
+    const result = resolveArchivedFiscalYearAccess(record, "dossier-1");
+    assert.equal(result.ok, true);
+  });
+
+  it("dossierId courant vide/absent → refusé, jamais une autorisation par défaut", () => {
+    const record = baseFiscalYear({ status: "closed", dossierId: "dossier-1" });
+    const result = resolveArchivedFiscalYearAccess(record, "");
+    assert.equal(result.ok, false);
   });
 });

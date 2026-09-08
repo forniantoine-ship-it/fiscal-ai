@@ -26,12 +26,22 @@ import {
   loadArchivedFiscalYear,
   FiscalYearAlreadyClosedError,
 } from "./dossier-db";
-import { getDossierRecord, getFiscalYearRecord, getWorkspaceRecord, getDocumentBlob, putDocumentBlob } from "./db";
+import {
+  getDossierRecord,
+  getFiscalYearRecord,
+  getWorkspaceRecord,
+  getDocumentBlob,
+  putDocumentBlob,
+  listFiscalYearsForDossier,
+} from "./db";
+import { resolveArchivedFiscalYearAccess } from "../services/dossier/fiscal-year-cycle";
 import { saveWorkspace, __testResetWorkspaceSaveChain } from "./persistence";
 import type { PersistedWorkspace } from "./persistence";
 import type { Dossier } from "../types/dossier";
-import type { FiscalEngineOutput, FiscalYear, LmnpDocument } from "../types/domain";
+import type { DeclarationDraft, FiscalEngineOutput, FiscalYear, LmnpDocument } from "../types/domain";
 import type { FiscalYearRecord } from "./dossier-db";
+import { runDeclarationGeneration } from "../services/declaration/run-declaration-generation";
+import { buildClientSummaryDocument } from "../services/declaration/build-client-summary-document";
 
 let idCounter = 0;
 function uid(prefix: string): string {
@@ -419,5 +429,198 @@ describe("Couche 1/Couche 2 — P0 FINAL GATE, écritures workspace stale", () =
     const workspaceRecord = await getWorkspaceRecord(userId);
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.properties[0].label, "Bien mis à jour", "une resauvegarde ordinaire de N+1 après transition n'est jamais bloquée");
+  });
+});
+
+describe("P1 — Historique des exercices clôturés (liste, chargement, isolation, immutabilité)", () => {
+  it("1 — LISTE : listFiscalYearsForDossier(dossierId) retourne N (clos) ET la coquille de N+1", async () => {
+    const dossierId = uid("dossier");
+    const userId = uid("user");
+    const workspace = readyWorkspace();
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    const records = await listFiscalYearsForDossier<FiscalYearRecord>(dossierId);
+    const ids = records.map((r) => r.id);
+    assert.ok(ids.includes(result.closedFiscalYear.id), "N clôturé doit apparaître dans la liste du dossier");
+    assert.ok(ids.includes(result.nextFiscalYear.id), "la coquille de N+1 apparaît aussi (filtrée côté UI sur status)");
+
+    const closedOnly = records.filter((r) => r.status === "closed");
+    assert.deepEqual(
+      closedOnly.map((r) => r.id),
+      [result.closedFiscalYear.id],
+      "seul N a le statut closed — N+1 (status draft) est exclu d'un filtre 'exercices clôturés'",
+    );
+  });
+
+  it("2 — CHARGEMENT : sélectionner N-1 charge bien les données de N-1 (declarationDraft, rfs, currentVersionId)", async () => {
+    const dossierId = uid("dossier");
+    const userId = uid("user");
+    const workspace = readyWorkspace({ siren: "222222222" });
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    const archived = await loadArchivedFiscalYear(result.closedFiscalYear.id);
+    assert.equal(archived?.declarationDraft?.siren, "222222222");
+    assert.equal(
+      archived?.declarationDraft?.fiscalResult?.resultatFiscal,
+      workspace.declarationDraft?.fiscalResult?.resultatFiscal,
+    );
+  });
+
+  it("5/6 — TÉLÉCHARGEMENT : la synthèse/aide 2042 d'un exercice archivé se construit depuis le rfs de CET exercice, jamais celui du workspace actif", async () => {
+    const dossierId = uid("dossier");
+    const userId = uid("user");
+    const fiscalYearId = uid("fy");
+
+    // Draft N (2025) suffisamment complet pour une génération réelle
+    // (même patron que `generationReadyDraft()`, fiscal-year-cycle.test.ts).
+    const draftN: DeclarationDraft = {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "111111111",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+    } as DeclarationDraft;
+    const generationN = runDeclarationGeneration(draftN, 2025);
+    assert.equal(generationN.status, "generated");
+    if (generationN.status !== "generated") throw new Error("unreachable");
+
+    const workspace = readyWorkspace({
+      fiscalYearId,
+      fiscalYearOverrides: { year: 2025 },
+      siren: "111111111",
+    });
+    workspace.declarationDraft = {
+      ...workspace.declarationDraft,
+      ...draftN,
+      fiscalResult: generationN.fiscalResult,
+      rfs: generationN.rfs,
+    } as DeclarationDraft;
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    // Le workspace ACTIF (N+1, 2026) reçoit ensuite ses propres données
+    // fiscales, structurellement différentes — simule un utilisateur ayant
+    // déjà avancé sur N+1 avant de consulter l'historique de N.
+    const draftNPlus1: DeclarationDraft = {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "111111111",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 50000 },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 4000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 1500, status: "validated" },
+    } as DeclarationDraft;
+    const generationNPlus1 = runDeclarationGeneration(draftNPlus1, 2026);
+    assert.equal(generationNPlus1.status, "generated");
+    if (generationNPlus1.status !== "generated") throw new Error("unreachable");
+    await saveWorkspace(userId, {
+      ...result.nextWorkspace,
+      declarationDraft: { ...draftNPlus1, fiscalResult: generationNPlus1.fiscalResult, rfs: generationNPlus1.rfs },
+    });
+
+    // "Téléchargement" de la synthèse/aide 2042 de N (archivé) — exactement
+    // la construction faite par ArchivedDeclarationView.
+    const archived = await loadArchivedFiscalYear(result.closedFiscalYear.id);
+    assert.ok(archived?.declarationDraft?.rfs, "l'archive de N doit porter son propre rfs");
+    const documentN = buildClientSummaryDocument(archived!.declarationDraft!.rfs!, {
+      activityStartDate: archived!.declarationDraft!.activityStartDate,
+    });
+
+    assert.equal(documentN.meta.exercice, 2025, "la synthèse téléchargée pour N doit porter l'exercice de N");
+    assert.notEqual(documentN.meta.exercice, 2026, "jamais l'exercice du workspace actif (N+1)");
+
+    // Le workspace actif, lui, reste bien sur son propre rfs 2026 — la
+    // consultation de l'archive ne l'a ni lu ni modifié.
+    const activeWorkspaceRecord = await getWorkspaceRecord(userId);
+    const activeData = activeWorkspaceRecord?.data as PersistedWorkspace | undefined;
+    assert.equal(activeData?.declarationDraft?.rfs?.exercice, 2026);
+  });
+
+  it("7 — ISOLATION : consulter N-1 (loadArchivedFiscalYear) ne modifie jamais le workspace actif N+1", async () => {
+    const dossierId = uid("dossier");
+    const userId = uid("user");
+    const workspace = readyWorkspace();
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    const workspaceBefore = await getWorkspaceRecord(userId);
+
+    // "Consultation" de N — strictement une lecture, aucun dispatch, aucune
+    // écriture vers STORE_WORKSPACE.
+    await loadArchivedFiscalYear(result.closedFiscalYear.id);
+    await loadArchivedFiscalYear(result.closedFiscalYear.id);
+
+    const workspaceAfter = await getWorkspaceRecord(userId);
+    assert.deepEqual(workspaceAfter, workspaceBefore, "le workspace actif (N+1) doit rester strictement inchangé après consultation de N-1");
+    assert.equal((workspaceAfter?.data as PersistedWorkspace).fiscalYear.id, result.nextFiscalYear.id);
+  });
+
+  it("8 — ARCHIVE IMMUTABLE : consulter N-1 plusieurs fois ne change ni son FiscalYearRecord ni son currentVersionId", async () => {
+    const dossierId = uid("dossier");
+    const userId = uid("user");
+    const workspace = readyWorkspace();
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    const firstRead = await loadArchivedFiscalYear(result.closedFiscalYear.id);
+    const secondRead = await loadArchivedFiscalYear(result.closedFiscalYear.id);
+
+    assert.deepEqual(secondRead, firstRead, "deux lectures successives de l'archive doivent être strictement identiques");
+    assert.equal(secondRead?.declarationDraft?.declaration?.currentVersionId, firstRead?.declarationDraft?.declaration?.currentVersionId);
+  });
+
+  it("9 — EXERCICE INEXISTANT : fiscalYearId inconnu → loadArchivedFiscalYear renvoie undefined, accès refusé proprement", async () => {
+    const dossierId = uid("dossier");
+    const record = await loadArchivedFiscalYear("fiscalYearId-jamais-cree");
+    assert.equal(record, undefined);
+    const access = resolveArchivedFiscalYearAccess(record, dossierId);
+    assert.equal(access.ok, false);
+  });
+
+  it("10 — EXERCICE NON AUTORISÉ : fiscalYearId réel mais d'un AUTRE dossier → accès refusé", async () => {
+    const dossierIdA = uid("dossier");
+    const dossierIdB = uid("dossier");
+    const userId = uid("user");
+    const workspace = readyWorkspace();
+
+    const result = await persistFiscalYearClosureAndTransition({
+      dossierId: dossierIdA,
+      userId,
+      workspace,
+      now: "2026-09-04T00:00:00.000Z",
+    });
+
+    const archived = await loadArchivedFiscalYear(result.closedFiscalYear.id);
+    const access = resolveArchivedFiscalYearAccess(archived, dossierIdB);
+    assert.equal(access.ok, false, "un exercice clôturé d'un autre dossier ne doit jamais être servi");
   });
 });

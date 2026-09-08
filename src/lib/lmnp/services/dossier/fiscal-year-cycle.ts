@@ -462,3 +462,31 @@ export function extractDossierLevelDataFromWorkspace(workspace: PersistedWorkspa
   const financements = extractFinancementBases(draft?.financementAssistantState?.loans);
   return { properties, financements };
 }
+
+export type ArchivedFiscalYearAccess = { ok: true } | { ok: false; reason: string };
+
+/**
+ * P1 — Historique des exercices clôturés. Précondition d'accès à la vue
+ * read-only d'un exercice archivé (`loadArchivedFiscalYear()`,
+ * `store/dossier-db.ts`) : jamais un exercice d'un autre dossier (isolation
+ * multi-utilisateur/multi-dossier), jamais l'exercice ACTIF (celui-ci reste
+ * consultable uniquement via le parcours existant, `/declarations`) — un
+ * exercice non `"closed"` (dont la coquille technique de l'exercice courant,
+ * cf. `persistFiscalYearClosureAndTransition()`) n'est jamais une archive
+ * consultable au sens de ce parcours.
+ */
+export function resolveArchivedFiscalYearAccess(
+  record: Pick<FiscalYear, "dossierId" | "status"> | undefined,
+  dossierId: string,
+): ArchivedFiscalYearAccess {
+  if (!record) {
+    return { ok: false, reason: "Exercice introuvable." };
+  }
+  if (!dossierId || record.dossierId !== dossierId) {
+    return { ok: false, reason: "Cet exercice n'appartient pas à votre dossier." };
+  }
+  if (record.status !== "closed") {
+    return { ok: false, reason: "Cet exercice n'est pas clôturé." };
+  }
+  return { ok: true };
+}
