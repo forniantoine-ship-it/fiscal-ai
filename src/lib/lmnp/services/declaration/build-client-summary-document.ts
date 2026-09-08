@@ -31,10 +31,27 @@ export type ClientSummaryResultatPrincipal =
   | { nature: "benefice"; montant: number }
   | { nature: "deficit"; montant: number };
 
+/**
+ * P2-1 (design PDF 2042-C-PRO validé) — catégorisation d'affichage pure,
+ * dérivée du code de case lui-même (5CD/5NA/5NY vs 5GA-5GJ), jamais d'une
+ * règle fiscale nouvelle :
+ *
+ * - "a_saisir" : 5CD, 5NA, 5NY. Validation officielle 2026 (brochure DGFiP
+ *   « Loueurs en meublé non professionnels », pages 7 et 9) : le contribuable
+ *   doit « reporter le résultat » lui-même, y compris après télétransmission
+ *   EDI-TDFC de sa déclaration n° 2031. Ces cases ne sont jamais préremplies.
+ * - "a_verifier" : 5GA à 5GJ (déficits antérieurs). Seules cases où un report
+ *   automatique par l'administration est plausible (reprise de la propre
+ *   déclaration N-1 du contribuable) — mais sans garantie, d'où l'instruction
+ *   de vérification plutôt qu'une affirmation.
+ */
+export type ClientSummaryCase2042Categorie = "a_saisir" | "a_verifier";
+
 export type ClientSummaryCase2042 = {
   case: string;
   label: string;
   montant: number | string;
+  categorie: ClientSummaryCase2042Categorie;
   /** Ambiguïté ou point à vérifier avant de reporter cette case — jamais masqué. */
   note?: string;
 };
@@ -125,10 +142,22 @@ export type ClientSummaryDocument = {
   travailEffectue: string[];
   aide2042: {
     cases: ClientSummaryCase2042[];
-    explicationPreremplissage: string;
-    instructionsSiPreremplie: string;
-    instructionsSiAbsente: string;
-    instructionsSiDivergente: string;
+    /**
+     * P2-1 — instruction fixe pour les cases catégorie "a_saisir" (5CD, 5NA,
+     * 5NY). Validée officiellement : jamais de mention d'un préremplissage
+     * possible, y compris après télétransmission EDI-TDFC de la déclaration
+     * professionnelle (brochure DGFiP LMNP, pages 7 et 9 : « vous devez
+     * ensuite reporter le résultat »).
+     */
+    instructionASaisir: string;
+    /**
+     * P2-1 — instruction fixe pour les cases catégorie "a_verifier"
+     * (5GA-5GJ) : le préremplissage y est plausible mais jamais garanti,
+     * jamais affirmé comme systématique.
+     */
+    instructionAVerifier: string;
+    /** P2-1 — que faire si la case à vérifier est vide ou diffère du montant indiqué. */
+    instructionAVerifierDivergence: string;
     /** Toutes les ambiguïtés signalées par les cases ci-dessus, regroupées pour affichage. */
     ambiguites: string[];
   };
@@ -221,6 +250,7 @@ function buildCase5CD(activityStartDate: string | undefined, exercice: number): 
       case: "5CD",
       label,
       montant: "Ne pas renseigner (exercice de 12 mois)",
+      categorie: "a_saisir",
     };
   }
 
@@ -229,6 +259,7 @@ function buildCase5CD(activityStartDate: string | undefined, exercice: number): 
       case: "5CD",
       label,
       montant: "À vérifier",
+      categorie: "a_saisir",
       note: "À vérifier : la durée de l'exercice est inférieure à 12 mois ; renseignez la case 5CD selon votre situation.",
     };
   }
@@ -237,6 +268,7 @@ function buildCase5CD(activityStartDate: string | undefined, exercice: number): 
     case: "5CD",
     label,
     montant: "À vérifier",
+    categorie: "a_saisir",
     note: "La date de début d'activité n'est pas connue. Ne renseignez la case 5CD que si votre exercice a duré moins de 12 mois.",
   };
 }
@@ -344,12 +376,14 @@ function buildCases2042(
       case: "5NY",
       label: "Déficit — locations meublées non professionnelles, régime réel, cas général",
       montant: fr.deficitNouveau,
+      categorie: "a_saisir",
     });
   } else {
     cases.push({
       case: "5NA",
       label: "Revenu imposable — locations meublées non professionnelles, régime réel, cas général",
       montant: fr.resultatFiscal,
+      categorie: "a_saisir",
     });
   }
 
@@ -360,6 +394,7 @@ function buildCases2042(
       case: caseId,
       label: `Déficit antérieur restant à reporter (exercice ${deficit.millesime})`,
       montant: deficit.montant,
+      categorie: "a_verifier",
     });
   }
 
@@ -500,14 +535,18 @@ export function buildClientSummaryDocument(
     travailEffectue: buildTravailEffectue(fr, isDeficit),
     aide2042: {
       cases,
-      explicationPreremplissage:
-        "Ces informations sont normalement susceptibles d'être reprises dans votre déclaration préremplie, lorsque les traitements administratifs le permettent. Vérifiez néanmoins votre déclaration : si une information est absente, incomplète ou différente, il vous appartient de la renseigner ou de la corriger.",
-      instructionsSiPreremplie:
-        "Si ces informations apparaissent déjà dans votre déclaration personnelle : vérifiez que les montants correspondent à ceux indiqués ci-dessous. Si les données sont correctes, aucune ressaisie n'est nécessaire.",
-      instructionsSiAbsente:
-        "Si, au moment de valider votre déclaration personnelle, ces informations ne sont pas encore présentes ou sont incomplètes : vous devez alors renseigner vous-même les montants indiqués dans le tableau ci-dessous, dans les cases concernées.",
-      instructionsSiDivergente:
-        "Si les montants déjà préremplis diffèrent de ceux indiqués ci-dessous : ne validez pas automatiquement votre déclaration. Vérifiez l'origine de l'écart avant de la confirmer.",
+      // P2-1 — validation officielle 2026 (brochure DGFiP LMNP, pages 7 et 9) :
+      // pour 5CD/5NA/5NY, jamais de mention d'un préremplissage possible,
+      // même après télétransmission EDI-TDFC de la déclaration professionnelle.
+      instructionASaisir:
+        "Cette information doit être reportée par vous dans votre déclaration 2042-C-PRO. Elle n'est pas préremplie par l'administration, même si votre déclaration professionnelle a déjà été télétransmise.",
+      // P2-1 — pour 5GA-5GJ uniquement : un report par l'administration est
+      // plausible (reprise de la déclaration N-1), mais jamais garanti — la
+      // formulation reste au conditionnel, jamais "sera" ni "automatiquement".
+      instructionAVerifier:
+        "L'administration peut déjà avoir reporté ce montant. Vérifiez qu'il correspond bien à ce qui apparaît dans votre déclaration.",
+      instructionAVerifierDivergence:
+        "Si le montant est différent ou absent, vérifiez la situation avant de valider votre déclaration.",
       ambiguites: cases.filter((c) => c.note).map((c) => c.note as string),
     },
     avertissements: {

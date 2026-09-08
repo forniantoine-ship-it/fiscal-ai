@@ -355,15 +355,21 @@ describe("Cycle 27 — TEST 5 : amortissement calculé / déductible / reporté 
 });
 
 describe("Cycle 27 — TEST 6 : instructions si les informations ne sont pas préremplies", () => {
-  it("le document explique quoi faire si le préremplissage n'est pas encore disponible, sans jamais le garantir", () => {
+  it("l'instruction 'à saisir' n'affirme jamais un préremplissage possible, même après télétransmission", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult()));
-    assert.ok(document.aide2042.instructionsSiAbsente.length > 0);
-    assert.match(document.aide2042.instructionsSiAbsente, /renseigner/i);
-    assert.ok(document.aide2042.instructionsSiPreremplie.length > 0);
-    assert.ok(document.aide2042.instructionsSiDivergente.length > 0);
-    // Le préremplissage ne doit jamais être présenté comme garanti ("normalement", pas "sera").
-    assert.doesNotMatch(document.aide2042.explicationPreremplissage, /\bsera\b|garanti|automatiquement rempli/i);
-    assert.match(document.aide2042.explicationPreremplissage, /normalement/i);
+    assert.ok(document.aide2042.instructionASaisir.length > 0);
+    assert.match(document.aide2042.instructionASaisir, /pas préremplie/i);
+    assert.doesNotMatch(document.aide2042.instructionASaisir, /normalement|peut(-| )être|susceptible/i);
+  });
+
+  it("l'instruction 'à vérifier' reste au conditionnel, jamais garantie", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult()));
+    assert.ok(document.aide2042.instructionAVerifier.length > 0);
+    assert.match(document.aide2042.instructionAVerifier, /peut déjà avoir/i);
+    assert.doesNotMatch(document.aide2042.instructionAVerifier, /\bsera\b|garanti|automatiquement/i);
+    assert.ok(document.aide2042.instructionAVerifierDivergence.length > 0);
+    assert.match(document.aide2042.instructionAVerifierDivergence, /différent ou absent/i);
+    assert.match(document.aide2042.instructionAVerifierDivergence, /avant de valider/i);
   });
 
   it("le document précise explicitement qu'il n'est ni la liasse officielle, ni un accusé EDI, ni une preuve d'acceptation", () => {
@@ -807,6 +813,104 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
  * P1-4B (audit 2026-09-02) — 5CD ne s'invite que si l'exercice est < 12 mois.
  * Aucun nombre de mois calculé. Source : activityStartDate, jamais dateMiseEnService.
  */
+/**
+ * P2-1 (design PDF validé) — catégorisation d'affichage "a_saisir" /
+ * "a_verifier", dérivée uniquement du code de case (5CD/5NA/5NY vs 5GA-5GJ).
+ * Aucun recalcul : chaque test compare la catégorie à celle attendue pour un
+ * code de case donné.
+ */
+describe("P2-1 — catégorisation des cases (à saisir / à vérifier)", () => {
+  it("cas 1 — bénéfice simple, exercice complet, aucun déficit antérieur : 5NA seul, catégorie a_saisir", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ exercice: 2025, resultatFiscal: 5500, deficitNouveau: 0 })),
+      { activityStartDate: "2020-01-01" },
+    );
+    const cases = document.aide2042.cases;
+    assert.equal(cases.some((c) => c.case === "5NA"), true);
+    assert.equal(cases.find((c) => c.case === "5NA")?.categorie, "a_saisir");
+    assert.equal(cases.some((c) => c.case === "5NY"), false);
+    assert.equal(cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
+  });
+
+  it("cas 2 — déficit : 5NY présent en a_saisir, 5NA absent", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 1200 })));
+    const case5NY = document.aide2042.cases.find((c) => c.case === "5NY");
+    assert.equal(case5NY?.categorie, "a_saisir");
+    assert.equal(document.aide2042.cases.some((c) => c.case === "5NA"), false);
+  });
+
+  it("cas 3 — exercice < 12 mois : 5CD présent en a_saisir avec la bonne valeur", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {
+      activityStartDate: "2025-06-01",
+    });
+    const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
+    assert.equal(case5CD?.categorie, "a_saisir");
+    assert.equal(case5CD?.montant, "À vérifier");
+  });
+
+  it("cas 4 — déficits antérieurs : toutes les lignes 5GA-5GJ sont catégorie a_verifier", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          stocks: {
+            deficits: [
+              { millesime: 2023, montant: 1200 },
+              { millesime: 2024, montant: 800 },
+            ],
+            amortissementsReportes: 0,
+            deficitsExpires: [],
+          },
+        }),
+      ),
+    );
+    const lignes = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
+    assert.equal(lignes.length, 2);
+    assert.ok(lignes.every((c) => c.categorie === "a_verifier"));
+  });
+
+  it("cas 5 — combinaison 5CD + 5NA + plusieurs déficits antérieurs : catégories correctement réparties", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          resultatFiscal: 4250,
+          deficitNouveau: 0,
+          stocks: {
+            deficits: [
+              { millesime: 2022, montant: 400 },
+              { millesime: 2023, montant: 1800 },
+              { millesime: 2024, montant: 950 },
+            ],
+            amortissementsReportes: 0,
+            deficitsExpires: [],
+          },
+        }),
+      ),
+      { activityStartDate: "2025-03-01" },
+    );
+    const cases = document.aide2042.cases;
+    const aSaisir = cases.filter((c) => c.categorie === "a_saisir");
+    const aVerifier = cases.filter((c) => c.categorie === "a_verifier");
+    assert.equal(aSaisir.length, 2, "5CD + 5NA");
+    assert.deepEqual(aSaisir.map((c) => c.case).sort(), ["5CD", "5NA"]);
+    assert.equal(aVerifier.length, 3, "trois déficits antérieurs");
+    assert.ok(aVerifier.every((c) => /^5G[A-J]$/.test(c.case)));
+  });
+
+  it("cas 6 — identité : le nom du client (denomination) est restitué tel quel, aucune nouvelle source", () => {
+    const document = buildClientSummaryDocument(rfs(fiscalResult()));
+    assert.equal(document.meta.identite.denomination, "Elsa Bouvard");
+  });
+
+  it("cas 7 — 5NA/5NY sont toujours mutuellement exclusives, quelle que soit la combinaison", () => {
+    const benefice = buildClientSummaryDocument(rfs(fiscalResult({ resultatFiscal: 100, deficitNouveau: 0 })));
+    assert.equal(benefice.aide2042.cases.filter((c) => c.case === "5NA" || c.case === "5NY").length, 1);
+    const deficit = buildClientSummaryDocument(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 100 })));
+    assert.equal(deficit.aide2042.cases.filter((c) => c.case === "5NA" || c.case === "5NY").length, 1);
+  });
+});
+
 describe("P1-4B — exposition 5CD selon la date de début d'activité", () => {
   it("1. activityStartDate antérieure au 01/01/2025 → 5CD n'invite pas à renseigner une durée", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult({ exercice: 2025 })), {

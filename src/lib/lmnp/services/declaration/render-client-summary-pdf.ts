@@ -22,10 +22,6 @@ function fmtEurValue(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
 }
 
-function fmtCaseMontant(montant: number | string): string {
-  return typeof montant === "number" ? fmtEurValue(montant) : montant;
-}
-
 /**
  * `toLocaleString("fr-FR")` produit un séparateur de milliers non standard
  * selon l'environnement Node/ICU — vérifié empiriquement : U+202F (narrow
@@ -156,40 +152,6 @@ class PdfCursor {
     this.spacer();
   }
 
-  /** Tableau simple à 3 colonnes (case / libellé / montant) — pas de dépendance externe. */
-  table(rows: { case: string; label: string; montant: string }[]): void {
-    const colCase = MARGIN;
-    const colLabel = MARGIN + 20;
-    const montantWidth = 42;
-    const colMontantRight = PAGE_WIDTH - MARGIN;
-    const labelWidth = colMontantRight - montantWidth - 4 - colLabel;
-    const rowHeight = LINE_HEIGHT * 1.4;
-
-    this.ensureSpace(rowHeight);
-    this.doc.setFont("helvetica", "bold");
-    this.doc.setFontSize(10);
-    this.doc.text("Case", colCase, this.y);
-    this.doc.text("Information", colLabel, this.y);
-    this.doc.text("Montant à utiliser", colMontantRight, this.y, { align: "right" });
-    this.y += rowHeight * 0.7;
-    this.doc.line(MARGIN, this.y, PAGE_WIDTH - MARGIN, this.y);
-    this.y += rowHeight * 0.5;
-    this.doc.setFont("helvetica", "normal");
-
-    for (const row of rows) {
-      const labelLines = this.doc.splitTextToSize(sanitizeForPdf(row.label), labelWidth) as string[];
-      const montantLines = this.doc.splitTextToSize(sanitizeForPdf(row.montant), montantWidth) as string[];
-      const height = Math.max(labelLines.length, montantLines.length, 1) * LINE_HEIGHT;
-      this.ensureSpace(height);
-      this.doc.text(row.case, colCase, this.y);
-      this.doc.text(labelLines, colLabel, this.y);
-      this.doc.text(montantLines, colMontantRight, this.y, { align: "right" });
-      this.y += height + 1;
-    }
-    this.doc.setFontSize(11);
-    this.spacer();
-  }
-
   finalizePagination(): void {
     const totalPages = this.doc.getNumberOfPages();
     for (let page = 1; page <= totalPages; page += 1) {
@@ -288,36 +250,11 @@ export function renderClientSummaryPdf(document: ClientSummaryDocument): jsPDF {
     document.avertissements.differenceResultatTresorerie,
   ]);
 
-  // ---- Page 3 — Votre aide pour la déclaration 2042-C-PRO ----
-  cursor.newPage();
-  cursor.heading("Votre aide pour la déclaration 2042-C-PRO");
-  cursor.paragraph(document.aide2042.explicationPreremplissage);
-  cursor.spacer();
-
-  cursor.table(
-    document.aide2042.cases.map((c) => ({
-      case: c.case,
-      label: c.label,
-      montant: fmtCaseMontant(c.montant),
-    })),
-  );
-
-  cursor.subheading("Si ces informations apparaissent déjà dans votre déclaration");
-  cursor.paragraph(document.aide2042.instructionsSiPreremplie);
-  cursor.subheading("Si ces informations ne sont pas encore présentes");
-  cursor.paragraph(document.aide2042.instructionsSiAbsente);
-  cursor.subheading("Si les montants diffèrent de ceux ci-dessus");
-  cursor.paragraph(document.aide2042.instructionsSiDivergente);
-
-  if (document.aide2042.ambiguites.length > 0) {
-    cursor.spacer();
-    cursor.subheading("Points à vérifier");
-    for (const note of document.aide2042.ambiguites) {
-      cursor.paragraph(`• ${note}`);
-    }
-  }
-
-  cursor.spacer(LINE_HEIGHT);
+  // L'aide détaillée à la déclaration 2042-C-PRO (cases, montants,
+  // instructions à saisir/à vérifier) vit désormais dans un document dédié —
+  // voir `render-aide-2042-pdf.ts`. Elle n'est plus dupliquée ici : ce
+  // document reste centré sur la synthèse du calcul fiscal.
+  cursor.spacer(LINE_HEIGHT * 0.4);
   cursor.paragraph(document.avertissements.statutEdi);
 
   cursor.finalizePagination();
