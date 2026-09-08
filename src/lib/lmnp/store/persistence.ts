@@ -184,9 +184,19 @@ async function recordToFile(record: DocumentBlobRecord): Promise<File | null> {
   });
 }
 
+/**
+ * P0 (bug GC multi-exercices) — `documents` ne porte jamais que ceux de
+ * l'exercice ACTIF (`workspace.documents`) : un blob dont le `fiscalYearId`
+ * diffère de `activeFiscalYearId` appartient à un exercice archivé et ne
+ * doit jamais être supprimé ici, même absent de `documents`. Un
+ * `record.fiscalYearId` manquant (portée inconnue, ex. enregistrement
+ * antérieur à ce champ) n'est JAMAIS traité comme une autorisation de
+ * purge — comparaison stricte à `activeFiscalYearId`, jamais un `!==`.
+ */
 async function loadFileRegistry(
   documents: LmnpDocument[],
   userId: string,
+  activeFiscalYearId: string,
 ): Promise<FileRegistry> {
   const registry: FileRegistry = new Map();
   const docById = new Map(documents.map((d) => [d.id, d]));
@@ -199,7 +209,7 @@ async function loadFileRegistry(
 
     const doc = docById.get(record.documentId);
     if (!doc) {
-      if (!record.userId || record.userId === userId) {
+      if (record.fiscalYearId === activeFiscalYearId) {
         void deleteDocumentBlob(record.documentId);
       }
       continue;
@@ -252,7 +262,7 @@ export async function hydrateLmnpStore(userId: string | null): Promise<HydratedL
     const workspace = await loadWorkspace(userId);
     if (!workspace) return { workspace: null, fileRegistry: new Map() };
 
-    const loaded = await loadFileRegistry(workspace.documents, userId);
+    const loaded = await loadFileRegistry(workspace.documents, userId, workspace.fiscalYear.id);
     const fileRegistry = await ensureDocumentFilesLoaded(workspace.documents, loaded);
     return { workspace, fileRegistry };
   } catch (error) {
@@ -404,11 +414,20 @@ function blobFingerprint(file: File, doc: LmnpDocument): string {
   return `${doc.id}:${file.size}:${file.name}:${doc.uploadedAt}`;
 }
 
-/** Sync in-memory files to IndexedDB (uploads / re-hydration safety). */
+/**
+ * Sync in-memory files to IndexedDB (uploads / re-hydration safety).
+ *
+ * P0 (bug GC multi-exercices) — `documents` ne porte jamais que ceux de
+ * l'exercice ACTIF : la purge d'orphelins ci-dessous ne doit jamais
+ * atteindre un blob d'un autre exercice (`record.fiscalYearId !==
+ * activeFiscalYearId`), même absent de `documents`. Un `fiscalYearId`
+ * manquant sur le blob (portée inconnue) n'autorise jamais la purge.
+ */
 export async function syncDocumentBlobs(
   documents: LmnpDocument[],
   fileRegistry: FileRegistry,
-  userId?: string | null,
+  userId: string | null | undefined,
+  activeFiscalYearId: string,
 ): Promise<void> {
   if (typeof window === "undefined") return;
 
@@ -445,7 +464,8 @@ export async function syncDocumentBlobs(
           if (ownerUserId && record.userId && record.userId !== ownerUserId) {
             return false;
           }
-          return !activeIds.has(record.documentId);
+          if (activeIds.has(record.documentId)) return false;
+          return record.fiscalYearId === activeFiscalYearId;
         })
         .map((record) => deleteDocumentBlob(record.documentId)),
     );

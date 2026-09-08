@@ -263,8 +263,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     if (!isReady) return;
-    void syncDocumentBlobs(state.documents, state.fileRegistry, authUserIdRef.current);
-  }, [isReady, state.documents, state.fileRegistry]);
+    void syncDocumentBlobs(state.documents, state.fileRegistry, authUserIdRef.current, state.fiscalYear.id);
+  }, [isReady, state.documents, state.fileRegistry, state.fiscalYear.id]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -276,6 +276,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         stateRef.current.documents,
         stateRef.current.fileRegistry,
         authUserIdRef.current,
+        stateRef.current.fiscalYear.id,
       );
     };
 
