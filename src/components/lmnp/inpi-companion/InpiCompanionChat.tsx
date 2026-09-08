@@ -1,19 +1,19 @@
 "use client";
 
 /**
- * Compagnon INPI — UI d'aide contextuelle (Phase 4.5.2).
+ * Compagnon INPI — UI d'aide contextuelle (Phase 4.5.2 + réponses 4.5.3).
  *
  * Couche UI UNIQUEMENT : ouvre/ferme un panneau d'aide, affiche des
  * suggestions dérivées du contexte déjà construit (Phase 4.5.1), permet une
- * saisie libre, et classe localement l'intention via `classifyInpiCompanionIntent`
- * — à des fins de validation technique du branchement, pas pour produire une
- * réponse métier (Phase 4.5.3). Aucun appel réseau, aucun LLM, aucune
- * persistance : les messages vivent uniquement en `useState` local, perdus à
- * la fermeture/navigation, exactement comme `RegularisationView` (Phase 4.3).
+ * saisie libre, classe localement l'intention, puis affiche la réponse
+ * déterministe de `buildInpiCompanionChatReply`. Aucun appel réseau, aucun
+ * LLM, aucune persistance : les messages vivent uniquement en `useState`
+ * local, perdus à la fermeture/navigation.
  *
  * Ne modifie jamais `inpiCompanionState`, `Dossier.inpiStatus`, ni aucune
  * donnée métier — ce composant ne reçoit d'ailleurs aucun moyen de le faire
  * (pas de `dispatch`, pas de `updateInpiStatus` dans ses props).
+ * `orientation` n'est pas exécutée : c'est une description, pas une action.
  */
 
 import { useCallback, useState, type KeyboardEvent } from "react";
@@ -27,16 +27,13 @@ import { typography } from "@/design-system/theme/typography";
 
 import type { InpiCompanionChatContext } from "./inpi-companion-chat-context";
 import { classifyInpiCompanionIntent } from "./inpi-companion-chat-intent";
+import { buildInpiCompanionChatReply } from "./inpi-companion-chat-response";
 import { buildInpiCompanionChatSuggestions } from "./inpi-companion-chat-suggestions";
 
 type LocalChatMessage = {
   role: "user" | "assistant";
   text: string;
 };
-
-/** Réponse neutre, non persistée, affichée le temps de la Phase 4.5.2 uniquement — jamais la nomenclature technique de l'intention (§10). */
-const PLACEHOLDER_ACKNOWLEDGEMENT =
-  "Merci, votre question a bien été prise en compte. Les réponses détaillées seront bientôt disponibles ici.";
 
 export function InpiCompanionChat({ context }: { context: InpiCompanionChatContext }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -49,14 +46,12 @@ export function InpiCompanionChat({ context }: { context: InpiCompanionChatConte
     (text: string) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      // Classification locale uniquement — aucune réponse métier générée ici,
-      // aucun appel réseau, aucune mutation du dossier. La couche de réponse
-      // déterministe arrive en Phase 4.5.3.
-      classifyInpiCompanionIntent(trimmed, context);
+      const intent = classifyInpiCompanionIntent(trimmed, context);
+      const reply = buildInpiCompanionChatReply({ message: trimmed, intent, context });
       setMessages((previous) => [
         ...previous,
         { role: "user", text: trimmed },
-        { role: "assistant", text: PLACEHOLDER_ACKNOWLEDGEMENT },
+        { role: "assistant", text: reply.text },
       ]);
       setDraft("");
     },

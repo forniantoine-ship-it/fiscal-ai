@@ -162,6 +162,72 @@ describe("Ordre de priorité — cas de conflit entre catégories", () => {
       "lost",
     );
   });
+
+  it("un conflit actif l'emporte sur lost (« je suis perdu »)", () => {
+    const conflict: InpiCompanionConflict = { field: "siren_siret", previousValue: "A", newValue: "B" };
+    assert.equal(classifyInpiCompanionIntent("je suis perdu", ctx({ conflicts: [conflict] })), "conflict");
+  });
+});
+
+describe("Phase 4.5.3 — motifs ajoutés", () => {
+  it("« je ne sais pas quoi faire » → lost", () => {
+    assert.equal(classifyInpiCompanionIntent("je ne sais pas quoi faire", ctx()), "lost");
+  });
+
+  it("« mon écran INPI ne correspond pas » → screen_divergence, pas conflict", () => {
+    assert.equal(classifyInpiCompanionIntent("mon écran INPI ne correspond pas", ctx()), "screen_divergence");
+  });
+
+  it("« l'INPI me demande quelque chose » → regularization", () => {
+    assert.equal(classifyInpiCompanionIntent("l'INPI me demande quelque chose", ctx()), "regularization");
+  });
+
+  it("« l'INPI me demande autre chose » reste screen_divergence (pas avalé par regularization)", () => {
+    assert.equal(classifyInpiCompanionIntent("l'INPI me demande autre chose", ctx()), "screen_divergence");
+  });
+
+  it("« mon SIRET ne correspond pas » → conflict, pas screen_divergence", () => {
+    assert.equal(classifyInpiCompanionIntent("mon SIRET ne correspond pas", ctx()), "conflict");
+  });
+
+  it("un « ne correspond pas » générique d'écran n'est pas capturé par conflict", () => {
+    assert.notEqual(classifyInpiCompanionIntent("mon écran INPI ne correspond pas", ctx()), "conflict");
+  });
+
+  it("« j'ai commencé ma démarche » → resume", () => {
+    assert.equal(classifyInpiCompanionIntent("j'ai commencé ma démarche", ctx()), "resume");
+  });
+
+  it("« j'ai envoyé ma demande » → resume", () => {
+    assert.equal(classifyInpiCompanionIntent("j'ai envoyé ma demande", ctx()), "resume");
+  });
+
+  it("« je ne sais pas si mon activité est déjà déclarée » → unknown_status", () => {
+    assert.equal(
+      classifyInpiCompanionIntent("je ne sais pas si mon activité est déjà déclarée", ctx()),
+      "unknown_status",
+    );
+  });
+
+  it("« mon activité est déjà déclarée » reste already_registered", () => {
+    assert.equal(classifyInpiCompanionIntent("mon activité est déjà déclarée", ctx()), "already_registered");
+  });
+
+  it("« faire la démarche à ma place » → out_of_scope", () => {
+    assert.equal(classifyInpiCompanionIntent("faire la démarche à ma place", ctx()), "out_of_scope");
+  });
+
+  it("« faites-la pour moi » → out_of_scope", () => {
+    assert.equal(classifyInpiCompanionIntent("faites-la pour moi", ctx()), "out_of_scope");
+  });
+
+  it("« pour moi » isolé n'est pas out_of_scope", () => {
+    assert.equal(classifyInpiCompanionIntent("c'est une question pour moi", ctx()), "free_question");
+  });
+
+  it("« à quoi sert le SIREN ? » → field_help", () => {
+    assert.equal(classifyInpiCompanionIntent("à quoi sert le SIREN ?", ctx()), "field_help");
+  });
 });
 
 describe("Pureté", () => {

@@ -45,15 +45,20 @@ const REGULARIZATION_PATTERNS = [
   "regulariser",
   "corriger mon dossier",
   "demande de correction",
+  "demande une correction",
   "demande de complement",
   "message de l'inpi",
   "message recu de l'inpi",
+  // Motif exact : ne doit PAS matcher « me demande autre chose » (screen_divergence).
+  "demande quelque chose",
 ] as const;
 
 const SCREEN_DIVERGENCE_PATTERNS = [
   "pas la meme chose",
   "ecran est different",
   "ecran different",
+  "mon ecran",
+  "ecran inpi",
   "je n'ai pas cette rubrique",
   "je n'ai pas cette option",
   "chez moi le bouton",
@@ -74,12 +79,17 @@ const CONFLICT_PATTERNS = [
   "laquelle dois-je",
   "quelle est la bonne",
   "quelle valeur",
+  // Volontairement ancrés SIREN/SIRET — jamais un « ne correspond pas » générique
+  // qui capturerait « mon écran INPI ne correspond pas » (screen_divergence).
+  "siren ne correspond",
+  "siret ne correspond",
 ] as const;
 
 const LOST_PATTERNS = [
   "je suis perdu",
   "completement perdu",
   "je ne sais plus quoi faire",
+  "je ne sais pas quoi faire",
   "je ne sais plus ou",
   "qu'est-ce qu'il me reste",
   "qu'est ce qu'il me reste",
@@ -92,12 +102,15 @@ const RESUME_PATTERNS = [
   "ou en etais-je",
   "ou j'en etais",
   "continuer mon dossier",
+  "j'ai commence ma demarche",
+  "j'ai envoye ma demande",
 ] as const;
 
 const UNKNOWN_STATUS_PATTERNS = [
   "je ne sais pas si je suis",
   "je ne sais pas si j'ai un siren",
   "je ne sais pas si j'ai un siret",
+  "je ne sais pas si mon activite",
   "comment savoir si j'ai un siren",
   "comment savoir si je suis",
 ] as const;
@@ -129,6 +142,11 @@ const OUT_OF_SCOPE_PATTERNS = [
   "credit d'impot",
   "reduction d'impot",
   " tva",
+  "a ma place",
+  "faites-la pour moi",
+  "faites la pour moi",
+  "faire la demarche pour moi",
+  "faites la demarche",
 ] as const;
 
 const FIELD_HELP_PATTERNS = [
@@ -139,7 +157,19 @@ const FIELD_HELP_PATTERNS = [
   "je ne comprends pas cette",
   "que signifie",
   "a quoi correspond",
+  "a quoi sert",
 ] as const;
+
+/** « pour moi » n'est hors périmètre que s'il s'agit clairement de faire la démarche INPI à la place du client — jamais un « pour moi » isolé. */
+function isDoingFormalityForUser(normalized: string): boolean {
+  if (!normalized.includes("pour moi")) return false;
+  return (
+    normalized.includes("demarche") ||
+    normalized.includes("inpi") ||
+    normalized.includes("formalite") ||
+    normalized.includes("guichet")
+  );
+}
 
 /**
  * Classification 100 % déterministe, ordre de priorité fixe (§8) :
@@ -182,7 +212,7 @@ export function classifyInpiCompanionIntent(
   if (matchesAny(normalized, MULTI_PROPERTY_PATTERNS)) {
     return "multi_property";
   }
-  if (matchesAny(normalized, OUT_OF_SCOPE_PATTERNS)) {
+  if (matchesAny(normalized, OUT_OF_SCOPE_PATTERNS) || isDoingFormalityForUser(normalized)) {
     return "out_of_scope";
   }
   if (matchesAny(normalized, FIELD_HELP_PATTERNS)) {
