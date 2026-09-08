@@ -59,9 +59,14 @@ function orientationAck(orientation: F009Orientation): string {
     case "registered_no_siret":
       return "Pas de souci. Nous allons saisir les informations essentielles à la main.";
     case "not_sure":
-      return "Nous allons avancer ensemble, étape par étape, avec une saisie guidée.";
+      // P1 — INPI sur Validation : message explicite (audit F009/F011-F014,
+      // 2026) — l'absence d'enregistrement INPI ne bloque jamais le tunnel
+      // fiscal ; l'accompagnement dédié arrive à l'étape Validation, jamais
+      // ici (F009 reste une saisie guidée, pas un assistant INPI complet).
+      return "Nous allons avancer ensemble, étape par étape, avec une saisie guidée. Votre situation INPI n'est pas encore claire pour vous ? Cela ne vous empêche pas de poursuivre la préparation de votre dossier fiscal — nous vous accompagnerons dans cette démarche à l'étape Validation.";
     case "not_yet":
-      return "Vous pourrez poursuivre votre dossier. Indiquez une date prévisionnelle si votre bien n'est pas encore loué.";
+      // P1 — même principe : voir le commentaire de "not_sure" ci-dessus.
+      return "Votre activité n'est pas encore enregistrée auprès de l'INPI. Cela ne vous empêche pas de poursuivre la préparation de votre dossier fiscal — nous vous accompagnerons dans cette démarche à l'étape Validation. Vous pourrez poursuivre votre dossier dès maintenant : indiquez une date prévisionnelle si votre bien n'est pas encore loué.";
   }
 }
 

@@ -14,6 +14,7 @@ import { ValidationFiscalSummary } from "@/components/lmnp/validation-workflow/V
 import { ValidationGenerateCta } from "@/components/lmnp/validation-workflow/ValidationGenerateCta";
 import { ValidationHero } from "@/components/lmnp/validation-workflow/ValidationHero";
 import { ValidationIncompleteCard } from "@/components/lmnp/validation-workflow/ValidationIncompleteCard";
+import { ValidationInpiBlock } from "@/components/lmnp/validation-workflow/ValidationInpiBlock";
 import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
 import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
 import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/ValidationPricingBlock";
@@ -34,6 +35,11 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import {
+  canOfferPaymentWithoutCerfa,
+  isBlockingAnomaliesInpiOnly,
+} from "@/lib/lmnp/services/declaration/payment-readiness";
+import { resolveInpiValidationState } from "@/lib/lmnp/services/inpi/resolve-inpi-validation-state";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
@@ -53,13 +59,28 @@ type FlowPhase = "idle" | "checkout" | "generating";
 
 export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const router = useRouter();
-  const { workspace, dispatch } = useLmnp();
+  const { workspace, dispatch, dossierInpiStatus, updateInpiStatus, inpiStatusUpdating } = useLmnp();
   const { showSuccess } = useFeedback();
 
   const draft = workspace.declarationDraft;
   const { fiscalYear } = workspace;
   const paid = Boolean(fiscalYear.paidAt);
   const generated = Boolean(fiscalYear.declarationGeneratedAt);
+
+  // P1 — INPI sur Validation. Combine le statut Dossier-level (miroir React,
+  // useLmnp()) avec paidAt/declarationGeneratedAt (inchangés) via une
+  // fonction pure testée isolément — jamais un nouveau calcul ad hoc ici.
+  const inpiValidationState = resolveInpiValidationState({
+    inpiStatus: dossierInpiStatus?.status,
+    paidAt: fiscalYear.paidAt,
+    declarationGeneratedAt: fiscalYear.declarationGeneratedAt,
+  });
+  const handleDeclareInpiStatus = useCallback(
+    (status: Parameters<typeof updateInpiStatus>[0]) => {
+      void updateInpiStatus(status, "declared");
+    },
+    [updateInpiStatus],
+  );
 
   const gate = useMemo(
     () =>
@@ -85,11 +106,24 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const [phase, setPhase] = useState<FlowPhase>("idle");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  // P1 — distingue le paiement suivi d'une génération immédiate ("generate",
+  // comportement existant inchangé) du paiement seul ("pay-only", nouveau) :
+  // seul ce second mode évite d'appeler runDeclarationGeneration() après
+  // confirmation du paiement.
+  const [checkoutMode, setCheckoutMode] = useState<"generate" | "pay-only">("generate");
 
   const canGenerate = gate.canGenerate && phase === "idle";
   const showMainContent = phase === "idle" && (!generated || gate.canGenerate);
   const blockingAnomalies = gate.blockingAnomalies;
   const missingItems = gate.recoveryItems.length > 0 ? gate.recoveryItems : snapshot.missing;
+
+  // P1 — Découplage paiement / génération (SIREN/SIRET pas encore obtenu via
+  // l'INPI). N'affaiblit jamais gate.canGenerate (inchangé, seul juge de la
+  // génération réelle) : ce booléen sert uniquement à proposer un paiement
+  // distinct quand le blocage ne relève QUE de l'identité INPI. Voir
+  // payment-readiness.ts pour la liste documentée des anomalies ignorées.
+  const showPayWithoutCerfaCta =
+    !gate.canGenerate && canOfferPaymentWithoutCerfa({ gate, paid, phaseIsIdle: phase === "idle" });
 
   const handleGenerateClick = useCallback(() => {
     if (!gate.canGenerate) return;
@@ -98,9 +132,21 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       setPhase("generating");
       return;
     }
+    setCheckoutMode("generate");
     setCheckoutOpen(true);
     setPhase("checkout");
   }, [gate.canGenerate, gate.canRetryAfterPayment]);
+
+  // P1 — même paiement (mock) que handleGenerateClick, mais n'appelle jamais
+  // runDeclarationGeneration() : le SIREN/SIRET requis par
+  // validate-liasse-inputs.ts (inchangé) manque encore. gate.canGenerate
+  // n'est jamais recalculé ni contourné ici.
+  const handlePayWithoutGenerationClick = useCallback(() => {
+    if (!showPayWithoutCerfaCta) return;
+    setCheckoutMode("pay-only");
+    setCheckoutOpen(true);
+    setPhase("checkout");
+  }, [showPayWithoutCerfaCta]);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
@@ -109,8 +155,20 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const handlePaymentConfirmed = useCallback(() => {
     setCheckoutOpen(false);
+    if (checkoutMode === "pay-only") {
+      // P1 — paidAt enregistré ici directement. Contrairement au chemin
+      // "generate" (handleGenerationComplete), declarationGeneratedAt/
+      // fiscalResult/liasseResult/declarationVersions ne sont JAMAIS écrits
+      // ici : runDeclarationGeneration() n'est pas appelée. L'état
+      // paidAt != null / declarationGeneratedAt == null est donc atteint
+      // sans qu'aucune génération n'ait été tentée ni réussie.
+      dispatch({ type: "JOURNEY_MARK_PAID" });
+      setPhase("idle");
+      router.push(LMNP_ROUTES.declarations);
+      return;
+    }
     setPhase("generating");
-  }, []);
+  }, [checkoutMode, dispatch, router]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
@@ -251,36 +309,67 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       {showMainContent ? (
         <>
           {blockingAnomalies.length > 0 ? (
-            <div
-              className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both] text-center"
-              style={{
-                borderRadius: radius.lg,
-                border: `1px solid ${colors.error.border}`,
-                backgroundColor: colors.error.surface,
-                boxShadow: shadows.card.default,
-                padding: spacing.card.md,
-              }}
-            >
-              <p
+            isBlockingAnomaliesInpiOnly(gate) ? (
+              // P1 — le SEUL blocage restant relève de l'identité INPI
+              // (identite.siret, cf. payment-readiness.ts) : jamais présenté
+              // comme une erreur fiscale — le Generation Gate lui-même
+              // n'est ni modifié ni contourné, seule sa présentation change.
+              <div
+                className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both] text-center"
                 style={{
-                  fontFamily: typography.fontFamily.display,
-                  fontSize: typography.fontSize.lg,
-                  color: colors.error.DEFAULT,
+                  borderRadius: radius.lg,
+                  border: `1px solid ${colors.warning.border}`,
+                  backgroundColor: colors.warning.surface,
+                  boxShadow: shadows.card.default,
+                  padding: spacing.card.md,
                 }}
               >
-                Le calcul fiscal n&apos;a pas pu être finalisé
-              </p>
-              <ul className="mx-auto mt-4 max-w-md space-y-1 text-left">
-                {blockingAnomalies.map((anomaly, index) => (
-                  <li
-                    key={`${anomaly.field ?? "anomaly"}-${index}`}
-                    style={{ ...typography.body.desktop, color: colors.text.secondary }}
-                  >
-                    • {anomaly.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
+                <p
+                  style={{
+                    fontFamily: typography.fontFamily.display,
+                    fontSize: typography.fontSize.lg,
+                    color: colors.warning.DEFAULT,
+                  }}
+                >
+                  Votre démarche INPI reste à finaliser
+                </p>
+                <p className="mx-auto mt-2 max-w-md" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+                  Votre dossier fiscal est prêt. Il ne manque que votre SIREN/SIRET pour générer votre déclaration
+                  officielle — cela n&apos;empêche pas de poursuivre.
+                </p>
+              </div>
+            ) : (
+              <div
+                className="w-full animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both] text-center"
+                style={{
+                  borderRadius: radius.lg,
+                  border: `1px solid ${colors.error.border}`,
+                  backgroundColor: colors.error.surface,
+                  boxShadow: shadows.card.default,
+                  padding: spacing.card.md,
+                }}
+              >
+                <p
+                  style={{
+                    fontFamily: typography.fontFamily.display,
+                    fontSize: typography.fontSize.lg,
+                    color: colors.error.DEFAULT,
+                  }}
+                >
+                  Le calcul fiscal n&apos;a pas pu être finalisé
+                </p>
+                <ul className="mx-auto mt-4 max-w-md space-y-1 text-left">
+                  {blockingAnomalies.map((anomaly, index) => (
+                    <li
+                      key={`${anomaly.field ?? "anomaly"}-${index}`}
+                      style={{ ...typography.body.desktop, color: colors.text.secondary }}
+                    >
+                      • {anomaly.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
           ) : null}
 
           <div className="w-full space-y-3 [&>section]:!mx-0 [&>section]:!w-full [&>section]:!max-w-none">
@@ -298,6 +387,21 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           />
 
           <ValidationAiValueBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
+
+          {/*
+            P1 — socle INPI. Emplacement produit validé : après le résumé
+            fiscal et le rappel de valeur IA, avant les questions
+            patrimoniales et le paiement. N'affecte ni le Generation Gate ni
+            paidAt/declarationGeneratedAt — updateInpiStatus() écrit
+            exclusivement Dossier.inpiStatus (cf. provider.tsx/dossier-db.ts).
+          */}
+          <ValidationInpiBlock
+            cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+            state={inpiValidationState}
+            siren={draft?.siren}
+            busy={inpiStatusUpdating}
+            onDeclareStatus={handleDeclareInpiStatus}
+          />
 
           {/*
             G1-P0 — intake patrimonial minimal (2033-A). Volontairement non
@@ -328,7 +432,17 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           ) : (
             <>
               <ValidationPricingBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
-              <ValidationGenerateCta disabled={!canGenerate} onClick={handleGenerateClick} />
+              {showPayWithoutCerfaCta ? (
+                // P1 — dossier fiscal prêt hors INPI (SIREN/SIRET manquant) :
+                // paiement possible, génération volontairement différée.
+                <div className="flex w-full justify-center">
+                  <Button disabled={phase !== "idle"} onClick={handlePayWithoutGenerationClick}>
+                    Valider et payer mon dossier fiscal
+                  </Button>
+                </div>
+              ) : (
+                <ValidationGenerateCta disabled={!canGenerate} onClick={handleGenerateClick} />
+              )}
             </>
           )}
 
@@ -341,6 +455,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         fiscalYear={fiscalYear.year}
         onClose={handleCheckoutClose}
         onConfirmPayment={handlePaymentConfirmed}
+        mode={checkoutMode}
       />
     </div>
   );

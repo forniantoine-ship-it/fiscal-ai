@@ -28,7 +28,9 @@ import {
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
+import { loadDossierInpiStatus, saveDossierInpiStatus, type DossierInpiStatusMirror } from "./dossier-db";
 import type { DeclarationDraft } from "../types";
+import type { InpiStatus, InpiStatusSource } from "../types/dossier";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 import {
@@ -77,6 +79,20 @@ interface LmnpContextValue {
   closeFiscalYearAndCreateNext: () => Promise<void>;
   /** Dernière erreur de closeFiscalYearAndCreateNext, le cas échéant. */
   closeFiscalYearError: string | null;
+  /**
+   * P1 — statut INPI, Dossier-level (cf. types/dossier.ts). Source de vérité
+   * durable : le record `Dossier` en IndexedDB (survit N→N+1). Ce champ est
+   * un miroir de lecture pour le rendu React, hydraté une fois `isReady`
+   * (effet séparé ci-dessous, jamais câblé dans l'effet d'hydratation
+   * principal — volontairement, cf. commentaire de dossier-db.ts sur le
+   * risque de modifier cet effet sans l'avoir intégralement audité).
+   * `undefined` tant que non hydraté OU si aucun Dossier n'existe encore.
+   */
+  dossierInpiStatus: DossierInpiStatusMirror | undefined;
+  /** Écrit le statut INPI (Dossier-level) puis met à jour le miroir local. */
+  updateInpiStatus: (status: InpiStatus, source: InpiStatusSource) => Promise<void>;
+  /** true pendant l'écriture de updateInpiStatus (évite les doubles clics). */
+  inpiStatusUpdating: boolean;
 }
 
 const LmnpContext = createContext<LmnpContextValue | null>(null);
@@ -109,6 +125,13 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const [nextFiscalYearError, setNextFiscalYearError] = useState<string | null>(null);
   // Design Gate "Clôture N → N+1" — dernière erreur de closeFiscalYearAndCreateNext.
   const [closeFiscalYearError, setCloseFiscalYearError] = useState<string | null>(null);
+  // P1 — miroir React du statut INPI Dossier-level (source de vérité :
+  // IndexedDB STORE_DOSSIER, cf. dossier-db.ts). Géré en useState séparé du
+  // useReducer principal, volontairement : aucune action ni case ajoutés à
+  // reducer.ts pour ce chantier, exactement le même patron que
+  // `autosaveStatus`/`closeFiscalYearError` ci-dessus.
+  const [dossierInpiStatus, setDossierInpiStatus] = useState<DossierInpiStatusMirror | undefined>(undefined);
+  const [inpiStatusUpdating, setInpiStatusUpdating] = useState(false);
   const [state, dispatch] = useReducer(
     lmnpReducer,
     { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
@@ -243,6 +266,46 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
+
+  // P1 — hydratation du statut INPI, effet ENTIÈREMENT séparé de l'effet
+  // d'hydratation du workspace ci-dessus (jamais fusionné avec lui — cf.
+  // dossier-db.ts : cet effet est déjà complexe et activement instrumenté,
+  // le modifier sans audit complet dépasserait le périmètre de ce chantier).
+  // Se déclenche une fois `isReady` (workspace hydraté) ET un dossierId
+  // Supabase disponible ; sans dossierId, aucun Dossier ne peut exister
+  // (cf. Dossier.id === lmnp_dossiers.id), le miroir reste `undefined`.
+  useEffect(() => {
+    if (!isReady || !authUserIdRef.current) return;
+    const dossierId = getCurrentDossierId();
+    if (!dossierId) return;
+
+    let cancelled = false;
+    void loadDossierInpiStatus(dossierId).then((result) => {
+      if (!cancelled) setDossierInpiStatus(result ?? {});
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady]);
+
+  const updateInpiStatus = useCallback(async (status: InpiStatus, source: InpiStatusSource) => {
+    const dossierId = getCurrentDossierId();
+    if (!dossierId) return;
+    setInpiStatusUpdating(true);
+    try {
+      const now = new Date().toISOString();
+      await saveDossierInpiStatus({
+        dossierId,
+        workspace: toPersisted(stateRef.current),
+        status,
+        source,
+        now,
+      });
+      setDossierInpiStatus({ status, source, updatedAt: now });
+    } finally {
+      setInpiStatusUpdating(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isReady || !authUserIdRef.current) return;
@@ -448,6 +511,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       nextFiscalYearError,
       closeFiscalYearAndCreateNext,
       closeFiscalYearError,
+      dossierInpiStatus,
+      updateInpiStatus,
+      inpiStatusUpdating,
     }),
     [
       workspace,
@@ -463,6 +529,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       nextFiscalYearError,
       closeFiscalYearAndCreateNext,
       closeFiscalYearError,
+      dossierInpiStatus,
+      updateInpiStatus,
+      inpiStatusUpdating,
     ],
   );
 

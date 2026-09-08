@@ -4,6 +4,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 
 import { DashboardConseillerSection } from "@/components/lmnp/dashboard/DashboardConseillerSection";
 import { DashboardWorkflow } from "@/components/lmnp/dashboard/DashboardWorkflow";
+import { InpiCompanionDashboardSummary } from "@/components/lmnp/inpi-companion/InpiCompanionDashboardSummary";
 import { SectionHeader } from "@/components/lmnp/dashboard/SectionHeader";
 import { VaultSection } from "@/components/lmnp/dashboard/VaultSection";
 import {
@@ -14,6 +15,7 @@ import { resolveDashboardHeroState } from "@/components/lmnp/dashboard/workflow-
 import { Chapter, FullHeightChapters } from "@/design-system/layouts/FullHeightChapters";
 import { DashboardFooter } from "@/design-system/layouts/DashboardLayout";
 import { motions } from "@/design-system/theme/motions";
+import { spacing } from "@/design-system/theme/spacing";
 import { useLmnp } from "@/lib/lmnp/store";
 import { WorkflowInspector } from "@/components/lmnp/dev/WorkflowInspector";
 import { deriveStatutDossier } from "@/lib/lmnp/engine/dossier-status";
@@ -98,6 +100,9 @@ export function DashboardHome() {
             showRailBelow
             touchAction="pan-y"
           />
+          <div className="mx-auto max-w-2xl w-full" style={{ marginBottom: spacing.scale[6] }}>
+            <InpiCompanionDashboardSummary />
+          </div>
           <Suspense fallback={null}>
             <DashboardWorkflow
               steps={workflowSteps}

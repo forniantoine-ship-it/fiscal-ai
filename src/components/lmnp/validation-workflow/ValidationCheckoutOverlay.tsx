@@ -16,17 +16,43 @@ type ValidationCheckoutOverlayProps = {
   fiscalYear: number;
   onClose: () => void;
   onConfirmPayment: () => void;
+  /**
+   * P1 — reflète le `checkoutMode` de ValidationDocumentStep.tsx (logique
+   * inchangée). "generate" (défaut) : paiement suivi d'une génération
+   * immédiate, wording existant. "pay-only" : SIREN/SIRET pas encore
+   * obtenu via l'INPI, la génération Cerfa est différée — le wording ne
+   * doit jamais parler de génération ni de télétransmission EDI à ce
+   * stade, seulement de validation/paiement du dossier côté Fiscal AI.
+   */
+  mode?: "generate" | "pay-only";
 };
+
+export const CHECKOUT_COPY = {
+  generate: {
+    title: "Finaliser la génération",
+    subtitle: (fiscalYear: number) => `LMNP ${fiscalYear} — génération et télétransmission EDI`,
+    explanation: undefined as string | undefined,
+  },
+  "pay-only": {
+    title: "Finaliser mon dossier",
+    subtitle: (fiscalYear: number) => `LMNP ${fiscalYear} — validation et paiement de votre dossier`,
+    explanation:
+      "Votre paiement valide et enregistre votre dossier fiscal auprès de Fiscal AI. Votre déclaration officielle sera générée dès que les informations INPI (SIREN/SIRET) seront disponibles.",
+  },
+} as const;
 
 export function ValidationCheckoutOverlay({
   open,
   fiscalYear,
   onClose,
   onConfirmPayment,
+  mode = "generate",
 }: ValidationCheckoutOverlayProps) {
   const [processing, setProcessing] = useState(false);
 
   if (!open) return null;
+
+  const copy = CHECKOUT_COPY[mode];
 
   function handlePay() {
     setProcessing(true);
@@ -66,11 +92,16 @@ export function ValidationCheckoutOverlay({
             color: colors.text.primary,
           }}
         >
-          Finaliser la génération
+          {copy.title}
         </p>
         <p className="mt-2 text-center" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          LMNP {fiscalYear} — génération et télétransmission EDI
+          {copy.subtitle(fiscalYear)}
         </p>
+        {copy.explanation ? (
+          <p className="mt-2 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+            {copy.explanation}
+          </p>
+        ) : null}
 
         <div
           className="mt-6 text-center"

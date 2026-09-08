@@ -773,6 +773,15 @@ export interface DeclarationDraft {
    * NOT authoritative for business data once the assistant completes (chargesAssistant).
    */
   chargesAssistantState?: import("@/runtime/assistants/f012-charges/types").F012PersistedState;
+  /**
+   * Compagnon INPI — progression du client dans l'accompagnement CFA
+   * (étape, historique, confirmations/conflits locaux au Compagnon).
+   * NOT une donnée métier : distinct de `Dossier.inpiStatus` (situation INPI
+   * déclarée, Dossier-level, cf. ADR-010) et de toute valeur déjà présente
+   * ailleurs sur `DeclarationDraft` (siret, activityStartDate, adresses...).
+   * @see InpiCompanionPersistedState
+   */
+  inpiCompanionState?: import("@/runtime/assistants/inpi-companion/types").InpiCompanionPersistedState;
   inpiConfirmedAt?: string;
   logementDocumentId?: string;
   logementConfirmedAt?: string;

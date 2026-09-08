@@ -14,16 +14,20 @@ export default function DeclarationsPage() {
   const router = useRouter();
   const { workspace, isReady } = useLmnp();
   const paid = Boolean(workspace.fiscalYear.paidAt);
-  const generated = Boolean(workspace.fiscalYear.declarationGeneratedAt);
 
+  // P1 — Découplage paiement / génération (SIREN/SIRET manquant, cf.
+  // payment-readiness.ts) : `generated` n'est plus une condition d'accès à
+  // cette route, seul `paid` l'est. DeclarationReadyView (inchangé) gère
+  // déjà correctement `paid && !generated` par construction (early return
+  // tant que fiscalResult/liasseResult sont absents, cf. audit READ-ONLY).
   useEffect(() => {
     if (!isReady) return;
-    if (!paid || !generated) {
+    if (!paid) {
       router.replace(LMNP_ROUTES.validation);
     }
-  }, [isReady, paid, generated, router]);
+  }, [isReady, paid, router]);
 
-  if (!isReady || !paid || !generated) {
+  if (!isReady || !paid) {
     return <p className="text-center text-stone-500">Chargement…</p>;
   }
 

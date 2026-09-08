@@ -38,6 +38,36 @@ export interface DossierIdentity {
 }
 
 /**
+ * P1 — statut de la démarche INPI (immatriculation SIREN/SIRET), propriété
+ * du Dossier — jamais une propriété d'exercice (`FiscalYear`/`DeclarationDraft`) :
+ * une activité enregistrée le reste quel que soit l'exercice fiscal en
+ * cours. Volontairement distinct de `DeclarationDraft.inpiConfirmedAt`
+ * (complétude de l'étape Activité du tunnel fiscal, jamais renommé ni
+ * détourné — un dossier peut avoir `inpiConfirmedAt` réglé sans aucun SIREN,
+ * cf. F-009). `"regularization_required"` et `"modification_in_progress"`
+ * couvrent les formalités de correction/modification, dont le régime de
+ * signature diffère de celui d'une création (cf. audit du parcours INPI
+ * officiel) — volontairement distincts de `"in_progress"`.
+ */
+export type InpiStatus =
+  | "not_started"
+  | "preparing"
+  | "in_progress"
+  | "modification_in_progress"
+  | "submitted"
+  | "regularization_required"
+  | "registered";
+
+/**
+ * P1 — distingue « le client déclare que c'est fait » de « un document
+ * (Kbis/extrait RNE) confirme l'enregistrement ». `"document_extracted"`
+ * n'est branché à aucune extraction automatique dans ce socle — le champ
+ * existe pour ne pas avoir à faire migrer les statuts déjà persistés
+ * lorsqu'une extraction RNE/Kbis sera ajoutée dans un chantier ultérieur.
+ */
+export type InpiStatusSource = "declared" | "document_extracted";
+
+/**
  * Niveau persistant Dossier — porte l'identité courante, les biens (stables,
  * référencés par les exercices via `FiscalYear.propertyIds`), les
  * financements (stables), et la liste des exercices qui lui appartiennent.
@@ -53,6 +83,17 @@ export interface Dossier extends DossierIdentity {
   fiscalYearIds: string[];
   createdAt: string;
   updatedAt: string;
+  /**
+   * P1 — `undefined` = aucun statut historique connu (dossier antérieur à ce
+   * chantier, ou jamais renseigné) — JAMAIS interprété comme « le client n'a
+   * jamais fait sa démarche ». `"not_started"` est une valeur explicitement
+   * déclarée (réponse du client à la question légère), distincte de
+   * l'absence de statut. Voir `resolveInpiValidationState()` pour la
+   * dérivation de l'état affiché à partir de cette distinction.
+   */
+  inpiStatus?: InpiStatus;
+  inpiStatusSource?: InpiStatusSource;
+  inpiStatusUpdatedAt?: string;
 }
 
 /**

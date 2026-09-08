@@ -17,6 +17,7 @@
 import {
   getDossierRecord,
   getFiscalYearRecord,
+  putDossierRecord,
   withStores,
   workspaceKeyForUser,
   STORE_DOSSIER,
@@ -33,7 +34,7 @@ import type {
   LmnpDocument,
   ValidationItem,
 } from "../types/domain";
-import type { Dossier } from "../types/dossier";
+import type { Dossier, InpiStatus, InpiStatusSource } from "../types/dossier";
 import {
   closeFiscalYear,
   createNextDeclarationDraft,
@@ -69,6 +70,65 @@ async function buildOrLoadDossier(
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * P1 — lecture isolée du statut INPI (Dossier-level). N'écrit rien : si
+ * aucun Dossier n'a encore été créé (migration paresseuse, cf. commentaire
+ * de fichier ci-dessus), retourne `undefined` — jamais un statut par défaut
+ * inventé ici (la dérivation "aucun statut connu" vs "not_started déclaré"
+ * reste la responsabilité de `resolveInpiValidationState()`).
+ */
+export type DossierInpiStatusMirror = {
+  status?: InpiStatus;
+  source?: InpiStatusSource;
+  updatedAt?: string;
+};
+
+export async function loadDossierInpiStatus(dossierId: string): Promise<DossierInpiStatusMirror | undefined> {
+  const existing = await getDossierRecord<Dossier>(dossierId);
+  if (!existing) return undefined;
+  return {
+    status: existing.inpiStatus,
+    source: existing.inpiStatusSource,
+    updatedAt: existing.inpiStatusUpdatedAt,
+  };
+}
+
+/**
+ * P1 — écrit le statut INPI (Dossier-level) dans une transaction ISOLÉE,
+ * portant UNIQUEMENT `STORE_DOSSIER` — jamais `STORE_FISCAL_YEARS` ni
+ * `STORE_WORKSPACE`. Volontairement indépendante de
+ * `persistFiscalYearTransition()`/`persistFiscalYearClosureAndTransition()`
+ * (atomicité et garde anti-concurrence de ces deux fonctions inchangées,
+ * jamais réutilisées ni contournées ici) : le statut INPI n'a aucun rapport
+ * avec la clôture d'un exercice, il doit pouvoir être écrit à tout moment,
+ * y compris pour un dossier mono-exercice n'ayant jamais clôturé.
+ *
+ * Réutilise `buildOrLoadDossier()` (migration paresseuse inchangée) pour
+ * garantir qu'un seul enregistrement `Dossier` existe jamais pour un
+ * `dossierId` donné : si une vraie transition N→N+1 survient plus tard,
+ * `buildOrLoadDossier()` retrouve cet enregistrement (même id ==
+ * `lmnp_dossiers.id`) et le complète normalement — aucune double création,
+ * aucune seconde source de vérité.
+ */
+export async function saveDossierInpiStatus(params: {
+  dossierId: string;
+  workspace: PersistedWorkspace;
+  status: InpiStatus;
+  source: InpiStatusSource;
+  now: string;
+}): Promise<Dossier> {
+  const { dossierId, workspace, status, source, now } = params;
+  const base = await buildOrLoadDossier(dossierId, workspace, now);
+  const dossier: Dossier = {
+    ...base,
+    inpiStatus: status,
+    inpiStatusSource: source,
+    inpiStatusUpdatedAt: now,
+  };
+  await putDossierRecord(dossier);
+  return dossier;
 }
 
 /**
