@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
+import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
+import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { shouldFlushF012PersistedStep } from "@/lib/lmnp/services/f012/f012-critical-persist";
@@ -16,13 +18,19 @@ import { resolveF012ResumeDecision } from "@/lib/lmnp/services/f012/f012-resume"
 import {
   amountPaidLabel,
   amountWhereToLook,
-  assistantHeaderLead,
+  categoryLabel,
   chargesAlreadyRecorded,
   coproFieldLabels,
+  paidInYearAnchor,
 } from "@/runtime/assistants/f012-charges/ux-copy";
 import { parseStructuredAmount } from "@/runtime/assistants/f012-charges/family-expense-parse";
 import { slotNudgePrompt } from "@/runtime/assistants/f012-charges/slot-nudge";
 import { collectedToChargeRegistry, isDocumentaryFamily } from "@/runtime";
+import {
+  FAMILY_CARD_TITLES,
+  familyCardPhrase,
+  filetFinalPrompt,
+} from "@/runtime/assistants/f012-charges/family-ux";
 import {
   resolveSituationalProfilage,
   situationalProfilageQuestions,
@@ -43,69 +51,254 @@ import {
   type F012Message,
   type F012Result,
   type F012State,
+  type ChargeCategorie,
 } from "@/runtime";
 
 const inputStyle = {
   ...typography.body.desktop,
-  padding: spacing.scale[3],
-  borderRadius: radius.md,
-  border: `1px solid ${colors.border.subtle}`,
-  backgroundColor: colors.surface.primary,
+  minHeight: 44,
+  padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
+  borderRadius: radius.lg,
+  border: `1px solid ${colors.border.default}`,
+  backgroundColor: colors.surface.inset,
   width: "100%",
+  color: colors.text.primary,
+  outline: "none",
 } as const;
 
-const labelStyle = { ...typography.caption.desktop, color: colors.text.muted } as const;
+const labelStyle = {
+  ...typography.caption.desktop,
+  color: colors.text.tertiary,
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: spacing.scale[2],
+};
+
+const PRIMARY_SUGGESTION_IDS = new Set(["confirm_all", "completeness_no"]);
+
+const CATEGORY_RECAP_ORDER: ChargeCategorie[] = [
+  "taxe_fonciere",
+  "assurance_pno",
+  "assurance_gli",
+  "copropriete",
+  "honoraires_gestion",
+  "honoraires_comptable",
+  "travaux",
+  "frais_bancaires",
+  "divers",
+];
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
 }
 
-function MessageBubble({ message }: { message: F012Message }) {
-  const isAssistant = message.role === "assistant";
+function assistantMessagesFromTurn(messages: F012Message[]): F012Message[] {
+  return messages.filter((message) => message.role === "assistant");
+}
+
+function splitQuestion(content: string): { title: string; body: string | null } {
+  const trimmed = content.trim();
+  const paraBreak = trimmed.indexOf("\n\n");
+  if (paraBreak > 0 && paraBreak < 180) {
+    return { title: trimmed.slice(0, paraBreak), body: trimmed.slice(paraBreak + 2).trim() || null };
+  }
+  const q = trimmed.indexOf("?");
+  if (q > 0 && q < 180 && q < trimmed.length - 1) {
+    return { title: trimmed.slice(0, q + 1), body: trimmed.slice(q + 1).trim() || null };
+  }
+  const firstLine = trimmed.split("\n")[0] ?? trimmed;
+  if (firstLine !== trimmed) {
+    return { title: firstLine, body: trimmed.slice(firstLine.length).trim() || null };
+  }
+  return { title: trimmed, body: null };
+}
+
+function completenessCopy(year: number): { title: string; body: string | null } {
+  const lines = filetFinalPrompt(year)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const question = lines.find((line) => line.includes("?")) ?? lines[0] ?? "Avant de terminer";
+  const intro = lines.find((line) => line !== question && !line.includes("·")) ?? null;
+  return { title: question, body: intro };
+}
+
+function headingForStep(input: {
+  showFamilyCard: boolean;
+  showProfilage: boolean;
+  showFamilyManual: boolean;
+  showSlotNudge: boolean;
+  showPaper: boolean;
+  showReview: boolean;
+  completeness: { title: string; body: string | null } | null;
+  isAggregateReview: boolean;
+  familyPhrase: string | null;
+  parsed: { title: string; body: string | null } | null;
+  paidInYear: string;
+  lastAssistantContent?: string;
+}): { title: string | null; body: string | null } {
+  if (input.showFamilyCard || input.showSlotNudge || input.showPaper) {
+    return { title: null, body: null };
+  }
+  if (input.showProfilage) {
+    return { title: "Avant de commencer", body: input.paidInYear };
+  }
+  if (input.showFamilyManual && input.familyPhrase) {
+    return { title: input.familyPhrase, body: null };
+  }
+  if (input.showReview) {
+    return { title: "Vérification de votre document", body: null };
+  }
+  if (input.completeness) {
+    return input.completeness;
+  }
+  if (input.isAggregateReview) {
+    return splitQuestion(input.lastAssistantContent ?? "Ces montants vous conviennent-ils ?");
+  }
+  return { title: input.parsed?.title ?? null, body: input.parsed?.body ?? null };
+}
+
+function ChoiceCard({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const active = (hovered || focused) && !disabled;
+
   return (
-    <div className={isAssistant ? "mr-8" : "ml-8 text-right"} style={{ marginBottom: spacing.scale[3] }}>
-      <div
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{
+        display: "block",
+        width: "100%",
+        minHeight: 52,
+        textAlign: "left",
+        padding: `${spacing.scale[4]} ${spacing.scale[5]}`,
+        borderRadius: radius.lg,
+        border: `1px solid ${active ? colors.border.focus : colors.border.default}`,
+        backgroundColor: active ? colors.surface.selected : colors.surface.primary,
+        color: colors.text.primary,
+        ...typography.body.desktop,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        boxShadow: active ? shadows.card.hover : shadows.card.default,
+        transition: motions.hover.card,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function RecapRow({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: spacing.scale[4],
+        padding: `${spacing.scale[3]} 0`,
+        borderBottom: `1px solid ${colors.border.subtle}`,
+      }}
+    >
+      <span style={{ ...typography.body.desktop, color: colors.text.secondary }}>{label}</span>
+      <span
         style={{
-          display: "inline-block",
-          textAlign: "left",
-          maxWidth: "100%",
-          padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
-          borderRadius: radius.lg,
-          backgroundColor: isAssistant ? colors.surface.inset : colors.orange[50],
+          ...(emphasize ? typography.cardTitle.mobile : typography.body.desktop),
           color: colors.text.primary,
-          ...typography.body.desktop,
-          whiteSpace: "pre-wrap",
+          fontVariantNumeric: "tabular-nums",
+          textAlign: "right",
         }}
       >
-        {message.content}
-      </div>
+        {value}
+      </span>
     </div>
   );
 }
 
-function SuggestionButton({
-  suggestionId,
+function QuietChip({
   label,
-  onPick,
+  onClick,
+  disabled,
 }: {
-  suggestionId: string;
   label: string;
-  onPick: (id: string) => void;
+  onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onPick(suggestionId)}
+      disabled={disabled}
+      onClick={onClick}
       style={{
-        ...typography.caption.desktop,
-        padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
-        borderRadius: radius.md,
+        minHeight: 40,
+        padding: `${spacing.scale[2]} ${spacing.scale[4]}`,
+        borderRadius: radius.full,
         border: `1px solid ${colors.border.subtle}`,
         backgroundColor: colors.surface.primary,
-        cursor: "pointer",
+        color: colors.text.secondary,
+        ...typography.caption.desktop,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       {label}
+    </button>
+  );
+}
+
+function GoBackControl({
+  visible,
+  disabled,
+  onBack,
+}: {
+  visible: boolean;
+  disabled: boolean;
+  onBack: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onBack}
+      aria-label="Retour à l'étape précédente"
+      style={{
+        display: "block",
+        marginTop: spacing.scale[8],
+        minHeight: 44,
+        padding: `${spacing.scale[2]} 0`,
+        background: "none",
+        border: "none",
+        color: colors.text.tertiary,
+        ...typography.body.desktop,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        pointerEvents: "auto",
+      }}
+    >
+      ← Retour
     </button>
   );
 }
@@ -151,31 +344,36 @@ function AnomalyList({ anomalies }: { anomalies: Anomaly[] }) {
 
 function ResultSummary({ result }: { result: F012Result }) {
   const { charges } = result;
+  const rows = CATEGORY_RECAP_ORDER.flatMap((category) => {
+    const value = charges.parCategorie[category];
+    if (value === undefined || value === 0) return [];
+    return [{ label: categoryLabel(category), value: fmtEur(value) }];
+  });
   return (
-    <div
-      style={{
-        padding: spacing.scale[4],
-        borderRadius: radius.lg,
-        backgroundColor: colors.surface.inset,
-        marginTop: spacing.scale[4],
-      }}
-    >
-      <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>Total déductible</p>
-      <p style={{ ...typography.sectionTitle.desktop, color: colors.text.primary }}>
-        {fmtEur(charges.totalDeductible)}
+    <Card variant="muted">
+      <p
+        style={{
+          ...typography.caption.desktop,
+          color: colors.text.tertiary,
+          letterSpacing: typography.letterSpacing.caps,
+          textTransform: "uppercase",
+          marginBottom: spacing.scale[2],
+        }}
+      >
+        Vos charges
       </p>
+      {rows.map((row) => (
+        <RecapRow key={row.label} label={row.label} value={row.value} />
+      ))}
+      <RecapRow label="Total déductible" value={fmtEur(charges.totalDeductible)} emphasize />
       {charges.totalAmortissable > 0 ? (
-        <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          À amortir : {fmtEur(charges.totalAmortissable)}
-        </p>
+        <RecapRow label="À amortir" value={fmtEur(charges.totalAmortissable)} />
       ) : null}
       {charges.totalPreExploitation > 0 ? (
-        <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Pré-exploitation (non déductible) : {fmtEur(charges.totalPreExploitation)}
-        </p>
+        <RecapRow label="Pré-exploitation (non déductible)" value={fmtEur(charges.totalPreExploitation)} />
       ) : null}
       <AnomalyList anomalies={result.anomalies} />
-    </div>
+    </Card>
   );
 }
 
@@ -196,22 +394,38 @@ function ProfilageForm({
   const questions = situationalProfilageQuestions({ copropriete: knownCopropriete }, year);
 
   return (
-    <div className="flex flex-col gap-2" style={{ marginTop: spacing.scale[4] }}>
+    <div className="flex flex-col gap-5">
       {questions.map((question) => {
         const checked = question.id === "copropriete" ? copropriete : question.id === "gestion" ? gestion : travaux;
         const setter = question.id === "copropriete" ? setCopropriete : question.id === "gestion" ? setGestion : setTravaux;
         return (
-          <label key={question.id} className="flex items-center gap-2" style={typography.body.desktop}>
+          <label
+            key={question.id}
+            className="flex items-start gap-3"
+            style={{
+              ...typography.body.desktop,
+              minHeight: 52,
+              padding: `${spacing.scale[4]} ${spacing.scale[5]}`,
+              borderRadius: radius.lg,
+              border: `1px solid ${checked ? colors.border.selected : colors.border.default}`,
+              backgroundColor: checked ? colors.surface.selected : colors.surface.primary,
+              cursor: disabled ? "not-allowed" : "pointer",
+              boxShadow: shadows.card.default,
+            }}
+          >
             <input
               type="checkbox"
               checked={checked}
+              disabled={disabled}
               onChange={(e) => setter(e.target.checked)}
+              style={{ marginTop: 4, width: 18, height: 18, accentColor: colors.text.accent }}
             />
-            {question.label}
+            <span>{question.label}</span>
           </label>
         );
       })}
       <Button
+        className="w-full"
         disabled={disabled}
         onClick={() => {
           const profil = resolveSituationalProfilage({
@@ -221,6 +435,45 @@ function ProfilageForm({
             travaux,
           });
           onSubmit({ ...profil });
+        }}
+      >
+        Continuer
+      </Button>
+    </div>
+  );
+}
+
+function TravauxSplitField({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean;
+  onSubmit: (value: number) => void;
+}) {
+  const [value, setValue] = useState("");
+  return (
+    <div className="flex flex-col gap-5">
+      <label style={labelStyle}>
+        Part remise en état (€)
+        <input
+          style={inputStyle}
+          id="split-montant"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const parsed = Number(value);
+              if (Number.isFinite(parsed)) onSubmit(parsed);
+            }
+          }}
+        />
+      </label>
+      <Button
+        className="w-full"
+        disabled={disabled}
+        onClick={() => {
+          const parsed = Number(value);
+          if (Number.isFinite(parsed)) onSubmit(parsed);
         }}
       >
         Continuer
@@ -239,16 +492,12 @@ function AmountActions({
   onAction: (action: F012Action) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button disabled={disabled} onClick={onValidate}>
+    <div className="flex flex-col gap-3">
+      <Button className="w-full" disabled={disabled} onClick={onValidate}>
         Valider
       </Button>
-      <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "unknown_category" })}>
-        Je ne sais pas
-      </Button>
-      <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "skip_category" })}>
-        Passer
-      </Button>
+      <ChoiceCard label="Je ne sais pas" disabled={disabled} onClick={() => onAction({ type: "unknown_category" })} />
+      <ChoiceCard label="Passer" disabled={disabled} onClick={() => onAction({ type: "skip_category" })} />
     </div>
   );
 }
@@ -285,7 +534,7 @@ function CategoryForm({
     case "honoraires_comptable":
     case "frais_bancaires":
       return (
-        <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+        <div className="flex flex-col gap-5">
           <label style={labelStyle}>
             {amountPaidLabel(year)}
             <input style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -315,7 +564,7 @@ function CategoryForm({
     case "copropriete": {
       const coproLabels = coproFieldLabels(year);
       return (
-        <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+        <div className="flex flex-col gap-5">
           <label style={labelStyle}>{coproLabels.courant}<input style={inputStyle} value={provisions} onChange={(e) => setProvisions(e.target.value)} /></label>
           <label style={labelStyle}>{coproLabels.regularisation}<input style={inputStyle} value={regularisation} onChange={(e) => setRegularisation(e.target.value)} /></label>
           <label style={labelStyle}>{coproLabels.epargneTravaux}<input style={inputStyle} value={fondsTravaux} onChange={(e) => setFondsTravaux(e.target.value)} /></label>
@@ -339,7 +588,7 @@ function CategoryForm({
 
     case "honoraires_gestion":
       return (
-        <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+        <div className="flex flex-col gap-5">
           <label style={labelStyle}>
             {amountPaidLabel(year)} — agence
             <input style={inputStyle} value={honoraires} onChange={(e) => setHonoraires(e.target.value)} />
@@ -364,7 +613,7 @@ function CategoryForm({
 
     case "travaux":
       return (
-        <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+        <div className="flex flex-col gap-5">
           <label style={labelStyle}>Description<input style={inputStyle} value={travauxDesc} onChange={(e) => setTravauxDesc(e.target.value)} /></label>
           <label style={labelStyle}>
             {amountPaidLabel(year)}
@@ -372,8 +621,9 @@ function CategoryForm({
           </label>
           <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>{amountWhereToLook("travaux")}</p>
           <label style={labelStyle}>Part remise en état (si la facture mélange réparation et amélioration)<input style={inputStyle} value={splitMontant} onChange={(e) => setSplitMontant(e.target.value)} placeholder="Laisser vide si ce n'est pas le cas" /></label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-3">
             <Button
+              className="w-full"
               disabled={disabled}
               onClick={() => {
                 const montant = parseAmount(travauxMontant);
@@ -383,26 +633,31 @@ function CategoryForm({
             >
               Décrire la dépense
             </Button>
-            <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "unknown_category" })}>
-              Je ne sais pas
-            </Button>
-            <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "finish_travaux_category" })}>
-              Passer
-            </Button>
+            <ChoiceCard
+              label="Je ne sais pas"
+              disabled={disabled}
+              onClick={() => onAction({ type: "unknown_category" })}
+            />
+            <ChoiceCard
+              label="Passer"
+              disabled={disabled}
+              onClick={() => onAction({ type: "finish_travaux_category" })}
+            />
           </div>
         </div>
       );
 
     case "divers":
       return (
-        <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+        <div className="flex flex-col gap-5">
           <label style={labelStyle}>Description<input style={inputStyle} value={diversDesc} onChange={(e) => setDiversDesc(e.target.value)} /></label>
           <label style={labelStyle}>
             {amountPaidLabel(year)}
             <input style={inputStyle} value={amount} onChange={(e) => setAmount(e.target.value)} />
           </label>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-3">
             <Button
+              className="w-full"
               disabled={disabled}
               onClick={() => {
                 const action = resolveDiversSubmitAction({ description: diversDesc, montant: amount });
@@ -411,12 +666,16 @@ function CategoryForm({
             >
               Ajouter cette dépense
             </Button>
-            <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "unknown_category" })}>
-              Je ne sais pas
-            </Button>
-            <Button variant="secondary" disabled={disabled} onClick={() => onAction({ type: "skip_category" })}>
-              Continuer
-            </Button>
+            <ChoiceCard
+              label="Je ne sais pas"
+              disabled={disabled}
+              onClick={() => onAction({ type: "unknown_category" })}
+            />
+            <ChoiceCard
+              label="Continuer"
+              disabled={disabled}
+              onClick={() => onAction({ type: "skip_category" })}
+            />
           </div>
         </div>
       );
@@ -536,7 +795,9 @@ export function F012ChargesAssistantPanel() {
   }, []);
 
   const [state, setState] = useState<F012State>(() => initialResume.turn.state);
-  const [messages, setMessages] = useState<F012Message[]>(() => initialResume.turn.messages);
+  const [currentTurnAssistants, setCurrentTurnAssistants] = useState<F012Message[]>(() =>
+    assistantMessagesFromTurn(initialResume.turn.messages),
+  );
   // Lu par les callbacks qui doivent agir sur l'état le plus frais sans
   // redéclencher leur propre identité à chaque tour — même principe que F-011.
   const stateRef = useRef(state);
@@ -615,8 +876,12 @@ export function F012ChargesAssistantPanel() {
    */
   const applyTurn = useCallback(
     (turn: F012AssistantTurn) => {
+      stateRef.current = turn.state;
       setState(turn.state);
-      setMessages((prev) => [...prev, ...turn.messages]);
+      const nextAssistants = assistantMessagesFromTurn(turn.messages);
+      if (nextAssistants.length > 0) {
+        setCurrentTurnAssistants(nextAssistants);
+      }
       persistSession(turn.state);
       if (turn.completed) persistCompletion(turn.state);
     },
@@ -747,10 +1012,7 @@ export function F012ChargesAssistantPanel() {
     state.familyPhase === "manual";
   const showSlotNudge = state.step === "category_collect" && state.familyPhase === "slot_nudge" && Boolean(state.pendingSlotNudge);
   const coverageForRecap =
-    (state.step === "completeness" ||
-      state.step === "aggregate_review" ||
-      state.step === "complete") &&
-    state.profil
+    state.step === "completeness" && state.profil
       ? collectedToChargeRegistry({
           collected: state.collected,
           profil: state.profil,
@@ -769,12 +1031,19 @@ export function F012ChargesAssistantPanel() {
   const travauxAwaitingQualification =
     currentCategory === "travaux" &&
     (state.travauxSubStep === "qualification" || state.travauxSubStep === "split");
+  const showPaper =
+    state.step === "category_collect" &&
+    state.familyPhase === "paper" &&
+    currentFamily !== undefined &&
+    isDocumentaryFamily(currentFamily);
+  const showReview = state.familyPhase === "review" && Boolean(state.documentReview);
   const showCategory =
     state.step === "category_collect" &&
     currentCategory &&
     !travauxAwaitingQualification &&
     !showFamilyCard &&
     !showFamilyManual &&
+    !showSlotNudge &&
     state.familyPhase !== "unknown_help" &&
     state.familyPhase !== "paper" &&
     state.familyPhase !== "review";
@@ -782,122 +1051,291 @@ export function F012ChargesAssistantPanel() {
   // Cycle 4E — même convention que F-010/F-011 : un historique non vide et
   // une étape non terminale, jamais un bouton mort.
   const canGoBack = Boolean(state.history && state.history.length > 0) && state.step !== "complete";
-  const announcement = [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  const lastAssistant = currentTurnAssistants.at(-1);
+  const announcement = lastAssistant?.content ?? "";
+  const hideEngineQuestion =
+    showFamilyCard ||
+    showProfilage ||
+    showFamilyManual ||
+    showSlotNudge ||
+    showPaper ||
+    showReview ||
+    state.step === "completeness" ||
+    state.step === "aggregate_review";
+  const parsedQuestion = lastAssistant && !hideEngineQuestion ? splitQuestion(lastAssistant.content) : null;
+  const { title: questionTitle, body: questionBody } = headingForStep({
+    showFamilyCard,
+    showProfilage,
+    showFamilyManual,
+    showSlotNudge,
+    showPaper,
+    showReview,
+    completeness: state.step === "completeness" ? completenessCopy(fiscalYear) : null,
+    isAggregateReview: state.step === "aggregate_review",
+    familyPhrase: currentFamily ? familyCardPhrase(currentFamily, fiscalYear) : null,
+    parsed: parsedQuestion,
+    paidInYear: paidInYearAnchor(fiscalYear),
+    lastAssistantContent: lastAssistant?.content,
+  });
+  const familyTitle = currentFamily ? FAMILY_CARD_TITLES[currentFamily] : null;
+  const progress =
+    state.step === "category_collect" &&
+    state.familyInventory &&
+    state.familyInventory.length > 0 &&
+    state.currentFamilyIndex !== undefined
+      ? `Famille ${state.currentFamilyIndex + 1} sur ${state.familyInventory.length}`
+      : null;
+  const suggestions =
+    lastAssistant?.suggestions &&
+    !showFamilyCard &&
+    !showProfilage &&
+    !showFamilyManual &&
+    !showSlotNudge &&
+    !showPaper &&
+    !showReview &&
+    !showCategory
+      ? lastAssistant.suggestions
+      : undefined;
+  const primarySuggestions = suggestions?.filter((suggestion) => PRIMARY_SUGGESTION_IDS.has(suggestion.id)) ?? [];
+  const choiceSuggestions = suggestions?.filter((suggestion) => !PRIMARY_SUGGESTION_IDS.has(suggestion.id)) ?? [];
+  const completenessFiletSuggestions =
+    state.step === "completeness"
+      ? choiceSuggestions.filter((suggestion) => suggestion.id !== "revisit_incomplete")
+      : [];
+  const showResult =
+    Boolean(state.result) && (state.step === "aggregate_review" || state.step === "complete");
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto w-full max-w-lg px-5 pb-12 pt-8 sm:px-6">
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      <header style={{ marginBottom: spacing.scale[6] }}>
-        <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+      <header style={{ marginBottom: spacing.scale[8] }}>
+        <p
+          style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            letterSpacing: typography.letterSpacing.caps,
+            textTransform: "uppercase",
+          }}
+        >
           <Link href={LMNP_ROUTES.dashboard} style={{ color: colors.text.muted }}>
             Tableau de bord
           </Link>
-          {" / Charges"}
+          {" · Charges"}
         </p>
-        <h1 style={{ ...typography.sectionTitle.desktop, color: colors.text.primary, marginTop: spacing.scale[2] }}>
-          Assistant Charges
-        </h1>
-        <p style={{ ...typography.body.desktop, color: colors.text.secondary, marginTop: spacing.scale[2] }}>
-          {assistantHeaderLead(fiscalYear)}
-        </p>
+        {progress ? (
+          <p
+            style={{
+              ...typography.caption.desktop,
+              color: colors.text.tertiary,
+              marginTop: spacing.scale[3],
+            }}
+          >
+            {progress}
+          </p>
+        ) : null}
       </header>
 
-      <Card>
-        <div style={{ padding: spacing.scale[4] }}>
-          {messages.map((message, index) => (
-            <MessageBubble key={index} message={message} />
-          ))}
+      <div
+        key={`${state.step}-${state.currentFamilyIndex ?? "none"}-${state.familyPhase ?? "none"}-${state.travauxSubStep ?? "none"}`}
+        className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)]"
+        style={{ pointerEvents: "auto" }}
+        onAnimationEnd={(event) => {
+          if (event.target !== event.currentTarget) return;
+          event.currentTarget.style.animation = "none";
+          event.currentTarget.style.transform = "none";
+          event.currentTarget.style.pointerEvents = "auto";
+        }}
+      >
+        {showFamilyManual && familyTitle ? (
+          <p
+            style={{
+              ...typography.caption.desktop,
+              color: colors.text.muted,
+              letterSpacing: typography.letterSpacing.caps,
+              textTransform: "uppercase",
+              marginBottom: spacing.scale[4],
+            }}
+          >
+            {familyTitle}
+          </p>
+        ) : null}
 
-          {messages.at(-1)?.suggestions && !showFamilyCard ? (
-            <div className="flex flex-wrap gap-2" style={{ marginBottom: spacing.scale[4] }}>
-              {messages.at(-1)!.suggestions!.map((s) => (
-                <SuggestionButton key={s.id} suggestionId={s.id} label={s.label} onPick={handleSuggestion} />
-              ))}
-            </div>
-          ) : null}
+        {questionTitle ? (
+          <h1
+            style={{
+              ...typography.sectionTitle.mobile,
+              color: colors.text.primary,
+              marginBottom: questionBody
+                ? spacing.scale[3]
+                : state.step === "completeness"
+                  ? spacing.scale[5]
+                  : spacing.scale[8],
+            }}
+          >
+            {questionTitle}
+          </h1>
+        ) : null}
 
-          {showProfilage ? (
-            <ProfilageForm
-              year={fiscalYear}
-              knownCopropriete={knownCopropriete}
-              disabled={busy}
-              onSubmit={(values) =>
-                void runAction({
-                  type: "submit_profilage",
-                  copropriete: values.copropriete,
-                  agence: values.agence,
-                  travaux: values.travaux,
-                  vacance: values.vacance,
-                  comptable: values.comptable,
-                })
-              }
-            />
-          ) : null}
+        {questionBody ? (
+          <p
+            style={{
+              ...(state.step === "completeness" ? typography.caption.desktop : typography.body.desktop),
+              color: colors.text.secondary,
+              marginBottom: state.step === "completeness" ? spacing.scale[5] : spacing.scale[8],
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {questionBody}
+          </p>
+        ) : null}
 
-          {showFamilyCard && currentFamily ? (
-            <FamilyCard
-              familyId={currentFamily}
-              year={fiscalYear}
-              showCreditNote={currentFamily === "assurances" && financementTotalAssurance !== undefined}
-              disabled={busy}
-              onAction={(action) => void runAction(action)}
-            />
-          ) : null}
+        {showProfilage ? (
+          <ProfilageForm
+            year={fiscalYear}
+            knownCopropriete={knownCopropriete}
+            disabled={busy}
+            onSubmit={(values) =>
+              void runAction({
+                type: "submit_profilage",
+                copropriete: values.copropriete,
+                agence: values.agence,
+                travaux: values.travaux,
+                vacance: values.vacance,
+                comptable: values.comptable,
+              })
+            }
+          />
+        ) : null}
 
-          {showFamilyManual && currentFamily ? (
-            <FamilyManualForm
-              familyId={currentFamily}
-              year={fiscalYear}
-              disabled={busy}
-              initialFreeText={state.pendingFamilyFreeText}
-              onAction={(action) => void runAction(action)}
-            />
-          ) : null}
+        {showFamilyCard && currentFamily ? (
+          <FamilyCard
+            familyId={currentFamily}
+            year={fiscalYear}
+            showCreditNote={currentFamily === "assurances" && financementTotalAssurance !== undefined}
+            disabled={busy}
+            onAction={(action) => void runAction(action)}
+          />
+        ) : null}
 
-          {showSlotNudge && state.pendingSlotNudge ? (
-            <SlotNudgeForm
-              prompt={slotNudgePrompt(state.pendingSlotNudge, fiscalYear)}
-              year={fiscalYear}
-              disabled={busy}
-              onRespond={(accepted, montant) =>
-                void runAction({
-                  type: "respond_slot_nudge",
-                  slot: state.pendingSlotNudge!,
-                  accepted,
-                  montant,
-                })
-              }
-            />
-          ) : null}
+        {showFamilyManual && currentFamily ? (
+          <FamilyManualForm
+            familyId={currentFamily}
+            year={fiscalYear}
+            disabled={busy}
+            initialFreeText={state.pendingFamilyFreeText}
+            onAction={(action) => void runAction(action)}
+          />
+        ) : null}
 
-          {state.familyPhase === "paper" && currentFamily && isDocumentaryFamily(currentFamily) ? (
-            <FamilyPaperUpload
-              familyId={currentFamily}
-              disabled={busy}
-              onFile={(file) => void analyzePaperFile(file)}
-              onManual={() => void runAction({ type: "open_family_manual" })}
-            />
-          ) : null}
+        {showSlotNudge && state.pendingSlotNudge ? (
+          <SlotNudgeForm
+            prompt={slotNudgePrompt(state.pendingSlotNudge, fiscalYear)}
+            year={fiscalYear}
+            disabled={busy}
+            onRespond={(accepted, montant) =>
+              void runAction({
+                type: "respond_slot_nudge",
+                slot: state.pendingSlotNudge!,
+                accepted,
+                montant,
+              })
+            }
+          />
+        ) : null}
 
-          {state.familyPhase === "review" && state.documentReview ? (
-            <DocumentReviewForm
-              review={state.documentReview}
-              year={fiscalYear}
-              disabled={busy}
-              onAction={(action) => void runAction(action)}
-            />
-          ) : null}
+        {showPaper && currentFamily && isDocumentaryFamily(currentFamily) ? (
+          <FamilyPaperUpload
+            familyId={currentFamily}
+            disabled={busy}
+            onFile={(file) => void analyzePaperFile(file)}
+            onManual={() => void runAction({ type: "open_family_manual" })}
+          />
+        ) : null}
 
-          {coverageForRecap.length > 0 ? (
+        {showReview && state.documentReview ? (
+          <DocumentReviewForm
+            review={state.documentReview}
+            year={fiscalYear}
+            disabled={false}
+            onAction={(action) => void runAction(action)}
+          />
+        ) : null}
+
+        {showReview && lastAssistant && lastAssistant.content.length < 180 ? (
+          <p
+            style={{
+              ...typography.caption.desktop,
+              color: colors.text.secondary,
+              marginTop: spacing.scale[4],
+            }}
+          >
+            {lastAssistant.content}
+          </p>
+        ) : null}
+
+        {coverageForRecap.length > 0 ? (
+          <div style={{ marginBottom: spacing.scale[6] }}>
             <CoverageRecap
               familyCoverage={coverageForRecap}
               onRevisit={() => void runAction({ type: "revisit_incomplete" })}
             />
-          ) : null}
+          </div>
+        ) : null}
 
-          {state.step === "completeness" ? (
+        {showResult && state.result ? (
+          <div style={{ marginBottom: spacing.scale[8] }}>
+            <ResultSummary result={state.result} />
+          </div>
+        ) : null}
+
+        {primarySuggestions.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            {primarySuggestions.map((suggestion) => (
+              <Button
+                key={suggestion.id}
+                className="w-full"
+                disabled={busy}
+                onClick={() => handleSuggestion(suggestion.id)}
+              >
+                {suggestion.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+
+        {state.step === "completeness" && completenessFiletSuggestions.length > 0 ? (
+          <div className="flex flex-wrap gap-2" style={{ marginTop: spacing.scale[6] }}>
+            {completenessFiletSuggestions.map((suggestion) => (
+              <QuietChip
+                key={suggestion.id}
+                label={suggestion.label}
+                disabled={busy}
+                onClick={() => handleSuggestion(suggestion.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {state.step !== "completeness" && choiceSuggestions.length > 0 ? (
+          <div
+            className="flex flex-col gap-3"
+            style={{ marginTop: primarySuggestions.length > 0 ? spacing.scale[4] : 0 }}
+          >
+            {choiceSuggestions.map((suggestion) => (
+              <ChoiceCard
+                key={suggestion.id}
+                label={suggestion.label}
+                disabled={busy}
+                onClick={() => handleSuggestion(suggestion.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {state.step === "completeness" ? (
+          <div style={{ marginTop: spacing.scale[5] }}>
             <CompletenessCatchForm
               year={fiscalYear}
               disabled={busy}
@@ -905,59 +1343,40 @@ export function F012ChargesAssistantPanel() {
                 void runAction({ type: "confirm_completeness", hasOther: true, freeText })
               }
             />
-          ) : null}
+          </div>
+        ) : null}
 
-          {showCategory ? (
-            <CategoryForm
-              categoryId={currentCategory}
-              year={fiscalYear}
-              disabled={busy}
-              onAction={(action) => void runAction(action)}
-            />
-          ) : null}
+        {showCategory ? (
+          <CategoryForm
+            categoryId={currentCategory}
+            year={fiscalYear}
+            disabled={busy}
+            onAction={(action) => void runAction(action)}
+          />
+        ) : null}
 
-          {travauxSplit ? (
-            <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
-              <label style={labelStyle}>
-                Part remise en état (€)
-                <input
-                  style={inputStyle}
-                  id="split-montant"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      const value = Number((e.target as HTMLInputElement).value);
-                      if (Number.isFinite(value)) {
-                        void runAction({ type: "submit_travaux_split", montantReparation: value });
-                      }
-                    }
-                  }}
-                />
-              </label>
-            </div>
-          ) : null}
+        {travauxSplit ? (
+          <TravauxSplitField
+            disabled={busy}
+            onSubmit={(value) => void runAction({ type: "submit_travaux_split", montantReparation: value })}
+          />
+        ) : null}
 
-          {canGoBack ? (
-            <div style={{ marginTop: spacing.scale[3] }}>
-              <Button variant="ghost" disabled={busy} onClick={() => void runAction({ type: "go_back" })}>
-                ← Précédent
+        {state.step === "complete" ? (
+          <div className="flex flex-col gap-3 sm:flex-row" style={{ marginTop: spacing.scale[4] }}>
+            <Link href={LMNP_ROUTES.amortissementsAssistant} className="flex-1">
+              <Button className="w-full">Continuer vers Amortissements</Button>
+            </Link>
+            <Link href={LMNP_ROUTES.dashboard}>
+              <Button variant="secondary" className="w-full">
+                Retour au tableau de bord
               </Button>
-            </div>
-          ) : null}
+            </Link>
+          </div>
+        ) : null}
 
-          {state.result ? <ResultSummary result={state.result} /> : null}
-
-          {state.step === "complete" ? (
-            <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
-              <Link href={LMNP_ROUTES.amortissementsAssistant} className="flex-1">
-                <Button className="w-full">Continuer vers Amortissements</Button>
-              </Link>
-              <Link href={LMNP_ROUTES.dashboard}>
-                <Button variant="secondary">Retour au tableau de bord</Button>
-              </Link>
-            </div>
-          ) : null}
-        </div>
-      </Card>
+        <GoBackControl visible={canGoBack} disabled={busy} onBack={() => void runAction({ type: "go_back" })} />
+      </div>
     </div>
   );
 }

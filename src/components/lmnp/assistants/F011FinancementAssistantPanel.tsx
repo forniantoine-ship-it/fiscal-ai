@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
+import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
+import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import type { F011PrefillFieldKey } from "@/lib/lmnp/services/f011/credit-bridge";
@@ -31,17 +33,46 @@ import {
 
 const inputStyle = {
   ...typography.body.desktop,
-  padding: spacing.scale[3],
-  borderRadius: radius.md,
-  border: `1px solid ${colors.border.subtle}`,
-  backgroundColor: colors.surface.primary,
+  minHeight: 44,
+  padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
+  borderRadius: radius.lg,
+  border: `1px solid ${colors.border.default}`,
+  backgroundColor: colors.surface.inset,
   width: "100%",
+  color: colors.text.primary,
+  outline: "none",
 } as const;
 
-const labelStyle = { ...typography.caption.desktop, color: colors.text.muted } as const;
+const labelStyle = {
+  ...typography.caption.desktop,
+  color: colors.text.tertiary,
+  display: "flex",
+  flexDirection: "column" as const,
+  gap: spacing.scale[2],
+};
+
+const PRIMARY_SUGGESTION_IDS = new Set(["confirm_loan", "confirm_all", "confirm_extraction"]);
+
+const LOAN_PROGRESS_STEPS = new Set<F011State["step"]>([
+  "loan_source_choice",
+  "loan_upload",
+  "loan_analyzing",
+  "loan_review_extraction",
+  "loan_type",
+  "loan_collect",
+  "loan_insurance",
+  "loan_guarantee",
+  "loan_fees",
+  "loan_ira",
+  "loan_review",
+]);
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
+}
+
+function fmtPct(rate: number): string {
+  return `${(rate * 100).toFixed(2).replace(".", ",")} %`;
 }
 
 function amountLabelFor(kind: "insurance" | "guarantee" | "fees" | "ira"): string {
@@ -57,49 +88,90 @@ function amountLabelFor(kind: "insurance" | "guarantee" | "fees" | "ira"): strin
   }
 }
 
-function MessageBubble({ message }: { message: F011Message }) {
-  const isAssistant = message.role === "assistant";
-  return (
-    <div className={isAssistant ? "mr-8" : "ml-8 text-right"} style={{ marginBottom: spacing.scale[3] }}>
-      <div
-        style={{
-          display: "inline-block",
-          textAlign: "left",
-          maxWidth: "100%",
-          padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
-          borderRadius: radius.lg,
-          backgroundColor: isAssistant ? colors.surface.inset : colors.orange[50],
-          color: colors.text.primary,
-          ...typography.body.desktop,
-          whiteSpace: "pre-wrap",
-        }}
-      >
-        {message.content}
-      </div>
-    </div>
-  );
+function assistantMessagesFromTurn(messages: F011Message[]): F011Message[] {
+  return messages.filter((message) => message.role === "assistant");
 }
 
-function SuggestionButton({
-  suggestionId,
+function progressCaption(state: F011State): string | null {
+  if (!state.nombrePrets) return null;
+  if (state.step === "aggregate_review") {
+    return state.nombrePrets > 1 ? `${state.nombrePrets} prêts` : "1 prêt";
+  }
+  if (!LOAN_PROGRESS_STEPS.has(state.step)) return null;
+  return `Prêt ${state.currentLoanIndex + 1} sur ${state.nombrePrets}`;
+}
+
+function stripLoanPrefix(content: string): string {
+  return content.replace(/^Prêt \d+ sur \d+\.\s*/, "");
+}
+
+function splitQuestion(content: string): { title: string; body: string | null } {
+  const trimmed = stripLoanPrefix(content.trim());
+  const paraBreak = trimmed.indexOf("\n\n");
+  if (paraBreak > 0 && paraBreak < 180) {
+    return { title: trimmed.slice(0, paraBreak), body: trimmed.slice(paraBreak + 2).trim() || null };
+  }
+  const q = trimmed.indexOf("?");
+  if (q > 0 && q < 180 && q < trimmed.length - 1) {
+    return { title: trimmed.slice(0, q + 1), body: trimmed.slice(q + 1).trim() || null };
+  }
+  const firstLine = trimmed.split("\n")[0] ?? trimmed;
+  if (firstLine !== trimmed) {
+    return { title: firstLine, body: trimmed.slice(firstLine.length).trim() || null };
+  }
+  return { title: trimmed, body: null };
+}
+
+function parseColonRows(content: string): { label: string; value: string }[] {
+  return content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separator = line.includes(" : ") ? " : " : line.includes(" :") ? " :" : null;
+      if (!separator) return { label: line, value: "" };
+      const index = line.indexOf(separator);
+      return { label: line.slice(0, index), value: line.slice(index + separator.length).trim() };
+    });
+}
+
+function ChoiceCard({
   label,
-  onPick,
+  onClick,
+  disabled,
 }: {
-  suggestionId: string;
   label: string;
-  onPick: (id: string) => void;
+  onClick: () => void;
+  disabled?: boolean;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const active = (hovered || focused) && !disabled;
+
   return (
     <button
       type="button"
-      onClick={() => onPick(suggestionId)}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
-        ...typography.caption.desktop,
-        padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
-        borderRadius: radius.md,
-        border: `1px solid ${colors.border.subtle}`,
-        backgroundColor: colors.surface.primary,
-        cursor: "pointer",
+        display: "block",
+        width: "100%",
+        minHeight: 52,
+        textAlign: "left",
+        padding: `${spacing.scale[4]} ${spacing.scale[5]}`,
+        borderRadius: radius.lg,
+        border: `1px solid ${active ? colors.border.focus : colors.border.default}`,
+        backgroundColor: active ? colors.surface.selected : colors.surface.primary,
+        color: colors.text.primary,
+        ...typography.body.desktop,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.6 : 1,
+        boxShadow: active ? shadows.card.hover : shadows.card.default,
+        transition: motions.hover.card,
       }}
     >
       {label}
@@ -107,31 +179,141 @@ function SuggestionButton({
   );
 }
 
+function RecapRow({
+  label,
+  value,
+  emphasize = false,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: spacing.scale[4],
+        padding: `${spacing.scale[3]} 0`,
+        borderBottom: `1px solid ${colors.border.subtle}`,
+      }}
+    >
+      <span style={{ ...typography.body.desktop, color: colors.text.secondary }}>{label}</span>
+      <span
+        style={{
+          ...(emphasize ? typography.cardTitle.mobile : typography.body.desktop),
+          color: colors.text.primary,
+          fontVariantNumeric: "tabular-nums",
+          textAlign: "right",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 function ResultSummary({ result }: { result: F011Result }) {
   if (result.skipped) return null;
   const { charges } = result;
   return (
-    <div
+    <Card variant="muted">
+      <p
+        style={{
+          ...typography.caption.desktop,
+          color: colors.text.tertiary,
+          letterSpacing: typography.letterSpacing.caps,
+          textTransform: "uppercase",
+          marginBottom: spacing.scale[2],
+        }}
+      >
+        Récapitulatif
+      </p>
+      <RecapRow label="Total déductible" value={fmtEur(charges.totalChargesFinancementExercice)} emphasize />
+      <RecapRow label="Intérêts" value={fmtEur(charges.totalInteretsEmprunt)} />
+      <RecapRow label="Assurance" value={fmtEur(charges.totalAssurance)} />
+      {charges.totalInteretsPreExploitation > 0 ? (
+        <RecapRow
+          label="Pré-exploitation (non déductible)"
+          value={fmtEur(charges.totalInteretsPreExploitation)}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function LoanTermsRecap({ loan }: { loan: F011State["pendingLoan"] }) {
+  if (!loan) return null;
+  const rows: { label: string; value: string }[] = [];
+  if (loan.capitalInitial !== undefined) rows.push({ label: "Montant", value: fmtEur(loan.capitalInitial) });
+  if (loan.tauxNominal !== undefined) rows.push({ label: "Taux", value: fmtPct(loan.tauxNominal) });
+  if (loan.dureeMois !== undefined) rows.push({ label: "Durée", value: `${loan.dureeMois} mois` });
+  if (loan.datePremiereMensualite) {
+    rows.push({ label: "1re mensualité", value: loan.datePremiereMensualite });
+  }
+  if (rows.length === 0) return null;
+  return (
+    <Card variant="muted">
+      {rows.map((row) => (
+        <RecapRow key={row.label} label={row.label} value={row.value} />
+      ))}
+    </Card>
+  );
+}
+
+function MessageRecap({ content }: { content: string }) {
+  const rows = parseColonRows(content);
+  if (rows.length === 0) return null;
+  return (
+    <Card variant="muted">
+      {rows.map((row, index) =>
+        row.value ? (
+          <RecapRow key={`${row.label}-${index}`} label={row.label} value={row.value} />
+        ) : (
+          <p
+            key={`${row.label}-${index}`}
+            style={{ ...typography.body.desktop, color: colors.text.secondary, padding: `${spacing.scale[2]} 0` }}
+          >
+            {row.label}
+          </p>
+        ),
+      )}
+    </Card>
+  );
+}
+
+function GoBackControl({
+  visible,
+  disabled,
+  onBack,
+}: {
+  visible: boolean;
+  disabled: boolean;
+  onBack: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onBack}
+      aria-label="Retour à l'étape précédente"
       style={{
-        padding: spacing.scale[4],
-        borderRadius: radius.lg,
-        backgroundColor: colors.surface.inset,
-        marginTop: spacing.scale[4],
+        display: "block",
+        marginTop: spacing.scale[8],
+        minHeight: 44,
+        padding: `${spacing.scale[2]} 0`,
+        background: "none",
+        border: "none",
+        color: colors.text.tertiary,
+        ...typography.body.desktop,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
       }}
     >
-      <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>Total déductible</p>
-      <p style={{ ...typography.sectionTitle.desktop, color: colors.text.primary }}>
-        {fmtEur(charges.totalChargesFinancementExercice)}
-      </p>
-      <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-        Intérêts : {fmtEur(charges.totalInteretsEmprunt)} — Assurance : {fmtEur(charges.totalAssurance)}
-      </p>
-      {charges.totalInteretsPreExploitation > 0 ? (
-        <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Pré-exploitation (non déductible) : {fmtEur(charges.totalInteretsPreExploitation)}
-        </p>
-      ) : null}
-    </div>
+      ← Retour
+    </button>
   );
 }
 
@@ -247,7 +429,9 @@ export function F011FinancementAssistantPanel() {
   }, []);
 
   const [state, setState] = useState<F011State>(() => initialResume.turn.state);
-  const [messages, setMessages] = useState<F011Message[]>(() => initialResume.turn.messages);
+  const [currentTurnAssistants, setCurrentTurnAssistants] = useState<F011Message[]>(() =>
+    assistantMessagesFromTurn(initialResume.turn.messages),
+  );
   // Cycle 5 — lu par le chemin d'analyse asynchrone (upload → OCR/GPT), qui
   // s'étend sur plusieurs rendus : `state` seul serait périmé au moment où le
   // pipeline répond. Toujours synchronisé (effet ci-dessous), jamais utilisé
@@ -399,7 +583,11 @@ export function F011FinancementAssistantPanel() {
   const applyTurn = useCallback(
     (turn: F011AssistantTurn) => {
       setState(turn.state);
-      setMessages((prev) => [...prev, ...turn.messages]);
+      setAwaitingAmountFor(null);
+      const nextAssistants = assistantMessagesFromTurn(turn.messages);
+      if (nextAssistants.length > 0) {
+        setCurrentTurnAssistants(nextAssistants);
+      }
       const lastAssistantMessage = [...turn.messages].reverse().find((m) => m.role === "assistant");
       if (lastAssistantMessage) setAnnouncement(lastAssistantMessage.content);
       if (turn.state.step === "loan_collect") {
@@ -633,22 +821,73 @@ export function F011FinancementAssistantPanel() {
   const step = state.step;
   const showLoanForm = step === "loan_collect";
   const canGoBack = Boolean(state.history && state.history.length > 0) && step !== "complete" && step !== "skipped";
+  const lastAssistant = currentTurnAssistants.at(-1);
+  const supportingAssistants = currentTurnAssistants.slice(0, -1);
+  const suggestions = awaitingAmountFor || showLoanForm ? undefined : lastAssistant?.suggestions;
+  const primarySuggestions = suggestions?.filter((suggestion) => PRIMARY_SUGGESTION_IDS.has(suggestion.id)) ?? [];
+  const choiceSuggestions = suggestions?.filter((suggestion) => !PRIMARY_SUGGESTION_IDS.has(suggestion.id)) ?? [];
+  const caption = progressCaption(state);
+  const parsedQuestion = lastAssistant ? splitQuestion(lastAssistant.content) : null;
+  const questionSource = awaitingAmountFor
+    ? amountLabelFor(awaitingAmountFor)
+    : step === "loan_review"
+      ? "Votre prêt"
+      : step === "loan_collect"
+        ? "Les conditions de votre prêt"
+        : step === "loan_review_extraction"
+          ? parsedQuestion?.title ?? "Votre document"
+          : parsedQuestion?.title ?? "Financement";
+  const questionBody =
+    awaitingAmountFor || step === "loan_review" || step === "loan_collect" || step === "loan_review_extraction"
+      ? null
+      : parsedQuestion?.body ?? null;
+  const supportingText =
+    step === "aggregate_review" || step === "loan_review"
+      ? ""
+      : supportingAssistants
+          .map((message) => message.content)
+          .filter(Boolean)
+          .join("\n\n");
+  const aggregateExplanation =
+    step === "aggregate_review"
+      ? supportingAssistants.map((message) => message.content).filter(Boolean).join("\n\n") ||
+        state.result?.explanation ||
+        ""
+      : "";
+  const showResult =
+    Boolean(state.result && !state.result.skipped) && (step === "aggregate_review" || step === "complete");
+
+  const goBack = () => {
+    void runAction({ type: "go_back" });
+  };
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <header style={{ marginBottom: spacing.scale[6] }}>
-        <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+    <div className="mx-auto w-full max-w-lg px-5 pb-12 pt-8 sm:px-6">
+      <header style={{ marginBottom: spacing.scale[8] }}>
+        <p
+          style={{
+            ...typography.caption.desktop,
+            color: colors.text.muted,
+            letterSpacing: typography.letterSpacing.caps,
+            textTransform: "uppercase",
+          }}
+        >
           <Link href={LMNP_ROUTES.dashboard} style={{ color: colors.text.muted }}>
             Tableau de bord
           </Link>
-          {" / Financement"}
+          {" · Financement"}
         </p>
-        <h1 style={{ ...typography.sectionTitle.desktop, color: colors.text.primary, marginTop: spacing.scale[2] }}>
-          Assistant Financement
-        </h1>
-        <p style={{ ...typography.body.desktop, color: colors.text.secondary, marginTop: spacing.scale[2] }}>
-          Identifiez les charges de financement déductibles pour l&apos;exercice {fiscalYear}.
-        </p>
+        {caption ? (
+          <p
+            style={{
+              ...typography.caption.desktop,
+              color: colors.text.tertiary,
+              marginTop: spacing.scale[3],
+            }}
+          >
+            {caption}
+          </p>
+        ) : null}
       </header>
 
       {/* Cycle 5 §13 — une seule zone aria-live, annonce le dernier message de
@@ -670,110 +909,200 @@ export function F011FinancementAssistantPanel() {
         }}
       />
 
-      <Card>
-        <div style={{ padding: spacing.scale[4] }}>
-          {messages.map((message, index) => (
-            <MessageBubble key={index} message={message} />
-          ))}
+      <div
+        key={`${step}-${state.currentLoanIndex}-${awaitingAmountFor ?? "none"}`}
+        className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+      >
+        {supportingText && step !== "loan_review" ? (
+          <p
+            style={{
+              ...typography.body.desktop,
+              color: colors.text.secondary,
+              marginBottom: spacing.scale[5],
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {supportingText}
+          </p>
+        ) : null}
 
-          {messages.at(-1)?.suggestions ? (
-            <div className="flex flex-wrap gap-2" style={{ marginBottom: spacing.scale[4] }}>
-              {messages.at(-1)!.suggestions!.map((s) => (
-                <SuggestionButton key={s.id} suggestionId={s.id} label={s.label} onPick={handleSuggestion} />
-              ))}
-            </div>
-          ) : null}
+        <h1
+          style={{
+            ...typography.sectionTitle.mobile,
+            color: colors.text.primary,
+            marginBottom: questionBody ? spacing.scale[4] : spacing.scale[8],
+          }}
+        >
+          {questionSource}
+        </h1>
 
-          {step === "loan_upload" ? (
-            <div style={{ marginTop: spacing.scale[4] }}>
-              <Button onClick={openFilePicker} disabled={busy}>
-                Choisir un fichier
-              </Button>
-            </div>
-          ) : null}
+        {questionBody ? (
+          <p
+            style={{
+              ...typography.body.desktop,
+              color: colors.text.secondary,
+              marginBottom: spacing.scale[8],
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {questionBody}
+          </p>
+        ) : null}
 
-          {showLoanForm ? (
-            <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
-              <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-                Prêt {state.currentLoanIndex + 1} sur {state.nombrePrets ?? 1}
+        {step === "loan_review" ? (
+          <div className="flex flex-col gap-4" style={{ marginBottom: spacing.scale[8] }}>
+            <LoanTermsRecap loan={state.pendingLoan} />
+            {lastAssistant ? <MessageRecap content={lastAssistant.content} /> : null}
+          </div>
+        ) : null}
+
+        {step === "loan_review_extraction" && lastAssistant ? (
+          <div style={{ marginBottom: spacing.scale[8] }}>
+            {parsedQuestion?.body ? (
+              <Card variant="muted">
+                <p
+                  style={{
+                    ...typography.body.desktop,
+                    color: colors.text.secondary,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {parsedQuestion.body}
+                </p>
+              </Card>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showResult && state.result ? (
+          <div style={{ marginBottom: spacing.scale[8] }}>
+            <ResultSummary result={state.result} />
+            {aggregateExplanation ? (
+              <p
+                style={{
+                  ...typography.body.desktop,
+                  color: colors.text.secondary,
+                  marginTop: spacing.scale[5],
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {aggregateExplanation}
               </p>
-              <label style={labelStyle}>
-                Montant emprunté (€)
-                <input style={inputStyle} value={capital} onChange={(e) => setCapital(e.target.value)} />
-              </label>
-              <label style={labelStyle}>
-                Taux annuel (%)
-                <input style={inputStyle} value={rate} onChange={(e) => setRate(e.target.value)} />
-              </label>
-              <label style={labelStyle}>
-                Durée (mois)
-                <input style={inputStyle} value={duration} onChange={(e) => setDuration(e.target.value)} />
-              </label>
-              <label style={labelStyle}>
-                Date 1ère mensualité
-                <input
-                  type="date"
-                  style={inputStyle}
-                  value={firstPayment}
-                  onChange={(e) => setFirstPayment(e.target.value)}
-                />
-              </label>
-              <Button onClick={submitLoan} disabled={busy}>
-                Continuer
+            ) : null}
+          </div>
+        ) : null}
+
+        {primarySuggestions.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            {primarySuggestions.map((suggestion) => (
+              <Button
+                key={suggestion.id}
+                className="w-full"
+                disabled={busy}
+                onClick={() => handleSuggestion(suggestion.id)}
+              >
+                {suggestion.label}
               </Button>
-            </div>
-          ) : null}
+            ))}
+          </div>
+        ) : null}
 
-          {awaitingAmountFor ? (
-            <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
-              <label style={labelStyle}>
-                {amountLabelFor(awaitingAmountFor)}
-                <input
-                  style={inputStyle}
-                  value={amountInput}
-                  onChange={(e) => setAmountInput(e.target.value)}
-                  placeholder="Laisser vide si aucun"
-                />
-              </label>
-              <Button onClick={submitAmount} disabled={busy}>
-                Continuer
+        {choiceSuggestions.length > 0 ? (
+          <div
+            className="flex flex-col gap-3"
+            style={{ marginTop: primarySuggestions.length > 0 ? spacing.scale[4] : 0 }}
+          >
+            {choiceSuggestions.map((suggestion) => (
+              <ChoiceCard
+                key={suggestion.id}
+                label={suggestion.label}
+                disabled={busy}
+                onClick={() => handleSuggestion(suggestion.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {step === "loan_upload" ? (
+          <div style={{ marginTop: suggestions ? spacing.scale[4] : 0 }}>
+            <Button className="w-full" onClick={openFilePicker} disabled={busy}>
+              Choisir un fichier
+            </Button>
+          </div>
+        ) : null}
+
+        {showLoanForm ? (
+          <div className="flex flex-col gap-5">
+            <label style={labelStyle}>
+              Montant emprunté (€)
+              <input style={inputStyle} value={capital} onChange={(e) => setCapital(e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Taux annuel (%)
+              <input style={inputStyle} value={rate} onChange={(e) => setRate(e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Durée (mois)
+              <input style={inputStyle} value={duration} onChange={(e) => setDuration(e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Date 1ère mensualité
+              <input
+                type="date"
+                style={inputStyle}
+                value={firstPayment}
+                onChange={(e) => setFirstPayment(e.target.value)}
+              />
+            </label>
+            <Button className="w-full" onClick={submitLoan} disabled={busy}>
+              Continuer
+            </Button>
+          </div>
+        ) : null}
+
+        {awaitingAmountFor ? (
+          <div className="flex flex-col gap-5">
+            <input
+              style={inputStyle}
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              placeholder="Laisser vide si aucun"
+              aria-label={amountLabelFor(awaitingAmountFor)}
+            />
+            <Button className="w-full" onClick={submitAmount} disabled={busy}>
+              Continuer
+            </Button>
+          </div>
+        ) : null}
+
+        {step === "blocked_missing_date" ? (
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link href={LMNP_ROUTES.activite} className="flex-1">
+              <Button className="w-full">Aller à l&apos;Activité</Button>
+            </Link>
+            <Link href={LMNP_ROUTES.dashboard}>
+              <Button variant="secondary" className="w-full">
+                Retour au tableau de bord
               </Button>
-            </div>
-          ) : null}
+            </Link>
+          </div>
+        ) : null}
 
-          {canGoBack ? (
-            <div style={{ marginTop: spacing.scale[3] }}>
-              <Button variant="ghost" disabled={busy} onClick={() => void runAction({ type: "go_back" })}>
-                ← Précédent
+        {step === "complete" || step === "skipped" ? (
+          <div className="flex flex-col gap-3 sm:flex-row" style={{ marginTop: spacing.scale[4] }}>
+            <Link href={LMNP_ROUTES.revenusAssistant} className="flex-1">
+              <Button className="w-full">Continuer vers Revenus</Button>
+            </Link>
+            <Link href={LMNP_ROUTES.dashboard}>
+              <Button variant="secondary" className="w-full">
+                Retour au tableau de bord
               </Button>
-            </div>
-          ) : null}
+            </Link>
+          </div>
+        ) : null}
 
-          {step === "blocked_missing_date" ? (
-            <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
-              <Link href={LMNP_ROUTES.activite} className="flex-1">
-                <Button className="w-full">Aller à l&apos;Activité</Button>
-              </Link>
-              <Link href={LMNP_ROUTES.dashboard}>
-                <Button variant="secondary">Retour au tableau de bord</Button>
-              </Link>
-            </div>
-          ) : null}
-
-          {state.result && !state.result.skipped ? <ResultSummary result={state.result} /> : null}
-
-          {step === "complete" || step === "skipped" ? (
-            <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
-              <Link href={LMNP_ROUTES.revenusAssistant} className="flex-1">
-                <Button className="w-full">Continuer vers Revenus</Button>
-              </Link>
-              <Link href={LMNP_ROUTES.dashboard}>
-                <Button variant="secondary">Retour au tableau de bord</Button>
-              </Link>
-            </div>
-          ) : null}
-        </div>
-      </Card>
+        <GoBackControl visible={canGoBack} disabled={busy} onBack={goBack} />
+      </div>
     </div>
   );
 }
