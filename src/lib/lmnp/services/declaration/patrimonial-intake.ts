@@ -94,6 +94,14 @@ export type PatrimonialIntakeState = {
   avancesAcomptesVerses?: OuiNonReponse;
   /** P1-B1, si OUI — montant de l'acompte versé (case 064). */
   avancesAcomptesVersesMontantRaw: string;
+  /** P1-B2 — case 014, logiciel/droit au bail/autre élément incorporel acquis pour l'activité. */
+  autresImmobilisationsIncorporellesBrut?: OuiNonReponse;
+  /** P1-B2, si OUI — montant de l'élément incorporel (case 014). */
+  autresImmobilisationsIncorporellesBrutMontantRaw: string;
+  /** P1-B2 — case 040, dépôt de garantie versé ou titres/cautions liés à l'activité (hors placements financiers, cf. 080). */
+  immobilisationsFinancieresBrut?: OuiNonReponse;
+  /** P1-B2, si OUI — montant du dépôt/de la caution (case 040). */
+  immobilisationsFinancieresBrutMontantRaw: string;
   /** P1-B1 — case 080, titres/placements détenus au titre de l'activité. */
   valeursMobilieresPlacementBrut?: OuiNonReponse;
   /** P1-B1, si OUI — montant des titres/placements (case 080). */
@@ -129,6 +137,8 @@ export const EMPTY_PATRIMONIAL_INTAKE_STATE: PatrimonialIntakeState = {
   ranRepriseRaw: "",
   subventionMontantRaw: "",
   avancesAcomptesVersesMontantRaw: "",
+  autresImmobilisationsIncorporellesBrutMontantRaw: "",
+  immobilisationsFinancieresBrutMontantRaw: "",
   valeursMobilieresPlacementBrutMontantRaw: "",
   chargesConstateesAvanceMontantRaw: "",
   produitsConstatesAvanceMontantRaw: "",
@@ -235,15 +245,30 @@ export function buildBilanPatrimonial(state: PatrimonialIntakeState): BilanInput
         ? { status: "DECLARE", montant: subventionMontant }
         : undefined;
 
-  // P1-B1 — les 5 questions dédiées (064/080/092/174/175) sont indépendantes
-  // de Q4 : chacune ne renseigne QUE sa propre clé de `LignesSimplesInputs`,
-  // jamais les 4 autres. `resolveLignePatrimonialeReponse()` reproduit
-  // exactement la doctrine déjà éprouvée par Q3 (subvention) : NON confirmé
-  // → NUL_CONFIRME ; OUI + montant → DECLARE ; OUI sans montant encore saisi,
-  // ou question jamais tranchée → absente (INCONNU), jamais un 0 inventé.
+  // P1-B1/P1-B2 — les 7 questions dédiées (014/040/064/080/092/174/175) sont
+  // indépendantes de Q4 : chacune ne renseigne QUE sa propre clé de
+  // `LignesSimplesInputs`, jamais les 6 autres. `resolveLignePatrimonialeReponse()`
+  // reproduit exactement la doctrine déjà éprouvée par Q3 (subvention) : NON
+  // confirmé → NUL_CONFIRME ; OUI + montant → DECLARE ; OUI sans montant
+  // encore saisi, ou question jamais tranchée → absente (INCONNU), jamais un
+  // 0 inventé.
   const lignesSimplesReponsesDediees: LignesSimplesInputs = {};
   const avancesAcomptesVerses = resolveLignePatrimonialeReponse(state.avancesAcomptesVerses, state.avancesAcomptesVersesMontantRaw);
   if (avancesAcomptesVerses !== undefined) lignesSimplesReponsesDediees.avancesAcomptesVerses = avancesAcomptesVerses;
+  const autresImmobilisationsIncorporellesBrut = resolveLignePatrimonialeReponse(
+    state.autresImmobilisationsIncorporellesBrut,
+    state.autresImmobilisationsIncorporellesBrutMontantRaw,
+  );
+  if (autresImmobilisationsIncorporellesBrut !== undefined) {
+    lignesSimplesReponsesDediees.autresImmobilisationsIncorporellesBrut = autresImmobilisationsIncorporellesBrut;
+  }
+  const immobilisationsFinancieresBrut = resolveLignePatrimonialeReponse(
+    state.immobilisationsFinancieresBrut,
+    state.immobilisationsFinancieresBrutMontantRaw,
+  );
+  if (immobilisationsFinancieresBrut !== undefined) {
+    lignesSimplesReponsesDediees.immobilisationsFinancieresBrut = immobilisationsFinancieresBrut;
+  }
   const valeursMobilieresPlacementBrut = resolveLignePatrimonialeReponse(
     state.valeursMobilieresPlacementBrut,
     state.valeursMobilieresPlacementBrutMontantRaw,
@@ -314,11 +339,15 @@ export function deriveIntakeStateFromBilanPatrimonial(value: BilanInputs | undef
   const autresElements: OuiNonReponse | undefined =
     value.lignesSimples?.autresImmobilisationsIncorporellesNet?.status === "NUL_CONFIRME" ? "NON" : undefined;
 
-  // P1-B1 — reconstruction des 5 réponses dédiées (064/080/092/174/175),
+  // P1-B1/P1-B2 — reconstruction des 7 réponses dédiées (014/040/064/080/092/174/175),
   // chacune lue depuis sa propre clé `lignesSimples`, indépendamment des
-  // 4 autres et de Q4 (`autresElements` ci-dessus, qui ne couvre jamais ces
-  // 5 clés — cf. `LIGNES_SIMPLES_NUL_CONFIRME`).
+  // 6 autres et de Q4 (`autresElements` ci-dessus, qui ne couvre jamais ces
+  // 7 clés — cf. `LIGNES_SIMPLES_NUL_CONFIRME`).
   const avancesAcomptesVerses = deriveOuiNonReponse(value.lignesSimples?.avancesAcomptesVerses);
+  const autresImmobilisationsIncorporellesBrut = deriveOuiNonReponse(
+    value.lignesSimples?.autresImmobilisationsIncorporellesBrut,
+  );
+  const immobilisationsFinancieresBrut = deriveOuiNonReponse(value.lignesSimples?.immobilisationsFinancieresBrut);
   const valeursMobilieresPlacementBrut = deriveOuiNonReponse(value.lignesSimples?.valeursMobilieresPlacementBrut);
   const chargesConstateesAvance = deriveOuiNonReponse(value.lignesSimples?.chargesConstateesAvance);
   const produitsConstatesAvance = deriveOuiNonReponse(value.lignesSimples?.produitsConstatesAvance);
@@ -349,6 +378,12 @@ export function deriveIntakeStateFromBilanPatrimonial(value: BilanInputs | undef
     autresElements,
     avancesAcomptesVerses,
     avancesAcomptesVersesMontantRaw: deriveMontantRaw(value.lignesSimples?.avancesAcomptesVerses),
+    autresImmobilisationsIncorporellesBrut,
+    autresImmobilisationsIncorporellesBrutMontantRaw: deriveMontantRaw(
+      value.lignesSimples?.autresImmobilisationsIncorporellesBrut,
+    ),
+    immobilisationsFinancieresBrut,
+    immobilisationsFinancieresBrutMontantRaw: deriveMontantRaw(value.lignesSimples?.immobilisationsFinancieresBrut),
     valeursMobilieresPlacementBrut,
     valeursMobilieresPlacementBrutMontantRaw: deriveMontantRaw(value.lignesSimples?.valeursMobilieresPlacementBrut),
     chargesConstateesAvance,

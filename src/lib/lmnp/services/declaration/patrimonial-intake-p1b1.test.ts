@@ -1,5 +1,6 @@
 /**
- * P1-B1 — collecte UI des 5 postes patrimoniaux Brut (064/080/092/174/175).
+ * P1-B1/P1-B2 — collecte UI des 7 postes patrimoniaux Brut
+ * (014/040/064/080/092/174/175).
  * Run: npx tsx --test src/lib/lmnp/services/declaration/patrimonial-intake-p1b1.test.ts
  *
  * Fichier dédié (voir mission P1-B1) : `patrimonial-intake.test.ts` existant
@@ -29,6 +30,18 @@ type Champ = {
 
 const CHAMPS: readonly Champ[] = [
   { caseId: "064", reponseKey: "avancesAcomptesVerses", montantRawKey: "avancesAcomptesVersesMontantRaw", lignesSimplesKey: "avancesAcomptesVerses" },
+  {
+    caseId: "014",
+    reponseKey: "autresImmobilisationsIncorporellesBrut",
+    montantRawKey: "autresImmobilisationsIncorporellesBrutMontantRaw",
+    lignesSimplesKey: "autresImmobilisationsIncorporellesBrut",
+  },
+  {
+    caseId: "040",
+    reponseKey: "immobilisationsFinancieresBrut",
+    montantRawKey: "immobilisationsFinancieresBrutMontantRaw",
+    lignesSimplesKey: "immobilisationsFinancieresBrut",
+  },
   {
     caseId: "080",
     reponseKey: "valeursMobilieresPlacementBrut",
@@ -91,20 +104,23 @@ for (const champ of CHAMPS) {
   });
 }
 
-describe("P1-B1 — les 5 champs sont indépendants les uns des autres", () => {
-  it("E — renseigner 064 seul ne modifie ni 080, ni 092, ni 174, ni 175", () => {
+describe("P1-B1/P1-B2 — les 7 champs sont indépendants les uns des autres", () => {
+  it("E — renseigner 064 seul ne modifie ni 014, ni 040, ni 080, ni 092, ni 174, ni 175", () => {
     const result = buildBilanPatrimonial(
       state({ routage: "NATIF", avancesAcomptesVerses: "OUI", avancesAcomptesVersesMontantRaw: "500" }),
     );
     assert.deepEqual(result?.lignesSimples, { avancesAcomptesVerses: { status: "DECLARE", montant: 500 } });
   });
 
-  it("E — les 5 réponses simultanément produisent les 5 clés, sans interférence", () => {
+  it("E — les 7 réponses simultanément produisent les 7 clés, sans interférence", () => {
     const result = buildBilanPatrimonial(
       state({
         routage: "NATIF",
         avancesAcomptesVerses: "OUI",
         avancesAcomptesVersesMontantRaw: "100",
+        autresImmobilisationsIncorporellesBrut: "OUI",
+        autresImmobilisationsIncorporellesBrutMontantRaw: "150",
+        immobilisationsFinancieresBrut: "NON",
         valeursMobilieresPlacementBrut: "NON",
         chargesConstateesAvance: "OUI",
         chargesConstateesAvanceMontantRaw: "200",
@@ -115,6 +131,8 @@ describe("P1-B1 — les 5 champs sont indépendants les uns des autres", () => {
     );
     assert.deepEqual(result?.lignesSimples, {
       avancesAcomptesVerses: { status: "DECLARE", montant: 100 },
+      autresImmobilisationsIncorporellesBrut: { status: "DECLARE", montant: 150 },
+      immobilisationsFinancieresBrut: { status: "NUL_CONFIRME" },
       valeursMobilieresPlacementBrut: { status: "NUL_CONFIRME" },
       chargesConstateesAvance: { status: "DECLARE", montant: 200 },
       produitsConstatesAvance: { status: "NUL_CONFIRME" },

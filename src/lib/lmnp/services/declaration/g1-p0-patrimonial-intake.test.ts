@@ -14,6 +14,7 @@ import {
   buildBilanPatrimonial,
   type PatrimonialIntakeState,
 } from "./patrimonial-intake";
+import { EMPTY_VENTILATION_TIERS_INTAKE_STATE } from "./ventilation-tiers-intake";
 import { map2033AFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033a";
 import type { DeclarationDraft, Property } from "../../types";
 
@@ -257,6 +258,87 @@ describe("G1-P0 — F. Gate et génération réelle produisent le même Form2033
       generated: false,
     });
     assert.equal(gate.canGenerate, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// H — P1-B2 : 014/040 collectées → 044 puis 110 se débloquent en cascade,
+// sans aucune modification des gates 044/110 (déjà câblées, cf. audit G2).
+// ---------------------------------------------------------------------------
+
+describe("G1-P0 — H. 014/040 collectées → 044 et 110 se débloquent", () => {
+  it("014=NON, 040=NON, plus 064/068/072/080/084/092 confirmés → 044, 096 et 110 publiés", () => {
+    const bilanPatrimonial = buildBilanPatrimonial(
+      state({
+        routage: "NATIF",
+        bankMode: "DEDIE",
+        closingCashRaw: "0",
+        apportsRaw: "0",
+        prelevementsRaw: "0",
+        subvention: "NON",
+        autresElements: "NON",
+        autresImmobilisationsIncorporellesBrut: "NON",
+        immobilisationsFinancieresBrut: "NON",
+        avancesAcomptesVerses: "NON",
+        valeursMobilieresPlacementBrut: "NON",
+        chargesConstateesAvance: "NON",
+        ventilationTiersIntake: { ...EMPTY_VENTILATION_TIERS_INTAKE_STATE, confirmationRecevoirVide: true },
+      }),
+    );
+    const draft = generationReadyDraft({ bilanPatrimonial });
+    const generation = runDeclarationGeneration(draft, 2025, undefined, bilanPatrimonial);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    const form = map2033AFromRfs(generation.rfs);
+    assert.equal(form.cases.find((c) => c.caseId === "014")?.value, 0, "014 confirmé nul");
+    assert.equal(form.cases.find((c) => c.caseId === "040")?.value, 0, "040 confirmé nul");
+    // 028 (immobilisations corporelles) provient de la branche legacy F-010,
+    // indépendante de la collecte P1-B2 — 5500 € vient de `logementAmortissement`
+    // dans `generationReadyDraft()`, pas de ce test. 044 = 014(0) + 028(5500) + 040(0).
+    assert.equal(
+      form.cases.find((c) => c.caseId === "044")?.value,
+      5500,
+      "044 = 014+028+040 : les trois composantes sont publiables, la gate existante (non modifiée) publie le total",
+    );
+    assert.equal(
+      form.cases.find((c) => c.caseId === "096")?.value,
+      0,
+      "096 doit aussi être publiable pour que 110 le soit à son tour",
+    );
+    assert.equal(
+      form.cases.find((c) => c.caseId === "110")?.value,
+      5500,
+      "110 = 044+096 : débloqué en cascade par la gate existante (non modifiée), simple conséquence de 044/096 publiables",
+    );
+  });
+
+  it("non-régression : sans réponse à 014/040, 044 et 110 restent bloqués comme avant ce chantier", () => {
+    const bilanPatrimonial = buildBilanPatrimonial(
+      state({
+        routage: "NATIF",
+        bankMode: "DEDIE",
+        closingCashRaw: "0",
+        apportsRaw: "0",
+        prelevementsRaw: "0",
+        subvention: "NON",
+        autresElements: "NON",
+        avancesAcomptesVerses: "NON",
+        valeursMobilieresPlacementBrut: "NON",
+        chargesConstateesAvance: "NON",
+        ventilationTiersIntake: { ...EMPTY_VENTILATION_TIERS_INTAKE_STATE, confirmationRecevoirVide: true },
+      }),
+    );
+    const draft = generationReadyDraft({ bilanPatrimonial });
+    const generation = runDeclarationGeneration(draft, 2025, undefined, bilanPatrimonial);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    const form = map2033AFromRfs(generation.rfs);
+    assert.equal(form.cases.find((c) => c.caseId === "014"), undefined, "014 reste INCONNU sans réponse");
+    assert.equal(form.cases.find((c) => c.caseId === "040"), undefined, "040 reste INCONNU sans réponse");
+    assert.equal(form.cases.find((c) => c.caseId === "044"), undefined, "044 reste bloqué tant que 014/040 ne sont pas répondues");
+    assert.equal(form.cases.find((c) => c.caseId === "110"), undefined, "110 reste bloqué en cascade");
   });
 });
 

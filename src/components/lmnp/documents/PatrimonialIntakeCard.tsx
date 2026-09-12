@@ -191,6 +191,48 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
         />
       ) : null}
 
+      {/* P1-B2 — case 014 */}
+      <Question label="Avez-vous acquis un logiciel, un droit au bail ou un autre élément incorporel pour cette activité ?">
+        <ChoiceButton
+          selected={state.autresImmobilisationsIncorporellesBrut === "NON"}
+          onClick={() => patch({ autresImmobilisationsIncorporellesBrut: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.autresImmobilisationsIncorporellesBrut === "OUI"}
+          onClick={() => patch({ autresImmobilisationsIncorporellesBrut: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.autresImmobilisationsIncorporellesBrut === "OUI" ? (
+        <AmountField
+          label="Montant de cet élément incorporel"
+          raw={state.autresImmobilisationsIncorporellesBrutMontantRaw}
+          onChange={(raw) => patch({ autresImmobilisationsIncorporellesBrutMontantRaw: raw })}
+        />
+      ) : null}
+
+      {/* P1-B2 — case 040 */}
+      <Question label="Avez-vous versé un dépôt de garantie ou détenez-vous des titres/cautions liés à cette activité, hors placements financiers ?">
+        <ChoiceButton
+          selected={state.immobilisationsFinancieresBrut === "NON"}
+          onClick={() => patch({ immobilisationsFinancieresBrut: "NON" })}
+          label="Non"
+        />
+        <ChoiceButton
+          selected={state.immobilisationsFinancieresBrut === "OUI"}
+          onClick={() => patch({ immobilisationsFinancieresBrut: "OUI" })}
+          label="Oui"
+        />
+      </Question>
+      {state.immobilisationsFinancieresBrut === "OUI" ? (
+        <AmountField
+          label="Montant du dépôt ou de la caution"
+          raw={state.immobilisationsFinancieresBrutMontantRaw}
+          onChange={(raw) => patch({ immobilisationsFinancieresBrutMontantRaw: raw })}
+        />
+      ) : null}
+
       {/* P1-B1 — case 080 */}
       <Question label="Détenez-vous des titres ou placements financiers au titre de cette activité ?">
         <ChoiceButton
