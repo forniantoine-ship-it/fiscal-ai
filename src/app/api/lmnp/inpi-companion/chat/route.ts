@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import {
+  analyzeInpiRegularizationMessage,
   generateInpiCompanionLlmText,
   INPI_COMPANION_LLM_PAYLOAD_MAX_BYTES,
   isInpiCompanionLlmAllowedForRequest,
   isInpiCompanionLlmConfigured,
+  isInpiRegularizationAnalysisRequest,
   parseInpiCompanionLlmRequest,
+  type InpiRegularizationAnalysis,
 } from "@/lib/lmnp/services/inpi/inpi-companion-llm";
 import { getServerSupabaseForUser, UnauthorizedError } from "@/lib/supabase-server";
 
@@ -23,6 +26,7 @@ const GENERIC_UNAUTHORIZED = { error: "unauthorized" } as const;
 export const inpiCompanionChatRouteDeps = {
   getServerSupabaseForUser,
   generateInpiCompanionLlmText,
+  analyzeInpiRegularizationMessage,
 };
 
 function readAuthToken(parsed: unknown): string | undefined {
@@ -36,6 +40,17 @@ function payloadWithoutAuthToken(parsed: unknown): unknown {
   const record = { ...(parsed as Record<string, unknown>) };
   delete record.authToken;
   return record;
+}
+
+function regularizationAnalysisBody(analysis: InpiRegularizationAnalysis) {
+  if (analysis.uncertainty) {
+    return {
+      summary: analysis.summary,
+      points: analysis.points,
+      uncertainty: analysis.uncertainty,
+    };
+  }
+  return { summary: analysis.summary, points: analysis.points };
 }
 
 export async function POST(request: Request) {
@@ -56,6 +71,15 @@ export async function POST(request: Request) {
     await inpiCompanionChatRouteDeps.getServerSupabaseForUser(readAuthToken(parsedJson));
 
     const payload = parseInpiCompanionLlmRequest(payloadWithoutAuthToken(parsedJson));
+
+    if (isInpiRegularizationAnalysisRequest(payload)) {
+      if (!isInpiCompanionLlmConfigured()) {
+        return NextResponse.json(GENERIC_UNAVAILABLE, { status: 503 });
+      }
+      const analysis = await inpiCompanionChatRouteDeps.analyzeInpiRegularizationMessage(payload);
+      return NextResponse.json(regularizationAnalysisBody(analysis));
+    }
+
     if (!isInpiCompanionLlmAllowedForRequest(payload)) {
       return NextResponse.json(GENERIC_INVALID, { status: 400 });
     }

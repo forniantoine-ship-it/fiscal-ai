@@ -14,16 +14,18 @@
  * (`DeclarationDraft.inpiCompanionState`) — jamais une donnée métier.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useReducer, useState, type ReactNode } from "react";
 
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
+import { TextArea } from "@/design-system/components/Input";
 import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { InpiStatus } from "@/lib/lmnp/types/dossier";
+import { supabase } from "@/lib/supabase";
 import { validateSiret } from "@/runtime";
 import type {
   InpiCompanionFieldKey,
@@ -33,7 +35,19 @@ import type {
 } from "@/runtime/assistants/inpi-companion/types";
 
 import { InpiCompanionChat } from "./InpiCompanionChat";
-import { buildInpiCompanionChatContext } from "./inpi-companion-chat-context";
+import { buildInpiCompanionChatContext, type InpiCompanionChatContext } from "./inpi-companion-chat-context";
+import { INPI_COMPANION_CHAT_LLM_ROUTE } from "./inpi-companion-chat-llm";
+import {
+  canSubmitRegularizationMessage,
+  clipRegularizationMessage,
+  INITIAL_REGULARISATION_UI,
+  reduceRegularisationUi,
+  REGULARISATION_COPY,
+  REGULARIZATION_MESSAGE_MAX,
+  regularisationCounterLabel,
+  regularisationResultSections,
+  type RegularisationAnalysisDisplay,
+} from "./inpi-companion-regularisation-ui";
 import {
   computeInpiCompanionView,
   displayValueForField,
@@ -76,6 +90,30 @@ const FIELD_EXPLANATIONS: Record<InpiCompanionFieldKey, string> = {
 
 function isConfirmableField(step: InpiCompanionStep): step is InpiCompanionFieldKey {
   return step !== "synthese";
+}
+
+type RegularisationWhitelistedContext = InpiCompanionChatContext;
+
+function readRegularizationAnalysis(payload: unknown): RegularisationAnalysisDisplay | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.some((key) => key !== "summary" && key !== "points" && key !== "uncertainty")) {
+    return null;
+  }
+  if (typeof record.summary !== "string" || !record.summary.trim()) return null;
+  if (!Array.isArray(record.points) || record.points.length > 8) return null;
+  if (record.points.some((point) => typeof point !== "string" || !point.trim())) return null;
+  const analysis: RegularisationAnalysisDisplay = {
+    summary: record.summary.trim(),
+    points: record.points.map((point) => (point as string).trim()),
+  };
+  if (record.uncertainty === null || record.uncertainty === undefined) {
+    return analysis;
+  }
+  if (typeof record.uncertainty !== "string" || !record.uncertainty.trim()) return null;
+  analysis.uncertainty = record.uncertainty.trim();
+  return analysis;
 }
 
 function ProvenanceBadge({ status }: { status: "extracted" | "proposed" | "missing" }) {
@@ -278,7 +316,11 @@ export function InpiCompanionPanel() {
         ) : null}
 
         {view.modeDecision.mode === "regularisation" ? (
-          <RegularisationView message={regularizationMessage} onChange={setRegularizationMessage} />
+          <RegularisationView
+            message={regularizationMessage}
+            onChange={setRegularizationMessage}
+            context={chatContext}
+          />
         ) : null}
 
         {view.modeDecision.mode === "verification" ? (
@@ -603,35 +645,192 @@ function AttenteView({
 function RegularisationView({
   message,
   onChange,
+  context,
 }: {
   message: string;
   onChange: (value: string) => void;
+  context: RegularisationWhitelistedContext;
 }) {
+  const [ui, applyUi] = useReducer(reduceRegularisationUi, INITIAL_REGULARISATION_UI);
+  const canAnalyze = canSubmitRegularizationMessage(message);
+  const analyzing = ui.phase === "analyzing";
+  const showComposer = ui.phase === "compose" || ui.phase === "analyzing";
+  const sections = ui.analysis ? regularisationResultSections(ui.analysis) : null;
+
+  const runAnalysis = useCallback(async () => {
+    applyUi({ type: "analyze", message });
+    if (!canSubmitRegularizationMessage(message)) return;
+    applyUi({ type: "analysis_started" });
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+      if (!authToken) {
+        applyUi({ type: "analysis_failed" });
+        return;
+      }
+      const response = await fetch(INPI_COMPANION_CHAT_LLM_ROUTE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          kind: "regularization_analysis",
+          message,
+          context,
+          authToken,
+        }),
+      });
+      if (!response.ok) {
+        applyUi({ type: "analysis_failed" });
+        return;
+      }
+      const payload: unknown = await response.json();
+      const analysis = readRegularizationAnalysis(payload);
+      if (!analysis) {
+        applyUi({ type: "analysis_failed" });
+        return;
+      }
+      applyUi({ type: "analysis_succeeded", analysis });
+    } catch {
+      applyUi({ type: "analysis_failed" });
+    }
+  }, [context, message]);
+
   return (
     <>
-      <PanelHeading>Une action est demandée par l&apos;INPI</PanelHeading>
-      <PanelBody>
-        L&apos;INPI vous demande probablement une correction ou un complément. Nous ne pouvons pas voir
-        directement le contenu de cette demande — copiez ici le message reçu pour que nous puissions vous
-        aider à le comprendre.
-      </PanelBody>
-      <textarea
-        value={message}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="Collez ici le message reçu de l'INPI"
-        rows={4}
-        style={{
-          ...typography.body.desktop,
-          width: "100%",
-          border: `1px solid ${colors.border.default}`,
-          borderRadius: radius.md,
-          padding: spacing.scale[3],
-          resize: "vertical",
-        }}
-      />
-      <p style={{ ...typography.caption.desktop, color: colors.text.tertiary, marginTop: spacing.scale[2] }}>
-        L&apos;assistant capable d&apos;expliquer ce message sera bientôt disponible.
-      </p>
+      <PanelHeading>{REGULARISATION_COPY.heading}</PanelHeading>
+      <PanelBody>{REGULARISATION_COPY.intro}</PanelBody>
+
+      {showComposer ? (
+        <div style={{ minWidth: 0, maxWidth: "100%" }}>
+          <label
+            htmlFor="inpi-regularisation-message"
+            style={{ ...typography.caption.desktop, color: colors.text.tertiary, display: "block", marginBottom: spacing.scale[2] }}
+          >
+            {REGULARISATION_COPY.textareaLabel}
+          </label>
+          <TextArea
+            id="inpi-regularisation-message"
+            aria-label={REGULARISATION_COPY.textareaLabel}
+            aria-invalid={Boolean(ui.validationError)}
+            aria-describedby="inpi-regularisation-counter inpi-regularisation-empty"
+            value={message}
+            maxLength={REGULARIZATION_MESSAGE_MAX}
+            readOnly={analyzing}
+            rows={4}
+            placeholder={REGULARISATION_COPY.placeholder}
+            onChange={(event) => onChange(clipRegularizationMessage(event.target.value))}
+            style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}
+          />
+          <p
+            id="inpi-regularisation-counter"
+            style={{ ...typography.caption.desktop, color: colors.text.tertiary, marginTop: spacing.scale[2] }}
+          >
+            {regularisationCounterLabel(message)}
+          </p>
+          {ui.validationError ? (
+            <p
+              id="inpi-regularisation-empty"
+              role="alert"
+              style={{ ...typography.caption.desktop, color: colors.error.DEFAULT, marginTop: spacing.scale[2] }}
+            >
+              {ui.validationError}
+            </p>
+          ) : (
+            <span id="inpi-regularisation-empty" hidden />
+          )}
+        </div>
+      ) : null}
+
+      {ui.phase === "analyzing" ? (
+        <p role="status" aria-live="polite" style={{ ...typography.body.desktop, color: colors.text.secondary, marginTop: spacing.scale[3] }}>
+          {REGULARISATION_COPY.analyzing}
+        </p>
+      ) : null}
+
+      {ui.phase === "result" && sections ? (
+        <div style={{ minWidth: 0, maxWidth: "100%", marginTop: spacing.scale[2] }}>
+          <p style={{ ...typography.caption.desktop, color: colors.text.tertiary, marginBottom: spacing.scale[3] }}>
+            {REGULARISATION_COPY.textareaLabel}
+          </p>
+          <h3 style={{ ...typography.cardTitle.desktop, color: colors.text.primary, marginBottom: spacing.scale[2] }}>
+            {REGULARISATION_COPY.summaryTitle}
+          </h3>
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary, marginBottom: spacing.scale[4] }}>
+            {sections.summary}
+          </p>
+          {sections.points ? (
+            <>
+              <h3 style={{ ...typography.cardTitle.desktop, color: colors.text.primary, marginBottom: spacing.scale[2] }}>
+                {REGULARISATION_COPY.pointsTitle}
+              </h3>
+              <ul style={{ ...typography.body.desktop, color: colors.text.secondary, marginBottom: spacing.scale[4], paddingLeft: spacing.scale[5] }}>
+                {sections.points.map((point) => (
+                  <li key={point}>{point}</li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {sections.uncertainty ? (
+            <>
+              <h3 style={{ ...typography.cardTitle.desktop, color: colors.text.primary, marginBottom: spacing.scale[2] }}>
+                {REGULARISATION_COPY.uncertaintyTitle}
+              </h3>
+              <p style={{ ...typography.body.desktop, color: colors.text.secondary, marginBottom: spacing.scale[4] }}>
+                {sections.uncertainty}
+              </p>
+            </>
+          ) : null}
+          <p style={{ ...typography.caption.desktop, color: colors.text.tertiary, marginBottom: spacing.scale[4] }}>
+            {REGULARISATION_COPY.reminder}
+          </p>
+        </div>
+      ) : null}
+
+      {ui.phase === "error" ? (
+        <p role="alert" style={{ ...typography.body.desktop, color: colors.text.secondary, marginBottom: spacing.scale[4] }}>
+          {REGULARISATION_COPY.error}
+        </p>
+      ) : null}
+
+      <div className="flex flex-col gap-2 sm:flex-row" style={{ marginTop: spacing.scale[3], minWidth: 0, maxWidth: "100%" }}>
+        {ui.phase === "compose" || ui.phase === "analyzing" ? (
+          <>
+            <Button
+              disabled={!canAnalyze || analyzing}
+              aria-busy={analyzing}
+              onClick={() => {
+                void runAnalysis();
+              }}
+            >
+              {REGULARISATION_COPY.analyze}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={analyzing}
+              onClick={() => {
+                applyUi({ type: "cancel" });
+                onChange("");
+              }}
+            >
+              {REGULARISATION_COPY.cancel}
+            </Button>
+          </>
+        ) : null}
+        {ui.phase === "result" ? (
+          <Button variant="ghost" onClick={() => applyUi({ type: "edit" })}>
+            {REGULARISATION_COPY.edit}
+          </Button>
+        ) : null}
+        {ui.phase === "error" ? (
+          <>
+            <Button onClick={() => { void runAnalysis(); }}>{REGULARISATION_COPY.retry}</Button>
+            <Button variant="ghost" onClick={() => applyUi({ type: "edit" })}>
+              {REGULARISATION_COPY.edit}
+            </Button>
+          </>
+        ) : null}
+      </div>
     </>
   );
 }

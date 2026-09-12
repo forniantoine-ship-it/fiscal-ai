@@ -21,6 +21,7 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 
 import { resolveInpiCompanionDashboardCase } from "./inpi-companion-dashboard-case";
 import { computeInpiCompanionView } from "./inpi-companion-view-model";
+import { shouldShowInpiCompanion } from "./should-show-inpi-companion";
 
 function SummaryTitle({ children }: { children: string }) {
   return (
@@ -55,6 +56,8 @@ export function InpiCompanionDashboardSummary() {
 
   // 4.4.4 — pas de dossier / pas encore hydraté : état neutre, jamais d'erreur.
   if (!isReady) return null;
+  // 4.5.6 — pas d'assistant INPI tant que la démarche n'est pas activée.
+  if (!shouldShowInpiCompanion(dossierInpiStatus?.status)) return null;
 
   const dashboardCase = resolveInpiCompanionDashboardCase(view.modeDecision);
   const multiPropertyNote = view.isMultiProperty
