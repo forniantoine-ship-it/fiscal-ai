@@ -6,6 +6,15 @@
 2. Relever l'état Git.
 3. Identifier les fichiers concernés.
 4. Comprendre le comportement actuel.
+
+   Un audit, plan ou document daté n'est jamais une preuve de l'état
+   actuel du code. Avant d'exécuter un chantier issu d'un document
+   antérieur, vérifier que HEAD n'a pas déjà intégré des correctifs
+   postérieurs — via `git log`, une recherche ciblée, la lecture du code
+   actuel, et les tests existants pertinents. Le document historique
+   reste valable comme preuve de l'état à une date donnée, jamais seul
+   comme preuve de l'état courant.
+
 5. Identifier l'attendu.
 6. Modifier uniquement si le mode l'autorise.
 7. Tester localement.
