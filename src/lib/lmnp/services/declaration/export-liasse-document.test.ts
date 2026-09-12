@@ -58,10 +58,11 @@ function rfs(fr: FiscalResult): FiscalRepresentation {
 
 /**
  * P0-1 (audit 2026-09-02) — buildLiasseRfsDocumentText() est le rendu texte
- * des formulaires complémentaires (2031-bis, 2033-A/B/C) exposé par
- * DeclarationReadyView. Ne teste aucune règle fiscale nouvelle : vérifie
- * uniquement que les 4 formulaires déjà assemblés par assembleLiasseFromRfs()
- * apparaissent bien dans le texte produit.
+ * interne des formulaires complémentaires (2031-bis, 2033-A/B/C). Il n'est
+ * plus un téléchargement client (DeclarationReadyView n'expose que l'aide
+ * 2042-C-PRO et la liasse fiscale). Ne teste aucune règle fiscale nouvelle :
+ * vérifie uniquement que les 4 formulaires déjà assemblés par
+ * assembleLiasseFromRfs() apparaissent bien dans le texte produit.
  */
 describe("P0-1 — buildLiasseRfsDocumentText() expose les 4 formulaires complémentaires", () => {
   it("le texte contient les 4 en-têtes de formulaire et au moins une case de chacun", () => {

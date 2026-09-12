@@ -3,10 +3,14 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 /**
  * P1-2 — pont client vers la route serveur P1-1 (`/api/lmnp/declaration/cerfa-pdf`).
  * Ce module ne recalcule jamais de fiscalité, ne reconstruit jamais la RFS,
- * n'invente aucun identifiant : la RFS et le `declarationVersionId` reçus en
- * paramètre sont exactement ceux de la génération affichée par
- * `DeclarationReadyView.tsx` — jamais une version historique, jamais un
- * recalcul local.
+ * n'invente aucun identifiant : la RFS et le `declarationVersionId` reçus
+ * en paramètre sont ceux fournis par l'appelant.
+ *
+ * L'appelant peut être l'exercice actif ou un exercice archivé. Dans les
+ * deux cas, `fetchOfficialCerfaPdfBytes` n'ouvre pas le workspace : il
+ * envoie le RFS et le `declarationVersionId` tels quels. Une régénération
+ * historique utilise donc le millésime actuel du moteur Cerfa ; elle ne
+ * restitue pas les bytes PDF produits au moment de la clôture.
  */
 
 export const CERFA_PDF_ROUTE = "/api/lmnp/declaration/cerfa-pdf";
@@ -44,15 +48,11 @@ export function buildCerfaPdfRequestPayload(
   return { rfs, declarationVersionId, forms: CERFA_PDF_FORMS };
 }
 
-export function cerfaPdfFileName(fiscalYear: number): string {
-  return `liasse-lmnp-cerfa-officiel-${fiscalYear}.pdf`;
-}
-
 /**
  * Message utilisateur à partir du corps d'erreur JSON éventuel de la route
  * (`{ error: string }` ou `{ status: "blocked", violations: [...] }`) —
  * fonction pure, testable, jamais de valeur inventée si le corps est
- * inexploitable (fallback appelé par `downloadOfficialCerfaPdf` uniquement).
+ * inexploitable. Consommée par `fetchOfficialCerfaPdfBytes`.
  */
 export function describeCerfaPdfErrorBody(body: unknown): string | undefined {
   if (!body || typeof body !== "object") return undefined;
@@ -68,13 +68,11 @@ export function describeCerfaPdfErrorBody(body: unknown): string | undefined {
 export type CerfaPdfDownloadError = { message: string };
 
 /**
- * Appelle la route P1-1 et déclenche le téléchargement navigateur du PDF
- * officiel reçu. Ne transforme jamais un échec en fausse réussite : toute
- * réponse non-200 (y compris `status:"blocked"` du moteur, 422) lève une
- * `CerfaPdfDownloadError` avec un message utilisateur, jamais un
- * téléchargement partiel ou silencieux.
+ * Appelle la route P1-1 et retourne les bytes du PDF Cerfa. Aucun mapper,
+ * aucun recalcul : le serveur reste l'unique producteur des Cerfa.
+ * Copie défensive du buffer (pdf-lib peut réécrire un ArrayBuffer partagé).
  */
-export async function downloadOfficialCerfaPdf(payload: CerfaPdfRequestPayload, fiscalYear: number): Promise<void> {
+export async function fetchOfficialCerfaPdfBytes(payload: CerfaPdfRequestPayload): Promise<Uint8Array> {
   let response: Response;
   try {
     response = await fetch(CERFA_PDF_ROUTE, {
@@ -98,13 +96,8 @@ export async function downloadOfficialCerfaPdf(payload: CerfaPdfRequestPayload, 
     } satisfies CerfaPdfDownloadError;
   }
 
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = cerfaPdfFileName(fiscalYear);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy;
 }

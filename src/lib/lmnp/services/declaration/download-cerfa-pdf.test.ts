@@ -1,13 +1,10 @@
 /**
  * P1-2 — pont client vers la route P1-1. Ce fichier teste uniquement les
- * fonctions PURES (payload, nom de fichier, extraction de message d'erreur)
- * — ce projet n'a aucune infrastructure de test de composant React (aucun
- * jsdom/@testing-library), donc `downloadOfficialCerfaPdf()` elle-même
- * (fetch + DOM) n'est pas exercée ici : ce serait fabriquer un faux test sur
- * une infrastructure inexistante. Les comportements UI (bouton disponible/
- * absent selon la fraîcheur, double-clic, affichage d'erreur) sont vérifiés
- * par relecture du composant (DeclarationReadyView.tsx) — voir la
- * restitution du chantier.
+ * fonctions PURES (payload, extraction de message d'erreur). Le fetch Cerfa
+ * (`fetchOfficialCerfaPdfBytes`) est réutilisé par la liasse fiscale
+ * (`downloadLiasseFiscalePdf`) ; il n'existe plus de téléchargement Cerfa
+ * seul. Les libellés et le câblage UI sont couverts par
+ * DeclarationReadyView.ux.test.ts.
  * Run: npx tsx --test src/lib/lmnp/services/declaration/download-cerfa-pdf.test.ts
  */
 import { describe, it } from "node:test";
@@ -16,7 +13,6 @@ import assert from "node:assert/strict";
 import {
   CERFA_PDF_FORMS,
   buildCerfaPdfRequestPayload,
-  cerfaPdfFileName,
   describeCerfaPdfErrorBody,
 } from "./download-cerfa-pdf";
 import { ALL_CERFA_FORM_IDS } from "@/lib/lmnp/services/liasse-pdf";
@@ -45,12 +41,6 @@ describe("buildCerfaPdfRequestPayload", () => {
     const canonicalPositions = CERFA_PDF_FORMS.map((form) => ALL_CERFA_FORM_IDS.indexOf(form));
     const sorted = [...canonicalPositions].sort((a, b) => a - b);
     assert.deepEqual(canonicalPositions, sorted, "CERFA_PDF_FORMS doit déjà être dans l'ordre canonique de ALL_CERFA_FORM_IDS");
-  });
-});
-
-describe("cerfaPdfFileName", () => {
-  it("inclut l'exercice fiscal, extension .pdf", () => {
-    assert.equal(cerfaPdfFileName(2025), "liasse-lmnp-cerfa-officiel-2025.pdf");
   });
 });
 

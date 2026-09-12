@@ -13,21 +13,10 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
-import {
-  downloadLiasseDocument,
-  downloadLiasseRfsDocument,
-} from "@/lib/lmnp/services/declaration/export-liasse-document";
-import {
-  formatLiasseCoverageMessage,
-  resolveLiasseCoverageState,
-} from "@/lib/lmnp/services/declaration/liasse-coverage-state";
-import { downloadClientSummaryPdf } from "@/lib/lmnp/services/declaration/render-client-summary-pdf";
-import {
-  buildCerfaPdfRequestPayload,
-  downloadOfficialCerfaPdf,
-} from "@/lib/lmnp/services/declaration/download-cerfa-pdf";
+import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/render-aide-2042-pdf";
+import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
+import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
-import { resolveFormulairesManquants } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { useLmnp } from "@/lib/lmnp/store";
 
@@ -39,7 +28,7 @@ export function DeclarationReadyView() {
   const router = useRouter();
   const { workspace, closeFiscalYearAndCreateNext, closeFiscalYearError } = useLmnp();
   const { fiscalYear } = workspace;
-  const { fiscalResult, liasseResult, rfs, liasseRfs, activityStartDate, declaration } = workspace.declarationDraft ?? {};
+  const { fiscalResult, liasseResult, rfs, activityStartDate, declaration } = workspace.declarationDraft ?? {};
 
   // Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
   // "Clôturer et continuer". Précondition affichage = précondition métier
@@ -108,41 +97,40 @@ export function DeclarationReadyView() {
     setCloseConfirmOpen(false);
   };
 
-  // P1-2 — bouton PDF CERFA officiel (route serveur P1-1). N'est rendu que
-  // si !declarationOutOfDate (voir plus bas) : jamais de contournement de la
-  // fraîcheur P0-2, jamais un ancien PDF officiel présenté comme actuel. La
-  // RFS transmise est exactement celle de la génération affichée
-  // (`workspace.declarationDraft.rfs`) — jamais reconstruite, jamais une
-  // version historique.
-  const [cerfaDownloading, setCerfaDownloading] = useState(false);
-  const [cerfaDownloadError, setCerfaDownloadError] = useState<string | undefined>(undefined);
+  // P1-2 / liasse documentaire — téléchargement de la liasse fiscale
+  // (pages documentaires + Cerfa). N'est rendu que si !declarationOutOfDate :
+  // jamais de contournement de la fraîcheur P0-2. La RFS transmise est
+  // exactement celle de la génération affichée (`workspace.declarationDraft.rfs`)
+  // — jamais reconstruite. Les Cerfa restent produits par la route existante.
+  const [liasseDownloading, setLiasseDownloading] = useState(false);
+  const [liasseDownloadError, setLiasseDownloadError] = useState<string | undefined>(undefined);
   const declarationVersionId = declaration?.currentVersionId;
+  const canDownloadLiasse = Boolean(rfs && declarationVersionId && !declarationOutOfDate);
 
-  const handleDownloadOfficialCerfaPdf = async () => {
-    if (cerfaDownloading || !rfs || !declarationVersionId) return;
-    setCerfaDownloading(true);
-    setCerfaDownloadError(undefined);
+  const handleDownloadLiasseFiscale = async () => {
+    if (liasseDownloading || !rfs || !declarationVersionId) return;
+    setLiasseDownloading(true);
+    setLiasseDownloadError(undefined);
     try {
-      await downloadOfficialCerfaPdf(buildCerfaPdfRequestPayload(rfs, declarationVersionId), fiscalYear.year);
+      await downloadLiasseFiscalePdf({
+        rfs,
+        extras: collectLiasseDossierExtras({
+          declarationDraft: workspace.declarationDraft,
+          fiscalYear,
+        }),
+        declarationVersionId,
+        fiscalYear: fiscalYear.year,
+      });
     } catch (err) {
-      setCerfaDownloadError(
+      setLiasseDownloadError(
         err && typeof err === "object" && "message" in err && typeof err.message === "string"
           ? err.message
-          : "Le PDF officiel n'a pas pu être généré. Réessayez dans quelques instants.",
+          : "La liasse fiscale n'a pas pu être générée. Réessayez dans quelques instants.",
       );
     } finally {
-      setCerfaDownloading(false);
+      setLiasseDownloading(false);
     }
   };
-  // P0-2 — préfère liasseRfs (2031-SD + 2031-bis + 2033-A/B/C) à liasseResult
-  // (F-007, 2031-SD seul) quand disponible ; jamais de fusion, jamais de recalcul.
-  const formulairesManquants = resolveFormulairesManquants(liasseResult, liasseRfs);
-  // P0-2a — `formulairesGeneres` (RFS) atteste qu'un formulaire a été assemblé
-  // sans erreur, jamais que ses cases sont réellement alimentées : ce décompte
-  // ne doit donc jamais être présenté comme une preuve de "liasse complète"
-  // au sens officiel (cf. audit P0-2a).
-  const coverage = resolveLiasseCoverageState(liasseRfs);
-  const { coverageLine, disclaimer } = formatLiasseCoverageMessage(coverage);
 
   if (!fiscalResult || !liasseResult) {
     return (
@@ -200,30 +188,8 @@ export function DeclarationReadyView() {
             : `${fmtEur(fiscalResult.resultatFiscal)} de résultat fiscal`}
         </h1>
         <p className="mx-auto mt-3 max-w-lg" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Ce document récapitule votre résultat fiscal et vous indique les informations à vérifier ou à
-          reporter dans votre déclaration personnelle.
+          Résultat fiscal de votre activité pour l&apos;exercice {fiscalYear.year}.
         </p>
-        {rfs ? (
-          <>
-            <p
-              className="mt-2"
-              style={{ ...typography.caption.desktop, color: colors.success.DEFAULT, fontWeight: typography.fontWeight.medium }}
-            >
-              Votre aide à la déclaration est prête
-            </p>
-            <div className="mt-6 flex justify-center">
-              <Button
-                onClick={() =>
-                  downloadClientSummaryPdf(
-                    buildClientSummaryDocument(rfs, { activityStartDate }),
-                  )
-                }
-              >
-                Télécharger ma synthèse fiscale et mon aide à la déclaration (PDF)
-              </Button>
-            </div>
-          </>
-        ) : null}
       </section>
 
       {declarationOutOfDate ? (
@@ -275,69 +241,76 @@ export function DeclarationReadyView() {
             letterSpacing: typography.letterSpacing.label,
           }}
         >
-          Documents techniques
+          Documents fiscaux
         </p>
-        <p
-          className="mx-auto mt-2 max-w-lg text-center"
-          style={{ ...typography.caption.desktop, color: colors.text.muted }}
+
+        <article
+          className="mt-5"
+          style={{
+            borderRadius: radius.lg,
+            border: `1px solid ${colors.border.default}`,
+            backgroundColor: colors.surface.primary,
+            padding: spacing.card.md,
+          }}
         >
-          {coverageLine} {disclaimer}
-        </p>
-        <div className="mt-4 flex justify-center">
-          <Button
-            variant="ghost"
-            onClick={() => downloadLiasseDocument(fiscalYear.year, fiscalResult, liasseResult)}
+          <p
+            style={{
+              fontFamily: typography.fontFamily.display,
+              fontSize: typography.fontSize.lg,
+              color: colors.text.primary,
+            }}
           >
-            Télécharger la liasse
-          </Button>
-        </div>
-
-        {!declarationOutOfDate && rfs && declarationVersionId ? (
-          <div className="mt-4 flex flex-col items-center gap-2">
-            <Button variant="ghost" onClick={handleDownloadOfficialCerfaPdf} disabled={cerfaDownloading}>
-              {cerfaDownloading ? "Génération en cours…" : "Télécharger le PDF officiel"}
-            </Button>
-            {cerfaDownloadError ? (
-              <p style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>{cerfaDownloadError}</p>
-            ) : null}
-          </div>
-        ) : null}
-        {formulairesManquants.length > 0 ? (
-          <p className="mt-3 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-            Formulaires non encore générés : {formulairesManquants.join(", ")}
+            Aide à ma déclaration 2042-C-PRO
           </p>
-        ) : null}
-
-        {liasseRfs ? (
-          <div className="mt-6 border-t pt-6" style={{ borderColor: colors.border.subtle }}>
-            <p
-              className="text-center"
-              style={{
-                ...typography.caption.desktop,
-                color: colors.text.muted,
-                letterSpacing: typography.letterSpacing.label,
+          <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+            Guide pratique pour reporter vos montants dans votre déclaration.
+          </p>
+          <div className="mt-4">
+            <Button
+              variant="secondary"
+              disabled={!rfs}
+              onClick={() => {
+                if (!rfs) return;
+                downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }));
               }}
             >
-              Formulaires complémentaires
-            </p>
-            <p
-              className="mx-auto mt-2 max-w-lg text-center"
-              style={{ ...typography.caption.desktop, color: colors.text.muted }}
-            >
-              Représentation texte des cases calculées pour les formulaires 2031-bis, 2033-A, 2033-B et
-              2033-C — pas un rendu CERFA officiel.
-            </p>
-            <div className="mt-4 flex justify-center">
-              <Button
-                variant="ghost"
-                onClick={() => downloadLiasseRfsDocument(fiscalYear.year, liasseRfs)}
-              >
-                Télécharger les formulaires complémentaires
-              </Button>
-            </div>
+              Télécharger mon aide pour la déclaration 2042-C-PRO
+            </Button>
           </div>
-        ) : null}
-      </section>
+        </article>
+
+          <article
+            className="mt-4"
+            style={{
+              borderRadius: radius.lg,
+              border: `1px solid ${colors.border.selected}`,
+              backgroundColor: colors.surface.selected,
+              boxShadow: shadows.card.default,
+              padding: spacing.card.md,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: typography.fontFamily.display,
+                fontSize: typography.fontSize.xl,
+                color: colors.text.primary,
+              }}
+            >
+              Ma liasse fiscale
+            </p>
+            <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+              Votre dossier fiscal complet, avec le détail des calculs et les formulaires fiscaux.
+            </p>
+            <div className="mt-4 flex flex-col items-start gap-2">
+              <Button onClick={handleDownloadLiasseFiscale} disabled={liasseDownloading || !canDownloadLiasse}>
+                {liasseDownloading ? "Génération en cours…" : "Télécharger ma liasse fiscale"}
+              </Button>
+              {liasseDownloadError ? (
+                <p style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>{liasseDownloadError}</p>
+              ) : null}
+            </div>
+          </article>
+        </section>
 
       {canCloseThisFiscalYear ? (
         <section

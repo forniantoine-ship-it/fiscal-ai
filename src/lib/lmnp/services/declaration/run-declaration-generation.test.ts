@@ -196,8 +196,9 @@ describe("Cycle 25 — completude reflète réellement formulairesManquants", ()
 
 /**
  * P0-2 (audit 2026-09-02) — resolveFormulairesManquants() est la source de
- * vérité unique consommée par DeclarationReadyView/ValidationDocumentStep :
+ * vérité unique consommée par runDeclarationGeneration() (completude) :
  * préfère liasseRfs à liasseResult, jamais de fusion, jamais de recalcul.
+ * DeclarationReadyView et ValidationDocumentStep n'affichent plus cette liste.
  */
 describe("P0-2 — resolveFormulairesManquants() préfère liasseRfs à liasseResult (jamais de fusion)", () => {
   function liasseResultFixture(formulairesManquants: string[]) {
@@ -506,7 +507,7 @@ describe("Cycle 35 — runDeclarationGeneration() expose form2033A avec l'immobi
     assert.ok(case028, "028 doit être alimentée grâce à valeurTerrain transportée jusqu'à la RFS");
     assert.equal(case028?.value, 125136, "107175.61 + 17960.39, arrondi");
     assert.ok(case030, "030 doit être alimentée");
-    assert.equal(case030?.value, 121416, "125136 − 3720");
+    assert.equal(case030?.value, 3720, "030 = Σ amortissementsCumules");
 
     // Champs historiques inchangés par cet ajout additif.
     // P3-LIASSE-1A : 2033-D-SD est désormais dans formulairesGeneres (socle

@@ -171,7 +171,7 @@ export function appendClosure(fiscalYear: FiscalYear, closure: FiscalYearClosure
 }
 
 /** Dernière closure produite pour cet exercice — jamais une closure choisie au hasard. */
-export function latestClosure(fiscalYear: FiscalYear): FiscalYearClosure | undefined {
+export function latestClosure(fiscalYear: Pick<FiscalYear, "closures">): FiscalYearClosure | undefined {
   const closures = fiscalYear.closures ?? [];
   return closures.length > 0 ? closures[closures.length - 1] : undefined;
 }

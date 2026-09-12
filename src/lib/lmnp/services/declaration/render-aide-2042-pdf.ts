@@ -4,7 +4,7 @@ import type { ClientSummaryCase2042, ClientSummaryDocument } from "./build-clien
 
 /**
  * Rendu PDF de « Votre aide pour la déclaration 2042-C-PRO » — document
- * autonome, distinct de la synthèse fiscale (`render-client-summary-pdf.ts`).
+ * autonome, distinct de la liasse fiscale documentaire.
  *
  * Design validé (concept C — Assistant pas-à-pas). Trois principes non
  * négociables portés par ce fichier :
@@ -93,10 +93,10 @@ export function displayMontantForSaisir(c: ClientSummaryCase2042): string {
 
 /**
  * `toLocaleString("fr-FR")` produit un séparateur de milliers non standard
- * (espace fine insécable / insécable selon runtime) — même limitation que
- * `render-client-summary-pdf.ts` : Helvetica/Courier non embarqués ne les
- * rendent pas correctement dans tous les lecteurs. Remplacés par une espace
- * normale juste avant l'écriture, jamais dans les données du document.
+ * (espace fine insécable / insécable selon runtime) — Helvetica/Courier non
+ * embarqués ne les rendent pas correctement dans tous les lecteurs. Remplacés
+ * par une espace normale juste avant l'écriture, jamais dans les données du
+ * document.
  */
 function sanitizeForPdf(text: string): string {
   return text.replace(/[    ]/g, " ");

@@ -19,8 +19,8 @@ import type { FiscalResult, StockDeficit } from "@/runtime/capabilities/f006/typ
  * `dateMiseEnService`.
  *
  * Séparation volontaire : cette fonction produit une représentation
- * structurée et testable ; `render-client-summary-pdf.ts` transforme
- * ensuite cette représentation en PDF. Aucune logique métier dans le renderer.
+ * structurée et testable ; `render-aide-2042-pdf.ts` dispose `aide2042`
+ * en PDF client. Aucune logique métier dans le renderer.
  */
 
 function fmtEur(value: number): string {

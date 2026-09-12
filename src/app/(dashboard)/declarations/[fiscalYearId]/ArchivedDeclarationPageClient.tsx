@@ -59,10 +59,5 @@ export function ArchivedDeclarationPageClient({ fiscalYearId }: { fiscalYearId: 
     return <p className="text-center text-stone-500">Chargement…</p>;
   }
 
-  return (
-    <ArchivedDeclarationView
-      fiscalYear={state.record}
-      declarationDraft={state.record.declarationDraft ?? { completedSteps: [] }}
-    />
-  );
+  return <ArchivedDeclarationView record={state.record} />;
 }

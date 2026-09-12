@@ -48,7 +48,7 @@ export type LiasseCoverageMessage = {
 
 /**
  * P0-2a — texte affiché au client, source unique pour l'écran de confirmation
- * (ValidationDocumentStep) et l'espace déclaration (DeclarationReadyView) :
+ * (ValidationDocumentStep) :
  * jamais "liasse complète"/"documents officiels", jamais la liste détaillée
  * des `casesNonAlimentees` — un décompte factuel, plus un rappel de nature du
  * document.

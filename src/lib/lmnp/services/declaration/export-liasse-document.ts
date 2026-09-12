@@ -55,23 +55,6 @@ export function buildLiasseDocumentText(
   return lines.join("\n");
 }
 
-export function downloadLiasseDocument(
-  fiscalYear: number,
-  fiscalResult: FiscalEngineOutput,
-  liasseResult: LiasseEngineOutput,
-): void {
-  const content = buildLiasseDocumentText(fiscalYear, fiscalResult, liasseResult);
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `liasse-lmnp-${fiscalYear}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
 /**
  * Représentation texte des formulaires complémentaires (2031-bis, 2033-A/B/C)
  * assemblés depuis la RFS (P0-1 — audit 2026-09-02). Pas un rendu CERFA
@@ -95,17 +78,4 @@ export function buildLiasseRfsDocumentText(fiscalYear: number, liasseRfs: Liasse
   }
   lines.push(`Généré le ${new Date(liasseRfs.trace.assembledAt).toLocaleString("fr-FR")}`);
   return lines.join("\n");
-}
-
-export function downloadLiasseRfsDocument(fiscalYear: number, liasseRfs: LiasseFromRfs): void {
-  const content = buildLiasseRfsDocumentText(fiscalYear, liasseRfs);
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `liasse-lmnp-complementaire-${fiscalYear}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
 }
