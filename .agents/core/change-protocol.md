@@ -45,3 +45,29 @@ Vérifier :
 - dette historique éventuelle.
 
 Commit uniquement si explicitement demandé.
+
+## Knowledge & Skill Check (obligatoire en fin de mission)
+
+Avant de clore toute mission (tous modes), répondre dans le compte rendu :
+
+**A. Cette mission a-t-elle produit une connaissance stable et réutilisable ?**
+
+Si NON : ne rien capitaliser.
+
+**B. Si OUI, quelle est la nature de cette connaissance ?**
+
+- connaissance métier/fiscale durable → candidate pour le Knowledge System (`knowledge/`) ;
+- méthode opérationnelle réutilisable → candidate pour enrichissement d'un Skill ;
+- règle générale de fonctionnement des agents → candidate pour `.agents/core` ;
+- information utile uniquement à la mission courante → ne pas conserver.
+
+**C. Si un Skill doit évoluer**, choisir explicitement entre : enrichir / fusionner / remplacer / créer — la création reste le dernier choix (voir [skill-governance.md](skill-governance.md)).
+
+**Important — découverte ≠ vérité.** Une hypothèse ou conclusion non suffisamment prouvée ne doit jamais être promue automatiquement en connaissance persistante. Pour les connaissances fiscales :
+
+```
+découverte
+→ preuve / source / validation (voir fiscal-proof-standard.md)
+→ connaissance canonique
+→ utilisation éventuelle par un Skill
+```

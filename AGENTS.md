@@ -16,10 +16,12 @@ Lire, dans l'ordre :
 
 1. [.agents/core/project-principles.md](.agents/core/project-principles.md)
 2. [.agents/core/change-protocol.md](.agents/core/change-protocol.md)
-3. uniquement les règles supplémentaires nécessaires parmi [.agents/core/](.agents/core/) ;
+3. uniquement les règles supplémentaires nécessaires parmi [.agents/core/](.agents/core/) — notamment [skill-governance.md](.agents/core/skill-governance.md) avant de créer un Skill, et [memory-protocol.md](.agents/core/memory-protocol.md) pour une mission longue ;
 4. uniquement le ou les Skills pertinents — voir [.agents/skills/README.md](.agents/skills/README.md).
 
-Ne jamais charger automatiquement tous les Skills.
+Ne jamais charger automatiquement tous les Skills, ni tout le Knowledge System, ni tout l'historique de mission.
+
+En fin de mission, le Knowledge & Skill Check défini dans [change-protocol.md](.agents/core/change-protocol.md) est obligatoire.
 
 ## Modes
 

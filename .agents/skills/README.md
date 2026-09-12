@@ -2,6 +2,8 @@
 
 Un Skill représente une compétence ciblée. Un agent doit charger uniquement les Skills nécessaires au chantier en cours.
 
+Avant de créer, fusionner ou remplacer un Skill, appliquer [.agents/core/skill-governance.md](../core/skill-governance.md).
+
 Exemple — chantier Cerfa PDF :
 
 ```
