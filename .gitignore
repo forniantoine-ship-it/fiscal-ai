@@ -45,3 +45,15 @@ next-env.d.ts
 
 # temp experiment workspace
 /.tmp/
+
+# local editor state (not versioned)
+knowledge/.obsidian/
+
+# generated test output (not versioned)
+src/lib/lmnp/services/liasse-pdf/tests/output/
+
+# local Claude Code tool config (kept local for now, per PO decision)
+.claude/
+
+# local reference spreadsheet (kept local for now, per PO decision)
+scripts/cycle23-revenus-reel.xlsx
