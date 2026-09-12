@@ -11,6 +11,7 @@ export type F009Step =
   // Document-first path (spec "F009, Document d'Abord" §09) — the entry point since Étape 3.
   | "intro"
   | "no_document"
+  | "collect_identity"
   | "manual_profile"
   | "analyzing"
   | "analysis_failed"
@@ -181,6 +182,7 @@ export type F009Action =
   | { type: "resolve_conflict"; field: F009DocumentFieldKey; value: string }
   | { type: "continue_review" }
   | { type: "submit_siret_known"; known: boolean; siret?: string }
+  | { type: "submit_identity"; lastName: string; firstName: string }
   | { type: "submit_manual_profile_fields"; profile: Record<string, string> }
   | { type: "submit_manual_activity_date"; dateDebutActivite: string }
   | { type: "go_back" };

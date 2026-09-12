@@ -42,6 +42,12 @@ const MISE_EN_SERVICE_QUESTION =
 const ACTIVITY_START_DATE_QUESTION =
   "Quelle est la date officielle de début de votre activité (immatriculation) ?";
 
+const NO_SIRET_REASSURANCE =
+  "Pas de problème. Nous vous guiderons de manière personnalisée pour créer votre activité sur le site officiel de l'INPI. " +
+  "Pour l'instant, continuons votre dossier.";
+
+const IDENTITY_QUESTION = "Pour votre dossier fiscal, comment vous appelez-vous ?";
+
 function introPrompt(): F009Message {
   return {
     role: "assistant",
@@ -686,8 +692,52 @@ export class F009ActiviteAssistant {
           };
         }
 
-        const next = advance(state, patch, "manual_profile");
-        messages.push({ role: "assistant", content: "Complétons maintenant votre profil." });
+        if (action.known) {
+          const next = advance(state, patch, "manual_profile");
+          messages.push({ role: "assistant", content: "Complétons maintenant votre profil." });
+          return { state: next, messages, completed: false };
+        }
+
+        // Pas de SIRET / pas sûr : collecte fiscale (identité + dates), jamais le
+        // formulaire administratif ActiviteProfileFields. Ne déduit jamais
+        // not_started de l'absence de SIREN/SIRET.
+        const identityAlreadyKnown = Boolean(state.lastName?.trim() && state.firstName?.trim());
+        const nextStep = identityAlreadyKnown ? "collect_activity" : "collect_identity";
+        const next = advance(state, patch, nextStep);
+        messages.push({ role: "assistant", content: NO_SIRET_REASSURANCE });
+        messages.push({
+          role: "assistant",
+          content: identityAlreadyKnown ? ACTIVITY_START_DATE_QUESTION : IDENTITY_QUESTION,
+        });
+        return { state: next, messages, completed: false };
+      }
+
+      case "submit_identity": {
+        const lastName = action.lastName.trim();
+        const firstName = action.firstName.trim();
+        messages.push({ role: "user", content: `${firstName} ${lastName}`.trim() });
+        if (!lastName || !firstName) {
+          messages.push({
+            role: "assistant",
+            content: "Indiquez votre nom et votre prénom pour continuer.",
+          });
+          return { state, messages, completed: false };
+        }
+        const next = advance(
+          state,
+          {
+            lastName,
+            firstName,
+            confirmed: { ...state.confirmed, lastName: true, firstName: true },
+            fieldSources: {
+              ...state.fieldSources,
+              lastName: "manual",
+              firstName: "manual",
+            },
+          },
+          "collect_activity",
+        );
+        messages.push({ role: "assistant", content: ACTIVITY_START_DATE_QUESTION });
         return { state: next, messages, completed: false };
       }
 

@@ -118,6 +118,8 @@ function isLikelyNetworkError(err: unknown): boolean {
 /** Steps from which the manual path can still reach for a document (spec §04). */
 const DOCUMENT_FOUND_LATER_STEPS = new Set<F009State["step"]>([
   "no_document",
+  "collect_identity",
+  "collect_activity",
   "manual_profile",
   "ask_missing_data",
 ]);
@@ -226,6 +228,8 @@ export function F009ActiviteAssistantPanel() {
   const [messages, setMessages] = useState<F009Message[]>(initialTurn.messages);
 
   const [siretInput, setSiretInput] = useState("");
+  const [identityLastName, setIdentityLastName] = useState(initialTurn.state.lastName ?? "");
+  const [identityFirstName, setIdentityFirstName] = useState(initialTurn.state.firstName ?? "");
   const [dateDebutInput, setDateDebutInput] = useState("");
   const [dateMiseEnServiceInput, setDateMiseEnServiceInput] = useState("");
   const [manualDateInput, setManualDateInput] = useState("");
@@ -517,6 +521,7 @@ export function F009ActiviteAssistantPanel() {
   const showAnalysisFailed = state.step === "analysis_failed";
   const showReview = state.step === "review_extracted_data";
   const showNoDocument = state.step === "no_document";
+  const showIdentity = state.step === "collect_identity";
   const showManualProfile = state.step === "manual_profile";
   const manualProfileStage: "profile" | "date" = state.manualProfile?.stage === "date" ? "date" : "profile";
   const showOrientation = state.step === "orientation";
@@ -844,6 +849,36 @@ export function F009ActiviteAssistantPanel() {
                   </form>
                 )}
               </div>
+            ) : null}
+
+            {showIdentity ? (
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void runAction({
+                    type: "submit_identity",
+                    lastName: identityLastName,
+                    firstName: identityFirstName,
+                  });
+                }}
+              >
+                <FieldLabel>Nom</FieldLabel>
+                <FocusableInput
+                  value={identityLastName}
+                  onChange={(event) => setIdentityLastName(event.target.value)}
+                  autoComplete="family-name"
+                />
+                <FieldLabel>Prénom</FieldLabel>
+                <FocusableInput
+                  value={identityFirstName}
+                  onChange={(event) => setIdentityFirstName(event.target.value)}
+                  autoComplete="given-name"
+                />
+                <Button type="submit" disabled={busy || !identityLastName.trim() || !identityFirstName.trim()}>
+                  Continuer
+                </Button>
+              </form>
             ) : null}
 
             {showManualProfile && manualProfileStage === "profile" ? (

@@ -1,8 +1,13 @@
 /**
  * Run: npx tsx src/runtime/assistants/f009-activite/assistant.test.ts
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import type { ActiviteFieldProvenance } from "@/lib/lmnp/services/activite-field-provenance";
 import type { F009DocumentProjection } from "@/lib/documents/facts/f009-fact-projection";
+import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
+import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
 
 import { F009ActiviteAssistant } from "./assistant";
 import {
@@ -137,38 +142,60 @@ async function runTests(): Promise<void> {
     assertEqual(turn.state.step, "review_extracted_data", "reste bloqué en revue");
   });
 
-  await test("NO_DOCUMENT → MANUAL_PROFILE", async () => {
+  await test("NO_DOCUMENT + SIRET inconnu → COLLECT_IDENTITY, jamais MANUAL_PROFILE", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
     const turn = await assistant.handle(noDoc, { type: "submit_siret_known", known: false });
-    assertEqual(turn.state.step, "manual_profile", "step");
+    assertEqual(turn.state.step, "collect_identity", "step");
+    assertTrue(
+      turn.messages.some((m) => m.content.includes("Pas de problème")),
+      "message rassurant",
+    );
+    assertTrue(
+      !turn.messages.some((m) => m.content.includes("Complétons maintenant votre profil")),
+      "pas de cadrage administratif",
+    );
+    assertTrue(
+      !turn.messages.some((m) => m.content.toLowerCase().includes("profil inpi")),
+      "pas de jargon profil INPI",
+    );
+    assertEqual(turn.state.siret, undefined, "absence de SIRET ≠ donnée inventée");
+    assertEqual(turn.state.siren, undefined, "absence de SIREN ≠ donnée inventée");
   });
 
-  await test("MANUAL_PROFILE → ASK_MISSING_DATA", async () => {
+  await test("COLLECT_IDENTITY → COLLECT_ACTIVITY → MISE_EN_SERVICE", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    const manual = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
-    const turn = await assistant.handle(manual, {
-      type: "submit_manual_activity_date",
+    const identity = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    const named = (
+      await assistant.handle(identity, { type: "submit_identity", lastName: "Dupont", firstName: "Marie" })
+    ).state;
+    assertEqual(named.step, "collect_activity", "step");
+    assertEqual(named.lastName, "Dupont", "nom fiscal");
+    assertEqual(named.firstName, "Marie", "prénom fiscal");
+
+    const turn = await assistant.handle(named, {
+      type: "submit_activity",
       dateDebutActivite: "2024-01-15",
+      regimeFiscal: "reel_simplifie",
     });
-    assertEqual(turn.state.step, "ask_missing_data", "step");
+    assertEqual(turn.state.step, "mise_en_service", "step");
     assertEqual(turn.state.dateDebutActivite, "2024-01-15", "dateDebutActivite");
     assertTrue(turn.state.confirmed?.dateDebutActivite === true, "confirmed");
   });
 
-  await test("DOCUMENT_FOUND_LATER → ANALYZING (depuis MANUAL_PROFILE)", async () => {
+  await test("DOCUMENT_FOUND_LATER → ANALYZING (depuis COLLECT_IDENTITY)", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    const manual = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
-    const turn = await assistant.handle(manual, { type: "upload_document" });
+    const identity = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    const turn = await assistant.handle(identity, { type: "upload_document" });
     assertEqual(turn.state.step, "analyzing", "step");
   });
 
   await test("GO_BACK revient au point de contrôle précédent, sans RESTART global", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    const manual = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
-    assertEqual(manual.step, "manual_profile", "sanity: en manual_profile");
-    assertEqual(manual.manualProfile?.siretKnown, false, "sanity: siretKnown posé");
+    const identity = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    assertEqual(identity.step, "collect_identity", "sanity: en collect_identity");
+    assertEqual(identity.manualProfile?.siretKnown, false, "sanity: siretKnown posé");
 
-    const back = await assistant.handle(manual, { type: "go_back" });
+    const back = await assistant.handle(identity, { type: "go_back" });
     assertEqual(back.state.step, "no_document", "revient à NO_DOCUMENT, pas à intro");
     assertEqual(back.state.manualProfile?.siretKnown, false, "les données saisies restent en mémoire");
   });
@@ -418,19 +445,101 @@ async function runTests(): Promise<void> {
     assertEqual(afterDoc.state.conflicts?.siret?.newValue, "12345678901234", "conflit expose la valeur du document");
   });
 
-  await test("I. Parcours manuel complet (sans document), de bout en bout, reste fonctionnel", async () => {
+  await test("I. Parcours sans document ni SIRET, de bout en bout, jusqu'à complete", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    const manual = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
-    const missing = (
-      await assistant.handle(manual, { type: "submit_manual_activity_date", dateDebutActivite: "2024-01-10" })
+    const unknownSiret = await assistant.handle(noDoc, { type: "submit_siret_known", known: false });
+    assertTrue(
+      unknownSiret.messages.some((m) => m.content.includes("Pas de problème")),
+      "message rassurant dès l'absence de SIRET",
+    );
+    const named = (
+      await assistant.handle(unknownSiret.state, {
+        type: "submit_identity",
+        lastName: "Dupont",
+        firstName: "Marie",
+      })
+    ).state;
+    const dates = (
+      await assistant.handle(named, {
+        type: "submit_activity",
+        dateDebutActivite: "2024-01-10",
+        regimeFiscal: "reel_simplifie",
+      })
     ).state;
     const confirming = (
-      await assistant.handle(missing, { type: "submit_mise_en_service", dateMiseEnService: "2024-03-01" })
+      await assistant.handle(dates, { type: "submit_mise_en_service", dateMiseEnService: "2024-03-01" })
     ).state;
     assertEqual(confirming.step, "confirmation", "step");
+    assertEqual(confirming.dateDebutActivite, "2024-01-10", "dateDebutActivite conservée");
+    assertEqual(confirming.dateMiseEnService, "2024-03-01", "dateMiseEnService conservée");
     const complete = await assistant.handle(confirming, { type: "confirm" });
-    assertEqual(complete.state.step, "complete", "le parcours manuel se termine sans jamais avoir touché au document");
+    assertEqual(complete.state.step, "complete", "atteint complete sans formulaire administratif");
     assertTrue(complete.completed, "turn.completed");
+    assertEqual(complete.state.lastName, "Dupont", "nom prêt pour identite.denomination");
+    assertEqual(complete.state.firstName, "Marie", "prénom prêt pour identite.denomination");
+    assertUndefined(complete.state.siret, "pas de SIRET inventé");
+    assertUndefined(complete.state.siren, "pas de SIREN inventé ni not_started déduit");
+    const denomination = identiteFromDeclarationDraft(
+      {
+        exploitantLastName: complete.state.lastName,
+        exploitantFirstName: complete.state.firstName,
+      } as DeclarationDraft,
+      2026,
+    ).denomination;
+    assertEqual(denomination, "Marie Dupont", "identite.denomination reste disponible");
+  });
+
+  await test("SIRET connu (sans document) → MANUAL_PROFILE inchangé", async () => {
+    const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
+    const turn = await assistant.handle(noDoc, {
+      type: "submit_siret_known",
+      known: true,
+      siret: "99999999900009",
+    });
+    assertEqual(turn.state.step, "manual_profile", "step");
+    assertTrue(
+      turn.messages.some((m) => m.content.includes("Complétons maintenant votre profil")),
+      "cadrage profil conservé quand le SIRET est connu",
+    );
+  });
+
+  await test("Pas encore déclarée (orientation legacy) : collect_activity, pas de not_started", async () => {
+    const turn = await assistant.handle(createInitialF009State(), {
+      type: "select_orientation",
+      orientation: "not_yet",
+    });
+    assertEqual(turn.state.step, "collect_activity", "step");
+    assertEqual(turn.state.orientation, "not_yet", "signal administratif distinct conservé");
+    assertTrue(
+      turn.messages.some((m) => m.content.includes("n'est pas encore enregistrée")),
+      "accusé de réception du cas explicite",
+    );
+    assertTrue(turn.state.step !== "manual_profile", "ne bascule pas vers le formulaire administratif");
+    assertTrue(turn.state.step !== "collect_identity", "ne se confond pas avec « Non / je ne suis pas sûr »");
+  });
+
+  await test("Identité déjà connue : pas de SIRET saute collect_identity et pose les dates", async () => {
+    const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
+    const withName: F009State = { ...noDoc, lastName: "Martin", firstName: "Julie" };
+    const turn = await assistant.handle(withName, { type: "submit_siret_known", known: false });
+    assertEqual(turn.state.step, "collect_activity", "step");
+    assertEqual(turn.state.lastName, "Martin", "identité conservée");
+    assertTrue(
+      turn.messages.some((m) => m.content.includes("Pas de problème")),
+      "message rassurant",
+    );
+    assertTrue(
+      turn.messages.some((m) => m.content.includes("officielle de début")),
+      "enchaîne sur la date fiscale",
+    );
+  });
+
+  await test("submit_identity refuse un nom ou un prénom vide", async () => {
+    const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
+    const identity = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    const turn = await assistant.handle(identity, { type: "submit_identity", lastName: "  ", firstName: "Marie" });
+    assertEqual(turn.state.step, "collect_identity", "reste sur l'identité");
+    assertUndefined(turn.state.lastName, "nom vide non enregistré");
   });
 
   // ---------------------------------------------------------------------
@@ -478,13 +587,13 @@ async function runTests(): Promise<void> {
     );
   });
 
-  await test("4. Abandon en MANUAL_PROFILE : SIRET connu/inconnu restauré", async () => {
+  await test("4. Abandon en COLLECT_IDENTITY : SIRET inconnu restauré", async () => {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    const manual = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
-    const persisted = toF009PersistedState(manual, now());
+    const identity = (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    const persisted = toF009PersistedState(identity, now());
 
     const resumed = assistant.resume(persisted);
-    assertEqual(resumed.state.step, "manual_profile", "step");
+    assertEqual(resumed.state.step, "collect_identity", "step");
     assertEqual(resumed.state.manualProfile?.siretKnown, false, "sous-état manuel restauré");
   });
 
@@ -854,7 +963,9 @@ async function runTests(): Promise<void> {
 
   async function reachManualProfileStage(): Promise<F009State> {
     const noDoc = (await assistant.handle(createF009IntroState(), { type: "select_no_document" })).state;
-    return (await assistant.handle(noDoc, { type: "submit_siret_known", known: false })).state;
+    return (
+      await assistant.handle(noDoc, { type: "submit_siret_known", known: true, siret: "99999999900009" })
+    ).state;
   }
 
   /** Reproduit exactement la règle SIREN de `persistCompletion` (panel) — testée ici sans store React. */
@@ -898,7 +1009,13 @@ async function runTests(): Promise<void> {
   });
 
   await test("3. SIREN sans SIRET : conservé comme donnée valide", async () => {
-    const manualProfile = await reachManualProfileStage();
+    // Session reprise encore sur l'ancien écran administratif, sans SIRET.
+    const manualProfile: F009State = {
+      ...createF009IntroState(),
+      step: "manual_profile",
+      history: ["intro", "no_document"],
+      manualProfile: { siretKnown: false, stage: "profile" },
+    };
     assertUndefined(manualProfile.siret, "sanity : pas de SIRET (SIRET connu = non)");
 
     const submitted = (
@@ -1378,6 +1495,26 @@ async function runTests(): Promise<void> {
       }
     },
   );
+
+  await test("Panel F009 : identité fiscale sans ActiviteProfileFields, CTA Logement sur complete", () => {
+    const panel = readFileSync(
+      fileURLToPath(new URL("../../../components/lmnp/assistants/F009ActiviteAssistantPanel.tsx", import.meta.url)),
+      "utf8",
+    );
+    assertTrue(panel.includes('state.step === "collect_identity"'), "l'écran identité est branché");
+    assertTrue(panel.includes('type: "submit_identity"'), "soumission identité fiscale");
+    assertTrue(panel.includes("Continuer vers Logement"), "CTA Logement conservé");
+    assertTrue(panel.includes("showManualProfile && manualProfileStage === \"profile\""), "ActiviteProfileFields reste derrière MANUAL_PROFILE");
+    assertTrue(
+      !panel.includes("showIdentity &&") || panel.includes("showIdentity ?"),
+      "collect_identity a son propre formulaire",
+    );
+    const identityBlock = panel.slice(
+      panel.indexOf("{showIdentity ?"),
+      panel.indexOf("{showManualProfile && manualProfileStage === \"profile\""),
+    );
+    assertTrue(!identityBlock.includes("ActiviteProfileFields"), "pas de formulaire administratif sur l'absence de SIRET");
+  });
 
   console.log(`\n${passed}/${total} tests passés`);
   if (passed !== total) process.exit(1);
