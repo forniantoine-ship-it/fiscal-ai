@@ -676,4 +676,65 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
     );
     assert.notEqual(applicationF006.deficitsImputes, deficitImputeFormOrder);
   });
+
+  /**
+   * MICRO-JALON R5 — le test ci-dessus (`stockAmortissementsReportes: 0`)
+   * documente déjà la divergence déficits/amortissement de l'exercice, mais
+   * n'exerce jamais l'ARD (stock d'amortissements reportés d'exercices
+   * antérieurs) lui-même. Angle mort identifié par l'audit de couverture
+   * 2033-B précédent (scénario R5 : déficit antérieur ET ARD non nuls
+   * simultanément) : aucun test existant ne le couvrait avant ce jalon.
+   * Comportement actuel documenté, SAV-027 non modifié, aucune règle
+   * fiscale changée — ces deux tests appellent `applyAmortissementStocks`
+   * réellement, ils ne réimplémentent jamais son arithmétique.
+   */
+  it("R5-A — résultat insuffisant pour absorber déficit antérieur ET amortissement : l'ARD préexistant n'est jamais entamé", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 1000,
+      amortCalcule: 800,
+      stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
+      stockAmortissementsReportes: 500,
+    });
+    // Ordre SAV-027 : déficit antérieur imputé en premier (600, intégral —
+    // le stock est entièrement consommé, aucun reliquat).
+    assert.equal(result.deficitsImputes, 600);
+    assert.equal(result.stockDeficitsMisAJour.length, 0, "le déficit antérieur de 600 est intégralement consommé, aucun reliquat reporté");
+    // Il ne reste que 400 pour l'amortissement de l'exercice (800 calculé) :
+    // seule une partie est déduite, le reste rejoint le stock reporté.
+    assert.equal(result.amortDeduct, 400);
+    // Le `reste` est à 0 avant même d'atteindre l'étape ARD (3ᵉ priorité,
+    // SAV-027) : le stock préexistant de 500 n'est JAMAIS entamé.
+    assert.equal(result.amortReportesUtilises, 0, "l'ARD préexistant (500) n'est pas utilisé : le reste est déjà à 0 après déficit + amortissement");
+    // amortReporte (case 318) = (800 calculé − 400 déduit) + (500 ARD initial − 0 utilisé) = 900.
+    assert.equal(result.amortReporte, 900, "318 = 400 d'amortissement de l'exercice non déduit + 500 d'ARD préexistant intact");
+    assert.equal(result.stockAmortissementsReportesMisAJour, 900);
+    assert.equal(result.resultatFiscal, 0);
+    assert.equal(result.deficitNouveau, 0);
+  });
+
+  it("R5-B — résultat suffisant pour absorber les trois niveaux (déficit antérieur, amortissement de l'exercice, ARD) : démonstration complète de la frontière", () => {
+    const result = applyAmortissementStocks({
+      exercice: 2025,
+      resultatAvantAmort: 2000,
+      amortCalcule: 800,
+      stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
+      stockAmortissementsReportes: 500,
+    });
+    // 1. Déficit antérieur imputé en premier, intégralement (600, reste 1400).
+    assert.equal(result.deficitsImputes, 600);
+    assert.equal(result.stockDeficitsMisAJour.length, 0);
+    // 2. Amortissement de l'exercice déduit en second, intégralement (800, reste 600).
+    assert.equal(result.amortDeduct, 800);
+    // 3. ARD préexistant utilisé en dernier, intégralement (500, reste 100) —
+    // c'est la démonstration explicite de la CONSOMMATION de l'ARD, absente
+    // du scénario R5-A ci-dessus.
+    assert.equal(result.amortReportesUtilises, 500, "l'ARD préexistant est intégralement consommé une fois déficit et amortissement de l'exercice absorbés");
+    // amortReporte (case 318) = (800 − 800) + (500 − 500) = 0 : plus aucun stock reporté.
+    assert.equal(result.amortReporte, 0);
+    assert.equal(result.stockAmortissementsReportesMisAJour, 0);
+    // Résultat fiscal final : 2000 − 600 − 800 − 500 = 100.
+    assert.equal(result.resultatFiscal, 100);
+    assert.equal(result.deficitNouveau, 0);
+  });
 });

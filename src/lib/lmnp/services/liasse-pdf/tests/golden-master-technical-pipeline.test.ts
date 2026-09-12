@@ -140,10 +140,10 @@ describe("Golden master TECHNIQUE — pipeline PDF avec le mapper fiscal actuel 
     // ont été démontrées et calibrées (registry/2033-b/2026.ts) — plus
     // aucune case exclue pour 2033-B-SD / millésime 2026.
     assert.equal(result.excludedCases.length, 0, "plus aucune case exclue — 330, 350 et 300 sont désormais calibrées et rendues");
-    assert.deepEqual(result.excludedCases, []);
     assert.ok(!result.excludedCases.some((e) => e.caseId === "330"), "330 ne doit plus apparaître dans excludedCases (MICRO-JALON calibration 330)");
     assert.ok(!result.excludedCases.some((e) => e.caseId === "350"), "350 ne doit plus apparaître dans excludedCases (MICRO-JALON implémentation 350)");
     assert.ok(!result.excludedCases.some((e) => e.caseId === "300"), "300 ne doit plus apparaître dans excludedCases (MICRO-JALON implémentation 300)");
+    assert.deepEqual(result.excludedCases, []);
 
     // --- Page 1 (2031-SD) — extraction réelle du texte écrit ------------
     const page1Text = await extractDrawnStringsForPage(result.pdfBytes, 1);

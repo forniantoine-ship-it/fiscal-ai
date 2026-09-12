@@ -155,4 +155,10 @@ describe("Cycle 26 — buildFiscalRepresentation() n'invente ni ne recalcule rie
     assert.equal(rfs.immobilisations?.dateMiseEnService, undefined, "compatibilité ascendante — pas de valeur par défaut");
     assert.equal(rfs.immobilisations?.composantsNouveaux, undefined, "absence de F-012 ≠ tableau vide inventé");
   });
+
+  it("P1-PDF-02-E — patrimoine absent → RFS.patrimoine undefined, jamais un état inventé", () => {
+    const rfs = buildFiscalRepresentation({ fiscalResult: fiscalResult(), identite: IDENTITE });
+    assert.equal(rfs.patrimoine, undefined);
+    assert.equal(rfs.trace.sources.patrimoine, undefined);
+  });
 });
