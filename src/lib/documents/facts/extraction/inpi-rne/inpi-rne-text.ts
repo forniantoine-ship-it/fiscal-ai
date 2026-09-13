@@ -66,7 +66,7 @@ export function parseMultilineAddress(text: string, startIndex: number): { value
       continue;
     }
     if (/^Données issues de la reprise/i.test(line)) break;
-    if (/^Type d'établissement/i.test(line)) break;
+    if (/^(?:Type d'établissement|Nature de l'établissement pour l'entreprise)/i.test(line)) break;
     if (/^Cet établissement a été fermé/i.test(line)) break;
     if (/^Page \d+\/\d+/i.test(line)) break;
     if (/^Inscriptions au RNE/i.test(line)) break;

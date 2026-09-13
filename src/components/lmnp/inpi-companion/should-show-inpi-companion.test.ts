@@ -81,13 +81,13 @@ describe("Intégration — Activité monte F009 toujours, Companion seulement si
   it("importe shouldShowInpiCompanion et F009ActiviteAssistantPanel", () => {
     assert.match(PAGE_SOURCE, /shouldShowInpiCompanion/);
     assert.match(PAGE_SOURCE, /F009ActiviteAssistantPanel/);
-    assert.match(FUNCTIONAL_PAGE, /<F009ActiviteAssistantPanel \/>/);
+    assert.match(FUNCTIONAL_PAGE, /<F009ActiviteAssistantPanel key=\{workspace\.fiscalYear\.id\} \/>/);
   });
 
   it("InpiCompanionPanel n'est rendu que derrière shouldShowInpiCompanion", () => {
     assert.match(
       FUNCTIONAL_PAGE,
-      /shouldShowInpiCompanion\(dossierInpiStatus\?\.status\)\s*\?\s*<InpiCompanionPanel \/>\s*:\s*null/,
+      /shouldShowInpiCompanion\(dossierInpiStatus\?\.status\)\s*\?\s*<section id="activite-inpi-companion" aria-label="Compagnon INPI"><InpiCompanionPanel \/><\/section>\s*:\s*null/,
     );
   });
 });

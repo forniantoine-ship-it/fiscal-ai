@@ -1,14 +1,18 @@
 import type { F009DocumentProjection } from "@/lib/documents/facts/f009-fact-projection";
 
+export type F009QuestionStep = "identifier" | "identity" | "address" | "activity_date" | "service_date";
+
 export type F009Step =
-  // Legacy manual-entry path (unchanged)
+  | F009QuestionStep
+  | "situation" | "document" | "pending_registration" | "review" | "edit"
+  // Legacy persisted steps, migrated on restore; no V1 UI remains.
   | "orientation"
   | "collect_siret"
   | "collect_activity"
   | "mise_en_service"
   | "confirmation"
   | "complete"
-  // Document-first path (spec "F009, Document d'Abord" §09) — the entry point since Étape 3.
+  // Legacy and shared document steps.
   | "intro"
   | "no_document"
   | "collect_identity"
@@ -69,7 +73,17 @@ export type F009ManualProfileState = {
 
 export type F009AnalysisFailureCause = "unrecognized" | "ocr_failed" | "network";
 
-export interface F009State {
+export interface F009V2Progress {
+  version?: 2;
+  registration?: "yes" | "no" | "unknown";
+  deferred?: boolean;
+  editing?: boolean;
+  inputs?: Partial<Record<F009Step, Record<string, string>>>;
+  resolutions?: Array<{ field: F009DocumentFieldKey; previous?: string; proposed?: string; selected: string; documentId?: string }>;
+}
+
+export interface F009State extends F009V2Progress {
+  error?: string;
   step: F009Step;
   orientation?: F009Orientation;
   siret?: string;
@@ -121,10 +135,11 @@ export interface F009State {
  * The subset of `F009State` worth persisting across a reload (Étape 4, spec §11/§12).
  * Deliberately excludes purely visual/derived fields — `explanation`/`prorataPercent`
  * are recomputed on resume rather than cached, and `fieldSources` (legacy, unread
- * elsewhere) is dropped. `declarationDraft` stays the business source of truth; this
- * is session/resume state only, never a second store for siret/dates themselves.
+ * elsewhere) is dropped. This structured draft substate holds collected values,
+ * review decisions and navigation until validation copies known values to the
+ * downstream declaration fields. It never stores a conversational transcript.
  */
-export type F009PersistedState = {
+export type F009PersistedState = F009V2Progress & {
   step: F009Step;
   siret?: string;
   siren?: string;
@@ -163,7 +178,17 @@ export interface F009Message {
 }
 
 export type F009Action =
-  // Legacy manual-entry path (unchanged)
+  | { type: "select_registration"; value: "yes" | "no" | "unknown" }
+  | { type: "manual" }
+  | { type: "defer" }
+  | { type: "review_all" }
+  | { type: "edit" }
+  | { type: "edit_question"; step: F009QuestionStep }
+  | { type: "stage_input"; values: Record<string, string> }
+  | { type: "answer"; values: Record<string, string> }
+  | { type: "siret_obtained"; siret: string }
+  | { type: "select_establishment"; siret: string }
+  // Legacy persisted steps, migrated on restore; no V1 UI remains.
   | { type: "select_orientation"; orientation: F009Orientation }
   | { type: "submit_siret"; siret: string }
   | { type: "submit_activity"; dateDebutActivite: string; regimeFiscal: "reel_simplifie" | "reel_normal" }
@@ -203,7 +228,8 @@ export function createInitialF009State(): F009State {
 /** Entry point for the document-first path (spec §02/§09) — what `start()` returns. */
 export function createF009IntroState(): F009State {
   return {
-    step: "intro",
+    version: 2,
+    step: "situation",
     fieldSources: {},
   };
 }
@@ -211,6 +237,12 @@ export function createF009IntroState(): F009State {
 /** Serializes the parts of a live F009State worth resuming later (Étape 4). */
 export function toF009PersistedState(state: F009State, updatedAt: string): F009PersistedState {
   return {
+    version: 2,
+    registration: state.registration,
+    deferred: state.deferred,
+    editing: state.editing,
+    inputs: state.inputs,
+    resolutions: state.resolutions,
     step: state.step,
     siret: state.siret,
     siren: state.siren,
@@ -239,10 +271,9 @@ export function toF009PersistedState(state: F009State, updatedAt: string): F009P
 }
 
 /**
- * Whether a persisted session is worth resuming (vs. starting fresh). No progress
- * (`intro`) and finished sessions (`complete`, covered instead by the existing
- * siret+dates completion shortcut) are both "nothing to resume" (spec §11, point 8).
+ * Every stored session is restorable, including completed sessions without SIRET.
+ * restoreF009 handles migration; completeness is never guessed from three fields.
  */
 export function shouldResumeF009(persisted: F009PersistedState | undefined): boolean {
-  return Boolean(persisted && persisted.step !== "intro" && persisted.step !== "complete");
+  return Boolean(persisted);
 }

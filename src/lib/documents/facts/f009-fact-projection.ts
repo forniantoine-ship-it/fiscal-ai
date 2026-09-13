@@ -32,9 +32,12 @@ export type F009SiretCandidate = {
   entityId: string;
   establishmentType?: string;
   evidence?: string;
+  address?: string;
 };
 
 export type F009DocumentProjection = {
+  siren?: string;
+  activityStartDateCandidates?: string[];
   /** Resolved SIRET, set only when exactly one active establishment is found. */
   siret?: string;
   siretProvenance: ActiviteFieldProvenance;
@@ -127,6 +130,7 @@ function findActiveSiretCandidates(facts: readonly DocumentFact[]): F009SiretCan
       entityId: siretFact.entityId,
       establishmentType: typeFact?.value,
       evidence: siretFact.evidence?.snippet,
+      address: resolveFactForType(facts, "address.establishment", { entityId: siretFact.entityId })?.value,
     });
   }
 
@@ -192,18 +196,8 @@ function projectActivityStartDate(facts: readonly DocumentFact[]): {
     };
   }
 
-  const datesAmbiguous = Boolean(
-    immatriculationDateRaw && immatriculationDateRaw !== activityStartDateRaw,
-  );
-
-  if (datesAmbiguous) {
-    return {
-      activityStartDateProvenance: missingInpiFieldProvenance(),
-      activityStartDateRaw,
-      immatriculationDateRaw,
-      datesAmbiguous: true,
-    };
-  }
+  // Different concepts are not conflicting candidates: RNE activity start is
+  // the 2031 input (TRF-0034); registration is retained only as source context.
 
   return {
     activityStartDate: activityStartDateRaw,
@@ -222,6 +216,13 @@ export function projectDocumentFactsToF009(
   const facts = extraction.facts;
   const siret = projectSiret(facts);
   const dates = projectActivityStartDate(facts);
+  const activityStartDateCandidates = [...new Set(findFactsByType(facts, "registry.activity_start_date")
+    .filter((fact) => !fact.entityId && (fact.status === "extracted" || fact.status === "proposed"))
+    .map((fact) => normalizeFrenchDateToIso(fact.value)).filter((value): value is string => Boolean(value)))];
+  if (activityStartDateCandidates.length > 1) {
+    dates.activityStartDate = undefined;
+    dates.datesAmbiguous = true;
+  }
 
   // Reuses Tunnel A's own projection — same facts, same pairing rules, same
   // provenance — rather than re-deriving these 6 fields from raw facts here.
@@ -230,6 +231,8 @@ export function projectDocumentFactsToF009(
   return {
     ...siret,
     ...dates,
+    activityStartDateCandidates,
+    siren: formValues.siren,
     lastName: formValues.lastName,
     lastNameProvenance: fieldProvenance.lastName ?? missingInpiFieldProvenance(),
     firstName: formValues.firstName,
@@ -246,7 +249,7 @@ export function projectDocumentFactsToF009(
     personalAddressProvenance: fieldProvenance.personalAddress ?? missingInpiFieldProvenance(),
     personalAddressCity: formValues.personalCity,
     personalAddressPostalCode: formValues.personalPostalCode,
-    establishmentAddress: formatAddressLine(
+    establishmentAddress: siret.siretAmbiguous ? undefined : siret.siretCandidates[0]?.address ?? formatAddressLine(
       formValues.establishmentAddress,
       formValues.establishmentPostalCode,
       formValues.establishmentCity,

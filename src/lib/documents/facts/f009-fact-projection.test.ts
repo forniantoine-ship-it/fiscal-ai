@@ -151,15 +151,15 @@ function runTests(): void {
     assertEqual(result.immatriculationDateRaw, "2024-03-05", "immatriculationDateRaw");
   });
 
-  test("Dates : activity_start_date et immatriculation_date différentes → ambigu, non résolu automatiquement", () => {
+  test("Dates : activity_start_date et immatriculation_date différentes → début d’activité conservé, concepts distincts", () => {
     const extraction = buildExtraction([
       companyFact("registry.activity_start_date", "05/03/2024"),
       companyFact("registry.immatriculation_date", "12/01/2024"),
     ]);
     const result = projectDocumentFactsToF009(extraction);
-    assertEqual(result.activityStartDate, undefined, "activityStartDate");
-    assertEqual(result.activityStartDateProvenance.status, "missing", "activityStartDateProvenance.status");
-    assertTrue(result.datesAmbiguous, "datesAmbiguous");
+    assertEqual(result.activityStartDate, "2024-03-05", "activityStartDate");
+    assertEqual(result.activityStartDateProvenance.status, "extracted", "activityStartDateProvenance.status");
+    assertEqual(result.datesAmbiguous, false, "datesAmbiguous");
     assertEqual(result.activityStartDateRaw, "2024-03-05", "activityStartDateRaw");
     assertEqual(result.immatriculationDateRaw, "2024-01-12", "immatriculationDateRaw");
   });

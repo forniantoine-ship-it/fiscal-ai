@@ -1,902 +1,312 @@
-import { formatAddressLine } from "@/lib/documents/facts/f009-fact-projection";
-
-import { explainMiseEnService } from "../../capabilities/f009/explain-mise-en-service";
-import { validateActiviteDates } from "../../capabilities/f009/validate-activite-dates";
+import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
+import type { InpiStatus } from "@/lib/lmnp/types/dossier";
+import { isValidSiren } from "@/lib/documents/extractors/inpi-extraction.helpers";
+import { parseAddressComponents } from "@/lib/documents/facts/derivation/rules/address-parse";
+import { extractAddressLine, formatAddressLine, type F009DocumentProjection } from "@/lib/documents/facts/f009-fact-projection";
 import { validateSiret } from "../../capabilities/f009/validate-siret";
+import { validateActiviteDates } from "../../capabilities/f009/validate-activite-dates";
+import { explainMiseEnService } from "../../capabilities/f009/explain-mise-en-service";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
-import {
-  ALL_F009_DOCUMENT_FIELD_KEYS,
-  createF009IntroState,
-  type F009Action,
-  type F009AssistantTurn,
-  type F009DocumentFieldKey,
-  type F009FieldConflict,
-  type F009Message,
-  type F009Orientation,
-  type F009PersistedState,
-  type F009State,
-  type F009Step,
-  type F009Suggestion,
-} from "./types";
+import { ALL_F009_DOCUMENT_FIELD_KEYS, toF009PersistedState, type F009Action, type F009AssistantTurn, type F009DocumentFieldKey, type F009PersistedState, type F009QuestionStep, type F009State, type F009Step } from "./types";
 
-const ORIENTATION_SUGGESTIONS: F009Suggestion[] = [
-  { id: "registered_siret", label: "Oui, et j'ai mon SIRET" },
-  { id: "registered_no_siret", label: "Oui, mais je n'ai pas mon SIRET" },
-  { id: "not_sure", label: "Je ne suis pas sûr" },
-  { id: "not_yet", label: "Pas encore déclarée" },
-];
-
-const INTRO_SUGGESTIONS: F009Suggestion[] = [
-  { id: "upload_document", label: "Importer mon extrait INPI" },
-  { id: "select_no_document", label: "Je n'ai pas ce document" },
-];
-
-const CONFIRMATION_SUGGESTIONS: F009Suggestion[] = [
-  { id: "confirm", label: "Oui, tout est correct" },
-  { id: "restart", label: "Recommencer" },
-];
-
-const MISE_EN_SERVICE_QUESTION =
-  "Quand avez-vous loué ce bien pour la première fois — ou quand prévoyez-vous de le louer ?";
-
-const ACTIVITY_START_DATE_QUESTION =
-  "Quelle est la date officielle de début de votre activité (immatriculation) ?";
-
-const NO_SIRET_REASSURANCE =
-  "Pas de problème. Nous vous guiderons de manière personnalisée pour créer votre activité sur le site officiel de l'INPI. " +
-  "Pour l'instant, continuons votre dossier.";
-
-const IDENTITY_QUESTION = "Pour votre dossier fiscal, comment vous appelez-vous ?";
-
-function introPrompt(): F009Message {
+export * from "./types";
+export const F009_QUESTIONS: Record<F009QuestionStep, { title: string; help: string }> = {
+  identifier: { title: "Quel est votre numéro SIRET ?", help: "14 chiffres. Si vous connaissez uniquement votre SIREN, vous pouvez indiquer ses 9 chiffres. Aucun SIREN supplémentaire ne sera demandé." },
+  identity: { title: "Quels sont vos nom et prénom ?", help: "L’identité de la personne qui prépare sa déclaration de location meublée." },
+  address: { title: "Quelle est l’adresse de votre activité ?", help: "L’adresse de l’établissement déclarée pour votre activité. Elle peut être différente de celle du logement loué." },
+  activity_date: { title: "Quelle est la date de début de votre activité ?", help: "La date de début d’activité déclarée au RNE. Elle peut être différente de la date d’immatriculation et de la disponibilité du logement." },
+  service_date: { title: "À quelle date votre logement était-il disponible à la location ?", help: "Indiquez la date à laquelle le logement était prêt à être loué, même si le premier locataire est arrivé plus tard. Il ne s’agit pas d’une date prévisionnelle." },
+};
+export function isQuestionStep(step: F009Step): step is F009QuestionStep { return step in F009_QUESTIONS; }
+export function validActivityDate(value?: string): boolean {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+export function hasIdentifier(state: F009State): boolean {
+  return Boolean((state.siret && validateSiret({ siret: state.siret }).valid) || (state.siren && isValidSiren(state.siren)));
+}
+export function nextMissingQuestion(state: F009State): F009QuestionStep | undefined {
+  if (!hasIdentifier(state) && !state.deferred) return "identifier";
+  if (!state.lastName?.trim() || !state.firstName?.trim()) return "identity";
+  if (!state.establishmentAddress?.trim() && !state.personalAddress?.trim()) return "address";
+  if (!validActivityDate(state.dateDebutActivite)) return "activity_date";
+  if (!validActivityDate(state.dateMiseEnService)) return "service_date";
+  return undefined;
+}
+export function hasF009Decisions(state: F009State): boolean {
+  return Object.values(state.conflicts ?? {}).some(Boolean) || Boolean(state.review?.siretAmbiguous || state.review?.datesAmbiguous);
+}
+function advance(state: F009State, step: F009Step, patch: Partial<F009State> = {}): F009State {
+  return { ...state, ...patch, step, error: undefined, history: [...(state.history ?? []), state.step] };
+}
+function turn(state: F009State, completed = false): F009AssistantTurn { return { state, messages: [], completed }; }
+function fail(state: F009State, error: string): F009AssistantTurn { return turn({ ...state, error }); }
+function same(a?: string, b?: string): boolean { return (a ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("fr") === (b ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("fr"); }
+function sameField(field: F009DocumentFieldKey, a?: string, b?: string): boolean {
+  if (!field.endsWith("Address")) return same(a, b);
+  const canonical = (value?: string) => {
+    const parts = parseAddressComponents(value ?? "");
+    return [parts.line, parts.postalCode, parts.city, parts.country].filter(Boolean).join(" ");
+  };
+  return same(canonical(a), canonical(b));
+}
+function addressPatch(field: "personalAddress" | "establishmentAddress", value: string): Partial<F009State> {
+  const parsed = parseAddressComponents(value);
+  return { [field]: value.trim(), [`${field}City`]: parsed.city, [`${field}PostalCode`]: parsed.postalCode };
+}
+function setValue(state: F009State, field: F009DocumentFieldKey, value: string): F009State {
+  let next: F009State = { ...state, [field]: value.trim(), confirmed: { ...state.confirmed, [field]: true }, conflicts: { ...state.conflicts, [field]: undefined } };
+  if (field === "personalAddress" || field === "establishmentAddress") next = { ...next, ...addressPatch(field, value) };
+  if (field === "siret") next.siren = value.slice(0, 9);
+  if (field === "dateDebutActivite" && !same(value, state.dateDebutActivite) && state.dateMiseEnService) {
+    // A changed RNE start date can make the previously declared availability date
+    // (disponibilité à la location, RAI-003) incoherent with it — validateActiviteDates
+    // rejects dateMiseEnService < dateDebutActivite. Never leave a stale value silently
+    // re-confirmed at "confirm": clear it so the user is asked again (garde-fou dates).
+    next.dateMiseEnService = undefined;
+    next.confirmed = { ...next.confirmed, dateMiseEnService: false };
+  }
+  return next;
+}
+function validateField(field: F009DocumentFieldKey, raw: string): string | undefined {
+  if (!raw.trim()) return "Indiquez une valeur avant de continuer.";
+  if (field === "siret") return validateSiret({ siret: raw }).error;
+  if (field === "dateDebutActivite" && !validActivityDate(raw)) return "Indiquez une date de début d’activité valide.";
+  return undefined;
+}
+function mergeProjection(state: F009State, projection: F009DocumentProjection): F009State {
+  let next: F009State = { ...state, review: { ...projection }, confirmed: { ...state.confirmed }, conflicts: { ...state.conflicts } };
+  const incoming = { ...projection, dateDebutActivite: projection.activityStartDate };
+  for (const field of ALL_F009_DOCUMENT_FIELD_KEYS) {
+    const value = incoming[field];
+    if (!value?.trim()) continue;
+    // Optional contacts never create an extra decision. Keep the existing contact on contradiction.
+    if (field === "email" || field === "telephone") {
+      if (!state[field]) next[field] = value;
+      continue;
+    }
+    const current = state[field];
+    const decided = [...(state.resolutions ?? [])].reverse().find((r) => r.field === field && r.documentId === state.analyzingDocumentId && same(r.proposed, value) && same(r.selected, current));
+    if (decided) continue;
+    if (current && !sameField(field, current, value)) {
+      next.conflicts![field] = { confirmedValue: current, newValue: value };
+    } else if (!current) {
+      next = setValue(next, field, value);
+      next.confirmed = { ...next.confirmed, [field]: false };
+    }
+  }
+  if (!next.siret && !next.siren && projection.siren && isValidSiren(projection.siren)) next.siren = projection.siren;
+  if (next.siret && validateSiret({ siret: next.siret }).valid) next.siren = next.siret.slice(0, 9);
+  return next;
+}
+function seedDraft(draft?: DeclarationDraft): Partial<F009State> {
+  if (!draft) return {};
+  const address = (line?: string, zip?: string, city?: string) => formatAddressLine(extractAddressLine(line, zip, city), zip, city);
   return {
-    role: "assistant",
-    content:
-      "Pour démarrer votre dossier d'activité LMNP, avez-vous votre extrait INPI sous la main ? " +
-      "En quelques secondes, nous pouvons en tirer l'essentiel — SIRET, date de début d'activité, et vos coordonnées.",
-    suggestions: INTRO_SUGGESTIONS,
+    siret: draft.siret, siren: draft.siret && validateSiret({ siret: draft.siret }).valid ? draft.siret.slice(0, 9) : draft.siren,
+    lastName: draft.exploitantLastName, firstName: draft.exploitantFirstName, email: draft.exploitantEmail, telephone: draft.exploitantTelephone,
+    personalAddress: address(draft.personalAddress ?? draft.entrepreneurAddress, draft.personalPostalCode ?? draft.entrepreneurPostalCode, draft.personalCity ?? draft.entrepreneurCity),
+    personalAddressCity: draft.personalCity ?? draft.entrepreneurCity, personalAddressPostalCode: draft.personalPostalCode ?? draft.entrepreneurPostalCode,
+    establishmentAddress: address(draft.establishmentAddress, draft.establishmentPostalCode, draft.establishmentCity), establishmentAddressCity: draft.establishmentCity, establishmentAddressPostalCode: draft.establishmentPostalCode,
+    dateDebutActivite: draft.activityStartDate, dateMiseEnService: draft.dateMiseEnService,
   };
 }
-
-function orientationAck(orientation: F009Orientation): string {
-  switch (orientation) {
-    case "registered_siret":
-      return "Parfait. Indiquez votre numéro SIRET — nous vérifierons le format avant toute recherche.";
-    case "registered_no_siret":
-      return "Pas de souci. Nous allons saisir les informations essentielles à la main.";
-    case "not_sure":
-      // P1 — INPI sur Validation : message explicite (audit F009/F011-F014,
-      // 2026) — l'absence d'enregistrement INPI ne bloque jamais le tunnel
-      // fiscal ; l'accompagnement dédié arrive à l'étape Validation, jamais
-      // ici (F009 reste une saisie guidée, pas un assistant INPI complet).
-      return "Nous allons avancer ensemble, étape par étape, avec une saisie guidée. Votre situation INPI n'est pas encore claire pour vous ? Cela ne vous empêche pas de poursuivre la préparation de votre dossier fiscal — nous vous accompagnerons dans cette démarche à l'étape Validation.";
-    case "not_yet":
-      // P1 — même principe : voir le commentaire de "not_sure" ci-dessus.
-      return "Votre activité n'est pas encore enregistrée auprès de l'INPI. Cela ne vous empêche pas de poursuivre la préparation de votre dossier fiscal — nous vous accompagnerons dans cette démarche à l'étape Validation. Vous pourrez poursuivre votre dossier dès maintenant : indiquez une date prévisionnelle si votre bien n'est pas encore loué.";
+const LEGACY_STEPS: Partial<Record<F009Step, F009Step>> = {
+  intro: "situation", orientation: "situation", no_document: "document", collect_siret: "identifier", collect_identity: "identity", collect_activity: "activity_date", mise_en_service: "service_date", confirmation: "review", review_extracted_data: "review", manual_profile: "review", ask_missing_data: "review",
+};
+export function restoreF009(draft?: DeclarationDraft, status?: InpiStatus): F009State {
+  const saved = draft?.activiteAssistantState;
+  const known = Object.fromEntries(Object.entries(seedDraft(draft)).filter(([, value]) => value !== undefined));
+  let state: F009State = { version: 2, step: "situation", fieldSources: {}, ...known, ...saved };
+  // An absent legacy session value must never erase a value in the dossier.
+  for (const [key, value] of Object.entries(known)) if (state[key as keyof F009State] === undefined) Object.assign(state, { [key]: value });
+  state.version = 2;
+  state.conflicts = { ...state.conflicts, email: undefined, telephone: undefined };
+  state.step = LEGACY_STEPS[state.step] ?? state.step;
+  state.history = (saved?.history ?? []).map((step) => LEGACY_STEPS[step] ?? step).filter((step) => step !== "analyzing");
+  state.registration ??= status === "registered" ? "yes" : status === "not_started" ? "no" : undefined;
+  if (!saved && draft?.inpiConfirmedAt) state.step = "complete";
+  if (!saved && !draft?.inpiConfirmedAt && hasIdentifier(state)) { state.registration ??= "yes"; state.step = "review"; }
+  if (state.step === "complete" && !state.siret) state.deferred = true;
+  // The companion writes the obtained SIRET to the draft, independently of F009.
+  if (draft?.siret && validateSiret({ siret: draft.siret }).valid && saved?.deferred && saved.siret !== draft.siret) {
+    state = { ...state, siret: draft.siret, siren: draft.siret.slice(0, 9), registration: "yes", deferred: false, step: "review", history: [...(state.history ?? []), "complete"] };
   }
-}
-
-function orientationLabel(orientation: F009Orientation): string {
-  return ORIENTATION_SUGGESTIONS.find((s) => s.id === orientation)?.label ?? orientation;
-}
-
-function fieldLabel(field: F009DocumentFieldKey): string {
-  switch (field) {
-    case "siret":
-      return "le SIRET";
-    case "dateDebutActivite":
-      return "la date de début d'activité";
-    case "lastName":
-      return "le nom";
-    case "firstName":
-      return "le prénom";
-    case "email":
-      return "l'email";
-    case "telephone":
-      return "le téléphone";
-    case "personalAddress":
-      return "l'adresse personnelle";
-    case "establishmentAddress":
-      return "l'adresse de l'établissement";
+  if (state.review?.datesAmbiguous && !state.review.activityStartDateCandidates && state.review.activityStartDateRaw) {
+    // V1 compared two different concepts. Retain the RNE activity date, never substitute immatriculation.
+    state.review = { ...state.review, datesAmbiguous: false, activityStartDate: state.review.activityStartDateRaw };
+    state.dateDebutActivite ??= state.review.activityStartDateRaw;
   }
+  return state;
 }
-
-/** Reads the current value of a document/manual field from state, by key. */
-function readF009Field(state: F009State, key: F009DocumentFieldKey): string | undefined {
-  switch (key) {
-    case "siret":
-      return state.siret;
-    case "dateDebutActivite":
-      return state.dateDebutActivite;
-    case "lastName":
-      return state.lastName;
-    case "firstName":
-      return state.firstName;
-    case "email":
-      return state.email;
-    case "telephone":
-      return state.telephone;
-    case "personalAddress":
-      return state.personalAddress;
-    case "establishmentAddress":
-      return state.establishmentAddress;
-  }
-}
-
-function analysisFailureMessage(cause: F009State["analysisFailureCause"]): string {
-  switch (cause) {
-    case "network":
-      return "La connexion a été interrompue pendant l'analyse. Vérifiez votre connexion, puis réessayez — ou continuez sans document.";
-    case "unrecognized":
-      return "Ce document ne ressemble pas à un extrait INPI. Vérifiez qu'il s'agit bien du bon fichier, ou continuez sans document.";
-    case "ocr_failed":
-    default:
-      return "Nous n'avons pas pu lire ce document. Vous pouvez réessayer, ou continuer sans document.";
-  }
-}
-
-/**
- * Pushes the step being left onto the history stack and applies the given patch —
- * the single place every forward transition goes through, so GO_BACK (garde-fou 1)
- * works uniformly across the legacy and document-first paths alike.
- */
-function advance(state: F009State, patch: Partial<F009State>, nextStep: F009Step): F009State {
-  return {
-    ...state,
-    ...patch,
-    step: nextStep,
-    history: [...(state.history ?? []), state.step],
+/** Writes only known values; absence is never an instruction to erase a profile. */
+export function f009DraftPatch(state: F009State, now: string, completed: boolean): Partial<DeclarationDraft> {
+  const patch: Partial<DeclarationDraft> = { activiteAssistantState: toF009PersistedState(state, now) };
+  if (!completed) return patch;
+  const entries = {
+    siret: state.siret, siren: state.siret && validateSiret({ siret: state.siret }).valid ? state.siret.slice(0, 9) : state.siren,
+    exploitantLastName: state.lastName, exploitantFirstName: state.firstName, exploitantEmail: state.email, exploitantTelephone: state.telephone,
+    activityStartDate: state.dateDebutActivite, dateMiseEnService: state.dateMiseEnService, activityType: "LMNP" as const,
   };
-}
-
-/**
- * Fusion rule shared by manuel→document and document→document (garde-fou 3):
- * a value the user has not explicitly confirmed is freely replaceable by a newer
- * candidate, regardless of the candidate's origin; a confirmed value is never
- * silently overwritten — a contradiction becomes an explicit, unresolved conflict;
- * and the absence of a value in a newer analysis never erases an established one.
- */
-function resolveDocumentField(input: {
-  currentValue?: string;
-  currentlyConfirmed: boolean;
-  newValue?: string;
-}): { value?: string; confirmed: boolean; conflict?: F009FieldConflict } {
-  if (input.newValue === undefined) {
-    return { value: input.currentValue, confirmed: input.currentlyConfirmed };
+  Object.assign(patch, Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined && value !== "")));
+  for (const prefix of ["personal", "establishment"] as const) {
+    const value = state[`${prefix}Address`];
+    if (value) {
+      const parsed = parseAddressComponents(value);
+      Object.assign(patch, { [`${prefix}Address`]: parsed.line ?? value, [`${prefix}City`]: parsed.city, [`${prefix}PostalCode`]: parsed.postalCode });
+    }
   }
-  if (!input.currentlyConfirmed) {
-    return { value: input.newValue, confirmed: false };
-  }
-  if (input.currentValue === input.newValue) {
-    return { value: input.currentValue, confirmed: true };
-  }
-  return {
-    value: input.currentValue,
-    confirmed: true,
-    conflict: { confirmedValue: input.currentValue!, newValue: input.newValue },
-  };
-}
-
-/**
- * Dependency invalidation (garde-fou 2): changing the date de début d'activité
- * invalidates the date de mise en service confirmed against it, and the prorata
- * explanation computed from it — forcing both back through re-validation instead
- * of silently carrying a now-stale confirmation or figure forward.
- */
-function invalidateDependentsOfActivityStart(state: F009State): Partial<F009State> {
-  return {
-    dateMiseEnService: undefined,
-    explanation: undefined,
-    prorataPercent: undefined,
-    confirmed: { ...state.confirmed, dateMiseEnService: undefined },
-  };
-}
-
-/**
- * Contextualized resume message (spec §08): summarizes what's already known and
- * what's left, from the persisted state alone — never a generic "let's start over".
- */
-function buildResumeMessage(persisted: F009PersistedState): F009Message {
-  if (persisted.step === "analyzing") {
-    return { role: "assistant", content: "Nous reprenons l'analyse de votre document." };
-  }
-  if (persisted.step === "analysis_failed") {
-    return {
-      role: "assistant",
-      content: analysisFailureMessage(persisted.analysisFailureCause),
-    };
-  }
-
-  const known: string[] = [];
-  if (persisted.siret) known.push(`votre SIRET (${persisted.siret})`);
-  if (persisted.dateDebutActivite) known.push("votre date de début d'activité");
-  if (persisted.dateMiseEnService) known.push("votre date de mise en service");
-  if (persisted.lastName || persisted.firstName) known.push("votre identité");
-  if (persisted.email || persisted.telephone) known.push("vos coordonnées");
-  if (persisted.personalAddress) known.push("votre adresse personnelle");
-  if (persisted.establishmentAddress) known.push("l'adresse de votre établissement");
-
-  const missing: string[] = [];
-  if (!persisted.siret) missing.push("votre SIRET");
-  if (!persisted.dateDebutActivite) missing.push("votre date de début d'activité");
-  if (!persisted.dateMiseEnService) missing.push("votre date de mise en service");
-
-  if (known.length === 0) {
-    return { role: "assistant", content: "Reprenons là où vous en étiez." };
-  }
-
-  const knownSentence = `Vous avez déjà fourni ${known.join(", ")}.`;
-  const missingSentence = missing.length > 0 ? ` Il ne manque que ${missing.join(", ")}.` : "";
-  return { role: "assistant", content: `${knownSentence}${missingSentence}` };
+  if (!nextMissingQuestion(state) && !hasF009Decisions(state)) patch.inpiConfirmedAt = now;
+  return patch;
 }
 
 export class F009ActiviteAssistant {
   constructor(private readonly ctx: RuntimeContext) {}
-
-  start(): F009AssistantTurn {
-    return {
-      state: createF009IntroState(),
-      messages: [introPrompt()],
-      completed: false,
-    };
+  start(draft?: DeclarationDraft, status?: InpiStatus): F009AssistantTurn { return turn(restoreF009(draft, status)); }
+  resume(persisted: F009PersistedState): F009AssistantTurn { return this.start({ completedSteps: [], activiteAssistantState: persisted }); }
+  explanation(state: F009State): string | undefined {
+    if (!validActivityDate(state.dateDebutActivite) || !validActivityDate(state.dateMiseEnService)) return undefined;
+    return explainMiseEnService({ dateDebutActivite: state.dateDebutActivite!, dateMiseEnService: state.dateMiseEnService! }, this.ctx.fiscalYear).explanation;
   }
-
-  /**
-   * Resumes a persisted session exactly where it was left (Étape 4) — never
-   * `start()`'s INTRO. `explanation`/`prorataPercent` are recomputed rather than
-   * trusted from storage, consistent with CONFIRMING never showing a cached figure.
-   */
-  resume(persisted: F009PersistedState): F009AssistantTurn {
-    const state: F009State = {
-      step: persisted.step,
-      siret: persisted.siret,
-      siren: persisted.siren,
-      dateDebutActivite: persisted.dateDebutActivite,
-      dateMiseEnService: persisted.dateMiseEnService,
-      regimeFiscal: persisted.regimeFiscal,
-      lastName: persisted.lastName,
-      firstName: persisted.firstName,
-      email: persisted.email,
-      telephone: persisted.telephone,
-      personalAddress: persisted.personalAddress,
-      personalAddressCity: persisted.personalAddressCity,
-      personalAddressPostalCode: persisted.personalAddressPostalCode,
-      establishmentAddress: persisted.establishmentAddress,
-      establishmentAddressCity: persisted.establishmentAddressCity,
-      establishmentAddressPostalCode: persisted.establishmentAddressPostalCode,
-      fieldSources: {},
-      history: persisted.history,
-      review: persisted.review,
-      confirmed: persisted.confirmed,
-      conflicts: persisted.conflicts,
-      analysisFailureCause: persisted.analysisFailureCause,
-      analyzingDocumentId: persisted.analyzingDocumentId,
-      manualProfile: persisted.manualProfile,
-    };
-
-    if (state.step === "confirmation" && state.dateDebutActivite && state.dateMiseEnService) {
-      const explanation = explainMiseEnService(
-        { dateDebutActivite: state.dateDebutActivite, dateMiseEnService: state.dateMiseEnService },
-        this.ctx.fiscalYear,
-      );
-      state.explanation = explanation.explanation;
-      state.prorataPercent = explanation.prorataPercent;
-    }
-
-    return {
-      state,
-      messages: [buildResumeMessage(persisted)],
-      completed: false,
-    };
-  }
-
-  /** Recomputes the prorata fresh from current state every time (garde-fou 2 — never cached). */
-  private enterConfirmation(
-    state: F009State,
-    dateMiseEnService: string,
-    messages: F009Message[],
-  ): F009State {
-    const explanation = explainMiseEnService(
-      { dateDebutActivite: state.dateDebutActivite!, dateMiseEnService },
-      this.ctx.fiscalYear,
-    );
-
-    const next = advance(
-      state,
-      {
-        dateMiseEnService,
-        explanation: explanation.explanation,
-        prorataPercent: explanation.prorataPercent,
-        confirmed: { ...state.confirmed, dateMiseEnService: true },
-        fieldSources: { ...state.fieldSources, dateMiseEnService: "manual" },
-      },
-      "confirmation",
-    );
-
-    messages.push({ role: "assistant", content: explanation.explanation });
-    messages.push({
-      role: "assistant",
-      content: "Ces informations vous semblent-elles correctes ?",
-      suggestions: CONFIRMATION_SUGGESTIONS,
-    });
-    return next;
-  }
-
   async handle(state: F009State, action: F009Action): Promise<F009AssistantTurn> {
-    const messages: F009Message[] = [];
-
+    state = { ...state, error: undefined };
     switch (action.type) {
-      case "restart":
-        return this.start();
-
-      // ---------------------------------------------------------------
-      // Legacy manual-entry path — behaviour unchanged, now history-tracked.
-      // ---------------------------------------------------------------
-
-      case "select_orientation": {
-        const next = advance(
-          state,
-          { orientation: action.orientation },
-          action.orientation === "registered_siret" ? "collect_siret" : "collect_activity",
-        );
-        messages.push({ role: "user", content: orientationLabel(action.orientation) });
-        messages.push({ role: "assistant", content: orientationAck(action.orientation) });
-        return { state: next, messages, completed: false };
+      case "select_registration": {
+        const next = { ...state, registration: action.value, deferred: action.value !== "yes" };
+        const missing = nextMissingQuestion(next);
+        return turn(advance(next, action.value === "yes" ? (!missing || missing === "service_date" ? "review" : "document") : "pending_registration"));
       }
-
-      case "submit_siret": {
-        messages.push({ role: "user", content: `SIRET : ${action.siret}` });
-        const result = validateSiret({ siret: action.siret });
-        if (!result.valid) {
-          messages.push({
-            role: "assistant",
-            content: result.error ?? "Ce SIRET ne semble pas valide.",
-          });
-          return { state, messages, completed: false };
+      case "manual": return turn(advance(state, nextMissingQuestion(state) ?? "review"));
+      case "defer": return turn(advance(state, "complete", { deferred: true }), true);
+      case "edit": return turn(advance(state, "edit"));
+      case "edit_question": return turn(advance(state, action.step, { editing: true }));
+      case "stage_input": return turn({ ...state, inputs: { ...state.inputs, [state.step]: action.values } });
+      case "siret_obtained": {
+        const check = validateSiret({ siret: action.siret });
+        if (!check.valid) return fail(state, check.error!);
+        const next = setValue(state, "siret", check.normalized!);
+        return turn(advance(next, "review", { registration: "yes", deferred: false }));
+      }
+      case "answer": {
+        const values = action.values;
+        let next = { ...state };
+        switch (state.step) {
+          case "identifier": {
+            const raw = (values.identifier ?? "").replace(/\s/g, "");
+            if (raw.length === 9 && isValidSiren(raw)) {
+              if (state.siret && !state.siret.startsWith(raw)) return fail(state, "Ce SIREN diffère du SIRET conservé. Indiquez le SIRET de l’établissement à utiliser.");
+              next.siren = raw;
+            } else {
+              const check = validateSiret({ siret: raw });
+              if (!check.valid) return fail(state, check.error!);
+              next = setValue(state, "siret", check.normalized!);
+              next.deferred = false;
+            }
+            break;
+          }
+          case "identity":
+            if (!values.lastName?.trim() || !values.firstName?.trim()) return fail(state, "Indiquez votre nom et votre prénom.");
+            next = setValue(setValue(state, "lastName", values.lastName), "firstName", values.firstName);
+            break;
+          case "address":
+            if (!values.address?.trim()) return fail(state, "Indiquez l’adresse de votre activité.");
+            next = setValue(state, "establishmentAddress", values.address);
+            break;
+          case "activity_date":
+            if (!validActivityDate(values.date)) return fail(state, "Indiquez une date de début d’activité valide.");
+            next = setValue(state, "dateDebutActivite", values.date);
+            break;
+          case "service_date":
+            if (!validActivityDate(values.date)) return fail(state, "Indiquez la date à laquelle le logement était disponible à la location.");
+            if (values.date > new Date().toISOString().slice(0, 10)) return fail(state, "Cette date est dans le futur. Vous pourrez compléter la disponibilité effective plus tard ; aucune date prévisionnelle ne sera utilisée.");
+            next.dateMiseEnService = values.date;
+            next.confirmed = { ...next.confirmed, dateMiseEnService: true };
+            break;
+          default: return turn(state);
         }
-        const next = advance(
-          state,
-          {
-            siret: result.normalized,
-            confirmed: { ...state.confirmed, siret: true },
-            fieldSources: { ...state.fieldSources, siret: "siret" },
-          },
-          "collect_activity",
-        );
-        messages.push({
-          role: "assistant",
-          content:
-            "Merci. Quelle est la date officielle de début de votre activité (immatriculation) ? " +
-            "Nous utiliserons le régime réel simplifié pour ce dossier.",
-        });
-        return { state: next, messages, completed: false };
-      }
-
-      case "submit_activity": {
-        messages.push({
-          role: "user",
-          content: `Début d'activité : ${action.dateDebutActivite}`,
-        });
-        const changed =
-          state.dateDebutActivite !== undefined &&
-          state.dateDebutActivite !== action.dateDebutActivite;
-        const next = advance(
-          state,
-          {
-            dateDebutActivite: action.dateDebutActivite,
-            regimeFiscal: action.regimeFiscal,
-            confirmed: { ...state.confirmed, dateDebutActivite: true },
-            fieldSources: {
-              ...state.fieldSources,
-              dateDebutActivite: "manual",
-              regimeFiscal: "manual",
-            },
-            ...(changed ? invalidateDependentsOfActivityStart(state) : {}),
-          },
-          "mise_en_service",
-        );
-        messages.push({ role: "assistant", content: MISE_EN_SERVICE_QUESTION });
-        return { state: next, messages, completed: false };
-      }
-
-      case "submit_mise_en_service": {
-        messages.push({
-          role: "user",
-          content: `Mise en service : ${action.dateMiseEnService}`,
-        });
-        if (!state.dateDebutActivite) {
-          messages.push({
-            role: "assistant",
-            content: "Il nous manque la date de début d'activité pour continuer.",
-          });
-          return { state, messages, completed: false };
+        if (next.review && state.step === "activity_date") next.review = { ...next.review, datesAmbiguous: false };
+        if (next.review && state.step === "identifier") next.review = { ...next.review, siretAmbiguous: false };
+        next.inputs = { ...next.inputs, [state.step]: undefined };
+        if (state.step === "identifier" && state.siret && next.siret !== state.siret) {
+          const candidate = state.review?.siretCandidates.find((entry) => entry.siret === next.siret);
+          if (candidate?.address) next = setValue(next, "establishmentAddress", candidate.address);
+          else return turn(advance(next, "address", { editing: true }));
         }
-
-        const dateCheck = validateActiviteDates({
-          dateDebutActivite: state.dateDebutActivite,
-          dateMiseEnService: action.dateMiseEnService,
-        });
-        if (!dateCheck.valid) {
-          messages.push({ role: "assistant", content: dateCheck.issues.join(" ") });
-          return { state, messages, completed: false };
+        return turn(advance(next, state.editing ? "review" : nextMissingQuestion(next) ?? "review", { editing: false }));
+      }
+      case "upload_document":
+        if (!action.documentId) return fail(state, "Le document n’est pas disponible. Importez-le à nouveau ou renseignez les informations manuellement.");
+        return turn(advance(state, "analyzing", { analyzingDocumentId: action.documentId, analysisFailureCause: undefined }));
+      case "analysis_success": return turn(advance(mergeProjection(state, action.projection), "review"));
+      case "analysis_failed": return turn({ ...state, step: "analysis_failed", analysisFailureCause: action.cause });
+      case "retry": return turn({ ...state, step: "analyzing", analysisFailureCause: undefined });
+      case "continue_manually": return turn(advance(state, nextMissingQuestion(state) ?? "review"));
+      case "select_establishment": {
+        const candidate = state.review?.siretCandidates.find((entry) => entry.siret === action.siret);
+        if (!candidate) return fail(state, "Sélectionnez un établissement proposé.");
+        const error = validateField("siret", candidate.siret);
+        if (error) return fail(state, error);
+        let next: F009State = { ...state, review: { ...state.review!, siretAmbiguous: false } };
+        // A candidate is a coupled SIRET/address, never an independently guessed address.
+        for (const [field, value] of [["siret", candidate.siret], ["establishmentAddress", candidate.address]] as const) {
+          if (!value) continue;
+          if (next[field] && !sameField(field, next[field], value)) next = { ...next, conflicts: { ...next.conflicts, [field]: { confirmedValue: next[field]!, newValue: value } } };
+          else next = setValue(next, field, value);
         }
-
-        const next = this.enterConfirmation(state, action.dateMiseEnService, messages);
-        return { state: next, messages, completed: false };
+        if (!candidate.address && !next.conflicts?.siret) return turn(advance(next, "address", { editing: true }));
+        return turn(next);
       }
-
-      case "confirm": {
-        messages.push({ role: "user", content: "Oui, tout est correct" });
-        messages.push({
-          role: "assistant",
-          content:
-            "Votre activité est enregistrée. Nous pouvons passer à l'étape suivante de votre dossier.",
-        });
-        return {
-          state: advance(state, {}, "complete"),
-          messages,
-          completed: true,
-        };
-      }
-
-      // ---------------------------------------------------------------
-      // Document-first path (spec "F009, Document d'Abord" §09).
-      // ---------------------------------------------------------------
-
-      case "upload_document": {
-        if (state.step === "analyzing") {
-          // A second upload while one is already in flight is ignored rather than
-          // risking two concurrent analyses interleaving into the same review state.
-          return { state, messages, completed: false };
-        }
-        messages.push({ role: "user", content: "Import d'un document" });
-        const next = advance(state, { analyzingDocumentId: action.documentId }, "analyzing");
-        messages.push({ role: "assistant", content: "L'IA prépare vos informations…" });
-        return { state: next, messages, completed: false };
-      }
-
-      case "select_no_document": {
-        messages.push({ role: "user", content: "Je n'ai pas ce document" });
-        const next = advance(state, {}, "no_document");
-        messages.push({
-          role: "assistant",
-          content:
-            "Pas de souci, nous allons avancer étape par étape. Connaissez-vous déjà votre numéro SIRET ?",
-        });
-        return { state: next, messages, completed: false };
-      }
-
-      case "analysis_success": {
-        const projection = action.projection;
-
-        // Same fusion rule (garde-fou 3) applied uniformly to all 8 document/manual
-        // fields — SIRET and the date keep their ambiguity gate; the 6 profile
-        // fields (reused from Tunnel A's own projection, see f009-fact-projection.ts)
-        // are never ambiguous at this layer, so they resolve directly.
-        const newValueByField: Record<F009DocumentFieldKey, string | undefined> = {
-          siret: projection.siretAmbiguous ? undefined : projection.siret,
-          dateDebutActivite: projection.datesAmbiguous ? undefined : projection.activityStartDate,
-          lastName: projection.lastName,
-          firstName: projection.firstName,
-          email: projection.email,
-          telephone: projection.telephone,
-          personalAddress: projection.personalAddress,
-          establishmentAddress: projection.establishmentAddress,
-        };
-
-        const resolutions = Object.fromEntries(
-          ALL_F009_DOCUMENT_FIELD_KEYS.map((key) => [
-            key,
-            resolveDocumentField({
-              currentValue: readF009Field(state, key),
-              currentlyConfirmed: Boolean(state.confirmed?.[key]),
-              newValue: newValueByField[key],
-            }),
-          ]),
-        ) as Record<F009DocumentFieldKey, ReturnType<typeof resolveDocumentField>>;
-
-        const dateChanged =
-          state.dateDebutActivite !== undefined &&
-          resolutions.dateDebutActivite.value !== undefined &&
-          resolutions.dateDebutActivite.value !== state.dateDebutActivite;
-
-        // City/postal code ride along with their address line: only refreshed when
-        // the line itself was freshly adopted from this analysis (never protected
-        // independently — they are not exposed as their own confirmable field).
-        const personalAdopted =
-          projection.personalAddress !== undefined &&
-          resolutions.personalAddress.value === projection.personalAddress;
-        const establishmentAdopted =
-          projection.establishmentAddress !== undefined &&
-          resolutions.establishmentAddress.value === projection.establishmentAddress;
-
-        const next = advance(
-          state,
-          {
-            review: projection,
-            siret: resolutions.siret.value,
-            dateDebutActivite: resolutions.dateDebutActivite.value,
-            lastName: resolutions.lastName.value,
-            firstName: resolutions.firstName.value,
-            email: resolutions.email.value,
-            telephone: resolutions.telephone.value,
-            personalAddress: resolutions.personalAddress.value,
-            personalAddressCity: personalAdopted ? projection.personalAddressCity : state.personalAddressCity,
-            personalAddressPostalCode: personalAdopted
-              ? projection.personalAddressPostalCode
-              : state.personalAddressPostalCode,
-            establishmentAddress: resolutions.establishmentAddress.value,
-            establishmentAddressCity: establishmentAdopted
-              ? projection.establishmentAddressCity
-              : state.establishmentAddressCity,
-            establishmentAddressPostalCode: establishmentAdopted
-              ? projection.establishmentAddressPostalCode
-              : state.establishmentAddressPostalCode,
-            confirmed: {
-              ...state.confirmed,
-              ...Object.fromEntries(
-                ALL_F009_DOCUMENT_FIELD_KEYS.map((key) => [key, resolutions[key].confirmed]),
-              ),
-            },
-            conflicts: Object.fromEntries(
-              ALL_F009_DOCUMENT_FIELD_KEYS.map((key) => [key, resolutions[key].conflict]),
-            ),
-            fieldSources: {
-              ...state.fieldSources,
-              ...(resolutions.siret.value && !resolutions.siret.conflict
-                ? { siret: "siret" as const }
-                : {}),
-            },
-            ...(dateChanged ? invalidateDependentsOfActivityStart(state) : {}),
-          },
-          "review_extracted_data",
-        );
-
-        messages.push({
-          role: "assistant",
-          content: "J'ai trouvé ces informations dans votre extrait INPI :",
-        });
-        return { state: next, messages, completed: false };
-      }
-
-      case "analysis_failed": {
-        const next = advance(state, { analysisFailureCause: action.cause }, "analysis_failed");
-        messages.push({ role: "assistant", content: analysisFailureMessage(action.cause) });
-        return { state: next, messages, completed: false };
-      }
-
-      case "retry": {
-        messages.push({ role: "user", content: "Réessayer" });
-        const next = advance(state, { analysisFailureCause: undefined }, "analyzing");
-        messages.push({ role: "assistant", content: "L'IA prépare vos informations…" });
-        return { state: next, messages, completed: false };
-      }
-
-      case "continue_manually": {
-        messages.push({ role: "user", content: "Continuer en manuel" });
-        const next = advance(state, { analysisFailureCause: undefined }, "no_document");
-        messages.push({
-          role: "assistant",
-          content:
-            "Pas de souci, nous allons avancer étape par étape. Connaissez-vous déjà votre numéro SIRET ?",
-        });
-        return { state: next, messages, completed: false };
-      }
-
-      case "confirm_field": {
-        const { field } = action;
-        messages.push({ role: "user", content: `Je confirme ${fieldLabel(field)}` });
-        const next: F009State = {
-          ...state,
-          confirmed: { ...state.confirmed, [field]: true },
-          conflicts: { ...state.conflicts, [field]: undefined },
-          fieldSources: {
-            ...state.fieldSources,
-            [field]: field === "siret" ? "siret" : "manual",
-          },
-        };
-        // ASK_MISSING_DATA asks for dateDebutActivite before dateMiseEnService when
-        // the document didn't provide it (correctif blocage) — once resolved here,
-        // prompt the next sub-question rather than leaving the chat silent.
-        if (state.step === "ask_missing_data" && field === "dateDebutActivite") {
-          messages.push({ role: "assistant", content: MISE_EN_SERVICE_QUESTION });
-        }
-        return { state: next, messages, completed: false };
-      }
-
-      case "correct_field": {
-        const { field, value } = action;
-        messages.push({ role: "user", content: `${fieldLabel(field)} : ${value}` });
-        const changed = field === "dateDebutActivite" && value !== state.dateDebutActivite;
-        const next: F009State = {
-          ...state,
-          [field]: value,
-          confirmed: { ...state.confirmed, [field]: true },
-          conflicts: { ...state.conflicts, [field]: undefined },
-          fieldSources: { ...state.fieldSources, [field]: "user_correction" },
-          ...(changed ? invalidateDependentsOfActivityStart(state) : {}),
-        };
-        if (state.step === "ask_missing_data" && field === "dateDebutActivite") {
-          messages.push({ role: "assistant", content: MISE_EN_SERVICE_QUESTION });
-        }
-        return { state: next, messages, completed: false };
-      }
-
+      case "correct_field":
       case "resolve_conflict": {
-        const { field, value } = action;
-        messages.push({ role: "user", content: `${fieldLabel(field)} retenu : ${value}` });
-        const changed = field === "dateDebutActivite" && value !== state.dateDebutActivite;
-        const next: F009State = {
-          ...state,
-          [field]: value,
-          confirmed: { ...state.confirmed, [field]: true },
-          conflicts: { ...state.conflicts, [field]: undefined },
-          ...(changed ? invalidateDependentsOfActivityStart(state) : {}),
-        };
-        if (state.step === "ask_missing_data" && field === "dateDebutActivite") {
-          messages.push({ role: "assistant", content: MISE_EN_SERVICE_QUESTION });
+        const error = validateField(action.field, action.value);
+        if (error) return fail(state, error);
+        const value = action.field === "siret" ? validateSiret({ siret: action.value }).normalized! : action.value.trim();
+        const conflict = state.conflicts?.[action.field];
+        let next = setValue(state, action.field, value);
+        if (action.field === "siret" && conflict && value === conflict.confirmedValue) next.conflicts = { ...next.conflicts, establishmentAddress: undefined };
+        if (action.field === "siret" && value !== state.siret) {
+          const candidate = state.review?.siretCandidates.find((entry) => entry.siret === value);
+          if (candidate?.address) next = setValue(next, "establishmentAddress", candidate.address);
         }
-        return { state: next, messages, completed: false };
-      }
-
-      case "continue_review": {
-        const unresolved = ALL_F009_DOCUMENT_FIELD_KEYS.filter(
-          (field) => state.conflicts?.[field] !== undefined,
-        );
-        if (unresolved.length > 0) {
-          messages.push({
-            role: "assistant",
-            content:
-              "Merci de choisir une valeur pour les champs en contradiction avant de continuer.",
-          });
-          return { state, messages, completed: false };
+        next.resolutions = [...(state.resolutions ?? []), { field: action.field, previous: conflict?.confirmedValue ?? state[action.field], proposed: conflict?.newValue, selected: value, documentId: state.analyzingDocumentId }];
+        if (action.field === "siret" && conflict && value === conflict.confirmedValue && state.conflicts?.establishmentAddress) {
+          const addressConflict = state.conflicts.establishmentAddress;
+          next.resolutions.push({ field: "establishmentAddress", previous: addressConflict.confirmedValue, proposed: addressConflict.newValue, selected: addressConflict.confirmedValue, documentId: state.analyzingDocumentId });
         }
-
-        if (state.dateMiseEnService && state.confirmed?.dateMiseEnService) {
-          const next = this.enterConfirmation(state, state.dateMiseEnService, messages);
-          return { state: next, messages, completed: false };
+        if (next.review && action.field === "siret") next.review = { ...next.review, siretAmbiguous: false };
+        if (next.review && action.field === "dateDebutActivite") next.review = { ...next.review, datesAmbiguous: false };
+        if (action.field === "siret" && value !== state.siret && !state.review?.siretCandidates.find((entry) => entry.siret === value)?.address) {
+          return turn(advance(next, "address", { editing: true }));
         }
-
-        const next = advance(state, {}, "ask_missing_data");
-        messages.push({
-          role: "assistant",
-          content: state.dateDebutActivite ? MISE_EN_SERVICE_QUESTION : ACTIVITY_START_DATE_QUESTION,
-        });
-        return { state: next, messages, completed: false };
+        return turn(next);
       }
-
-      case "submit_siret_known": {
-        messages.push({
-          role: "user",
-          content: action.known ? "Oui, je le connais" : "Non / je ne suis pas sûr",
-        });
-
-        let patch: Partial<F009State> = {
-          manualProfile: { ...state.manualProfile, siretKnown: action.known },
-        };
-
-        if (action.known && action.siret) {
-          const result = validateSiret({ siret: action.siret });
-          if (!result.valid) {
-            messages.push({
-              role: "assistant",
-              content: result.error ?? "Ce SIRET ne semble pas valide.",
-            });
-            return { state, messages, completed: false };
-          }
-          patch = {
-            ...patch,
-            siret: result.normalized,
-            confirmed: { ...state.confirmed, siret: true },
-            fieldSources: { ...state.fieldSources, siret: "siret" },
-          };
+      case "review_all":
+      case "confirm": {
+        if (hasF009Decisions(state)) return fail(state, "Choisissez les informations à conserver avant de continuer.");
+        if (state.siret) {
+          const error = validateField("siret", state.siret);
+          if (error) return fail(state, error);
         }
-
-        if (action.known) {
-          const next = advance(state, patch, "manual_profile");
-          messages.push({ role: "assistant", content: "Complétons maintenant votre profil." });
-          return { state: next, messages, completed: false };
-        }
-
-        // Pas de SIRET / pas sûr : collecte fiscale (identité + dates), jamais le
-        // formulaire administratif ActiviteProfileFields. Ne déduit jamais
-        // not_started de l'absence de SIREN/SIRET.
-        const identityAlreadyKnown = Boolean(state.lastName?.trim() && state.firstName?.trim());
-        const nextStep = identityAlreadyKnown ? "collect_activity" : "collect_identity";
-        const next = advance(state, patch, nextStep);
-        messages.push({ role: "assistant", content: NO_SIRET_REASSURANCE });
-        messages.push({
-          role: "assistant",
-          content: identityAlreadyKnown ? ACTIVITY_START_DATE_QUESTION : IDENTITY_QUESTION,
-        });
-        return { state: next, messages, completed: false };
+        const confirmed = { ...state.confirmed };
+        for (const field of ALL_F009_DOCUMENT_FIELD_KEYS) if (state[field]) confirmed[field] = true;
+        const next = { ...state, confirmed };
+        const missing = nextMissingQuestion(next);
+        if (missing) return turn(advance(next, missing));
+        if (next.dateMiseEnService! > new Date().toISOString().slice(0, 10)) return fail(state, "La disponibilité effective est dans le futur. Modifiez cette information ou complétez-la plus tard.");
+        const dates = validateActiviteDates({ dateDebutActivite: next.dateDebutActivite!, dateMiseEnService: next.dateMiseEnService! });
+        if (!dates.valid) return fail(state, dates.issues.join(" "));
+        return turn(advance(next, "complete", { deferred: !next.siret }), true);
       }
-
-      case "submit_identity": {
-        const lastName = action.lastName.trim();
-        const firstName = action.firstName.trim();
-        messages.push({ role: "user", content: `${firstName} ${lastName}`.trim() });
-        if (!lastName || !firstName) {
-          messages.push({
-            role: "assistant",
-            content: "Indiquez votre nom et votre prénom pour continuer.",
-          });
-          return { state, messages, completed: false };
-        }
-        const next = advance(
-          state,
-          {
-            lastName,
-            firstName,
-            confirmed: { ...state.confirmed, lastName: true, firstName: true },
-            fieldSources: {
-              ...state.fieldSources,
-              lastName: "manual",
-              firstName: "manual",
-            },
-          },
-          "collect_activity",
-        );
-        messages.push({ role: "assistant", content: ACTIVITY_START_DATE_QUESTION });
-        return { state: next, messages, completed: false };
-      }
-
-      case "submit_manual_profile_fields": {
-        const p = action.profile;
-        messages.push({ role: "user", content: "Profil renseigné" });
-
-        // Absence never erases an established value (garde-fou 3, applied here to
-        // manual re-submission too) — an empty field on resubmission keeps whatever
-        // was already there rather than blanking it.
-        const keep = (current: string | undefined, incoming: string | undefined) => {
-          const trimmed = incoming?.trim();
-          return trimmed ? { value: trimmed, provided: true } : { value: current, provided: false };
-        };
-
-        const lastName = keep(state.lastName, p.lastName);
-        const firstName = keep(state.firstName, p.firstName);
-        const siren = keep(state.siren, p.siren);
-        const email = keep(state.email, p.email);
-        const telephone = keep(state.telephone, p.telephone);
-
-        // Combined via the same formatAddressLine used for the document path, so
-        // F009State.personalAddress/establishmentAddress mean the same thing
-        // regardless of origin — no parallel address representation.
-        const personalLine = keep(undefined, p.personalAddress);
-        const personalCity = keep(state.personalAddressCity, p.personalCity);
-        const personalPostalCode = keep(state.personalAddressPostalCode, p.personalPostalCode);
-        const personalAddress = personalLine.provided
-          ? formatAddressLine(personalLine.value, personalPostalCode.value, personalCity.value)
-          : state.personalAddress;
-
-        const establishmentLine = keep(undefined, p.establishmentAddress);
-        const establishmentCity = keep(state.establishmentAddressCity, p.establishmentCity);
-        const establishmentPostalCode = keep(state.establishmentAddressPostalCode, p.establishmentPostalCode);
-        const establishmentAddress = establishmentLine.provided
-          ? formatAddressLine(establishmentLine.value, establishmentPostalCode.value, establishmentCity.value)
-          : state.establishmentAddress;
-
-        const next: F009State = {
-          ...state,
-          lastName: lastName.value,
-          firstName: firstName.value,
-          siren: siren.value,
-          email: email.value,
-          telephone: telephone.value,
-          personalAddress,
-          personalAddressCity: personalCity.value,
-          personalAddressPostalCode: personalPostalCode.value,
-          establishmentAddress,
-          establishmentAddressCity: establishmentCity.value,
-          establishmentAddressPostalCode: establishmentPostalCode.value,
-          confirmed: {
-            ...state.confirmed,
-            ...(lastName.provided ? { lastName: true } : {}),
-            ...(firstName.provided ? { firstName: true } : {}),
-            ...(email.provided ? { email: true } : {}),
-            ...(telephone.provided ? { telephone: true } : {}),
-            ...(personalLine.provided ? { personalAddress: true } : {}),
-            ...(establishmentLine.provided ? { establishmentAddress: true } : {}),
-          },
-          fieldSources: {
-            ...state.fieldSources,
-            ...(lastName.provided ? { lastName: "manual" as const } : {}),
-            ...(firstName.provided ? { firstName: "manual" as const } : {}),
-            ...(email.provided ? { email: "manual" as const } : {}),
-            ...(telephone.provided ? { telephone: "manual" as const } : {}),
-            ...(personalLine.provided ? { personalAddress: "manual" as const } : {}),
-            ...(establishmentLine.provided ? { establishmentAddress: "manual" as const } : {}),
-          },
-          manualProfile: { ...state.manualProfile, profile: action.profile, stage: "date" },
-        };
-
-        messages.push({
-          role: "assistant",
-          content: "Quelle est la date officielle de début de votre activité (immatriculation) ?",
-        });
-        return { state: next, messages, completed: false };
-      }
-
-      case "submit_manual_activity_date": {
-        messages.push({
-          role: "user",
-          content: `Début d'activité : ${action.dateDebutActivite}`,
-        });
-        const changed =
-          state.dateDebutActivite !== undefined &&
-          state.dateDebutActivite !== action.dateDebutActivite;
-        const next = advance(
-          state,
-          {
-            dateDebutActivite: action.dateDebutActivite,
-            confirmed: { ...state.confirmed, dateDebutActivite: true },
-            manualProfile: { ...state.manualProfile, dateDebutActivite: action.dateDebutActivite },
-            fieldSources: { ...state.fieldSources, dateDebutActivite: "manual" },
-            ...(changed ? invalidateDependentsOfActivityStart(state) : {}),
-          },
-          "ask_missing_data",
-        );
-        messages.push({ role: "assistant", content: MISE_EN_SERVICE_QUESTION });
-        return { state: next, messages, completed: false };
-      }
-
       case "go_back": {
-        // Sub-navigation inside MANUAL_PROFILE (profile ↔ date, correctif Option B) —
-        // this hasn't pushed onto the top-level history stack, since the step itself
-        // never changed. Data already entered on the profile screen is untouched.
-        if (state.step === "manual_profile" && state.manualProfile?.stage === "date") {
-          return {
-            state: { ...state, manualProfile: { ...state.manualProfile, stage: "profile" } },
-            messages,
-            completed: false,
-          };
-        }
-
-        const history = state.history ?? [];
-
-        if (history.length === 0) {
-          // A session resumed straight into COMPLETE (legacy shortcut) has no
-          // history yet but must still be reopenable (garde-fou 1, point 2).
-          if (state.step === "complete") {
-            return { state: { ...state, step: "confirmation" }, messages, completed: false };
-          }
-          return { state, messages, completed: false };
-        }
-
-        const previousStep = history[history.length - 1]!;
-        const next: F009State = {
-          ...state,
-          step: previousStep,
-          history: history.slice(0, -1),
-        };
-        return { state: next, messages, completed: false };
+        const history = [...(state.history ?? [])];
+        let previous = history.pop();
+        // Analysis is an effect, not an editable page. Going back must not rerun OCR/GPT.
+        while (previous === "analyzing" || previous === state.step) previous = history.pop();
+        if (!previous) previous = state.step === "complete" ? "review" : "situation";
+        return turn({ ...state, step: previous, history, editing: previous === "edit" ? false : state.editing });
       }
-
-      default:
-        return { state, messages, completed: false };
+      default: return turn(state);
     }
   }
 }
-
-export {
-  createInitialF009State,
-  createF009IntroState,
-  toF009PersistedState,
-  shouldResumeF009,
-  ALL_F009_DOCUMENT_FIELD_KEYS,
-} from "./types";
-export type {
-  F009Action,
-  F009AnalysisFailureCause,
-  F009AssistantTurn,
-  F009DocumentFieldKey,
-  F009FieldConflict,
-  F009FieldSource,
-  F009ManualProfileState,
-  F009Message,
-  F009Orientation,
-  F009PersistedState,
-  F009State,
-  F009Step,
-  F009Suggestion,
-} from "./types";

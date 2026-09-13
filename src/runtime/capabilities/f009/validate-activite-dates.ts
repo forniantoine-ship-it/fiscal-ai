@@ -29,14 +29,14 @@ export function validateActiviteDates(
   }
   if (debut && miseEnService && miseEnService < debut) {
     issues.push(
-      "La mise en location ne peut pas précéder la date d'immatriculation de votre activité.",
+      "La disponibilité à la location précède le début d’activité renseigné. Vérifiez ces deux dates pour continuer.",
     );
   }
   if (input.acteNotarieDate) {
     const acte = parseDate(input.acteNotarieDate);
     if (acte && miseEnService && miseEnService < acte) {
       issues.push(
-        "La mise en location ne peut pas précéder la date de votre acte notarié.",
+        "La disponibilité à la location ne peut pas précéder la date de votre acte notarié.",
       );
     }
   }

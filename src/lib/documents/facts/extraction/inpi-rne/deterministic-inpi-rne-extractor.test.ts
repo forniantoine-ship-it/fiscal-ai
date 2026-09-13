@@ -89,3 +89,14 @@ run("does not invent email, phone, or LMNP regime facts", () => {
 });
 
 console.log("All deterministic-inpi-rne-extractor tests passed.");
+
+run("SIRET avec espaces entre les 14 chiffres : aucun plafond de caractères OCR", () => {
+  const raw = INPI_RNE_808900351_OCR.replace("80890035100020", "8 0 8 9 0 0 3 5 1 0 0 0 2 0");
+  const facts = extractInpiRneDeterministicFacts(raw, "spaced");
+  assert.equal(factValue(facts, "registry.siret", "80890035100020"), "80890035100020");
+});
+run("15 chiffres ne sont jamais tronqués en SIRET de 14 chiffres", () => {
+  const raw = INPI_RNE_808900351_OCR.replace("80890035100020", "808900351000201");
+  const facts = extractInpiRneDeterministicFacts(raw, "too-long");
+  assert.equal(factValue(facts, "registry.siret", "80890035100020"), undefined);
+});

@@ -1,5 +1,3 @@
-import { normalizeSiret } from "@/lib/documents/extractors/inpi-extraction.helpers";
-
 export type ValidateSiretInput = {
   siret: string;
 };
@@ -25,8 +23,8 @@ function passesLuhnCheck(digits: string): boolean {
 }
 
 export function validateSiret(input: ValidateSiretInput): ValidateSiretOutput {
-  const normalized = normalizeSiret(input.siret);
-  if (normalized.length !== 14) {
+  const normalized = input.siret.replace(/\s/g, "");
+  if (!/^\d{14}$/.test(normalized)) {
     return {
       valid: false,
       error: "Le SIRET doit contenir 14 chiffres.",

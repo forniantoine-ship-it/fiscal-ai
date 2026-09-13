@@ -6,12 +6,12 @@ import { shouldShowInpiCompanion } from "@/components/lmnp/inpi-companion/should
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function ActiviteAssistantPage() {
-  const { dossierInpiStatus } = useLmnp();
+  const { workspace, dossierInpiStatus } = useLmnp();
 
   return (
     <>
-      <F009ActiviteAssistantPanel />
-      {shouldShowInpiCompanion(dossierInpiStatus?.status) ? <InpiCompanionPanel /> : null}
+      <F009ActiviteAssistantPanel key={workspace.fiscalYear.id} />
+      {shouldShowInpiCompanion(dossierInpiStatus?.status) ? <section id="activite-inpi-companion" aria-label="Compagnon INPI"><InpiCompanionPanel /></section> : null}
     </>
   );
 }

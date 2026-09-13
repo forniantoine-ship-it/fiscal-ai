@@ -5,6 +5,7 @@ import {
   cleanLabelValue,
   findLabelValue,
   normalizeSiret,
+  normalizeInpiRneText,
   parseMultilineAddress,
 } from "./inpi-rne-text";
 
@@ -62,7 +63,13 @@ function deriveEstablishmentStatus(typeLabel: string): string {
 }
 
 export function parseInpiRneEstablishments(text: string): ParsedEstablishment[] {
-  const marker = /Type d'établissement\s*:/gi;
+  text = normalizeInpiRneText(text);
+  // Two observed INPI layouts, each split on the field that actually opens its
+  // establishment record. RNE extracts open on "Type d'établissement :". Guichet
+  // Unique "Synthèse de dépôt" records open on "Etablissements - <NIC>" — SIRET,
+  // NIC and Code APE all appear BEFORE "Nature de l'établissement..." there, so
+  // splitting on that label alone (as before) left them in the previous block.
+  const marker = /(?:Type d'établissement\s*:|Etablissements\s*-\s*\d+)/gi;
   const matches = [...text.matchAll(marker)];
   if (matches.length === 0) return [];
 
@@ -73,11 +80,11 @@ export function parseInpiRneEstablishments(text: string): ParsedEstablishment[] 
     const end = index + 1 < matches.length ? matches[index + 1]!.index ?? text.length : text.length;
     const block = text.slice(start, end);
 
-    const typeMatch = block.match(/Type d'établissement\s*:\s*(.+)/i);
+    const typeMatch = block.match(/(?:Type d'établissement|Nature de l'établissement pour l'entreprise)\s*:\s*(.+)/i);
     const typeLabel = cleanLabelValue(typeMatch?.[1] ?? "");
     if (!typeLabel) continue;
 
-    const siretMatch = findLabelValue(block, /Siret\s*:\s*([0-9\s]{14,17})/i);
+    const siretMatch = findLabelValue(block, /Siret(?: de l'établissement)?\s*:\s*((?:[0-9]\s*){13}[0-9])(?!\s*[0-9])/i);
     const siret = siretMatch ? normalizeSiret(siretMatch.value) : undefined;
     if (!siret) continue;
 
@@ -98,7 +105,7 @@ export function parseInpiRneEstablishments(text: string): ParsedEstablishment[] 
     const ape = findLabelValue(block, /Code APE\s*:\s*([0-9]{4}[A-Z][^\n]*)/i);
     const activity = findLabelValue(block, /Activité\s*:\s*(.+)/i);
 
-    const addressMatch = block.match(/Adresse\s*:\s*/i);
+    const addressMatch = block.match(/Adresse(?: de l['']établissement)?\s*:\s*/i);
     const address = addressMatch
       ? parseMultilineAddress(block, (addressMatch.index ?? 0) + addressMatch[0].length)
       : null;

@@ -64,7 +64,11 @@ function extractCompanyFacts(text: string, documentId: string): DocumentFact[] {
     }
   }
 
-  const siren = findLabelValue(companyText, /SIREN\s*(?:\(siège\))?\s*:\s*([0-9\s]{9,11})/i);
+  // RNE extracts: "SIREN (siège) :" / "SIREN :". Guichet Unique "Synthèse de dépôt": "N° d'identification (SIREN) :".
+  const siren = findLabelValue(
+    companyText,
+    /(?:SIREN\s*(?:\(siège\))?|N[°o]?\s*d['']identification\s*\(SIREN\))\s*:\s*([0-9\s]{9,11})/i,
+  );
   if (siren) {
     const normalized = normalizeSiren(siren.value);
     if (normalized) {
@@ -175,7 +179,8 @@ export const deterministicInpiRneExtractor: DeterministicFactExtractor = {
     return (
       normalized.includes("registre national des entreprises") ||
       normalized.includes("extrait des inscriptions") ||
-      normalized.includes("data.inpi.fr")
+      normalized.includes("data.inpi.fr") ||
+      (normalized.includes("synthèse de dépôt") && normalized.includes("guichet unique des entreprises"))
     );
   },
   extract({ rawText, documentId }) {
