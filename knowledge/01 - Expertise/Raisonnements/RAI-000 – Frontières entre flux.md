@@ -36,6 +36,18 @@ Le flux Amortissements consomme :
 
 **Règle** : le flux Amortissements ne recalcule jamais la base amortissable. Si la base change (correction de l'acquisition), le flux Acquisition est relancé et le flux Amortissements est reconstruit à partir des nouvelles sorties.
 
+## Acquisition → Résultat fiscal (frais_en_charges)
+
+Quand JUG-001 retient la déduction immédiate, le flux Acquisition produit aussi :
+
+| Sortie | Transformation source | Type |
+|---|---|---|
+| `frais_en_charges` | TRF-0001 | montant |
+
+Cette sortie ne rejoint jamais le flux Amortissements (elle vaut alors 0 dans le prix de revient — TRF-0001). Elle rejoint directement les charges d'exploitation de l'exercice concerné, au même titre que `total_charges_déductibles` (Charges, TRF-0020) : le domaine Résultat fiscal l'agrège dans `charges_exploitation`.
+
+**Règle** : `frais_en_charges` est un montant déjà calculé par TRF-0001, jamais recalculé en aval. Il ne s'additionne qu'une fois — soit il augmente le prix de revient (intégration), soit il rejoint les charges de l'exercice (déduction), jamais les deux.
+
 ## Amortissements → Résultat fiscal
 
 Le flux Amortissements produit :
@@ -127,6 +139,7 @@ Le domaine Résultat fiscal est un moteur d'orchestration. Il consomme les sorti
 |---|---|---|
 | `total_recettes` | Recettes | TRF-0029 |
 | `total_charges_déductibles` | Charges | TRF-0020 |
+| `frais_en_charges` | Acquisition | TRF-0001 |
 | `charges_pré_exploitation` | Pré-exploitation | TRF-0025 |
 | `total_annuel_exercice` (amortissement) | Amortissements | TRF-0012 |
 | `perte_exceptionnelle` | Travaux | TRF-0027 |

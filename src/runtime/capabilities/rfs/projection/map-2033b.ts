@@ -261,11 +261,13 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // Case 264 — Total des charges d'exploitation (II). Formule établie et
   // vérifiée par l'audit FEC (grand livre comptable réel du dossier de
   // référence, reconciliation au centime près) : les charges d'exploitation
-  // comptables complètes = la part déductible fiscalement (F-012) + les
-  // dotations aux amortissements comptables (compte PCG 681, confirmé dans
-  // le FEC) + les charges comptabilisées mais fiscalement non déductibles
-  // (F-012, ex. fonds de roulement de copropriété). Projection de trois
-  // valeurs déjà calculées — aucune règle fiscale nouvelle.
+  // comptables complètes = la part déductible fiscalement (agrégée par F-006
+  // dans `chargesExploitation` — F-012, et depuis TRF-0001/JUG-001 les frais
+  // d'acquisition F-010 choisis en déduction immédiate) + les dotations aux
+  // amortissements comptables (compte PCG 681, confirmé dans le FEC) + les
+  // charges comptabilisées mais fiscalement non déductibles (F-012, ex.
+  // fonds de roulement de copropriété). Projection de trois valeurs déjà
+  // calculées — aucune règle fiscale nouvelle.
   //
   // P0-3a.4 — `chargesExploitationPreExploitation` (composante A, P0-3a.3)
   // rejoint ce total : ce sont des charges d'exploitation F-012 (taxe
