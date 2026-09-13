@@ -3,9 +3,9 @@ id: VER-005
 title: Ventilation avec mobilier isolé
 type: vérification
 status: approved
-version: "1.0"
+version: "1.1"
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-09-13
 owner: product-owner
 tags: [lmnp, ventilation, mobilier, limite, vérification]
 cible: TRF-0002
@@ -17,21 +17,21 @@ données_entrée:
   montant_mobilier_isolé: 8000
   ratio_terrain: 0.20
 résultat_attendu:
-  valeur_terrain: 35680
-  valeur_bâti: 142720
-  base_amortissable_bâti: 142720
-verdict: "Conforme si terrain + bâti + mobilier == prix_revient (35680 + 142720 + 8000 == 186400)"
+  valeur_terrain: 37280
+  valeur_bâti: 149120
+  base_amortissable_bâti: 149120
+verdict: "Conforme si terrain + bâti == prix_revient (37280 + 149120 == 186400)"
 ---
 
 # VER-005 — Ventilation avec mobilier isolé
 
 ## Contexte
 
-Prix de revient 186 400 € (frais intégrés, mobilier de 8 000 € déjà isolé). Ratio terrain 20%.
+Prix de revient 186 400 € (frais intégrés, mobilier de 8 000 € déjà isolé par TRF-0001 — cf. VER-002). Ratio terrain 20%.
 
 ## Traitement attendu
 
-1. prix_hors_mobilier = 186 400 - 8 000 = 178 400 €
-2. valeur_terrain = 178 400 × 0,20 = 35 680 €
-3. valeur_bâti = 178 400 × 0,80 = 142 720 €
-4. Cohérence : 35 680 + 142 720 + 8 000 = 186 400 ✓
+1. valeur_terrain = 186 400 × 0,20 = 37 280 €
+2. valeur_bâti = 186 400 × 0,80 = 149 120 €
+3. Cohérence locale (garde-fou TRF-0002) : 37 280 + 149 120 = 186 400 ✓
+4. Invariant de conservation global : 37 280 + 149 120 + 8 000 = 194 400 € = prix_acquisition (180 000) + frais_notaire (14 400) ✓
