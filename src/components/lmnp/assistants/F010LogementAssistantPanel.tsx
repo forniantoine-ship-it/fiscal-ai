@@ -813,6 +813,24 @@ export function F010LogementAssistantPanel() {
     if (decision.kind === "start") {
       return { decision, turn: assistant.start() };
     }
+    if (decision.kind === "resume_complete") {
+      // P1 (reload/complete) : reprend le VRAI `F010PersistedState` complet
+      // (réponses, history, confirmed, review) au lieu du repli synthétique
+      // `legacy_complete` — même message d'accueil qu'avant (aucun changement
+      // de wording), mais l'état porte désormais toutes les données pour que
+      // la synthèse s'affiche et que « Modifier mes réponses » ouvre un
+      // parcours réellement éditable.
+      return {
+        decision,
+        turn: {
+          state: assistant.resume(persisted!).state,
+          messages: [
+            { role: "assistant" as const, content: "Votre logement est déjà configuré pour cet exercice." },
+          ],
+          completed: false,
+        },
+      };
+    }
     return { decision, turn: assistant.resume(persisted!) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

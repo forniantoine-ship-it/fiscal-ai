@@ -239,14 +239,29 @@ describe("I. ancien dossier sans logementAssistantState", () => {
   });
 });
 
-describe("J. session COMPLETE ne déclenche jamais resume", () => {
-  it("resolveF010ResumeDecision ne renvoie jamais un kind de reprise pour step:'complete'", () => {
-    const persisted: F010PersistedState = { step: "complete", fieldSources: {}, updatedAt: "2026-08-27T10:00:00.000Z" };
+describe("J. session COMPLETE réellement persistée → resume_complete, jamais le repli synthétique legacy_complete (P1)", () => {
+  it("un F010PersistedState avec step:'complete' est reconnu et repris intégralement, pas remplacé par un état synthétique", () => {
+    const persisted: F010PersistedState = {
+      step: "complete",
+      fieldSources: {},
+      updatedAt: "2026-08-27T10:00:00.000Z",
+      prixAcquisition: 280_000,
+      fraisNotaire: 19_500,
+      choixTraitementFrais: "integration",
+      typeBien: "appartement",
+      ratioTerrain: 0.15,
+      history: ["review_plan"],
+    };
     const decision = resolveF010ResumeDecision({ persisted, isLegacyComplete: true });
-    assert.equal(decision.kind, "legacy_complete");
+    assert.deepEqual(decision, { kind: "resume_complete" });
+    assert.notEqual(decision.kind, "legacy_complete");
     assert.notEqual(decision.kind, "resume_analysis");
     assert.notEqual(decision.kind, "resume_pending_extraction");
-    assert.notEqual(decision.kind, "resume_step");
+  });
+
+  it("un dossier réellement legacy (aucun F010PersistedState, seulement logementConfirmedAt) reste sur le repli legacy_complete", () => {
+    const decision = resolveF010ResumeDecision({ persisted: undefined, isLegacyComplete: true });
+    assert.deepEqual(decision, { kind: "legacy_complete" });
   });
 });
 
@@ -267,5 +282,133 @@ describe("Non-régression : résultat jamais mis en cache", () => {
     const turn = assistant.resume(persisted);
     assert.equal(turn.state.step, "review_plan");
     assert.ok(turn.state.result, "le plan doit être recalculé à la reprise, jamais absent");
+  });
+});
+
+describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () => {
+  async function completeF010Session(assistant: F010LogementAssistant) {
+    let turn = assistant.start();
+    turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
+    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_bien",
+      prixAcquisition: 280_000,
+      typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
+    });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_frais",
+      fraisNotaire: 19_500,
+      choixTraitementFrais: "integration",
+    });
+    turn = await assistant.handle(turn.state, { type: "skip_mobilier" });
+    turn = await assistant.handle(turn.state, { type: "submit_ventilation", ratioTerrain: 0.15 });
+    turn = await assistant.handle(turn.state, { type: "confirm" });
+    return turn;
+  }
+
+  it("SCÉNARIO 1 — complete → persist → reload : la synthèse complète est disponible (state.result présent, pas seulement step='complete')", async () => {
+    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    assert.equal(completed.completed, true);
+    assert.equal(completed.state.step, "complete");
+
+    const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
+    const decision = resolveF010ResumeDecision({ persisted, isLegacyComplete: true });
+    assert.deepEqual(decision, { kind: "resume_complete" });
+
+    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    assert.equal(resumed.state.step, "complete");
+    assert.ok(resumed.state.result, "la synthèse doit être reconstruite après reload, pas absente");
+    assert.equal(resumed.state.result!.planValide, true);
+    assert.equal(resumed.state.prixAcquisition, 280_000);
+    assert.equal(resumed.state.ratioTerrain, 0.15);
+  });
+
+  it("SCÉNARIO 2 — complete → reload → Modifier mes réponses : go_back ouvre review_plan avec les réponses existantes, pas un écran vide", async () => {
+    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
+    const assistant = new F010LogementAssistant(ctx);
+    const resumed = assistant.resume(persisted);
+
+    const modifyTurn = await assistant.handle(resumed.state, { type: "go_back" });
+    assert.equal(modifyTurn.state.step, "review_plan");
+    assert.equal(modifyTurn.state.prixAcquisition, 280_000);
+    assert.equal(modifyTurn.state.fraisNotaire, 19_500);
+    assert.equal(modifyTurn.state.ratioTerrain, 0.15);
+    assert.ok(modifyTurn.state.result, "l'écran de modification doit rester exploitable (plan affiché)");
+  });
+
+  it("SCÉNARIO 3 — complete → reload → Modifier sans changement : aucune donnée métier confirmée n'est perdue", async () => {
+    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
+    const assistant = new F010LogementAssistant(ctx);
+    const resumed = assistant.resume(persisted);
+    const before = resumed.state;
+
+    const modifyTurn = await assistant.handle(before, { type: "go_back" });
+    const after = modifyTurn.state;
+
+    assert.equal(after.prixAcquisition, before.prixAcquisition);
+    assert.equal(after.fraisNotaire, before.fraisNotaire);
+    assert.equal(after.choixTraitementFrais, before.choixTraitementFrais);
+    assert.equal(after.ratioTerrain, before.ratioTerrain);
+    assert.equal(after.typeBien, before.typeBien);
+    assert.deepEqual(after.confirmed, before.confirmed);
+  });
+
+  it("SCÉNARIO 4 — complete → reload → Modifier → changement réel : recalcul cohérent, nouvel état persistable sans transcript", async () => {
+    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
+    const assistant = new F010LogementAssistant(ctx);
+    const resumed = assistant.resume(persisted);
+    const originalValeurTerrain = resumed.state.result!.valeurTerrain;
+
+    const backTurn = await assistant.handle(resumed.state, { type: "go_back" });
+    const changedTurn = await assistant.handle(backTurn.state, {
+      type: "submit_ventilation",
+      ratioTerrain: 0.25,
+    });
+
+    assert.equal(changedTurn.state.step, "review_plan");
+    assert.ok(changedTurn.state.result, "le nouveau plan doit être recalculé après une vraie modification");
+    assert.notEqual(changedTurn.state.result!.valeurTerrain, originalValeurTerrain);
+    assert.equal(changedTurn.state.result!.prixRevient, resumed.state.result!.prixRevient, "seule la ventilation dépend du ratio modifié — le prix de revient (TRF-0001) reste inchangé");
+
+    const newPersisted = toF010PersistedState(changedTurn.state, "2026-09-13T10:05:00.000Z");
+    assert.equal(newPersisted.ratioTerrain, 0.25);
+    assert.equal("result" in newPersisted, false, "F010PersistedState ne persiste jamais le résultat calculé");
+  });
+
+  it("SCÉNARIO 5 — ancien workspace compatible : un F010PersistedState complet sans champ optionnel récent reprend quand même en resume_complete", () => {
+    const persisted: F010PersistedState = {
+      step: "complete",
+      fieldSources: {},
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      prixAcquisition: 200_000,
+      fraisNotaire: 15_000,
+      choixTraitementFrais: "integration",
+      typeBien: "appartement",
+      ratioTerrain: 0.2,
+      history: ["review_plan"],
+      // pas de `review`, pas de `confirmed`, pas de `pendingExtraction` : absents, jamais inventés.
+    };
+    const decision = resolveF010ResumeDecision({ persisted, isLegacyComplete: true });
+    assert.deepEqual(decision, { kind: "resume_complete" });
+
+    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    assert.equal(resumed.state.step, "complete");
+    assert.ok(resumed.state.result);
+    assert.equal(resumed.state.confirmed, undefined, "champ absent du blob persisté : jamais inventé, reste undefined");
+  });
+
+  it("SCÉNARIO 6 — aucun transcript conversationnel n'est requis ni produit pour reprendre une session complète", async () => {
+    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
+
+    assert.equal("messages" in persisted, false, "F010PersistedState ne porte aucun champ messages/transcript");
+
+    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    assert.equal(resumed.state.step, "complete");
+    assert.ok(resumed.state.result, "la reprise ne dépend d'aucun historique de messages, seulement des champs structurés");
   });
 });

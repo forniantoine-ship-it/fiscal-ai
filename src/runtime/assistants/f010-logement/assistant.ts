@@ -322,7 +322,11 @@ export class F010LogementAssistant {
       review: persisted.review,
     };
 
-    if (state.step === "review_plan") {
+    // P1 (reload/complete) : `result` n'est jamais persisté (toujours recalculé,
+    // cf. commentaire de `F010PersistedState`) — recalculé ici aussi pour
+    // `"complete"`, pas seulement `"review_plan"`, sinon la synthèse et l'écran
+    // de modification (`go_back` depuis COMPLETE) retrouvent un état sans plan.
+    if (state.step === "review_plan" || state.step === "complete") {
       const result = this.computePlan(state);
       if (result) state.result = result;
     }

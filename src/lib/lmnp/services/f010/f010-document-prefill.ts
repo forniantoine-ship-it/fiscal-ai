@@ -345,7 +345,8 @@ export type F010ResumeDecision =
   | { kind: "legacy_complete" }
   | { kind: "resume_analysis"; analyzingDocumentId: string }
   | { kind: "resume_pending_extraction"; pendingExtraction: F010ActePrefill }
-  | { kind: "resume_step" };
+  | { kind: "resume_step" }
+  | { kind: "resume_complete" };
 
 export type ResolveF010ResumeDecisionParams = {
   persisted: F010PersistedState | undefined;
@@ -358,11 +359,24 @@ export type ResolveF010ResumeDecisionParams = {
  * React : encode à elle seule l'ordre imposé par la contrainte #5
  * (`shouldResumeF010` toujours vérifié avant le repli `logementConfirmedAt`),
  * pour que cet ordre ne dépende pas d'une relecture attentive du JSX.
+ *
+ * P1 (reload/complete) : un `F010PersistedState` avec `step === "complete"`
+ * contient déjà toutes les réponses (`toF010PersistedState` les sérialise
+ * intégralement à la confirmation) — `shouldResumeF010` l'exclut du chemin
+ * `resume_step` (mêmes règles que F009), mais il ne doit jamais tomber dans
+ * le repli `legacy_complete` (état synthétique sans réponses) tant que cette
+ * donnée structurée existe réellement. Vérifié avant `shouldResumeF010`,
+ * donc avant `isLegacyComplete` : c'est une preuve plus forte qu'un simple
+ * flag `logementConfirmedAt`.
  */
 export function resolveF010ResumeDecision(
   params: ResolveF010ResumeDecisionParams,
 ): F010ResumeDecision {
   const { persisted, isLegacyComplete } = params;
+
+  if (persisted && persisted.step === "complete") {
+    return { kind: "resume_complete" };
+  }
 
   if (shouldResumeF010(persisted)) {
     if (persisted!.analyzingDocumentId && !persisted!.pendingExtraction) {

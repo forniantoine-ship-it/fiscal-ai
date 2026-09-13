@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-import { F010LogementAssistant } from "@/runtime";
+import { F010LogementAssistant, computeAmortizationPlan } from "@/runtime";
 import type { F010State } from "@/runtime";
 
 const ctx = { dossierId: "test-dossier", fiscalYear: 2024 };
@@ -30,6 +30,20 @@ const panelSource = readFileSync(
 );
 
 function reviewPlanState(overrides: Partial<F010State> = {}): F010State {
+  // P0-3 : `confirm` refuse tout `state.result` absent ou invalide (garde
+  // métier ajoutée après ce cycle) — un plan valide et cohérent avec les
+  // champs ci-dessous est donc requis pour que le test 9 (confirm → complete
+  // → go_back) exerce réellement ce chemin, pas seulement le refus du garde.
+  const plan = computeAmortizationPlan({
+    prixAcquisition: 280000,
+    mobilierInclus: false,
+    fraisNotaire: 21000,
+    choixTraitementFrais: "integration",
+    typeBien: "appartement",
+    ratioTerrain: 0.15,
+    dateMiseEnService: "2024-03-01",
+    exerciceFiscal: 2024,
+  });
   return {
     step: "review_plan",
     prixAcquisition: 280000,
@@ -41,6 +55,7 @@ function reviewPlanState(overrides: Partial<F010State> = {}): F010State {
     ratioTerrain: 0.15,
     fieldSources: {},
     history: ["orientation", "acquisition_source", "collect_bien", "collect_frais", "collect_mobilier", "ventilation"],
+    result: { ...plan, explanation: "" },
     ...overrides,
   };
 }

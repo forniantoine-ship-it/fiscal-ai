@@ -18,9 +18,20 @@ type Decision =
   | "resume_step"
   | "resume_analysis"
   | "resume_pending_extraction"
+  | "resume_complete"
   | "legacy_complete";
 
+/**
+ * P1 (reload/complete) : miroir strict de `resolveF010ResumeDecision`
+ * (f010-document-prefill.ts) — un `F010PersistedState` avec `step ===
+ * "complete"` contient déjà toutes les réponses et doit être repris
+ * intégralement (`resume_complete`), vérifié AVANT `shouldResumeF010`
+ * (qui l'exclut, mêmes règles que F009) et avant le repli `legacy_complete`
+ * (réservé au vrai legacy : aucun `F010PersistedState`, seulement le flag
+ * `logementConfirmedAt`).
+ */
 function decide(persisted: F010PersistedState | undefined, legacyComplete: boolean): Decision {
+  if (persisted && persisted.step === "complete") return "resume_complete";
   if (shouldResumeF010(persisted)) {
     if (persisted!.analyzingDocumentId && !persisted!.pendingExtraction) return "resume_analysis";
     if (persisted!.pendingExtraction) return "resume_pending_extraction";
@@ -76,10 +87,20 @@ describe("B1-1 reprise après reload — matrice A→I", () => {
     assert.equal(new F010LogementAssistant(ctx).resume(persisted).state.step, "review_plan");
   });
 
-  it("D. complete + refresh → legacy_complete (pas shouldResumeF010)", () => {
-    const persisted = toF010PersistedState(base({ step: "complete" }), "2026-08-28T10:00:00.000Z");
+  it("D. complete + refresh, F010PersistedState réel présent → resume_complete, jamais legacy_complete (P1)", () => {
+    const persisted = toF010PersistedState(
+      base({ step: "complete", prixAcquisition: 200_000, fraisNotaire: 15_000, choixTraitementFrais: "integration", typeBien: "appartement", ratioTerrain: 0.2 }),
+      "2026-08-28T10:00:00.000Z",
+    );
+    // `shouldResumeF010` exclut toujours "complete" (mêmes règles que F009) —
+    // ce n'est PAS la fonction qui décide de la reprise d'un complete réel.
     assert.equal(shouldResumeF010(persisted), false);
-    assert.equal(decide(persisted, true), "legacy_complete");
+    assert.equal(decide(persisted, true), "resume_complete");
+    assert.notEqual(decide(persisted, true), "legacy_complete");
+  });
+
+  it("D2. complete + refresh, aucun F010PersistedState (vrai legacy, seulement logementConfirmedAt) → legacy_complete (P1)", () => {
+    assert.equal(decide(undefined, true), "legacy_complete");
   });
 
   it("E. ancien blob sans logementAssistantState → start", () => {
