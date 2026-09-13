@@ -335,3 +335,169 @@ describe("F-010 — P0 : le prorata première année est ancré sur l'année de 
     assert.equal(y2025.ratio, y2024.ratio);
   });
 });
+
+describe("F-010 — P0-1 : TRF-0002 ne retranche plus le mobilier une seconde fois", () => {
+  // Oracle KS (8d88287, TRF-0002 v1.1) : acte 200 000 €, mobilier inclus
+  // 10 000 €, frais notaire 15 000 € intégrés, ratio terrain 20 %.
+  const ORACLE = {
+    prixAcquisition: 200000,
+    mobilierInclus: true,
+    montantMobilier: 10000,
+    fraisNotaire: 15000,
+    choixTraitementFrais: "integration" as const,
+    typeBien: "appartement" as const,
+    ratioTerrain: 0.2,
+    dateMiseEnService: "2024-01-01",
+    exerciceFiscal: 2024,
+  };
+
+  it("mobilier > 0 : prix de revient hors mobilier (205 000), terrain (41 000) et bâti (164 000)", () => {
+    const r = computeAmortizationPlan(ORACLE);
+    assert.equal(r.prixRevient, 205000);
+    assert.equal(r.montantMobilierIsole, 10000);
+    assert.equal(r.valeurTerrain, 41000);
+    assert.equal(r.valeurBati, 164000);
+    assert.equal(r.baseAmortissableBati, 164000);
+  });
+
+  it("conservation de valeur : terrain + bâti + mobilier == prix d'acquisition + frais incorporés (215 000)", () => {
+    const r = computeAmortizationPlan(ORACLE);
+    assert.equal(r.valeurTerrain + r.valeurBati + r.montantMobilierIsole, 215000);
+    assert.equal(ORACLE.prixAcquisition + ORACLE.fraisNotaire, 215000);
+  });
+
+  it("absence de double soustraction : ventilationTerrainBati ventile directement prixRevient, jamais prixRevient - montantMobilierIsole", () => {
+    const ventilation = ventilationTerrainBati({
+      prixRevient: 205000,
+      montantMobilierIsole: 10000,
+      ratioTerrain: 0.2,
+    });
+    // Avant correction (bug double soustraction) : terrain 39000 / bâti 156000.
+    assert.notEqual(ventilation.valeurTerrain, 39000);
+    assert.equal(ventilation.valeurTerrain, 41000);
+    assert.equal(ventilation.valeurBati, 164000);
+    assert.equal(ventilation.anomalies.filter((a) => a.severity === "fatal").length, 0);
+  });
+
+  it("mobilier = 0 : la ventilation reste inchangée (non-régression du cas nominal)", () => {
+    const r = computeAmortizationPlan({ ...ORACLE, mobilierInclus: false, montantMobilier: undefined });
+    assert.equal(r.montantMobilierIsole, 0);
+    assert.equal(r.prixRevient, 215000);
+    assert.equal(r.valeurTerrain, 43000);
+    assert.equal(r.valeurBati, 172000);
+  });
+
+  it("frais incorporés : le prix de revient hors mobilier inclut déjà les frais avant ventilation", () => {
+    const prix = computePrixRevient({
+      prixAcquisition: ORACLE.prixAcquisition,
+      mobilierInclus: true,
+      montantMobilier: ORACLE.montantMobilier,
+      fraisNotaire: ORACLE.fraisNotaire,
+      choixTraitementFrais: "integration",
+    });
+    assert.equal(prix.prixRevient, 205000);
+    const ventilation = ventilationTerrainBati({
+      prixRevient: prix.prixRevient,
+      montantMobilierIsole: prix.montantMobilierIsole,
+      ratioTerrain: 0.2,
+    });
+    assert.equal(ventilation.valeurTerrain + ventilation.valeurBati, prix.prixRevient);
+  });
+});
+
+describe("F-010 — P0-2 : fraisEnCharges (JUG-001 déduction) traverse computeAmortizationPlan sans se perdre", () => {
+  it("traitement = déduction : fraisEnCharges est reporté par computeAmortizationPlan", () => {
+    const r = computeAmortizationPlan({
+      prixAcquisition: 200000,
+      mobilierInclus: false,
+      fraisNotaire: 15000,
+      choixTraitementFrais: "deduction",
+      typeBien: "appartement",
+      ratioTerrain: 0.15,
+      dateMiseEnService: "2024-01-01",
+      exerciceFiscal: 2024,
+    });
+    assert.equal(r.prixRevient, 200000);
+    assert.equal(r.fraisEnCharges, 15000);
+  });
+
+  it("traitement = intégration : fraisEnCharges reste à 0, jamais confondu avec les frais incorporés", () => {
+    const r = computeAmortizationPlan({
+      prixAcquisition: 200000,
+      mobilierInclus: false,
+      fraisNotaire: 15000,
+      choixTraitementFrais: "integration",
+      typeBien: "appartement",
+      ratioTerrain: 0.15,
+      dateMiseEnService: "2024-01-01",
+      exerciceFiscal: 2024,
+    });
+    assert.equal(r.prixRevient, 215000);
+    assert.equal(r.fraisEnCharges, 0);
+  });
+});
+
+describe("F-010 — P0-3 : un plan invalide ne peut jamais être marqué planValide", () => {
+  const BASE = {
+    prixAcquisition: 200000,
+    mobilierInclus: false,
+    fraisNotaire: 15000,
+    choixTraitementFrais: "integration" as const,
+    typeBien: "appartement" as const,
+    dateMiseEnService: "2024-01-01",
+    exerciceFiscal: 2024,
+  };
+
+  it("ratio terrain = 0 : anomalie fatale de TRF-0002 remonte jusqu'à planValide=false", () => {
+    const r = computeAmortizationPlan({ ...BASE, ratioTerrain: 0 });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("ratio terrain invalide (> 1) : planValide=false", () => {
+    const r = computeAmortizationPlan({ ...BASE, ratioTerrain: 1.5 });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("ratio terrain NaN : rejeté explicitement, planValide=false (pas un simple '<=0' silencieux)", () => {
+    const r = computeAmortizationPlan({ ...BASE, ratioTerrain: NaN });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("ratio terrain Infinity : rejeté explicitement, planValide=false", () => {
+    const r = computeAmortizationPlan({ ...BASE, ratioTerrain: Infinity });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("prix d'acquisition invalide (NaN) : planValide=false", () => {
+    const r = computeAmortizationPlan({ ...BASE, prixAcquisition: NaN, ratioTerrain: 0.15 });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("mobilier invalide (NaN) : planValide=false", () => {
+    const r = computeAmortizationPlan({
+      ...BASE,
+      mobilierInclus: true,
+      montantMobilier: NaN,
+      ratioTerrain: 0.15,
+    });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("frais invalides (NaN) : planValide=false", () => {
+    const r = computeAmortizationPlan({ ...BASE, fraisNotaire: NaN, ratioTerrain: 0.15 });
+    assert.equal(r.planValide, false);
+    assert.ok(r.anomalies.some((a) => a.severity === "fatal"));
+  });
+
+  it("plan nominal valide : planValide=true et aucune anomalie fatale (non-régression)", () => {
+    const r = computeAmortizationPlan({ ...BASE, ratioTerrain: 0.15 });
+    assert.equal(r.planValide, true);
+    assert.equal(r.anomalies.filter((a) => a.severity === "fatal").length, 0);
+  });
+});

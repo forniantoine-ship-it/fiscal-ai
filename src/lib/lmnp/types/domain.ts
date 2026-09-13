@@ -559,6 +559,12 @@ export type LmnpActivityType = "LMNP" | "LMP";
 /** Sortie durable de F-010 (Assistant Logement) — consommée par F-006/F-012. */
 export interface LogementAmortissementOutput {
   prixRevient: number;
+  /**
+   * JUG-001 : frais d'acquisition en déduction immédiate (TRF-0001) — 0 si
+   * intégrés au prix de revient. Optionnel pour ne pas casser les fixtures/
+   * dossiers antérieurs à ce champ ; F-006 le traite comme 0 si absent.
+   */
+  fraisEnCharges?: number;
   valeurTerrain: number;
   valeurBati: number;
   baseAmortissableBati: number;

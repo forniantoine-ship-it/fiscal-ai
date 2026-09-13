@@ -4,8 +4,9 @@ import { round2 } from "./types";
 /**
  * TRF-0002 — Ventilation terrain-bâti.
  * Fonde AX-001 (le terrain ne s'amortit jamais). Paramétré par JUG-002.
- * Sépare le prix de revient (hors mobilier) en part terrain (non amortissable)
- * et part bâti (amortissable).
+ * Ventile directement le prix de revient — déjà hors mobilier en sortie de
+ * TRF-0001 (AX-003) — entre part terrain (non amortissable) et part bâti
+ * (amortissable). Le mobilier n'est pas retranché une seconde fois ici.
  */
 export type VentilationTerrainBatiInput = {
   prixRevient: number;
@@ -26,9 +27,19 @@ export function ventilationTerrainBati(
 ): VentilationTerrainBatiOutput {
   const anomalies: Anomaly[] = [];
 
-    const prixHorsMobilier = round2(input.prixRevient - input.montantMobilierIsole);
-    const valeurTerrain = round2(prixHorsMobilier * input.ratioTerrain);
-    const valeurBati = round2(prixHorsMobilier - valeurTerrain);
+    if (!Number.isFinite(input.prixRevient)) {
+      anomalies.push({ severity: "fatal", message: "Le prix de revient doit être un nombre valide." });
+    }
+    if (!Number.isFinite(input.ratioTerrain)) {
+      anomalies.push({
+        severity: "fatal",
+        message: "Le ratio terrain doit être un nombre valide.",
+        field: "ratioTerrain",
+      });
+    }
+
+    const valeurTerrain = round2(input.prixRevient * input.ratioTerrain);
+    const valeurBati = round2(input.prixRevient - valeurTerrain);
     const baseAmortissableBati = valeurBati;
 
     // Gardes TRF-0002
@@ -45,11 +56,11 @@ export function ventilationTerrainBati(
         field: "ratioTerrain",
       });
     }
-    const somme = round2(valeurTerrain + valeurBati + input.montantMobilierIsole);
+    const somme = round2(valeurTerrain + valeurBati);
     if (Math.abs(somme - round2(input.prixRevient)) > 0.01) {
       anomalies.push({
         severity: "fatal",
-        message: "Terrain + bâti + mobilier doit être égal au prix de revient.",
+        message: "Terrain + bâti doit être égal au prix de revient.",
       });
     }
 

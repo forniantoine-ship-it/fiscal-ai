@@ -132,3 +132,57 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
     assert.equal(turn.state.fieldSources.typeBien, "manual");
   });
 });
+
+describe("F-010 — P0-3 : la Capacité refuse de confirmer un plan invalide, quel que soit l'appelant", () => {
+  async function reachVentilation(ratioTerrain: number) {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    const start = assistant.start();
+    let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
+    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_bien",
+      prixAcquisition: 280000,
+      typeBien: "appartement",
+      natureBien: "ancien",
+      dateAcquisition: "2024-03-01",
+    });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_frais",
+      fraisNotaire: 19500,
+      choixTraitementFrais: "integration",
+    });
+    turn = await assistant.handle(turn.state, { type: "skip_mobilier" });
+    turn = await assistant.handle(turn.state, { type: "submit_ventilation", ratioTerrain });
+    return { assistant, turn };
+  }
+
+  it("ratio terrain = 0 : review_plan affiche planValide=false et confirm est refusé (pas de transition vers complete)", async () => {
+    const { assistant, turn } = await reachVentilation(0);
+    assert.equal(turn.state.step, "review_plan");
+    assert.equal(turn.state.result!.planValide, false);
+
+    const confirmTurn = await assistant.handle(turn.state, { type: "confirm" });
+    assert.equal(confirmTurn.completed, false);
+    assert.equal(confirmTurn.state.step, "review_plan");
+    assert.ok(!confirmTurn.messages.some((m) => /enregistré/i.test(m.content)));
+  });
+
+  it("appel direct de confirm sur un state.result invalide construit à la main : refusé également (garde côté Capacité, pas seulement côté flux)", async () => {
+    const { assistant, turn } = await reachVentilation(0.15);
+    const tampered: F010State = {
+      ...turn.state,
+      result: { ...turn.state.result!, planValide: false },
+    };
+    const confirmTurn = await assistant.handle(tampered, { type: "confirm" });
+    assert.equal(confirmTurn.completed, false);
+    assert.equal(confirmTurn.state.step, "review_plan");
+  });
+
+  it("plan nominal valide : confirm complète normalement (non-régression)", async () => {
+    const { assistant, turn } = await reachVentilation(0.15);
+    assert.equal(turn.state.result!.planValide, true);
+    const confirmTurn = await assistant.handle(turn.state, { type: "confirm" });
+    assert.equal(confirmTurn.completed, true);
+    assert.equal(confirmTurn.state.step, "complete");
+  });
+});

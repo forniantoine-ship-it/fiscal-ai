@@ -612,6 +612,19 @@ export class F010LogementAssistant {
       }
 
       case "confirm": {
+        // Garde métier (P0-3) : un plan comportant une anomalie fatale (TRF-0001
+        // à TRF-0014 — ratio terrain nul/invalide, valeur non finie, etc.) ne
+        // peut jamais être confirmé, quel que soit l'appelant (UI ou test).
+        // Le bouton désactivé côté panel n'est qu'une défense secondaire.
+        if (!state.result || !state.result.planValide) {
+          messages.push({
+            role: "assistant",
+            content:
+              "Impossible de valider : le calcul comporte une incohérence. " +
+              "Corrigez les montants saisis avant de confirmer.",
+          });
+          return { state, messages, completed: false };
+        }
         messages.push({ role: "user", content: "Oui, je valide" });
         messages.push({
           role: "assistant",
@@ -719,6 +732,7 @@ export class F010LogementAssistant {
     return {
       prixRevient: computed.prixRevient,
       montantMobilierIsole: computed.montantMobilierIsole,
+      fraisEnCharges: computed.fraisEnCharges,
       valeurTerrain: computed.valeurTerrain,
       valeurBati: computed.valeurBati,
       baseAmortissableBati: computed.baseAmortissableBati,

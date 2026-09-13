@@ -1191,6 +1191,7 @@ export function F010LogementAssistantPanel() {
       });
       const logementAmortissement = {
         prixRevient: r.prixRevient,
+        fraisEnCharges: r.fraisEnCharges,
         valeurTerrain: r.valeurTerrain,
         valeurBati: r.valeurBati,
         baseAmortissableBati: r.baseAmortissableBati,

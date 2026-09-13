@@ -32,6 +32,7 @@ export type ComputeAmortizationPlanInput = {
 export type ComputeAmortizationPlanOutput = {
   prixRevient: number;
   montantMobilierIsole: number;
+  fraisEnCharges: number;
   valeurTerrain: number;
   valeurBati: number;
   baseAmortissableBati: number;
@@ -106,15 +107,21 @@ export function computeAmortizationPlan(
 
   const composants = [...decompose.composants, ...mobilier.composants];
 
+  // Un plan n'est valide que si aucune Transformation de la chaîne n'a
+  // remonté d'anomalie fatale (TRF-0001 à TRF-0014) — validate.planValide
+  // (TRF-0014) seul ne couvre pas les anomalies fatales de TRF-0001/TRF-0002.
+  const planValide = validate.planValide && anomalies.every((a) => a.severity !== "fatal");
+
   return {
     prixRevient: prix.prixRevient,
     montantMobilierIsole: prix.montantMobilierIsole,
+    fraisEnCharges: prix.fraisEnCharges,
     valeurTerrain: ventilation.valeurTerrain,
     valeurBati: ventilation.valeurBati,
     baseAmortissableBati: ventilation.baseAmortissableBati,
     prorataRatio: prorata.ratio,
     plan: assemble.plan,
-    planValide: validate.planValide,
+    planValide,
     composants,
     anomalies,
   };

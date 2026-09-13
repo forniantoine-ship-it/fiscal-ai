@@ -32,6 +32,8 @@ export type F010AcquisitionSource = "acte" | "partiel" | "manuel";
 export interface F010Result {
   prixRevient: number;
   montantMobilierIsole: number;
+  /** JUG-001 : frais d'acquisition en déduction immédiate (TRF-0001) — 0 si intégrés au prix de revient. */
+  fraisEnCharges: number;
   valeurTerrain: number;
   valeurBati: number;
   baseAmortissableBati: number;

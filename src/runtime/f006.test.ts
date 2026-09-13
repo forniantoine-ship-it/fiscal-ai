@@ -506,6 +506,56 @@ describe("F-006 — composition produceFiscalResult", () => {
   });
 });
 
+describe("F-006 — P0-2 : fraisEnCharges (F-010, JUG-001 déduction) rejoint chargesExploitation sans se perdre", () => {
+  // Oracle : prix 200 000, frais 15 000 en déduction, aucune autre charge,
+  // recettes 30 000 → charges liées aux frais = 15 000, résultat avant
+  // amortissements = 30 000 - 15 000 = 15 000.
+  const ORACLE_INPUT = {
+    exerciceFiscal: 2024,
+    activite: { dateMiseEnService: "2024-01-01" },
+    revenusAssistant: { exerciceFiscal: 2024, totalRecettes: 30000 },
+    chargesAssistant: { exerciceFiscal: 2024, totalDeductible: 0, totalPreExploitation: 0 },
+    amortissementAssistant: { exerciceFiscal: 2024, totalDotations: 0, status: "validated" as const },
+    logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z", fraisEnCharges: 15000 },
+  };
+
+  it("les frais déduits augmentent chargesExploitation et diminuent le résultat avant amortissement", () => {
+    const { result } = produceFiscalResult(ORACLE_INPUT);
+    assert.ok(result);
+    assert.equal(result!.charges.chargesExploitation, 15000);
+    assert.equal(result!.resultatAvantAmort, 15000);
+  });
+
+  it("disparition impossible : logementAmortissement sans fraisEnCharges se comporte comme 0 (jamais NaN)", () => {
+    const { result } = produceFiscalResult({
+      ...ORACLE_INPUT,
+      logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
+    });
+    assert.ok(result);
+    assert.equal(result!.charges.chargesExploitation, 0);
+    assert.equal(result!.resultatAvantAmort, 30000);
+  });
+
+  it("pas de double comptage : les frais F-012 (chargesAssistant.totalDeductible) et les frais F-010 s'additionnent une seule fois chacun", () => {
+    const { result } = produceFiscalResult({
+      ...ORACLE_INPUT,
+      chargesAssistant: { exerciceFiscal: 2024, totalDeductible: 2000, totalPreExploitation: 0 },
+    });
+    assert.ok(result);
+    assert.equal(result!.charges.chargesExploitation, 17000);
+  });
+
+  it("intégration au prix de revient (fraisEnCharges=0) : aucun impact sur chargesExploitation, jamais confondu avec la déduction", () => {
+    const { result } = produceFiscalResult({
+      ...ORACLE_INPUT,
+      logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z", fraisEnCharges: 0 },
+    });
+    assert.ok(result);
+    assert.equal(result!.charges.chargesExploitation, 0);
+    assert.equal(result!.resultatAvantAmort, 30000);
+  });
+});
+
 describe("F-006 — Explanation Engine", () => {
   it("explique un déficit avant amortissement", () => {
     const { result } = produceFiscalResult({

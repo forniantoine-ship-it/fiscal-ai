@@ -71,7 +71,16 @@ export type FiscalJournalEntry = {
 export type FiscalEngineInputs = {
   exerciceFiscal: number;
   activite: ActiviteFiscalInput;
-  logementAmortissement?: { computedAt: string };
+  logementAmortissement?: {
+    computedAt: string;
+    /**
+     * JUG-001 : frais d'acquisition en déduction immédiate (TRF-0001, F-010).
+     * Transport pur — jamais recalculé ici. Optionnel : 0 si l'assistant n'a
+     * pas encore produit cette donnée ou si les frais sont intégrés au prix
+     * de revient (à ne jamais confondre avec ce cas).
+     */
+    fraisEnCharges?: number;
+  };
   financementCharges?: FinancementFiscalInput;
   chargesAssistant?: ChargesFiscalInput;
   revenusAssistant?: RevenusFiscalInput;

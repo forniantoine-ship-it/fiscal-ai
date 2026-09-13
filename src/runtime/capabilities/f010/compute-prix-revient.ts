@@ -28,6 +28,39 @@ export type ComputePrixRevientOutput = {
 export function computePrixRevient(input: ComputePrixRevientInput): ComputePrixRevientOutput {
   const anomalies: Anomaly[] = [];
 
+    if (!Number.isFinite(input.prixAcquisition)) {
+      anomalies.push({
+        severity: "fatal",
+        message: "Le prix d'acquisition doit être un nombre valide.",
+        field: "prixAcquisition",
+      });
+    }
+    if (
+      input.mobilierInclus &&
+      input.montantMobilier !== undefined &&
+      !Number.isFinite(input.montantMobilier)
+    ) {
+      anomalies.push({
+        severity: "fatal",
+        message: "Le montant du mobilier doit être un nombre valide.",
+        field: "montantMobilier",
+      });
+    }
+    if (!Number.isFinite(input.fraisNotaire)) {
+      anomalies.push({
+        severity: "fatal",
+        message: "Les frais de notaire doivent être un nombre valide.",
+        field: "fraisNotaire",
+      });
+    }
+    if (input.fraisAgence !== undefined && !Number.isFinite(input.fraisAgence)) {
+      anomalies.push({
+        severity: "fatal",
+        message: "Les frais d'agence doivent être un nombre valide.",
+        field: "fraisAgence",
+      });
+    }
+
     const montantMobilierIsole =
       input.mobilierInclus && input.montantMobilier ? round2(input.montantMobilier) : 0;
     const prixHorsMobilier = round2(input.prixAcquisition - montantMobilierIsole);

@@ -15,7 +15,13 @@ export function aggregateFiscalInputs(
     return { anomalies };
   }
 
-  const chargesExploitation = round2(input.chargesAssistant.totalDeductible);
+  // F-010 (TRF-0001, JUG-001) : frais d'acquisition en déduction immédiate,
+  // transportés une seule fois jusqu'ici — jamais dupliqués dans F-012, jamais
+  // confondus avec les frais intégrés au prix de revient (fraisEnCharges = 0
+  // dans ce cas).
+  const chargesExploitation = round2(
+    input.chargesAssistant.totalDeductible + (input.logementAmortissement?.fraisEnCharges ?? 0),
+  );
   // Cycle 32 — transport pur depuis F-012 (ChargesAssistantOutput.totalNonDeductible),
   // jamais recalculé ici. 0 si l'assistant n'a pas encore produit cette donnée.
   const totalNonDeductible = round2(input.chargesAssistant.totalNonDeductible ?? 0);
