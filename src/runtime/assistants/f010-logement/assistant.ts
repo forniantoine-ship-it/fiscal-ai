@@ -406,7 +406,11 @@ export class F010LogementAssistant {
             natureBien: action.natureBien ?? state.natureBien,
             dateAcquisition: action.dateAcquisition,
             surface: action.surface,
-            adresse: action.adresse,
+            // P2-1 : même règle que natureBien/localisation — l'adresse n'a
+            // aucun champ manuel dans ce formulaire (uniquement issue de la
+            // review documentaire) ; l'omettre ici ne doit jamais effacer une
+            // adresse déjà connue.
+            adresse: action.adresse ?? state.adresse,
             localisation: action.localisation ?? state.localisation,
             fieldSources: {
               ...state.fieldSources,

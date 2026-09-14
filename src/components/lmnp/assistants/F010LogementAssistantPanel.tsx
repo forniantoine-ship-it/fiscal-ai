@@ -477,6 +477,18 @@ function isLegacyLogementComplete(draft: ReturnType<typeof useLmnp>["workspace"]
   return Boolean(draft?.logementConfirmedAt);
 }
 
+/**
+ * P2-2 : `TypeBien` ("appartement"/"maison"/"autre") n'est pas `PropertyType`
+ * — projection explicite pour `CONFIRM_LOGEMENT_PROFILE`, jamais une nouvelle
+ * taxonomie. "autre" doit rejoindre "non-classe" (déjà existant sur
+ * `PropertyType`), jamais retomber silencieusement sur "appartement".
+ */
+export function mapF010TypeBienToPropertyType(typeBien: TypeBien): "appartement" | "maison" | "non-classe" {
+  if (typeBien === "maison") return "maison";
+  if (typeBien === "autre") return "non-classe";
+  return "appartement";
+}
+
 /** Ordre d'affichage de l'écran de review (Cycle 4C2) — imposé par la demande produit. */
 const F010_REVIEW_FIELD_ORDER: readonly F010ReviewFieldKey[] = [
   "prixAcquisition",
@@ -676,13 +688,24 @@ export function buildF010BulkConfirmAnnouncement(params: {
  * pour un champ absent. Source unique, réutilisée à la fois pour l'état
  * disabled du bouton et pour la boucle de confirmation elle-même — aucune
  * seconde liste de champs.
+ *
+ * P2-3 : `editingField` exclut le champ actuellement ouvert en correction
+ * locale (`editingReviewField`, état React — jamais dans `F010State`). Sans
+ * cette exclusion, "Tout confirmer" confirmerait `entry.proposedValue` (la
+ * proposition du document) alors qu'une correction différente est visible
+ * mais pas encore soumise — l'utilisateur doit d'abord valider ou annuler
+ * cette édition avant que ce champ puisse être traité en masse.
  */
 export function computeF010ReviewConfirmableFields(
   state: F010State,
   visibleEntries: (readonly [F010ReviewFieldKey, F010ExtractionReviewField])[],
+  editingField?: F010ReviewFieldKey | null,
 ): F010ReviewFieldKey[] {
   return visibleEntries
-    .filter(([field, entry]) => entry.status === "pending" && !isF010ReviewFieldConflict(state, field, entry))
+    .filter(
+      ([field, entry]) =>
+        entry.status === "pending" && !isF010ReviewFieldConflict(state, field, entry) && field !== editingField,
+    )
     .map(([field]) => field);
 }
 
@@ -744,6 +767,26 @@ export type F010LocalFormSyncValues = {
 };
 
 /**
+ * P2-4 : reformate `ratioTerrain` (fraction 0-1) en pourcentage pour le champ
+ * de saisie, sans jamais arrondir la valeur métier. `Math.round` perdait la
+ * précision réelle (33,333 % devenait 33 %) et cette valeur ARRONDIE était
+ * ensuite réinjectée dans le calcul au resubmit — une mutation silencieuse,
+ * pas un simple format d'affichage. `toFixed(12)` élimine seulement le bruit
+ * de représentation flottante (ex. `0.1234 * 100` → `12.339999999999999`),
+ * jamais un chiffre significatif réellement saisi par l'utilisateur — 12
+ * décimales couvre la précision native d'un flottant IEEE-754 (~15-17
+ * chiffres significatifs au total), au-delà de laquelle une entrée à 6
+ * décimales (ex. `toFixed(6)`, audit contradictoire P2) pouvait encore
+ * tronquer un chiffre réellement saisi (12,3456789 % → 12,345679 %) ou, pire,
+ * faire collapser un cas limite vers 0 % ou 100 % (0,0000001 % → "0",
+ * 99,9999999 % → "100") — retombant alors dans l'anomalie fatale P0-3 que ce
+ * correctif visait justement à éliminer.
+ */
+export function formatF010RatioPercentForInput(ratioTerrain: number): string {
+  return String(Number((ratioTerrain * 100).toFixed(12)));
+}
+
+/**
  * Mise en forme pure des valeurs à réappliquer aux formulaires locaux —
  * extraite pour être testable directement (convention du projet, pas de
  * RTL). Mêmes règles exactes que l'ancien `syncLocalFormsFromState` inline :
@@ -765,7 +808,7 @@ export function computeF010LocalFormSync(next: F010State): F010LocalFormSyncValu
     choixFrais: next.choixTraitementFrais,
     fraisSource: (next.fieldSources.fraisNotaire as FieldSource) ?? "manual",
     mobilier: next.montantMobilier !== undefined ? String(next.montantMobilier) : undefined,
-    ratio: next.ratioTerrain !== undefined ? String(Math.round(next.ratioTerrain * 100)) : undefined,
+    ratio: next.ratioTerrain !== undefined ? formatF010RatioPercentForInput(next.ratioTerrain) : undefined,
     localisation: next.localisation,
     ratioSource: (next.fieldSources.ratioTerrain as FieldSource) ?? "manual",
   };
@@ -977,7 +1020,7 @@ export function F010LogementAssistantPanel() {
 
   // ventilation
   const [ratio, setRatio] = useState(() =>
-    initialBienState.ratioTerrain !== undefined ? String(Math.round(initialBienState.ratioTerrain * 100)) : "",
+    initialBienState.ratioTerrain !== undefined ? formatF010RatioPercentForInput(initialBienState.ratioTerrain) : "",
   );
   const [ratioSource, setRatioSource] = useState<FieldSource>("manual");
   const [localisation, setLocalisation] = useState<Localisation | "">(() => initialBienState.localisation ?? "");
@@ -1141,7 +1184,7 @@ export function F010LogementAssistantPanel() {
   const runBulkConfirmReview = useCallback(async () => {
     const initialState = stateRef.current;
     const visible = computeF010ReviewVisibleEntries(initialState.review);
-    const confirmableFields = computeF010ReviewConfirmableFields(initialState, visible);
+    const confirmableFields = computeF010ReviewConfirmableFields(initialState, visible, editingReviewField);
     if (confirmableFields.length === 0) return;
 
     setBusy(true);
@@ -1186,7 +1229,7 @@ export function F010LogementAssistantPanel() {
     } finally {
       setBusy(false);
     }
-  }, [assistant, analyzingDocumentId, pendingExtraction, persistSession, syncLocalFormsFromState, announceText]);
+  }, [assistant, analyzingDocumentId, pendingExtraction, persistSession, syncLocalFormsFromState, announceText, editingReviewField]);
 
   const persistCompletion = useCallback(
     (finalState: F010State) => {
@@ -1196,7 +1239,7 @@ export function F010LogementAssistantPanel() {
       dispatch({
         type: "CONFIRM_LOGEMENT_PROFILE",
         profile: {
-          propertyType: finalState.typeBien === "maison" ? "maison" : "appartement",
+          propertyType: finalState.typeBien !== undefined ? mapF010TypeBienToPropertyType(finalState.typeBien) : undefined,
           surface: finalState.surface,
           acquisitionDate: finalState.dateAcquisition,
           address: finalState.adresse,
@@ -1439,8 +1482,8 @@ export function F010LogementAssistantPanel() {
   const reviewResolvedCount = reviewVisibleEntries.filter(([, entry]) => entry.status !== "pending").length;
   const reviewHasPending = reviewVisibleEntries.some(([, entry]) => entry.status === "pending");
   const reviewConfirmableFields = useMemo(
-    () => computeF010ReviewConfirmableFields(state, reviewVisibleEntries),
-    [state, reviewVisibleEntries],
+    () => computeF010ReviewConfirmableFields(state, reviewVisibleEntries, editingReviewField),
+    [state, reviewVisibleEntries, editingReviewField],
   );
 
   const step = state.step;

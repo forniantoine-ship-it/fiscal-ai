@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { F010LogementAssistant } from "./assistant";
+import { toF010PersistedState } from "./types";
 import type { F010State } from "./types";
 
 const ctx = { dossierId: "test-dossier", fiscalYear: 2024 };
@@ -184,5 +185,129 @@ describe("F-010 — P0-3 : la Capacité refuse de confirmer un plan invalide, qu
     const confirmTurn = await assistant.handle(turn.state, { type: "confirm" });
     assert.equal(confirmTurn.completed, true);
     assert.equal(confirmTurn.state.step, "complete");
+  });
+});
+
+describe("F-010 — P2-1 : une adresse déjà connue n'est jamais effacée par un resubmit de submit_bien", () => {
+  async function reachCollectBienWithConfirmedAdresse(assistant: F010LogementAssistant) {
+    let turn = assistant.start();
+    turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
+    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
+    turn = await assistant.handle(turn.state, {
+      type: "analysis_success",
+      documentId: "doc-1",
+      proposal: {
+        prixAcquisition: 280000,
+        typeBien: "appartement",
+        dateAcquisition: "2024-03-01",
+        surface: 45,
+        adresse: "12 rue des Lilas, 75011 Paris",
+      },
+    });
+    for (const field of ["prixAcquisition", "typeBien", "dateAcquisition", "surface", "adresse"] as const) {
+      turn = await assistant.handle(turn.state, { type: "confirm_extracted_field", field });
+    }
+    assert.equal(turn.state.adresse, "12 rue des Lilas, 75011 Paris");
+    // Revenir jusqu'à collect_bien : review_extraction -> collect_bien (2 go_back
+    // depuis collect_frais, où leaveReviewIfComplete a atterri une fois la review close).
+    assert.equal(turn.state.step, "collect_frais");
+    turn = await assistant.handle(turn.state, { type: "go_back" });
+    turn = await assistant.handle(turn.state, { type: "go_back" });
+    assert.equal(turn.state.step, "collect_bien");
+    assert.equal(turn.state.adresse, "12 rue des Lilas, 75011 Paris");
+    return turn;
+  }
+
+  it("adresse confirmée via document, puis resubmit de collect_bien sans adresse (formulaire manuel réel) : adresse conservée", async () => {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    const atCollectBien = await reachCollectBienWithConfirmedAdresse(assistant);
+
+    // Reproduit exactement le dispatch du formulaire manuel (panel.tsx) : jamais `adresse`.
+    const resubmitted = await assistant.handle(atCollectBien.state, {
+      type: "submit_bien",
+      prixAcquisition: 285000,
+      typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
+      surface: 45,
+      fieldSources: { prixAcquisition: "manual", typeBien: "manual", dateAcquisition: "manual", surface: "manual" },
+    });
+
+    assert.equal(resubmitted.state.adresse, "12 rue des Lilas, 75011 Paris");
+    assert.equal(resubmitted.state.prixAcquisition, 285000, "le champ réellement resoumis change bien");
+  });
+
+  it("adresse corrigée (pas seulement confirmée) via document, puis même cycle : adresse corrigée conservée", async () => {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    let turn = assistant.start();
+    turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
+    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
+    turn = await assistant.handle(turn.state, {
+      type: "analysis_success",
+      documentId: "doc-1",
+      proposal: {
+        prixAcquisition: 280000,
+        typeBien: "appartement",
+        dateAcquisition: "2024-03-01",
+        surface: 45,
+        adresse: "12 rue des Lilas, 75011 Paris",
+      },
+    });
+    for (const field of ["prixAcquisition", "typeBien", "dateAcquisition", "surface"] as const) {
+      turn = await assistant.handle(turn.state, { type: "confirm_extracted_field", field });
+    }
+    turn = await assistant.handle(turn.state, {
+      type: "correct_extracted_field",
+      field: "adresse",
+      value: "3 avenue de la République, 75011 Paris",
+    });
+    assert.equal(turn.state.adresse, "3 avenue de la République, 75011 Paris");
+
+    turn = await assistant.handle(turn.state, { type: "go_back" });
+    turn = await assistant.handle(turn.state, { type: "go_back" });
+    assert.equal(turn.state.step, "collect_bien");
+
+    const resubmitted = await assistant.handle(turn.state, {
+      type: "submit_bien",
+      prixAcquisition: 280000,
+      typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
+      surface: 45,
+      fieldSources: { prixAcquisition: "manual", typeBien: "manual", dateAcquisition: "manual", surface: "manual" },
+    });
+    assert.equal(resubmitted.state.adresse, "3 avenue de la République, 75011 Paris");
+  });
+
+  it("survit à un cycle persistence/reload complet : adresse toujours présente après resume()", async () => {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    const atCollectBien = await reachCollectBienWithConfirmedAdresse(assistant);
+    const resubmitted = await assistant.handle(atCollectBien.state, {
+      type: "submit_bien",
+      prixAcquisition: 285000,
+      typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
+      surface: 45,
+      fieldSources: { prixAcquisition: "manual", typeBien: "manual", dateAcquisition: "manual", surface: "manual" },
+    });
+
+    const persisted = toF010PersistedState(resubmitted.state, "2026-09-13T10:00:00.000Z");
+    assert.equal(persisted.adresse, "12 rue des Lilas, 75011 Paris");
+
+    const resumed = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" }).resume(persisted);
+    assert.equal(resumed.state.adresse, "12 rue des Lilas, 75011 Paris");
+  });
+
+  it("submit_bien avec une adresse explicite écrase bien l'ancienne (jamais un blocage permanent)", async () => {
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    const atCollectBien = await reachCollectBienWithConfirmedAdresse(assistant);
+    const resubmitted = await assistant.handle(atCollectBien.state, {
+      type: "submit_bien",
+      prixAcquisition: 285000,
+      typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
+      surface: 45,
+      adresse: "9 boulevard Voltaire, 75011 Paris",
+      fieldSources: { prixAcquisition: "manual", typeBien: "manual", dateAcquisition: "manual", surface: "manual" },
+    });
+    assert.equal(resubmitted.state.adresse, "9 boulevard Voltaire, 75011 Paris");
   });
 });
