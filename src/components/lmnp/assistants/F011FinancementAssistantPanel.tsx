@@ -83,7 +83,9 @@ function fmtPct(rate: number): string {
 function amountLabelFor(kind: "insurance" | "guarantee" | "fees" | "ira"): string {
   switch (kind) {
     case "insurance":
-      return "Montant annuel de l'assurance externe (€)";
+      // F011-3 — ce libellé sert désormais aussi bien à l'assurance externe
+      // qu'à une assurance bancaire de montant inconnu : générique à dessein.
+      return "Montant annuel de l'assurance emprunteur (€)";
     case "guarantee":
       return "Montant de la commission de caution (€)";
     case "fees":
@@ -238,10 +240,20 @@ function ResultSummary({ result }: { result: F011Result }) {
       <RecapRow label="Total déductible" value={fmtEur(charges.totalChargesFinancementExercice)} emphasize />
       <RecapRow label="Intérêts" value={fmtEur(charges.totalInteretsEmprunt)} />
       <RecapRow label="Assurance" value={fmtEur(charges.totalAssurance)} />
-      {charges.totalInteretsPreExploitation > 0 ? (
+      {/*
+       * F011-3 (audit KS AX-011/JUG-011) — les intérêts + l'assurance
+       * pré-exploitation SONT déductibles (déduction immédiate, JUG-011
+       * choix A), déjà comptés dans le résultat fiscal via
+       * `chargesPreExploitation` (F-006) — seulement hors du total F-011
+       * ci-dessus, qui ne couvre que la période d'exploitation. Jamais
+       * "non déductible" : cette étiquette contredisait le traitement réel
+       * et pouvait pousser l'utilisateur à les intégrer par erreur aux
+       * frais d'acquisition (double comptage).
+       */}
+      {charges.totalInteretsPreExploitation + (charges.totalAssurancePreExploitation ?? 0) > 0 ? (
         <RecapRow
-          label="Pré-exploitation (non déductible)"
-          value={fmtEur(charges.totalInteretsPreExploitation)}
+          label="Pré-exploitation (déductible séparément)"
+          value={fmtEur(charges.totalInteretsPreExploitation + (charges.totalAssurancePreExploitation ?? 0))}
         />
       ) : null}
     </Card>
@@ -518,6 +530,15 @@ export function F011FinancementAssistantPanel() {
     null | "insurance" | "guarantee" | "fees" | "ira"
   >(null);
   const [amountInput, setAmountInput] = useState("");
+  /**
+   * F011-3 — quel type d'assurance la saisie de montant en cours
+   * (`awaitingAmountFor === "insurance"`) doit produire : "externe" reste
+   * inchangé (toujours une saisie dédiée) ; "bancaire" n'ouvre cette même
+   * saisie que lorsqu'aucun montant n'est déjà connu (voir `handleSuggestion`),
+   * pour ne jamais transformer silencieusement une assurance bancaire de
+   * montant inconnu en 0 €.
+   */
+  const [insuranceAmountType, setInsuranceAmountType] = useState<"bancaire" | "externe">("externe");
 
   /**
    * Persiste l'état conversationnel F011 (Cycle 2) — jamais le résultat
@@ -767,9 +788,20 @@ export function F011FinancementAssistantPanel() {
       if (suggestionId === "in_fine") void runAction({ type: "set_loan_type", typePret: "in_fine" });
 
       if (suggestionId === "assurance_bancaire") {
-        void runAction({ type: "set_insurance", assuranceType: "bancaire" });
+        // F011-3 — un montant déjà connu (extrait ou déjà saisi) est réutilisé
+        // tel quel, jamais redemandé. Sans montant connu, on ouvre la même
+        // saisie que pour "externe" plutôt que de laisser F011 retenir 0 €
+        // sans jamais permettre à l'utilisateur de préciser le montant.
+        if (state.pendingLoan?.assuranceAnnuelle !== undefined) {
+          void runAction({ type: "set_insurance", assuranceType: "bancaire" });
+        } else {
+          setInsuranceAmountType("bancaire");
+          setAmountInput("");
+          setAwaitingAmountFor("insurance");
+        }
       }
       if (suggestionId === "assurance_externe") {
+        setInsuranceAmountType("externe");
         setAmountInput(state.pendingLoan?.assuranceAnnuelle !== undefined ? String(state.pendingLoan.assuranceAnnuelle) : "");
         setAwaitingAmountFor("insurance");
       }
@@ -838,7 +870,7 @@ export function F011FinancementAssistantPanel() {
     const parsed = value !== undefined && Number.isFinite(value) ? value : undefined;
 
     if (awaitingAmountFor === "insurance") {
-      void runAction({ type: "set_insurance", assuranceType: "externe", assuranceAnnuelle: parsed });
+      void runAction({ type: "set_insurance", assuranceType: insuranceAmountType, assuranceAnnuelle: parsed });
     } else if (awaitingAmountFor === "guarantee") {
       void runAction({ type: "set_guarantee", typeGarantie: "caution", commissionCaution: parsed });
     } else if (awaitingAmountFor === "fees") {
@@ -848,7 +880,7 @@ export function F011FinancementAssistantPanel() {
     }
     setAwaitingAmountFor(null);
     setAmountInput("");
-  }, [amountInput, awaitingAmountFor, runAction]);
+  }, [amountInput, awaitingAmountFor, insuranceAmountType, runAction]);
 
   const step = state.step;
   const showLoanForm = step === "loan_collect";

@@ -344,12 +344,12 @@ describe("F-011 — correctif assurance bancaire : ne jamais écraser un montant
     assert.ok(ack, "un message d'accusé de réception doit être présent");
     assert.ok(ack!.content.includes("661"), "le montant retenu doit être annoncé");
     assert.ok(
-      !ack!.content.includes("Sans tableau d'amortissement importé"),
-      "ne jamais prétendre l'absence de tableau quand un montant a été extrait",
+      !ack!.content.includes("Sans montant indiqué"),
+      "ne jamais prétendre l'absence de montant quand un montant a été extrait",
     );
   });
 
-  it("F — bancaire sans aucun montant connu : le message d'impossibilité reste inchangé, rien n'est inventé", async () => {
+  it("F011-3 — F — bancaire sans aucun montant connu (bouton direct) : rien n'est inventé, aucun montant n'est saisi ici", async () => {
     const assistant = new F011FinancementAssistant(ctx, DEPS_OK);
     let turn = await assistant.handle(assistant.start().state, { type: "set_presence_emprunt", presence: true });
     turn = await assistant.handle(turn.state, { type: "set_nombre_prets", count: 1 });
@@ -365,7 +365,11 @@ describe("F-011 — correctif assurance bancaire : ne jamais écraser un montant
     turn = await assistant.handle(turn.state, { type: "set_insurance", assuranceType: "bancaire" });
     assert.equal(turn.state.pendingLoan?.assuranceAnnuelle, undefined, "aucun montant n'est inventé");
     const ack = turn.messages.find((m) => m.content.includes("Assurance bancaire"));
-    assert.ok(ack?.content.includes("Sans tableau d'amortissement importé"));
+    assert.ok(ack?.content.includes("Sans montant indiqué"));
+    assert.ok(
+      !ack!.content.includes("non déductible"),
+      "F011-3 — jamais prétendre non déductible, elle est simplement absente du calcul faute de montant connu",
+    );
   });
 
   it("H — externe + montant extrait confirmé tel quel : la provenance reste 'extracted', non-régression", async () => {

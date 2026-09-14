@@ -235,15 +235,20 @@ function insurancePrompt(): F011Message {
 }
 
 /**
- * Correctif assurance bancaire — le message doit refléter l'état réel du
- * prêt, jamais une hypothèse fixe. Si un montant est déjà connu (extrait
- * d'un document, ou déjà saisi), il est annoncé et retenu ; sinon seulement,
- * l'impossibilité de l'isoler est expliquée.
+ * F011-3 — le message doit refléter l'état réel du prêt, jamais une
+ * hypothèse fixe. Si un montant est connu (extrait d'un document, déjà
+ * renseigné, ou tout juste saisi par l'utilisateur), il est annoncé et
+ * retenu comme charge déductible. Sinon, l'utilisateur a été explicitement
+ * invité à le saisir (panel : `awaitingAmountFor("insurance")` s'ouvre dès
+ * que `pendingLoan.assuranceAnnuelle` est inconnu, y compris pour "bancaire"
+ * — voir `F011FinancementAssistantPanel.handleSuggestion`) : s'il l'a
+ * délibérément laissé vide, ce message le dit sans jamais prétendre à une
+ * impossibilité technique qui n'existe plus.
  */
 function insuranceBancaireAckPrompt(assuranceAnnuelle: number | undefined, source: FieldSource | undefined): F011Message {
   if (assuranceAnnuelle !== undefined) {
     const montant = `${Math.round(assuranceAnnuelle).toLocaleString("fr-FR")} € par an`;
-    const origine = source === "extracted" ? "extrait de votre document" : "déjà renseigné";
+    const origine = source === "extracted" ? "extrait de votre document" : "que vous avez indiqué";
     return {
       role: "assistant",
       content: `Assurance bancaire notée. Le montant ${origine} (${montant}) est retenu comme charge déductible.`,
@@ -252,8 +257,8 @@ function insuranceBancaireAckPrompt(assuranceAnnuelle: number | undefined, sourc
   return {
     role: "assistant",
     content:
-      "Assurance bancaire notée. Sans tableau d'amortissement importé, je ne peux pas isoler son montant " +
-      "des mensualités — elle n'est donc pas comptée séparément ici pour cet exercice.",
+      "Assurance bancaire notée. Sans montant indiqué, elle n'est pas comptée comme charge déductible pour cet " +
+      "exercice — vous pourrez le préciser plus tard en modifiant ce prêt.",
   };
 }
 
@@ -720,36 +725,45 @@ export class F011FinancementAssistant {
           content:
             action.assuranceType === "externe"
               ? `Externe — ${action.assuranceAnnuelle ? `${action.assuranceAnnuelle.toLocaleString("fr-FR")} € / an` : "montant non précisé"}`
-              : "Bancaire",
+              : action.assuranceAnnuelle !== undefined
+                ? `Bancaire — ${action.assuranceAnnuelle.toLocaleString("fr-FR")} € / an`
+                : "Bancaire",
         });
-        // Correctif assurance bancaire — "Bancaire" ne doit jamais écraser un
-        // montant déjà connu (extrait d'un document ou déjà saisi) : le KS
-        // (F-011 §"Type d'assurance") prévoit explicitement l'extraction
-        // automatique pour ce cas. Seul "externe" fait porter le montant par
-        // l'action elle-même (saisie dédiée) ; "bancaire" reprend tel quel
-        // ce qui est déjà dans `pendingLoan`, sans jamais rien inventer.
+        // F011-3 — "Bancaire" ne doit jamais écraser un montant déjà connu
+        // (extrait d'un document ou déjà saisi) quand l'action ne porte
+        // aucun montant (bouton direct, panel : `pendingLoan.assuranceAnnuelle`
+        // déjà défini). Mais quand aucun montant n'est connu, le panel ouvre
+        // désormais la même saisie que pour "externe" (`awaitingAmountFor`)
+        // et l'action porte alors le montant tapé par l'utilisateur — y
+        // compris `undefined` s'il l'a délibérément laissé vide, jamais
+        // silencieusement transformé en 0 (voir `computeFinancementExercice`,
+        // qui applique `?? 0` uniquement à ce stade final, jamais ici).
+        // "externe" reste inchangé : le montant porte toujours intégralement
+        // sur l'action elle-même (saisie dédiée, y compris pour l'effacer).
         const nextAssuranceAnnuelle =
-          action.assuranceType === "externe" ? action.assuranceAnnuelle : state.pendingLoan?.assuranceAnnuelle;
+          action.assuranceType === "externe" ? action.assuranceAnnuelle : (action.assuranceAnnuelle ?? state.pendingLoan?.assuranceAnnuelle);
         if (action.assuranceType === "bancaire") {
           messages.push(insuranceBancaireAckPrompt(nextAssuranceAnnuelle, state.fieldSources.assuranceAnnuelle));
         }
         messages.push(guaranteePrompt(state.detectedGuaranteeFees));
         const nextFieldSources = { ...state.fieldSources };
-        if (action.assuranceType === "externe") {
-          if (nextAssuranceAnnuelle !== undefined) {
-            nextFieldSources.assuranceAnnuelle = classifyManualSource(
-              state.fieldSources,
-              "assuranceAnnuelle",
-              state.pendingLoan?.assuranceAnnuelle,
-              nextAssuranceAnnuelle,
-            );
-          } else {
-            // Le champ redevient absent (montant externe non précisé) — sa
-            // provenance ne doit pas rester figée sur "extracted".
-            delete nextFieldSources.assuranceAnnuelle;
-          }
+        if (action.assuranceAnnuelle !== undefined) {
+          // Un montant est porté explicitement par cette action (externe, ou
+          // bancaire tout juste saisi par l'utilisateur) — sa provenance doit
+          // refléter cette saisie, jamais rester sur une provenance périmée.
+          nextFieldSources.assuranceAnnuelle = classifyManualSource(
+            state.fieldSources,
+            "assuranceAnnuelle",
+            state.pendingLoan?.assuranceAnnuelle,
+            nextAssuranceAnnuelle,
+          );
+        } else if (action.assuranceType === "externe") {
+          // Le champ redevient absent (montant externe non précisé) — sa
+          // provenance ne doit pas rester figée sur "extracted".
+          delete nextFieldSources.assuranceAnnuelle;
         }
-        // "bancaire" : la valeur ne change pas, donc sa provenance non plus —
+        // "bancaire" sans montant porté par l'action (bouton direct, montant
+        // déjà connu) : la valeur ne change pas, donc sa provenance non plus —
         // jamais touchée ici (ni effacée, ni reclassée).
         return {
           state: advance(
@@ -1038,11 +1052,29 @@ export class F011FinancementAssistant {
   private buildLoanPreviewMessage(loans: F011LoanDraft[], draft: F011LoanDraft): F011Message {
     const preview = this.computeForLoans([...loans, draft]);
     const pretPreview = preview.charges.prets.at(-1);
+    // F011-3 (audit KS AX-011/JUG-011) — les intérêts/assurance
+    // pré-exploitation sont deux montants DISTINCTS (siblings de
+    // `interetsEmpruntExercice`/`assuranceEmpruntExercice`, jamais un
+    // sous-ensemble — voir `PretFinancementExercice`), et déductibles dès
+    // cet exercice (déduction immédiate, JUG-011 choix A) : jamais "dont ...
+    // non déductibles", qui les présentait à tort comme une part perdue de
+    // la ligne au-dessus.
+    const preExploitationLines: string[] = [];
+    if ((pretPreview?.interetsPreExploitation ?? 0) > 0) {
+      preExploitationLines.push(
+        `Intérêts pré-exploitation, déductibles dès cet exercice : ${Math.round(pretPreview!.interetsPreExploitation).toLocaleString("fr-FR")} €\n`,
+      );
+    }
+    if ((pretPreview?.assurancePreExploitation ?? 0) > 0) {
+      preExploitationLines.push(
+        `Assurance pré-exploitation, déductible dès cet exercice : ${Math.round(pretPreview!.assurancePreExploitation).toLocaleString("fr-FR")} €\n`,
+      );
+    }
     return {
       role: "assistant",
       content:
         `Intérêts déductibles de l'exercice : ${Math.round(pretPreview?.interetsEmpruntExercice ?? 0).toLocaleString("fr-FR")} €\n` +
-        `dont pré-exploitation (non déductibles) : ${Math.round(pretPreview?.interetsPreExploitation ?? 0).toLocaleString("fr-FR")} €\n` +
+        preExploitationLines.join("") +
         `Assurance déductible : ${Math.round(pretPreview?.assuranceEmpruntExercice ?? 0).toLocaleString("fr-FR")} €\n` +
         `Frais de dossier déductibles : ${Math.round(pretPreview?.fraisDossierDeductibles ?? 0).toLocaleString("fr-FR")} €\n` +
         `Garantie déductible : ${Math.round(pretPreview?.garantieDeductible ?? 0).toLocaleString("fr-FR")} €\n` +
