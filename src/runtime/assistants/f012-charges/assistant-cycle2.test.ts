@@ -174,6 +174,97 @@ describe("F-012 — Cycle 2 : persistance et reprise", () => {
     assert.equal(shouldResumeF012(undefined), false);
   });
 
+  it("F012-2/A — resume() sur un F012PersistedState à `complete` : reprend le vrai état (jamais un blob vide), collected/résultat cohérents", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_SIMPLE });
+    turn = await assistant.handle(turn.state, {
+      type: "submit_taxe_fonciere",
+      montant: 1200,
+    });
+    turn = await assistant.handle(turn.state, { type: "confirm_all" });
+    assert.equal(turn.state.step, "complete");
+    assert.equal(turn.completed, true);
+
+    const persisted = toF012PersistedState(turn.state, TS);
+    assert.equal(persisted.step, "complete");
+    assert.ok((persisted.history?.length ?? 0) > 0, "l'historique n'est pas vide pour une session normale");
+
+    const assistant2 = new F012ChargesAssistant(ctx, DEPS);
+    const resumed = assistant2.resume(persisted);
+    // F012-2/B — les données existantes sont conservées, jamais effacées à la reprise.
+    assert.equal(resumed.state.collected.taxeFonciere, 1200);
+    assert.equal(resumed.state.step, "complete");
+    assert.equal(resumed.state.result?.charges.totalDeductible, 1200);
+  });
+
+  it("F012-2/M — complete → Modifier (go_back) : retombe sur l'écran précédent réel, jamais un no-op, données conservées", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_SIMPLE });
+    turn = await assistant.handle(turn.state, { type: "submit_taxe_fonciere", montant: 1200 });
+    turn = await assistant.handle(turn.state, { type: "confirm_all" });
+    assert.equal(turn.state.step, "complete");
+
+    const back = await assistant.handle(turn.state, { type: "go_back" });
+    // Avec un historique réel non vide, go_back restitue l'écran exact
+    // qui précédait `confirm_all` (jamais figé à "aggregate_review" — ce
+    // n'est qu'un repli pour l'historique vide, testé séparément ci-dessous).
+    assert.notEqual(back.state.step, "complete", "Modifier ouvre un écran éditable, jamais un no-op");
+    assert.equal(back.state.collected.taxeFonciere, 1200, "les données ne sont jamais effacées à l'ouverture de l'édition");
+    assert.equal(back.completed, false);
+  });
+
+  it("F012-2/M — complete (reprise directe, historique vide) → Modifier (go_back) : retombe aussi sur aggregate_review", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_SIMPLE });
+    turn = await assistant.handle(turn.state, { type: "submit_taxe_fonciere", montant: 1200 });
+    turn = await assistant.handle(turn.state, { type: "confirm_all" });
+
+    // Simule une reprise directe sur `complete` sans historique en mémoire
+    // (cas F012-2/resume_complete : `history` est bien persisté normalement,
+    // mais un très vieux dossier pourrait n'en porter aucun).
+    const stateNoHistory = { ...turn.state, history: [] };
+    const back = await assistant.handle(stateNoHistory, { type: "go_back" });
+    assert.equal(back.state.step, "aggregate_review", "jamais un no-op même sans historique");
+    assert.equal(back.state.collected.taxeFonciere, 1200);
+  });
+
+  it("F012-2/D — Modifier une charge pure (taxe foncière) : le nouveau total est correct après reconfirmation", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_SIMPLE });
+    turn = await assistant.handle(turn.state, { type: "submit_taxe_fonciere", montant: 1200 });
+    turn = await assistant.handle(turn.state, { type: "confirm_all" });
+    assert.equal(turn.state.result?.charges.totalDeductible, 1200);
+
+    let back = await assistant.handle(turn.state, { type: "go_back" });
+    back = await assistant.handle(back.state, { type: "go_back" });
+    assert.ok(back.state.step === "category_collect" || back.state.step === "aggregate_review");
+
+    // Retour jusqu'à la catégorie taxe foncière puis correction.
+    while (back.state.step !== "category_collect" || back.state.categoryInventory[back.state.currentCategoryIndex] !== "taxe_fonciere") {
+      back = await assistant.handle(back.state, { type: "go_back" });
+    }
+    const corrected = await assistant.handle(back.state, { type: "submit_taxe_fonciere", montant: 2000 });
+    const reconfirmed = await assistant.handle(corrected.state, { type: "confirm_all" });
+    assert.equal(reconfirmed.state.step, "complete");
+    assert.equal(reconfirmed.state.result?.charges.totalDeductible, 2000, "nouveau total charges correct après correction");
+  });
+
+  it("F012-2/C — Modifier sans changement (go_back puis reconfirmer tel quel) : reconfirmation cohérente, même total", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_SIMPLE });
+    turn = await assistant.handle(turn.state, { type: "submit_taxe_fonciere", montant: 1200 });
+    turn = await assistant.handle(turn.state, { type: "confirm_all" });
+
+    const back = await assistant.handle(turn.state, { type: "go_back" });
+    const reconfirmed = await assistant.handle(back.state, { type: "confirm_all" });
+    assert.equal(reconfirmed.state.step, "complete");
+    assert.equal(reconfirmed.state.result?.charges.totalDeductible, 1200, "aucun changement réel → même total");
+    assert.deepEqual(
+      reconfirmed.state.result?.charges.composantsNouveaux,
+      turn.state.result?.charges.composantsNouveaux,
+    );
+  });
+
   it("J — données inconnues ignorées : un blob avec des champs étrangers ne fait pas planter la reprise", async () => {
     const assistant = new F012ChargesAssistant(ctx, DEPS);
     const turn = await assistant.handle(assistant.start().state, { type: "submit_profilage", ...PROFIL_LARGE });

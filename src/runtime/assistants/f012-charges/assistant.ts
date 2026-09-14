@@ -382,6 +382,14 @@ export class F012ChargesAssistant {
   private handleGoBack(state: F012State): F012AssistantTurn {
     const history = state.history ?? [];
     if (history.length === 0) {
+      // F012-2 — une session reprise directement sur `complete` (miroir F010
+      // "garde-fou 1") n'a pas encore d'historique en mémoire mais doit
+      // rester modifiable : retombe sur `aggregate_review` (l'écran juste
+      // avant la confirmation finale), jamais un no-op.
+      if (state.step === "complete") {
+        const reentry = this.buildReentryTurn({ ...state, step: "aggregate_review" });
+        return { state: reentry.state, messages: reentry.messages, completed: false };
+      }
       return { state, messages: [], completed: false };
     }
 
@@ -1328,6 +1336,26 @@ export class F012ChargesAssistant {
         };
       }
 
+      case "resolve_travaux_date": {
+        if (!action.dateDebut) return { state, messages, completed: false };
+        const index = state.collected.travaux.findIndex((t) => t.id === action.travauxId);
+        if (index === -1) return { state, messages, completed: false };
+        const target = state.collected.travaux[index]!;
+        // Ne rouvre jamais la qualification (JUG-008 inchangée) : seule la
+        // date propre (TRF-0028), jusqu'ici absente, est renseignée.
+        if (target.dateDebut !== undefined) return { state, messages, completed: false };
+        const travaux = [...state.collected.travaux];
+        travaux[index] = { ...target, dateDebut: action.dateDebut };
+        const collected = { ...state.collected, travaux };
+        messages.push({ role: "user", content: `Date (« ${target.description} ») : ${action.dateDebut}` });
+        return this.buildReview(
+          { ...state, collected },
+          state.profil!,
+          state.categoryInventory,
+          messages,
+        );
+      }
+
       default:
         return { state, messages, completed: false };
     }
@@ -1482,6 +1510,20 @@ export class F012ChargesAssistant {
    * pour qu'une reprise soit indiscernable d'un tour normal.
    */
   private buildReentryTurn(state: F012State): { state: F012State; messages: F012Message[] } {
+    // F012-2 (« Modifier mes réponses ») — reprise directe sur `complete`
+    // (`resolveF012ResumeDecision` → `resume_complete`) : recalcule `result`
+    // depuis `collected` (jamais un résultat persisté rejoué), même principe
+    // que `aggregate_review` ci-dessous. Le panel affiche son propre message
+    // "déjà enregistré" pour cet écran (miroir F010/F011) — celui-ci ne sert
+    // qu'à garantir que `state.result` n'est jamais `undefined` ici.
+    if (state.step === "complete") {
+      const result = this.buildResult(state);
+      return {
+        state: { ...state, result },
+        messages: [{ role: "assistant", content: result.explanation }],
+      };
+    }
+
     if (state.step === "aggregate_review") {
       const result = this.buildResult(state);
       const unresolved = unresolvedFamilyLabels(this.registryOf(state).familyCoverage);

@@ -321,6 +321,14 @@ export type F012Action =
   | { type: "submit_travaux_qualification"; choix: TravauxQualificationChoix }
   | { type: "submit_travaux_split"; montantReparation: number }
   | { type: "submit_travaux_date"; dateDebut: string }
+  /**
+   * Chantier 2 (§8) — un travaux qualifié "incertain" qui se résout en
+   * immobilisation (SAV-015, montant ≥ seuil) bloque à `confirm_all` faute
+   * de date propre (TRF-0028) : cette action fournit la date manquante pour
+   * UN item déjà collecté, sans jamais rouvrir sa qualification (JUG-008
+   * inchangée) ni recréer une nouvelle dépense.
+   */
+  | { type: "resolve_travaux_date"; travauxId: string; dateDebut: string }
   | { type: "finish_travaux_category" }
   | { type: "confirm_completeness"; hasOther: boolean; familyId?: ChargeFamilyId; freeText?: string }
   /** Cycle 13A — une relance compagnon, une seule fois. */

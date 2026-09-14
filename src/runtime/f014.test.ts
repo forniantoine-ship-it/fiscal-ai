@@ -389,6 +389,56 @@ describe("F-014 — Assistant Amortissements", () => {
   });
 });
 
+describe("Chantier 2 (§6/§7) — F-014 contestation : routage par origine réelle, jamais par préfixe d'id", () => {
+  const ctx = { dossierId: "test", fiscalYear: 2024, route: "/assistants/amortissements" };
+  const travaux = createComposantTravaux({
+    id: "travaux-veranda", // P0-B/D — id stable, plus jamais de préfixe "f012-".
+    label: "Extension véranda",
+    montant: 12000,
+    nature: "amélioration",
+    dateDebut: "2024-06-01",
+    origin: "f012_travaux",
+  }).composant;
+
+  it("I — contestation d'un composant F-012 : redirige vers Charges, jamais Logement", async () => {
+    const assistant = new F014AmortissementsAssistant(ctx, {
+      dateMiseEnService: "2024-04-15",
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: CAS_NOMINAL.prorataRatio,
+      composantsNouveaux: [travaux],
+    });
+    const state = assistant.start().state;
+    assert.ok(state.plan?.nouveaux_elements.some((c) => c.id === "travaux-veranda"));
+
+    const turn = await assistant.handle(state, { type: "submit_contestation", composantId: "travaux-veranda" });
+    assert.match(turn.messages.at(-1)?.content ?? "", /travaux déclarés/i);
+    assert.ok(
+      turn.messages.at(-1)?.suggestions?.some((s) => s.id === "redirect_charges"),
+      "un composant F-012 doit renvoyer vers Charges, jamais vers Logement",
+    );
+    assert.equal(turn.event, "AMORTISSEMENTS_CONTESTE");
+  });
+
+  it("J — contestation d'un élément F-010 (bâti) : redirige toujours vers Logement, routage inchangé", async () => {
+    const assistant = new F014AmortissementsAssistant(ctx, {
+      dateMiseEnService: "2024-04-15",
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: CAS_NOMINAL.prorataRatio,
+      composantsNouveaux: [travaux],
+    });
+    const state = assistant.start().state;
+    const composantBati = state.plan?.composants[0];
+    assert.ok(composantBati, "le plan F-010 porte au moins un composant bâti");
+
+    const turn = await assistant.handle(state, { type: "submit_contestation", composantId: composantBati!.id });
+    assert.match(turn.messages.at(-1)?.content ?? "", /logement/i);
+    assert.ok(
+      turn.messages.at(-1)?.suggestions?.some((s) => s.id === "redirect_logement"),
+      "un composant F-010 doit toujours renvoyer vers Logement",
+    );
+  });
+});
+
 describe("F-014 — Cohérence avec la valeur stockée (amortissementAssistant)", () => {
   it("ne détecte pas de dérive quand le total validé et le total recalculé sont identiques", () => {
     assert.equal(hasAmortissementDrifted(6779, 6779), false);

@@ -15,6 +15,7 @@ import { shouldFlushF012PersistedStep } from "@/lib/lmnp/services/f012/f012-crit
 import { buildCoproLignesFromAmounts } from "@/lib/lmnp/services/f012/f012-copro-form-state";
 import { resolveDiversSubmitAction } from "@/lib/lmnp/services/f012/f012-divers-form-state";
 import { resolveF012ResumeDecision } from "@/lib/lmnp/services/f012/f012-resume";
+import { composantsNouveauxChanged } from "@/lib/lmnp/services/f012/f012-amortissement-freshness";
 import {
   amountPaidLabel,
   amountWhereToLook,
@@ -886,9 +887,27 @@ export function F012ChargesAssistantPanel() {
         computedAt: now,
       };
 
+      // Chantier 2 — F012 → F014 freshness (§4) : une (re)confirmation qui
+      // change réellement un composant amortissable (nouveau, supprimé, ou
+      // base/durée/date modifiée) invalide la validation F-014 existante —
+      // jamais sur un simple clic "Modifier" sans changement réel, jamais
+      // sur l'édition d'une charge pure. `amortissementAssistant` fait déjà
+      // partie des clés contributives de DECLARATION_PATCH_DRAFT
+      // (reducer.ts) : l'invalider ici suffit à rouvrir F-014 ET à
+      // invalider `declarationGeneratedAt` par le mécanisme déjà existant,
+      // sans dupliquer cette logique ici.
+      const amortissementStale =
+        draft?.amortissementAssistant !== undefined &&
+        composantsNouveauxChanged(draft?.chargesAssistant?.composantsNouveaux, chargesAssistant.composantsNouveaux);
+
       dispatch({
         type: "DECLARATION_PATCH_DRAFT",
-        patch: { chargesAssistantState, chargesAssistant, chargesConfirmedAt: now },
+        patch: {
+          chargesAssistantState,
+          chargesAssistant,
+          chargesConfirmedAt: now,
+          ...(amortissementStale ? { amortissementAssistant: undefined } : {}),
+        },
       });
       dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "charges-assistant" });
       void flushWorkspace({
@@ -896,10 +915,11 @@ export function F012ChargesAssistantPanel() {
           chargesAssistantState,
           chargesAssistant,
           chargesConfirmedAt: now,
+          ...(amortissementStale ? { amortissementAssistant: undefined } : {}),
         },
       });
     },
-    [dispatch, fiscalYear, flushWorkspace],
+    [dispatch, draft, fiscalYear, flushWorkspace],
   );
 
   /**
@@ -925,12 +945,24 @@ export function F012ChargesAssistantPanel() {
     async (action: F012Action) => {
       setBusy(true);
       try {
-        applyTurn(await assistant.handle(stateRef.current, action));
+        const wasComplete = stateRef.current.step === "complete";
+        const turn = await assistant.handle(stateRef.current, action);
+        applyTurn(turn);
+        // F012-2 (« Modifier mes réponses ») — miroir exact F010/F011 : rouvrir
+        // `complete` pour modification invalide immédiatement le signal de
+        // confirmation partagé (Cycle 0), jusqu'à une nouvelle confirmation
+        // explicite — le dossier redevient incomplet pendant la correction.
+        // `amortissementAssistant`/`declarationGeneratedAt` ne sont PAS
+        // touchés ici : leur invalidation reste conditionnée à un changement
+        // contributif réel, détecté à la reconfirmation (persistCompletion).
+        if (wasComplete && turn.state.step !== "complete") {
+          dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { chargesConfirmedAt: undefined } });
+        }
       } finally {
         setBusy(false);
       }
     },
-    [assistant, applyTurn],
+    [assistant, applyTurn, dispatch],
   );
 
   const analyzePaperFile = useCallback(
@@ -1084,6 +1116,21 @@ export function F012ChargesAssistantPanel() {
     state.familyPhase !== "review";
   const travauxSplit = state.travauxSubStep === "split";
   const travauxDate = state.travauxSubStep === "date";
+  // Chantier 2 (§8) — un travaux "incertain" résolu en immobilisation (SAV-015)
+  // bloque à `confirm_all` faute de date propre (TRF-0028) ; l'anomalie
+  // bloquante porte l'id de la charge dans `field`. On identifie ici les
+  // items déjà collectés, marqués "incertain", sans `dateDebut`, et
+  // réellement cités par une anomalie bloquante — jamais une réouverture de
+  // qualification, uniquement la date manquante.
+  const pendingIncertainDates =
+    state.step === "aggregate_review"
+      ? state.collected.travaux.filter(
+          (t) =>
+            t.choix === "incertain" &&
+            t.dateDebut === undefined &&
+            state.result?.anomalies.some((a) => a.severity === "error" && a.field === t.id),
+        )
+      : [];
   // Cycle 4E — même convention que F-010/F-011 : un historique non vide et
   // une étape non terminale, jamais un bouton mort.
   const canGoBack = Boolean(state.history && state.history.length > 0) && state.step !== "complete";
@@ -1405,16 +1452,38 @@ export function F012ChargesAssistantPanel() {
           />
         ) : null}
 
+        {pendingIncertainDates.map((t) => (
+          <div key={t.id} className="flex flex-col gap-2">
+            <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+              « {t.description} » sera amorti : sa date de fin des travaux / mise en service est nécessaire.
+            </p>
+            <TravauxDateField
+              disabled={busy}
+              onSubmit={(value) => void runAction({ type: "resolve_travaux_date", travauxId: t.id, dateDebut: value })}
+            />
+          </div>
+        ))}
+
         {state.step === "complete" ? (
-          <div className="flex flex-col gap-3 sm:flex-row" style={{ marginTop: spacing.scale[4] }}>
-            <Link href={LMNP_ROUTES.amortissementsAssistant} className="flex-1">
-              <Button className="w-full">Continuer vers Amortissements</Button>
-            </Link>
-            <Link href={LMNP_ROUTES.dashboard}>
-              <Button variant="secondary" className="w-full">
-                Retour au tableau de bord
-              </Button>
-            </Link>
+          <div className="flex flex-col gap-2" style={{ marginTop: spacing.scale[4] }}>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href={LMNP_ROUTES.amortissementsAssistant} className="flex-1">
+                <Button className="w-full">Continuer vers Amortissements</Button>
+              </Link>
+              <Link href={LMNP_ROUTES.dashboard}>
+                <Button variant="secondary" className="w-full">
+                  Retour au tableau de bord
+                </Button>
+              </Link>
+            </div>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              className="w-full"
+              onClick={() => void runAction({ type: "go_back" })}
+            >
+              Modifier mes réponses
+            </Button>
           </div>
         ) : null}
 

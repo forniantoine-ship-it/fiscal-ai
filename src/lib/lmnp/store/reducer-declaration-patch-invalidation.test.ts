@@ -476,7 +476,7 @@ describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activit�
     assert.equal(next.fiscalYear.paidAt, undefined);
   });
 
-  it("#17 F-012 Charges reste hors périmètre : chargesAssistant modifié + declarationGeneratedAt posé → aucune invalidation (non couvert, comme avant P2-2/P2-3)", async () => {
+  it("#17 chargesAssistant seul modifié (charge pure, aucun composant amortissable touché) + declarationGeneratedAt posé → aucune invalidation directe", async () => {
     const lmnpReducer = await loadReducer();
     const chargesFixture = {
       exerciceFiscal: 2026,
@@ -502,7 +502,59 @@ describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activit�
     assert.equal(
       next.fiscalYear.declarationGeneratedAt,
       GENERATED_AT,
-      "F-012 est verrouillé en lecture seule une fois confirmé (audit P2-2/P2-3) — volontairement hors périmètre",
+      "chargesAssistant seul n'est pas une clé contributive directe : une charge pure édité sans toucher un " +
+        "composant amortissable ne doit jamais invalider la déclaration (Chantier 2 §4/§5)",
+    );
+  });
+
+  it("#18 (Chantier 2 §4/§5) — F-012 modifie un composant amortissable : le panel invalide amortissementAssistant dans le même patch → declarationGeneratedAt effacé", async () => {
+    // F012ChargesAssistantPanel.persistCompletion() détecte le drift des
+    // composants (composantsNouveauxChanged) et, dans CE cas, ajoute
+    // `amortissementAssistant: undefined` au MÊME patch que `chargesAssistant`
+    // — ce test reproduit exactement ce patch composé, sans dépendre de React.
+    const lmnpReducer = await loadReducer();
+    const chargesFixture = {
+      exerciceFiscal: 2026,
+      totalDeductible: 0,
+      totalNonDeductible: 0,
+      totalAmortissable: 12000,
+      totalPreExploitation: 0,
+      parCategorie: {},
+      composantsNouveaux: [
+        {
+          id: "travaux-1",
+          label: "Extension",
+          montant: 12000,
+          dureeAnnees: 18,
+          dotationAnnuelle: 667,
+          nature: "amélioration" as const,
+          dateDebut: "2025-06-01",
+          origin: "f012_travaux" as const,
+        },
+      ],
+      fieldSources: {},
+      computedAt: "2026-01-01T00:00:00Z",
+    };
+    const state = baseState(
+      {
+        completedSteps: ["charges", "amortissement"],
+        chargesAssistant: { ...chargesFixture, composantsNouveaux: [{ ...chargesFixture.composantsNouveaux[0]!, montant: 8000 }] },
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        amortissementAssistant: amortissementFixture(),
+      },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { chargesAssistant: chargesFixture, amortissementAssistant: undefined },
+    });
+
+    assert.equal(next.declarationDraft?.amortissementAssistant, undefined, "F-014 redevient à revalider");
+    assert.equal(
+      next.fiscalYear.declarationGeneratedAt,
+      undefined,
+      "la modification d'un composant amortissable ripple jusqu'à declarationGeneratedAt via la clé contributive existante",
     );
   });
 });

@@ -192,17 +192,23 @@ export class F014AmortissementsAssistant {
         const label = composantLabel(state.plan, action.composantId);
         messages.push({ role: "user", content: `Problème sur : ${label}` });
         const composant = findComposant(state.plan, action.composantId);
-        const source =
-          composant?.id.startsWith("f012-")
-            ? "La valeur provient de vos travaux déclarés (étape Charges)."
-            : "La valeur provient de votre logement (étape Logement).";
+        // Chantier 2 (§7) — routage par origine réelle, jamais par un
+        // préfixe d'id fragile : `plan.nouveaux_elements` est structurellement
+        // réservé aux composants F-012 (compose-plan-amortissement.ts), et
+        // `plan.composants` au bâti/mobilier F-010, quelle que soit la forme
+        // de l'id (chantier 1 a remplacé l'id `f012-${index}` par l'id stable
+        // du composant F-012 lui-même — ce préfixe n'existe donc plus).
+        const isF012Origin = state.plan.nouveaux_elements.some((c) => c.id === action.composantId);
+        const source = isF012Origin
+          ? "La valeur provient de vos travaux déclarés (étape Charges)."
+          : "La valeur provient de votre logement (étape Logement).";
         messages.push({
           role: "assistant",
           content:
             `${source}\n\n` +
             "Pour corriger ce montant, retournez à l'étape concernée. Le plan sera recalculé automatiquement.",
           suggestions: [
-            composant?.id.startsWith("f012-")
+            isF012Origin
               ? { id: "redirect_charges", label: "Aller à l'étape Charges" }
               : { id: "redirect_logement", label: "Aller à l'étape Logement" },
           ],
