@@ -82,17 +82,6 @@ function advance(state: F010State, patch: Partial<F010State>, nextStep: F010Step
   };
 }
 
-/**
- * Étape possédant les champs obligatoires manquants pour calculer le plan
- * (correctif dead-end Cycle 3, contrainte #9) — ou `null` si tout est réuni.
- * Recense un champ par écran, jamais un message générique sans destination.
- */
-function resolveF010MissingStep(state: F010State): F010Step | null {
-  if (state.prixAcquisition === undefined || state.typeBien === undefined) return "collect_bien";
-  if (state.fraisNotaire === undefined || state.choixTraitementFrais === undefined) return "collect_frais";
-  return null;
-}
-
 function buildF010MissingFieldsMessage(state: F010State, missingStep: F010Step): string {
   const missing: string[] = [];
   if (missingStep === "collect_bien") {
@@ -466,47 +455,42 @@ export class F010LogementAssistant {
           role: "user",
           content: `Prix d'achat : ${action.prixAcquisition.toLocaleString("fr-FR")} €`,
         });
-        const next = advance(
-          state,
-          {
-            prixAcquisition: action.prixAcquisition,
-            typeBien: action.typeBien,
-            // Cycle 4B : jamais un effacement — une valeur déjà connue (dossier
-            // repris, ou déjà répondue au moment d'une estimation de frais) est
-            // préservée quand l'action ne la fournit pas.
-            natureBien: action.natureBien ?? state.natureBien,
-            dateAcquisition: action.dateAcquisition,
-            surface: action.surface,
-            // P2-1 : même règle que natureBien/localisation — l'adresse n'a
-            // aucun champ manuel dans ce formulaire (uniquement issue de la
-            // review documentaire) ; l'omettre ici ne doit jamais effacer une
-            // adresse déjà connue.
-            adresse: action.adresse ?? state.adresse,
-            localisation: action.localisation ?? state.localisation,
-            fieldSources: {
-              ...state.fieldSources,
-              prixAcquisition: fs.prixAcquisition ?? "manual",
-              typeBien: fs.typeBien ?? "manual",
-              dateAcquisition: fs.dateAcquisition ?? "manual",
-              ...(action.surface !== undefined ? { surface: fs.surface ?? "manual" } : {}),
-            },
-            confirmed: {
-              ...state.confirmed,
-              prixAcquisition: true,
-              typeBien: true,
-              dateAcquisition: true,
-              ...(action.surface !== undefined ? { surface: true } : {}),
-            },
+        // V2-3 : le patch de données est appliqué SANS transition d'étape ici
+        // (`advanceToNextStep` ci-dessous décide seul de l'étape suivante réelle
+        // et pousse l'historique une seule fois — un `advance()` intermédiaire
+        // vers `state.step` lui-même corromprait l'historique de `go_back`).
+        const patched: F010State = {
+          ...state,
+          prixAcquisition: action.prixAcquisition,
+          typeBien: action.typeBien,
+          // Cycle 4B : jamais un effacement — une valeur déjà connue (dossier
+          // repris, ou déjà répondue au moment d'une estimation de frais) est
+          // préservée quand l'action ne la fournit pas.
+          natureBien: action.natureBien ?? state.natureBien,
+          dateAcquisition: action.dateAcquisition,
+          surface: action.surface,
+          // P2-1 : même règle que natureBien/localisation — l'adresse n'a
+          // aucun champ manuel dans ce formulaire (uniquement issue de la
+          // review documentaire) ; l'omettre ici ne doit jamais effacer une
+          // adresse déjà connue.
+          adresse: action.adresse ?? state.adresse,
+          localisation: action.localisation ?? state.localisation,
+          fieldSources: {
+            ...state.fieldSources,
+            prixAcquisition: fs.prixAcquisition ?? "manual",
+            typeBien: fs.typeBien ?? "manual",
+            dateAcquisition: fs.dateAcquisition ?? "manual",
+            ...(action.surface !== undefined ? { surface: fs.surface ?? "manual" } : {}),
           },
-          "collect_frais",
-        );
-        messages.push({
-          role: "assistant",
-          content:
-            "Combien avez-vous payé de frais de notaire ? " +
-            "Vous pourrez choisir de les ajouter à la valeur du bien ou de les déduire immédiatement.",
-        });
-        return { state: next, messages, completed: false };
+          confirmed: {
+            ...state.confirmed,
+            prixAcquisition: true,
+            typeBien: true,
+            dateAcquisition: true,
+            ...(action.surface !== undefined ? { surface: true } : {}),
+          },
+        };
+        return this.advanceToNextStep(patched, messages);
       }
 
       case "analysis_success": {
@@ -582,29 +566,22 @@ export class F010LogementAssistant {
               ? "ajoutés à la valeur du bien"
               : "déduits immédiatement"),
         });
-        const next = advance(
-          state,
-          {
-            fraisNotaire: action.fraisNotaire,
-            choixTraitementFrais: action.choixTraitementFrais,
-            // Cycle 4B : même règle de préservation qu'à submit_bien.
-            natureBien: action.natureBien ?? state.natureBien,
-            fieldSources: {
-              ...state.fieldSources,
-              fraisNotaire: source,
-              choixTraitementFrais: "judgment",
-            },
-            confirmed: { ...state.confirmed, fraisNotaire: true, choixTraitementFrais: true },
+        // V2-3 : voir commentaire équivalent dans "submit_bien" — patch de
+        // données seul, transition décidée par `advanceToNextStep`.
+        const patched: F010State = {
+          ...state,
+          fraisNotaire: action.fraisNotaire,
+          choixTraitementFrais: action.choixTraitementFrais,
+          // Cycle 4B : même règle de préservation qu'à submit_bien.
+          natureBien: action.natureBien ?? state.natureBien,
+          fieldSources: {
+            ...state.fieldSources,
+            fraisNotaire: source,
+            choixTraitementFrais: "judgment",
           },
-          "collect_mobilier",
-        );
-        messages.push({
-          role: "assistant",
-          content:
-            "Le prix inclut-il du mobilier (cuisine équipée, meubles) ? " +
-            "Si oui, indiquez son montant estimé ; sinon, passez cette étape.",
-        });
-        return { state: next, messages, completed: false };
+          confirmed: { ...state.confirmed, fraisNotaire: true, choixTraitementFrais: true },
+        };
+        return this.advanceToNextStep(patched, messages);
       }
 
       case "submit_mobilier": {
@@ -613,34 +590,26 @@ export class F010LogementAssistant {
           role: "user",
           content: `Mobilier : ${action.montantMobilier.toLocaleString("fr-FR")} €`,
         });
-        const next = advance(
-          state,
-          {
-            mobilierInclus: action.montantMobilier > 0,
-            montantMobilier: action.montantMobilier,
-            mobilierMode: action.mode,
-            fieldSources: { ...state.fieldSources, montantMobilier: source },
-            confirmed: { ...state.confirmed, montantMobilier: true },
-          },
-          "ventilation",
-        );
-        messages.push(this.ventilationPrompt(next));
-        return { state: next, messages, completed: false };
+        const patched: F010State = {
+          ...state,
+          mobilierInclus: action.montantMobilier > 0,
+          montantMobilier: action.montantMobilier,
+          mobilierMode: action.mode,
+          fieldSources: { ...state.fieldSources, montantMobilier: source },
+          confirmed: { ...state.confirmed, montantMobilier: true },
+        };
+        return this.advanceToNextStep(patched, messages);
       }
 
       case "skip_mobilier": {
         messages.push({ role: "user", content: "Pas de mobilier" });
-        const next = advance(
-          state,
-          {
-            mobilierInclus: false,
-            montantMobilier: 0,
-            confirmed: { ...state.confirmed, montantMobilier: true },
-          },
-          "ventilation",
-        );
-        messages.push(this.ventilationPrompt(next));
-        return { state: next, messages, completed: false };
+        const patched: F010State = {
+          ...state,
+          mobilierInclus: false,
+          montantMobilier: 0,
+          confirmed: { ...state.confirmed, montantMobilier: true },
+        };
+        return this.advanceToNextStep(patched, messages);
       }
 
       case "submit_ventilation": {
@@ -655,47 +624,7 @@ export class F010LogementAssistant {
           fieldSources: { ...state.fieldSources, ratioTerrain: action.source ?? "judgment" },
           confirmed: { ...state.confirmed, ratioTerrain: true },
         };
-
-        // Correctif dead-end (Cycle 3, contrainte #9) : jamais de message générique
-        // sans destination — le champ manquant précis est nommé et l'état est
-        // redirigé vers l'écran qui permet de le renseigner.
-        const missingStep = resolveF010MissingStep(staged);
-        if (missingStep) {
-          messages.push({
-            role: "assistant",
-            content: buildF010MissingFieldsMessage(staged, missingStep),
-          });
-          return { state: advance(staged, {}, missingStep), messages, completed: false };
-        }
-
-        // Arbitrage dateMiseEnService (Option B) : tous les champs F010 sont
-        // désormais connus (missingStep ci-dessus est null), mais le calcul
-        // final reste impossible sans la précondition F-009 — jamais un plan
-        // fictif basé sur une date inventée.
-        const result = this.computePlan(staged);
-        if (!result) {
-          messages.push(blockedMissingDatePrompt());
-          return { state: advance(staged, {}, "blocked_missing_date"), messages, completed: false };
-        }
-        const next = advance(staged, { result }, "review_plan");
-        messages.push({ role: "assistant", content: result.explanation });
-        if (!result.planValide) {
-          messages.push({
-            role: "assistant",
-            content:
-              "Attention : une incohérence a été détectée dans le calcul. " +
-              "Vérifiez les montants saisis avant de confirmer.",
-          });
-        }
-        messages.push({
-          role: "assistant",
-          content: "Ces éléments vous conviennent-ils ?",
-          suggestions: [
-            { id: "confirm", label: "Oui, je valide" },
-            { id: "restart", label: "Recommencer" },
-          ],
-        });
-        return { state: next, messages, completed: false };
+        return this.advanceToNextStep(staged, messages);
       }
 
       case "confirm": {
@@ -759,6 +688,93 @@ export class F010LogementAssistant {
       default:
         return { state, messages, completed: false };
     }
+  }
+
+  /**
+   * V2-3 (minimum questions) : point de passage unique de tous les handlers
+   * séquentiels (`submit_bien`, `submit_frais`, `submit_mobilier`,
+   * `skip_mobilier`, `submit_ventilation`) après mise à jour de l'état —
+   * généralisation du même mécanisme "champ manquant → écran suivant réel"
+   * déjà utilisé par `leaveReviewIfComplete` (chemin document), cette fois
+   * sur le chemin séquentiel manuel. Corrige la redondance démontrée : avant
+   * ce chantier, chaque handler avançait inconditionnellement à l'écran
+   * suivant fixe (`collect_frais` → `collect_mobilier` → `ventilation`),
+   * même quand les champs de ces écrans étaient déjà connus (ex. retour
+   * arrière puis re-soumission d'un champ antérieur). `nextMissingF010Field`
+   * couvre les 7 champs de `F010_MISSING_FIELD_ORDER` (contrairement à
+   * `resolveF010MissingStep`, limité à 4) — un champ déjà connu et inchangé
+   * n'est donc plus jamais redemandé.
+   */
+  private advanceToNextStep(state: F010State, messages: F010Message[]): F010AssistantTurn {
+    const missing = nextMissingF010Field(state);
+    if (missing !== null) {
+      const missingStep = stepForF010Field(missing);
+      switch (missingStep) {
+        case "collect_bien":
+          // Garde-fou dead-end (Cycle 3, contrainte #9) — cas défensif only
+          // (ces champs sont toujours déjà fournis par `submit_bien` avant
+          // que ce point de passage ne soit atteint en usage normal).
+          messages.push({
+            role: "assistant",
+            content: buildF010MissingFieldsMessage(state, missingStep),
+          });
+          break;
+        case "collect_frais":
+          // Chemin normal (première fois après `submit_bien`) — message
+          // d'origine, jamais le générique "il manque" (Cycle 4E2, parcours
+          // manuel inchangé). `fraisNotaire`/`choixTraitementFrais` ne
+          // peuvent redevenir manquants après avoir été fournis une fois
+          // (aucune action ne les efface) : ce cas ne recouvre donc que le
+          // premier passage, jamais un retour arrière.
+          messages.push({
+            role: "assistant",
+            content:
+              "Combien avez-vous payé de frais de notaire ? " +
+              "Vous pourrez choisir de les ajouter à la valeur du bien ou de les déduire immédiatement.",
+          });
+          break;
+        case "collect_mobilier":
+          messages.push({
+            role: "assistant",
+            content:
+              "Le prix inclut-il du mobilier (cuisine équipée, meubles) ? " +
+              "Si oui, indiquez son montant estimé ; sinon, passez cette étape.",
+          });
+          break;
+        case "ventilation":
+          messages.push(this.ventilationPrompt(state));
+          break;
+      }
+      return { state: advance(state, {}, missingStep), messages, completed: false };
+    }
+
+    // Arbitrage dateMiseEnService (Option B) : tous les champs F010 sont
+    // désormais connus, mais le calcul final reste impossible sans la
+    // précondition F-009 — jamais un plan fictif basé sur une date inventée.
+    const result = this.computePlan(state);
+    if (!result) {
+      messages.push(blockedMissingDatePrompt());
+      return { state: advance(state, {}, "blocked_missing_date"), messages, completed: false };
+    }
+    const next = advance(state, { result }, "review_plan");
+    messages.push({ role: "assistant", content: result.explanation });
+    if (!result.planValide) {
+      messages.push({
+        role: "assistant",
+        content:
+          "Attention : une incohérence a été détectée dans le calcul. " +
+          "Vérifiez les montants saisis avant de confirmer.",
+      });
+    }
+    messages.push({
+      role: "assistant",
+      content: "Ces éléments vous conviennent-ils ?",
+      suggestions: [
+        { id: "confirm", label: "Oui, je valide" },
+        { id: "restart", label: "Recommencer" },
+      ],
+    });
+    return { state: next, messages, completed: false };
   }
 
   private ventilationPrompt(state: F010State): F010Message {

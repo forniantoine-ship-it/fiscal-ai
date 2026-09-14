@@ -269,10 +269,19 @@ describe("Cycle 3 — DEAD-END submit_ventilation", () => {
 
   it("champs manquants (fraisNotaire) → redirection vers collect_frais", async () => {
     const assistant = new F010LogementAssistant(ctx);
+    // V2-3 : `dateAcquisition` doit être présent ici — ce garde-fou dead-end
+    // utilise désormais `nextMissingF010Field` (7 champs de
+    // `F010_MISSING_FIELD_ORDER`, le même ordre que le chemin documentaire),
+    // et non plus l'ancien `resolveF010MissingStep` (limité à 4 champs, qui
+    // ne vérifiait jamais `dateAcquisition`). En réalité `submit_bien` fournit
+    // toujours `dateAcquisition` en même temps que `prixAcquisition`/`typeBien` —
+    // l'omettre ici ne testerait que l'ancienne lacune du garde-fou, pas un cas
+    // atteignable en usage normal.
     const staged: F010State = {
       step: "ventilation",
       prixAcquisition: 280000,
       typeBien: "appartement",
+      dateAcquisition: "2024-03-01",
       fieldSources: {},
     };
     const turn = await assistant.handle(staged, { type: "submit_ventilation", ratioTerrain: 0.15 });
