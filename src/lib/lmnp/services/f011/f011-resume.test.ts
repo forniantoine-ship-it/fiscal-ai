@@ -28,9 +28,14 @@ describe("resolveF011ResumeDecision — Cycle 2", () => {
     assert.deepEqual(decision, { kind: "legacy_complete" });
   });
 
-  it("un blob figé sur `complete` ne déclenche pas la reprise — le raccourci legacy prend le relais", () => {
+  it("F011-2 — un blob figé sur `complete` reprend le vrai état persisté (prêts + history), jamais le repli synthétique", () => {
     const decision = resolveF011ResumeDecision({ persisted: persisted("complete"), isLegacyComplete: true });
-    assert.deepEqual(decision, { kind: "legacy_complete" });
+    assert.deepEqual(decision, { kind: "resume_complete" });
+  });
+
+  it("F011-2 — `complete` sans flag legacy (nouveau dossier) reprend quand même le vrai état persisté", () => {
+    const decision = resolveF011ResumeDecision({ persisted: persisted("complete"), isLegacyComplete: false });
+    assert.deepEqual(decision, { kind: "resume_complete" });
   });
 
   it("aucun progrès (`presence_emprunt`) et pas encore complet → départ simple", () => {

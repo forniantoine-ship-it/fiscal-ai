@@ -1,7 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_LOAN_FORM_VALUES, resolveLoanFormAction, type LoanIdentity } from "./f011-loan-form-state";
+import {
+  DEFAULT_LOAN_FORM_VALUES,
+  isLoanFormComplete,
+  resolveLoanFormAction,
+  type LoanIdentity,
+} from "./f011-loan-form-state";
 
 /**
  * Correctif Cycle 10 — ces tests couvrent uniquement la décision pure
@@ -126,5 +131,47 @@ describe("F-011 — correctif formulaire prêt (resolveLoanFormAction)", () => {
       const decision = resolveLoanFormAction(undefined, identity(1, 0), identity(0, 0));
       assert.equal(decision.kind, "reset");
     });
+  });
+});
+
+/**
+ * F011-2 — le formulaire manuel affichait par défaut un prêt fictif réel
+ * (200 000 €, 1,85 %, 240 mois, 15/01/2022) : un utilisateur pouvait valider
+ * un financement inventé sans jamais rien saisir. Ces tests couvrent :
+ * (1) l'absence de toute valeur métier fictive dans l'état initial du
+ * formulaire, et (2) la précondition pure qui empêche `Continuer` de créer
+ * un prêt avec des champs obligatoires vides ou invalides.
+ */
+describe("F011-2 — DEFAULT_LOAN_FORM_VALUES ne contient plus de prêt fictif", () => {
+  it("les quatre champs de départ sont vides — aucun capital/taux/durée/date inventé", () => {
+    assert.deepEqual(DEFAULT_LOAN_FORM_VALUES, { capital: "", rate: "", duration: "", firstPayment: "" });
+  });
+});
+
+describe("F011-2 — isLoanFormComplete (précondition du bouton Continuer)", () => {
+  it("A — formulaire vide (nouveau prêt manuel) : jamais complet", () => {
+    assert.equal(isLoanFormComplete(DEFAULT_LOAN_FORM_VALUES), false);
+  });
+
+  it("B — un seul champ obligatoire manquant suffit à bloquer Continuer", () => {
+    const complete = { capital: "150000", rate: "1.85", duration: "240", firstPayment: "2024-01-15" };
+    assert.equal(isLoanFormComplete(complete), true);
+    assert.equal(isLoanFormComplete({ ...complete, capital: "" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, rate: "" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, duration: "" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, firstPayment: "" }), false);
+  });
+
+  it("valeurs non numériques ou capital/durée non strictement positifs : bloqué", () => {
+    const complete = { capital: "150000", rate: "1.85", duration: "240", firstPayment: "2024-01-15" };
+    assert.equal(isLoanFormComplete({ ...complete, capital: "abc" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, capital: "0" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, duration: "0" }), false);
+    assert.equal(isLoanFormComplete({ ...complete, rate: "abc" }), false);
+  });
+
+  it("C — valeurs extraites d'un document (préremplissage) : reconnues comme complètes sans re-saisie", () => {
+    const extracted = { capital: "100000", rate: "3", duration: "120", firstPayment: "2024-01-15" };
+    assert.equal(isLoanFormComplete(extracted), true);
   });
 });

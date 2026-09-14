@@ -15,8 +15,13 @@ import type { F011PrefillFieldKey } from "@/lib/lmnp/services/f011/credit-bridge
 import { runF011UploadFlow } from "@/lib/lmnp/services/f011/f011-document-analysis";
 import { shouldFlushF011PersistedStep } from "@/lib/lmnp/services/f011/f011-critical-persist";
 import { resolveF011ResumeDecision } from "@/lib/lmnp/services/f011/f011-resume";
-import { resolveLoanFormAction, type LoanIdentity } from "@/lib/lmnp/services/f011/f011-loan-form-state";
+import {
+  isLoanFormComplete,
+  resolveLoanFormAction,
+  type LoanIdentity,
+} from "@/lib/lmnp/services/f011/f011-loan-form-state";
 import { buildFinancementCharges } from "@/lib/lmnp/services/f011/f011-build-financement-charges";
+import { shouldInvalidateCreditConfirmation } from "@/lib/lmnp/services/f011/f011-credit-confirmation-invalidation";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { supabase } from "@/lib/supabase";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
@@ -424,6 +429,23 @@ export function F011FinancementAssistantPanel() {
       return { decision, turn: assistant.start() };
     }
 
+    if (decision.kind === "resume_complete") {
+      // F011-2 — reprend le VRAI `F011PersistedState` complet (prêts, history)
+      // au lieu du repli synthétique `legacy_complete`, même message d'accueil
+      // qu'avant, pour que « Modifier mes réponses » ouvre un parcours
+      // réellement éditable (miroir F010 `resume_complete`).
+      return {
+        decision,
+        turn: {
+          state: assistant.resume(persisted!).state,
+          messages: [
+            { role: "assistant" as const, content: "Votre financement est déjà enregistré pour cet exercice." },
+          ],
+          completed: false,
+        },
+      };
+    }
+
     return { decision, turn: assistant.resume(persisted!) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -445,22 +467,22 @@ export function F011FinancementAssistantPanel() {
   const [capital, setCapital] = useState(() =>
     initialResume.turn.state.step === "loan_collect" && initialResume.turn.state.pendingLoan?.capitalInitial !== undefined
       ? String(initialResume.turn.state.pendingLoan.capitalInitial)
-      : "200000",
+      : "",
   );
   const [rate, setRate] = useState(() =>
     initialResume.turn.state.step === "loan_collect" && initialResume.turn.state.pendingLoan?.tauxNominal !== undefined
       ? String(initialResume.turn.state.pendingLoan.tauxNominal * 100)
-      : "1.85",
+      : "",
   );
   const [duration, setDuration] = useState(() =>
     initialResume.turn.state.step === "loan_collect" && initialResume.turn.state.pendingLoan?.dureeMois !== undefined
       ? String(initialResume.turn.state.pendingLoan.dureeMois)
-      : "240",
+      : "",
   );
   const [firstPayment, setFirstPayment] = useState(() =>
     initialResume.turn.state.step === "loan_collect" && initialResume.turn.state.pendingLoan?.datePremiereMensualite
       ? initialResume.turn.state.pendingLoan.datePremiereMensualite
-      : "2022-01-15",
+      : "",
   );
   const [busy, setBusy] = useState(false);
 
@@ -582,6 +604,7 @@ export function F011FinancementAssistantPanel() {
    */
   const applyTurn = useCallback(
     (turn: F011AssistantTurn) => {
+      const previousStep = stateRef.current.step;
       setState(turn.state);
       setAwaitingAmountFor(null);
       const nextAssistants = assistantMessagesFromTurn(turn.messages);
@@ -597,9 +620,18 @@ export function F011FinancementAssistantPanel() {
         });
       }
       persistSession(turn.state);
+      // F011-2 (audit contradictoire) — miroir de la contrainte #10 F010 :
+      // rouvrir `complete` pour modification invalide le signal de complétude
+      // partagé (`creditConfirmedAt`, lu par `validation-profile.ts` et
+      // `document-journey-progress.ts`) jusqu'à une nouvelle confirmation
+      // explicite. Ne touche jamais aux prêts (`financementCharges`/
+      // `creditFinancing` restent tels quels, seule la porte se referme).
+      if (shouldInvalidateCreditConfirmation({ previousStep, nextStep: turn.state.step })) {
+        dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { creditConfirmedAt: undefined } });
+      }
       if (turn.completed) persistCompletion(turn.state);
     },
-    [applyLoanFormAction, persistCompletion, persistSession],
+    [applyLoanFormAction, dispatch, persistCompletion, persistSession],
   );
 
   const runAction = useCallback(
@@ -783,13 +815,13 @@ export function F011FinancementAssistantPanel() {
     [runAction, state.pendingLoan, state.detectedGuaranteeFees],
   );
 
+  const canSubmitLoan = isLoanFormComplete({ capital, rate, duration, firstPayment });
+
   const submitLoan = useCallback(() => {
+    if (!isLoanFormComplete({ capital, rate, duration, firstPayment })) return;
     const capitalValue = Number(capital);
     const rateValue = Number(rate) / 100;
     const durationValue = Number(duration);
-    if (!Number.isFinite(capitalValue) || !Number.isFinite(rateValue) || !Number.isFinite(durationValue)) {
-      return;
-    }
     void runAction({
       type: "submit_loan_terms",
       capitalInitial: capitalValue,
@@ -1035,15 +1067,33 @@ export function F011FinancementAssistantPanel() {
           <div className="flex flex-col gap-5">
             <label style={labelStyle}>
               Montant emprunté (€)
-              <input style={inputStyle} value={capital} onChange={(e) => setCapital(e.target.value)} />
+              <input
+                style={inputStyle}
+                value={capital}
+                onChange={(e) => setCapital(e.target.value)}
+                placeholder="Ex. : 150000"
+                inputMode="decimal"
+              />
             </label>
             <label style={labelStyle}>
               Taux annuel (%)
-              <input style={inputStyle} value={rate} onChange={(e) => setRate(e.target.value)} />
+              <input
+                style={inputStyle}
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                placeholder="Ex. : 1,85"
+                inputMode="decimal"
+              />
             </label>
             <label style={labelStyle}>
               Durée (mois)
-              <input style={inputStyle} value={duration} onChange={(e) => setDuration(e.target.value)} />
+              <input
+                style={inputStyle}
+                value={duration}
+                onChange={(e) => setDuration(e.target.value)}
+                placeholder="Ex. : 240"
+                inputMode="numeric"
+              />
             </label>
             <label style={labelStyle}>
               Date 1ère mensualité
@@ -1054,7 +1104,7 @@ export function F011FinancementAssistantPanel() {
                 onChange={(e) => setFirstPayment(e.target.value)}
               />
             </label>
-            <Button className="w-full" onClick={submitLoan} disabled={busy}>
+            <Button className="w-full" onClick={submitLoan} disabled={busy || !canSubmitLoan}>
               Continuer
             </Button>
           </div>
@@ -1089,15 +1139,27 @@ export function F011FinancementAssistantPanel() {
         ) : null}
 
         {step === "complete" || step === "skipped" ? (
-          <div className="flex flex-col gap-3 sm:flex-row" style={{ marginTop: spacing.scale[4] }}>
-            <Link href={LMNP_ROUTES.revenusAssistant} className="flex-1">
-              <Button className="w-full">Continuer vers Revenus</Button>
-            </Link>
-            <Link href={LMNP_ROUTES.dashboard}>
-              <Button variant="secondary" className="w-full">
-                Retour au tableau de bord
+          <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href={LMNP_ROUTES.revenusAssistant} className="flex-1">
+                <Button className="w-full">Continuer vers Revenus</Button>
+              </Link>
+              <Link href={LMNP_ROUTES.dashboard}>
+                <Button variant="secondary" className="w-full">
+                  Retour au tableau de bord
+                </Button>
+              </Link>
+            </div>
+            {step === "complete" ? (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                className="w-full"
+                onClick={() => void runAction({ type: "go_back" })}
+              >
+                Modifier mes réponses
               </Button>
-            </Link>
+            ) : null}
           </div>
         ) : null}
 

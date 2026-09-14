@@ -17,13 +17,40 @@ export type LoanFormValues = {
   firstPayment: string;
 };
 
-/** Valeurs de départ historiques du formulaire — identiques à l'état initial du panel, jamais réinventées. */
+/**
+ * F011-2 — un nouveau prêt manuel part toujours vide : aucune valeur
+ * fictive (montant/taux/durée/date d'un prêt inventé) ne doit jamais devenir
+ * une donnée métier sans saisie explicite de l'utilisateur.
+ */
 export const DEFAULT_LOAN_FORM_VALUES: LoanFormValues = {
-  capital: "200000",
-  rate: "1.85",
-  duration: "240",
-  firstPayment: "2022-01-15",
+  capital: "",
+  rate: "",
+  duration: "",
+  firstPayment: "",
 };
+
+/**
+ * F011-2 — précondition du bouton Continuer : les quatre champs obligatoires
+ * du prêt manuel doivent être renseignés et numériquement valides avant de
+ * pouvoir créer un `F011LoanDraft`. Pure, testable hors React.
+ */
+export function isLoanFormComplete(values: LoanFormValues): boolean {
+  const capital = Number(values.capital);
+  const rate = Number(values.rate);
+  const duration = Number(values.duration);
+  return (
+    values.capital.trim() !== "" &&
+    values.rate.trim() !== "" &&
+    values.duration.trim() !== "" &&
+    values.firstPayment.trim() !== "" &&
+    Number.isFinite(capital) &&
+    capital > 0 &&
+    Number.isFinite(rate) &&
+    rate >= 0 &&
+    Number.isFinite(duration) &&
+    duration > 0
+  );
+}
 
 export type LoanFormAction =
   /** Un prêt déjà partiellement ou totalement connu (édition, extraction partielle) — préremplir depuis ces valeurs. */
