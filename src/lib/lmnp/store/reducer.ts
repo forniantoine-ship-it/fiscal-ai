@@ -709,6 +709,41 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         confirmationInvalidated = true;
       }
 
+      // F012 V2 Phase 2 (audit contradictoire) — `chargesConfirmedAt` seul ne
+      // suffit pas ici : contrairement à `chargesExtraction`/`creditFinancing`
+      // (jamais recalculés depuis `collected`), `collected.taxeFonciereExpense`
+      // EST directement relue par `collected-to-registry.ts` à chaque calcul
+      // — la laisser à `decision: "confirmed"` referait silencieusement une
+      // Charge à partir d'un document qui n'existe plus (donnée orpheline
+      // réutilisable au prochain calcul/reload, exactement le risque signalé).
+      // Correctif minimal : la dépense repasse à `decision: "pending"` (même
+      // sémantique que "jamais encore validée" ailleurs dans ce modèle,
+      // aucune règle nouvelle) — `montant`/`montantExtrait` restent intacts,
+      // rien n'est effacé, seule la validation redevient nécessaire.
+      if (
+        declarationDraft &&
+        declarationDraft.chargesAssistantState?.collected.taxeFonciereExpense?.documentId === action.documentId
+      ) {
+        const chargesAssistantState = declarationDraft.chargesAssistantState;
+        const taxeFonciereExpense = chargesAssistantState.collected.taxeFonciereExpense!;
+        declarationDraft = {
+          ...declarationDraft,
+          chargesConfirmedAt: undefined,
+          chargesAssistantState: {
+            ...chargesAssistantState,
+            collected: {
+              ...chargesAssistantState.collected,
+              taxeFonciereExpense: {
+                ...taxeFonciereExpense,
+                decision: "pending",
+                reviewNeeded: true,
+              },
+            },
+          },
+        };
+        confirmationInvalidated = true;
+      }
+
       if (declarationDraft?.creditDocumentId === action.documentId) {
         declarationDraft = { ...declarationDraft, creditConfirmedAt: undefined };
         confirmationInvalidated = true;

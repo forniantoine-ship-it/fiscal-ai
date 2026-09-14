@@ -19,6 +19,7 @@ import {
   type FamilyCoverage,
 } from "../../capabilities/f012/charge";
 import { resolveFamilyCoverage } from "../../capabilities/f012/family-coverage";
+import { expenseToCharge, isExpenseRecordable } from "../../capabilities/f012/expense";
 import { unknownReasonForFamily } from "./family-coverage-intents";
 import { toF012PersistedState, type F012CollectedData, type F012PersistedState, type F012State } from "./types";
 
@@ -79,7 +80,17 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
   const { collected, profil, categoryInventory, fieldSources, exercise } = input;
   const charges: Charge[] = [];
 
-  if (collected.taxeFonciere !== undefined) {
+  // F012 V2 Phase 2 — SOURCE canonique pour la taxe foncière quand la
+  // dépense provient du nouveau chemin document → Expense (famille "impots"
+  // migrée) : `Expense` prime, jamais les deux à la fois (`collected.taxeFonciere`
+  // reste la source pour la saisie manuelle / les dossiers non migrés,
+  // comportement historique inchangé ci-dessous). Une Expense non encore
+  // validée (pending/ignored) ne produit aucune Charge — jamais silencieuse.
+  if (collected.taxeFonciereExpense !== undefined) {
+    if (isExpenseRecordable(collected.taxeFonciereExpense)) {
+      charges.push(expenseToCharge(collected.taxeFonciereExpense).charge);
+    }
+  } else if (collected.taxeFonciere !== undefined) {
     charges.push(
       scalarCharge({
         slot: "taxe-fonciere",

@@ -106,6 +106,97 @@ describe("REMOVE_DOCUMENT — invalidation des confirmations Charges/Crédit/Amo
     assert.equal(next.declarationDraft?.chargesConfirmedAt, "2026-01-01T00:00:00Z");
   });
 
+  it("#1b F012 V2 Phase 2 — document source d'une Expense (taxe foncière) supprimé → chargesConfirmedAt invalidé, jamais une Expense orpheline silencieusement validée", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      [doc("doc-real-tf-1", "charges")],
+      {
+        completedSteps: ["charges"],
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        chargesAssistantState: {
+          step: "complete",
+          categoryInventory: [],
+          currentCategoryIndex: 0,
+          collected: {
+            coproLignes: [],
+            travaux: [],
+            divers: [],
+            skippedCategories: [],
+            taxeFonciereExpense: {
+              id: "expense-doc-doc-real-tf-1-taxe-fonciere",
+              exerciceFiscal: 2026,
+              montant: 1100,
+              montantExtrait: 1100,
+              description: "Taxe foncière",
+              origin: "document",
+              documentId: "doc-real-tf-1",
+              fieldSources: { montant: "extracted" },
+              category: "taxe_fonciere",
+              decision: "confirmed",
+            },
+          },
+          fieldSources: {},
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+      },
+    );
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-real-tf-1" });
+
+    assert.equal(
+      next.declarationDraft?.chargesConfirmedAt,
+      undefined,
+      "l'Expense dépend d'un document supprimé — la confirmation F012 doit être invalidée, pas rester silencieuse",
+    );
+    // Audit contradictoire (Chantier 8) — chargesConfirmedAt seul ne suffit
+    // pas : l'Expense elle-même ne doit plus rester `decision: "confirmed"`,
+    // sinon collected-to-registry.ts continuerait à en tirer une Charge au
+    // prochain calcul/reload, donnée orpheline réutilisable silencieusement.
+    const expense = (next.declarationDraft?.chargesAssistantState as any)?.collected?.taxeFonciereExpense;
+    assert.notEqual(expense?.decision, "confirmed", "l'Expense ne doit plus être exploitable en Charge après la suppression du document source");
+    assert.equal(expense?.montant, 1100, "le montant n'est pas effacé, seule la validation redevient nécessaire");
+  });
+
+  it("#1c F012 V2 Phase 2 — document non contributeur d'une Expense supprimé → chargesConfirmedAt conservé", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      [doc("doc-real-tf-1", "charges"), doc("doc-autre-tf", "autre")],
+      {
+        completedSteps: ["charges"],
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        chargesAssistantState: {
+          step: "complete",
+          categoryInventory: [],
+          currentCategoryIndex: 0,
+          collected: {
+            coproLignes: [],
+            travaux: [],
+            divers: [],
+            skippedCategories: [],
+            taxeFonciereExpense: {
+              id: "expense-doc-doc-real-tf-1-taxe-fonciere",
+              exerciceFiscal: 2026,
+              montant: 1100,
+              montantExtrait: 1100,
+              description: "Taxe foncière",
+              origin: "document",
+              documentId: "doc-real-tf-1",
+              fieldSources: { montant: "extracted" },
+              category: "taxe_fonciere",
+              decision: "confirmed",
+            },
+          },
+          fieldSources: {},
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+      },
+    );
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-autre-tf" });
+
+    assert.equal(next.declarationDraft?.chargesConfirmedAt, "2026-01-01T00:00:00Z");
+  });
+
   it("#3 Crédit : document contributeur supprimé → creditConfirmedAt supprimé", async () => {
     const lmnpReducer = await loadReducer();
     const state = baseState(

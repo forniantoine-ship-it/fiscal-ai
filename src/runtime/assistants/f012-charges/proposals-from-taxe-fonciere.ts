@@ -24,19 +24,23 @@ const PRELEVEMENT_LINE =
 const PAYMENT_DATE =
   /(?:date\s+de\s+paiement|pay[eé]\s+le|pr[eé]lev[eé]\s+le)[^\d\n]{0,12}(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})/i;
 
-function yearFromPaymentDate(date: string | undefined): number | undefined {
+/**
+ * Exportées (Phase 2 F012 V2) pour réutilisation par `expense-from-taxe-fonciere.ts`
+ * — même extraction, jamais une seconde implémentation des mêmes regex.
+ */
+export function yearFromPaymentDate(date: string | undefined): number | undefined {
   if (!date) return undefined;
   const match = date.match(/(\d{4})$/);
   return match ? Number(match[1]) : undefined;
 }
 
-function extractPaymentDate(corpus: string): string | undefined {
+export function extractPaymentDate(corpus: string): string | undefined {
   const match = PAYMENT_DATE.exec(corpus);
   if (!match?.[1]) return undefined;
   return normalizeChargeDateValue(match[1]) ?? undefined;
 }
 
-function extractPrelevements(corpus: string): number[] {
+export function extractPrelevements(corpus: string): number[] {
   const amounts: number[] = [];
   PRELEVEMENT_LINE.lastIndex = 0;
   let match: RegExpExecArray | null;

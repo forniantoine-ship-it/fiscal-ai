@@ -6,6 +6,8 @@ import type { CoproLigneInput } from "../../capabilities/f012/compute-copro-dedu
 import { detectFinancementOverlap } from "../../capabilities/f012/detect-financement-overlap";
 import { mapChoixToNature, splitMixteTravaux } from "../../capabilities/f012/qualify-travail";
 import type { NatureIntervention } from "../../capabilities/f012/types";
+import type { Expense } from "../../capabilities/f012/expense";
+import { taxeFonciereExpenseMissingAmount } from "./expense-from-taxe-fonciere";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import { explainCharges } from "../../presentation/explain-charges";
 import { validateCharges } from "../../capabilities/f012/validate-charges";
@@ -211,6 +213,33 @@ function travauxDatePrompt(): F012Message {
   };
 }
 
+/**
+ * F012 V2 Phase 2 — "taxe foncière renseignée" doit rester vrai quelle que
+ * soit la source : `collected.taxeFonciere` (saisie manuelle / dossier non
+ * migré, comportement historique) OU `collected.taxeFonciereExpense`
+ * (nouveau chemin document → Expense, famille "impots"). Jamais les deux
+ * lus indépendamment ailleurs — seul point de vérité pour cette question.
+ */
+function hasTaxeFonciereValue(collected: F012State["collected"]): boolean {
+  return collected.taxeFonciere !== undefined || collected.taxeFonciereExpense !== undefined;
+}
+
+/** F012 V2 Phase 2 — présente la dépense (Expense) extraite du document avant confirmation/correction/rejet. */
+function taxeFonciereExpenseReceivedMessage(expense: Expense): F012Message {
+  const content =
+    expense.montantExtrait !== undefined
+      ? `Nous avons lu ${expense.montantExtrait.toLocaleString("fr-FR")} € de taxe foncière dans ce document. Est-ce le bon montant ?`
+      : "Nous n'avons pas pu lire le montant dans ce document. Vous pouvez le renseigner manuellement.";
+  return {
+    role: "assistant",
+    content,
+    suggestions: [
+      { id: "confirm_taxe_fonciere_expense", label: "Oui, ce montant est correct" },
+      { id: "ignore_taxe_fonciere_expense", label: "Ignorer ce document" },
+    ],
+  };
+}
+
 function confirmAllPrompt(unresolvedLabels: string[] = []): F012Message {
   const suggestions: Array<{ id: string; label: string }> = [];
   if (unresolvedLabels.length > 0) {
@@ -304,6 +333,7 @@ export class F012ChargesAssistant {
       familyPhase: persisted.familyPhase,
       documentReview: persisted.documentReview,
       analyzedDocumentIds: persisted.analyzedDocumentIds,
+      pendingTaxeFonciereExpense: persisted.pendingTaxeFonciereExpense,
     };
 
     const reentry = this.buildReentryTurn(baseState);
@@ -412,6 +442,7 @@ export class F012ChargesAssistant {
       familyPhase: previous.familyPhase,
       documentReview: previous.documentReview,
       analyzedDocumentIds: previous.analyzedDocumentIds,
+      pendingTaxeFonciereExpense: previous.pendingTaxeFonciereExpense,
       result: undefined,
       history: history.slice(0, -1),
     };
@@ -600,6 +631,83 @@ export class F012ChargesAssistant {
             familyPhase: "review",
             documentReview: { ...draftReview, conflicts },
             analyzedDocumentIds: [...(state.analyzedDocumentIds ?? []), action.documentId],
+          },
+          messages,
+          completed: false,
+        };
+      }
+
+      // F012 V2 Phase 2 — chemin document → Expense (famille "impots" migrée).
+      // `Expense` (capabilities/f012/expense.ts) devient la source persistée
+      // pour cette famille (`collected.taxeFonciereExpense`) ; `ChargeProposal`
+      // reste inchangé pour les autres familles documentaires (assurances,
+      // gestion, syndic).
+      case "receive_taxe_fonciere_expense": {
+        messages.push(taxeFonciereExpenseReceivedMessage(action.expense));
+        return {
+          state: { ...state, pendingTaxeFonciereExpense: action.expense },
+          messages,
+          completed: false,
+        };
+      }
+
+      case "confirm_taxe_fonciere_expense": {
+        const pending = state.pendingTaxeFonciereExpense;
+        if (!pending) return { state, messages, completed: false };
+        // Jamais une confirmation sur un montant fabriqué (§1 de la mission) :
+        // sans extraction, seule une correction explicite peut débloquer.
+        if (taxeFonciereExpenseMissingAmount(pending)) {
+          messages.push({
+            role: "assistant",
+            content: "Aucun montant n'a pu être lu dans ce document — renseignez-le avant de confirmer.",
+          });
+          return { state, messages, completed: false };
+        }
+        messages.push({ role: "user", content: "Oui, ce montant est correct" });
+        const confirmed: Expense = { ...pending, decision: "confirmed" };
+        const collected = clearFamilyCoverageIntents(
+          { ...state.collected, taxeFonciereExpense: confirmed },
+          ["impots"],
+        );
+        return this.previewAndAdvanceFamily(
+          { ...state, collected, pendingTaxeFonciereExpense: undefined },
+          messages,
+        );
+      }
+
+      case "correct_taxe_fonciere_expense": {
+        const pending = state.pendingTaxeFonciereExpense;
+        if (!pending) return { state, messages, completed: false };
+        messages.push({
+          role: "user",
+          content: `Montant corrigé : ${action.montant.toLocaleString("fr-FR")} €`,
+        });
+        const corrected: Expense = {
+          ...pending,
+          montant: action.montant,
+          decision: "modified",
+          fieldSources: { ...pending.fieldSources, montant: "user_correction" },
+        };
+        const collected = clearFamilyCoverageIntents(
+          { ...state.collected, taxeFonciereExpense: corrected },
+          ["impots"],
+        );
+        return this.previewAndAdvanceFamily(
+          { ...state, collected, pendingTaxeFonciereExpense: undefined },
+          messages,
+        );
+      }
+
+      case "ignore_taxe_fonciere_expense": {
+        const pending = state.pendingTaxeFonciereExpense;
+        if (!pending) return { state, messages, completed: false };
+        messages.push({ role: "user", content: "Ignorer ce document" });
+        const ignored: Expense = { ...pending, decision: "ignored" };
+        return {
+          state: {
+            ...state,
+            collected: { ...state.collected, taxeFonciereExpense: ignored },
+            pendingTaxeFonciereExpense: undefined,
           },
           messages,
           completed: false,
@@ -1686,7 +1794,7 @@ export class F012ChargesAssistant {
         comptable: false,
       },
       renseigne: {
-        taxeFonciere: state.collected.taxeFonciere !== undefined,
+        taxeFonciere: hasTaxeFonciereValue(state.collected),
         assurancePno: state.collected.assurancePno !== undefined,
         copropriete: state.collected.coproLignes.length > 0,
         honorairesGestion: state.collected.honorairesGestion !== undefined,
@@ -2102,7 +2210,7 @@ export class F012ChargesAssistant {
   private categoryIsFilled(collected: F012State["collected"], categoryId: F012CategoryId): boolean {
     switch (categoryId) {
       case "taxe_fonciere":
-        return collected.taxeFonciere !== undefined;
+        return hasTaxeFonciereValue(collected);
       case "assurance_pno":
         return collected.assurancePno !== undefined;
       case "assurance_gli":

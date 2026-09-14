@@ -269,7 +269,12 @@ export function expenseToCharge(expense: Expense): ExpenseToChargeOutput {
             dateDebut: expense.dateDebut,
           }
         : undefined,
-    reviewNeeded: expense.qualificationRetenue === undefined ? true : expense.reviewNeeded,
+    // Phase 2 — l'ambiguïté charge/immobilisation (JUG-008) ne concerne que
+    // les travaux : une dépense hors "travaux" (ex. taxe foncière) n'a pas
+    // de `qualificationRetenue` à arbitrer et ne doit jamais être marquée
+    // "à revoir" pour autant — seule `familyId === "travaux"` applique ce repli.
+    reviewNeeded:
+      familyId === "travaux" && expense.qualificationRetenue === undefined ? true : expense.reviewNeeded,
   });
 
   return { charge, anomalies };

@@ -10,6 +10,7 @@ import type {
   DocumentaryFamilyId,
   F012DocumentReview,
 } from "./charge-proposal";
+import type { Expense } from "../../capabilities/f012/expense";
 import type {
   ChargesExerciceResult,
   ComposantNouveau,
@@ -68,6 +69,16 @@ export interface F012FamilyLine {
 
 export interface F012CollectedData {
   taxeFonciere?: number;
+  /**
+   * F012 V2 Phase 2 — SOURCE canonique pour la taxe foncière quand cette
+   * dépense provient du nouveau chemin document → Expense (famille "impots"
+   * migrée). Quand présente, prime sur `taxeFonciere` ci-dessus pour la
+   * projection Charge (`collected-to-registry.ts`) — jamais les deux à la
+   * fois pour la même dépense. `taxeFonciere` (scalaire) reste la source
+   * pour la saisie manuelle / les dossiers non migrés — comportement
+   * historique inchangé.
+   */
+  taxeFonciereExpense?: Expense;
   assurancePno?: number;
   assuranceGli?: number;
   coproLignes: CoproLigneInput[];
@@ -166,6 +177,8 @@ export type F012HistorySnapshot = {
   familyPhase?: F012FamilyPhase;
   documentReview?: F012DocumentReview;
   analyzedDocumentIds?: string[];
+  /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
+  pendingTaxeFonciereExpense?: Expense;
 };
 
 /** Capture les champs dignes d'être restaurés par GO_BACK — jamais `result`, jamais `history` lui-même. */
@@ -187,6 +200,7 @@ export function snapshotF012State(state: F012State): F012HistorySnapshot {
     familyPhase: state.familyPhase,
     documentReview: state.documentReview,
     analyzedDocumentIds: state.analyzedDocumentIds,
+    pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
   };
 }
 
@@ -210,6 +224,8 @@ export interface F012State {
   analyzedDocumentIds?: string[];
   /** GO_BACK (Cycle 4E) doit survivre à un refresh — même mécanisme unique qu'en mémoire. */
   history?: F012HistorySnapshot[];
+  /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
+  pendingTaxeFonciereExpense?: Expense;
 }
 
 export interface F012Suggestion {
@@ -246,6 +262,19 @@ export type F012Action =
       proposals: ChargeProposal[];
       fileName?: string;
     }
+  /**
+   * F012 V2 Phase 2 — chemin document → Expense pour la famille "impots"
+   * migrée (taxe foncière), distinct du chemin `ChargeProposal` ci-dessus
+   * (inchangé pour les autres familles documentaires). `expense` porte déjà
+   * `decision: "pending"` et un `documentId` réel (`LmnpDocument.id`).
+   */
+  | { type: "receive_taxe_fonciere_expense"; expense: Expense }
+  /** Accepte l'Expense en attente telle quelle (montant extrait correct) → decision="confirmed". */
+  | { type: "confirm_taxe_fonciere_expense" }
+  /** Corrige le montant de l'Expense en attente (montantExtrait conservé) → decision="modified". */
+  | { type: "correct_taxe_fonciere_expense"; montant: number }
+  /** Écarte l'Expense en attente → decision="ignored", jamais projetée en Charge. */
+  | { type: "ignore_taxe_fonciere_expense" }
   | { type: "confirm_proposal"; proposalId: string }
   | { type: "modify_proposal"; proposalId: string; amount: number }
   | { type: "ignore_proposal"; proposalId: string; reason?: string }
@@ -389,6 +418,8 @@ export type F012PersistedState = {
   familyPhase?: F012FamilyPhase;
   documentReview?: F012DocumentReview;
   analyzedDocumentIds?: string[];
+  /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
+  pendingTaxeFonciereExpense?: Expense;
   updatedAt: string;
 };
 
@@ -415,6 +446,7 @@ export function toF012PersistedState(state: F012State, updatedAt: string): F012P
     familyPhase: state.familyPhase,
     documentReview: state.documentReview,
     analyzedDocumentIds: state.analyzedDocumentIds,
+    pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
     updatedAt,
   };
 }

@@ -16,6 +16,7 @@ import { buildCoproLignesFromAmounts } from "@/lib/lmnp/services/f012/f012-copro
 import { resolveDiversSubmitAction } from "@/lib/lmnp/services/f012/f012-divers-form-state";
 import { resolveF012ResumeDecision } from "@/lib/lmnp/services/f012/f012-resume";
 import { composantsNouveauxChanged } from "@/lib/lmnp/services/f012/f012-amortissement-freshness";
+import { analyzeImpotsDocument, IMPOTS_UPLOAD_CATEGORY } from "@/lib/lmnp/services/f012/f012-impots-document-upload";
 import {
   amountPaidLabel,
   amountWhereToLook,
@@ -972,6 +973,61 @@ export function F012ChargesAssistantPanel() {
           ? stateRef.current.familyInventory[stateRef.current.currentFamilyIndex]
           : undefined;
       if (!familyId || !isDocumentaryFamily(familyId)) return;
+
+      // F012 V2 Phase 2 — famille "impots" (taxe foncière) migrée : chemin
+      // document → Expense avec un VRAI LmnpDocument (upload Supabase réel,
+      // même pipeline que ChargesDocumentStep.tsx), jamais l'id synthétique
+      // `f012-doc-*` ci-dessous. Les autres familles documentaires
+      // (assurances/gestion/syndic) restent intégralement sur le chemin
+      // `ChargeProposal` historique — aucun comportement hybride pour impots.
+      if (familyId === "impots") {
+        setBusy(true);
+        try {
+          const result = await analyzeImpotsDocument(file, fiscalYear);
+          if (result.status === "not_authenticated") {
+            alert("Utilisateur non connecté");
+            return;
+          }
+          if (result.status === "upload_failed") {
+            alert("L'envoi du document a échoué — réessayez.");
+            return;
+          }
+          // Le document est réellement stocké (Storage + table `documents`)
+          // dès que l'upload réussit — enregistré ici, que l'extraction
+          // réussisse ou non, pour que `REMOVE_DOCUMENT` puisse ensuite le
+          // retrouver (§7 : plus jamais un id F012 invisible du registre).
+          dispatch({
+            type: "UPLOAD_DOCUMENTS",
+            files: [
+              {
+                file: result.uploadedFile,
+                documentId: result.documentId,
+                isSupabaseDocumentId: true,
+                category: IMPOTS_UPLOAD_CATEGORY,
+              },
+            ],
+          });
+          if (result.status === "extraction_failed") {
+            // Document réel enregistré, mais AUCUNE Expense fabriquée sans
+            // donnée réelle (§3.B) — l'utilisateur reste libre de saisir le
+            // montant manuellement via le formulaire existant.
+            alert("Nous n'avons pas pu lire ce document — vous pouvez renseigner le montant manuellement.");
+            return;
+          }
+          for (const expense of result.expenses) {
+            applyTurn(
+              await assistant.handle(stateRef.current, {
+                type: "receive_taxe_fonciere_expense",
+                expense,
+              }),
+            );
+          }
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+
       setBusy(true);
       try {
         let text = "";
@@ -1004,7 +1060,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, fiscalYear],
+    [assistant, applyTurn, dispatch, fiscalYear],
   );
 
   const handleSuggestion = useCallback(
