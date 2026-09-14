@@ -134,9 +134,15 @@ function computePret(
   });
   anomalies.push(...validation.anomalies);
 
-  const souscriptionExercice =
-    pret.anneeSouscription === undefined ||
-    pret.anneeSouscription === input.exerciceFiscal;
+  // F011-1 (P0) : `anneeSouscription` n'est déductible que si elle est
+  // CONNUE et égale à l'exercice courant — jamais par défaut. L'ancienne
+  // lecture (`undefined` traité comme "souscrit cette année") permettait à
+  // une commission de caution/des frais de dossier d'un prêt souscrit une
+  // année antérieure (ou dont l'année de souscription n'est simplement pas
+  // renseignée) d'être déduits à chaque exercice où le prêt est simplement
+  // présent — contraire à la règle KS ("déductible l'année de souscription
+  // uniquement", F-011 §Modèle prêt).
+  const souscriptionExercice = pret.anneeSouscription === input.exerciceFiscal;
 
   return {
     pretId: pret.pretId,
