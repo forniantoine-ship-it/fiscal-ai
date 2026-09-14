@@ -15,10 +15,9 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
     const startTurn = assistant.start();
     assert.equal(startTurn.state.step, "orientation");
 
+    // V2-2 (document-first) : select_nature("achat") mène directement à
+    // collect_bien — plus de question préalable "avez-vous l'acte ?".
     let turn = await assistant.handle(startTurn.state, { type: "select_nature", nature: "achat" });
-    assert.equal(turn.state.step, "acquisition_source");
-
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
     assert.equal(turn.state.step, "collect_bien");
 
     turn = await assistant.handle(turn.state, {
@@ -63,8 +62,6 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
 
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
     collected.push(...turn.messages.map((m) => m.content));
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
-    collected.push(...turn.messages.map((m) => m.content));
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -101,7 +98,6 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
     const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -119,7 +115,6 @@ describe("F-010 — Assistant Logement (Chemin A)", () => {
     const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -140,7 +135,6 @@ describe("F-010 — P0-3 : la Capacité refuse de confirmer un plan invalide, qu
     const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -193,7 +187,6 @@ describe("F-010 — P2-1 : une adresse déjà connue n'est jamais effacée par u
   async function reachCollectBienWithConfirmedAdresse(assistant: F010LogementAssistant) {
     let turn = assistant.start();
     turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "analysis_success",
       documentId: "doc-1",
@@ -241,7 +234,6 @@ describe("F-010 — P2-1 : une adresse déjà connue n'est jamais effacée par u
     const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
     let turn = assistant.start();
     turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "analysis_success",
       documentId: "doc-1",
@@ -317,7 +309,6 @@ describe("F-010 — dateMiseEnService (Option B) : jamais de fallback fiscal, ja
   async function reachVentilationManual(assistant: F010LogementAssistant, ratioTerrain = 0.15) {
     let turn = assistant.start();
     turn = await assistant.handle(turn.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "manuel" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 200_000,

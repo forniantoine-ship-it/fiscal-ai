@@ -13,7 +13,6 @@ const ctx = { dossierId: "test-dossier", fiscalYear: 2024 };
 async function walkToReviewPlan(assistant: F010LogementAssistant): Promise<F010State> {
   const start = assistant.start();
   let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-  turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
   turn = await assistant.handle(turn.state, {
     type: "submit_bien",
     prixAcquisition: 280000,
@@ -49,30 +48,19 @@ describe("Cycle 3 — GO_BACK", () => {
     assert.equal(turn.state.step, "orientation");
   });
 
-  it("acquisition_source → orientation", async () => {
+  it("collect_bien → orientation (V2-2 : select_nature('achat') mène directement à collect_bien, plus d'acquisition_source)", async () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    assert.equal(turn.state.step, "acquisition_source");
-    turn = await assistant.handle(turn.state, { type: "go_back" });
-    assert.equal(turn.state.step, "orientation");
-  });
-
-  it("collect_bien → acquisition_source", async () => {
-    const assistant = new F010LogementAssistant(ctx);
-    const start = assistant.start();
-    let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     assert.equal(turn.state.step, "collect_bien");
     turn = await assistant.handle(turn.state, { type: "go_back" });
-    assert.equal(turn.state.step, "acquisition_source");
+    assert.equal(turn.state.step, "orientation");
   });
 
   it("collect_frais → collect_bien, données du bien conservées (pas de snapshot nécessaire)", async () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -92,7 +80,6 @@ describe("Cycle 3 — GO_BACK", () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -115,7 +102,6 @@ describe("Cycle 3 — GO_BACK", () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -171,7 +157,6 @@ describe("Cycle 3 — GO_BACK", () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,
@@ -180,7 +165,7 @@ describe("Cycle 3 — GO_BACK", () => {
       dateAcquisition: "2024-03-01",
     });
     assert.equal(turn.state.step, "collect_frais");
-    assert.deepEqual(turn.state.history, ["orientation", "acquisition_source", "collect_bien"]);
+    assert.deepEqual(turn.state.history, ["orientation", "collect_bien"]);
 
     // Simule un refresh : reprise depuis un F010PersistedState reconstruit à la main.
     const resumed = assistant.resume({
@@ -198,7 +183,7 @@ describe("Cycle 3 — GO_BACK", () => {
 
     const backTurn = await assistant.handle(resumed.state, { type: "go_back" });
     assert.equal(backTurn.state.step, "collect_bien");
-    assert.deepEqual(backTurn.state.history, ["orientation", "acquisition_source"]);
+    assert.deepEqual(backTurn.state.history, ["orientation"]);
   });
 });
 
@@ -207,7 +192,6 @@ describe("Cycle 3 — CONFIRMATION", () => {
     const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
 
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
@@ -246,7 +230,6 @@ describe("Cycle 3 — CONFIRMATION", () => {
     const assistant = new F010LogementAssistant(ctx);
     const start = assistant.start();
     let turn = await assistant.handle(start.state, { type: "select_nature", nature: "achat" });
-    turn = await assistant.handle(turn.state, { type: "select_source", source: "acte" });
     turn = await assistant.handle(turn.state, {
       type: "submit_bien",
       prixAcquisition: 280000,

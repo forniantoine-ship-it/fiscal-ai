@@ -1605,39 +1605,6 @@ export function F010LogementAssistantPanel() {
             </div>
           ) : null}
 
-          {step === "acquisition_source" ? (
-            <div className="flex flex-col gap-2">
-              {[
-                { id: "acte", label: "Oui, j'ai mon acte notarié" },
-                { id: "partiel", label: "Je l'ai, mais incomplet" },
-                { id: "manuel", label: "Non, je saisirai les montants" },
-              ].map((option) => (
-                <Button
-                  key={option.id}
-                  variant="secondary"
-                  disabled={busy}
-                  className={F010_FOCUS_BUTTON_CLASS}
-                  onClick={() =>
-                    void runAction({
-                      type: "select_source",
-                      source: option.id as "acte" | "partiel" | "manuel",
-                    })
-                  }
-                >
-                  {option.label}
-                </Button>
-              ))}
-              <Button
-                variant="ghost"
-                disabled={busy}
-                className={F010_FOCUS_BUTTON_CLASS}
-                onClick={() => void runAction({ type: "go_back" })}
-              >
-                Précédent
-              </Button>
-            </div>
-          ) : null}
-
           {step === "collect_bien" ? (
             <form
               className="flex flex-col gap-3"
@@ -1678,6 +1645,10 @@ export function F010LogementAssistantPanel() {
               }}
             >
               <div className="flex flex-col gap-2">
+                <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                  Vous pouvez ajouter votre acte pour préremplir les informations — ce n&apos;est jamais
+                  obligatoire, vous pouvez aussi les saisir directement ci-dessous.
+                </p>
                 <F010FieldLabel htmlFor={F010_FORM_FIELD_IDS.fileActe}>
                   Importer mon acte notarié (PDF ou image)
                 </F010FieldLabel>

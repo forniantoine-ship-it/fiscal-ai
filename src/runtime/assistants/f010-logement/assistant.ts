@@ -315,8 +315,15 @@ export class F010LogementAssistant {
    * que F009 pour `explanation`/`prorataPercent` : jamais de valeur en cache).
    */
   resume(persisted: F010PersistedState): F010AssistantTurn {
+    // V2-2 (document-first) : `acquisition_source` n'existe plus dans le
+    // parcours normal — un `F010PersistedState` légataire resté sur ce step
+    // (ancien dossier jamais terminé) reprend directement sur `collect_bien`,
+    // avec toutes ses données déjà connues intactes. Jamais de suppression du
+    // type/step lui-même (les anciens dossiers doivent rester résumables),
+    // seulement une normalisation au point de reprise.
+    const step: F010Step = persisted.step === "acquisition_source" ? "collect_bien" : persisted.step;
     const state: F010State = {
-      step: persisted.step,
+      step,
       nature: persisted.nature,
       acquisitionSource: persisted.acquisitionSource,
       prixAcquisition: persisted.prixAcquisition,
@@ -420,13 +427,17 @@ export class F010LogementAssistant {
             completed: false,
           };
         }
+        // V2-2 (document-first) : plus de question préalable "avez-vous
+        // l'acte ?" — collect_bien porte déjà l'upload (recommandé, jamais
+        // obligatoire) et la saisie manuelle sur le même écran (panel.tsx).
         messages.push({
           role: "assistant",
-          content: "Parfait. Avez-vous votre acte notarié sous la main ?",
-          suggestions: SOURCE_SUGGESTIONS,
+          content:
+            "Parfait. Vous pouvez importer votre acte pour préremplir les informations, " +
+            "ou les saisir directement ci-dessous.",
         });
         return {
-          state: advance(state, { nature: action.nature }, "acquisition_source"),
+          state: advance(state, { nature: action.nature }, "collect_bien"),
           messages,
           completed: false,
         };
@@ -722,11 +733,25 @@ export class F010LogementAssistant {
           return { state, messages, completed: false };
         }
 
-        const previousStep = history[history.length - 1]!;
+        // V2-2 (document-first) : `acquisition_source` n'est plus jamais
+        // représenté — un historique légataire peut encore le contenir
+        // (ancien dossier avancé au-delà avant ce chantier) ; on le saute
+        // silencieusement plutôt que de le ressusciter, jamais une deuxième
+        // détermination de step, juste un filtrage de la pile existante.
+        const remaining = [...history];
+        let previousStep = remaining.pop();
+        while (previousStep === "acquisition_source" && remaining.length > 0) {
+          previousStep = remaining.pop();
+        }
+        if (previousStep === "acquisition_source") {
+          // Rien d'autre sous cette entrée légataire : l'écran d'avant était
+          // nécessairement l'orientation (seul step qui y menait).
+          previousStep = "orientation";
+        }
         const next: F010State = {
           ...state,
-          step: previousStep,
-          history: history.slice(0, -1),
+          step: previousStep!,
+          history: remaining,
         };
         return { state: next, messages, completed: false };
       }
