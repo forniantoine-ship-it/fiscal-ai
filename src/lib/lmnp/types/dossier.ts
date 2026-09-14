@@ -104,9 +104,32 @@ export interface Dossier extends DossierIdentity {
  * Logement, hors périmètre de ce chantier).
  */
 export interface PropertyAmortissementComposant {
+  /**
+   * P0-B/D — identité stable, présente UNIQUEMENT pour les composants
+   * d'origine F-012 (`origin` renseigné) : condition nécessaire à la reprise
+   * N → N+1 sans recréation. Absente pour les lignes F-010 historiques
+   * (bâti/mobilier), dont l'ordre de tableau reste inchangé — aucune
+   * régression sur le comportement F-010 existant.
+   */
+  id?: string;
   label: string;
   montant: number;
   dureeAnnees: number;
+  /**
+   * P0-B — origine du composant : absente pour le bâti/mobilier F-010
+   * (implicite), toujours renseignée pour un composant F-012 (travaux ou
+   * appel gros travaux copropriété) — nécessaire pour ne jamais le
+   * recréer comme une nouvelle dépense F-012 en N+1.
+   */
+  origin?: "f012_travaux" | "f012_copro";
+  /** Métadonnée F-012 conservée pour traçabilité — non consommée par le moteur fiscal. */
+  nature?: "amélioration" | "construction" | "renouvellement";
+  /**
+   * P0-A/P0-B — date propre de mise en service du composant (F-012),
+   * jamais la date du bien. Absente pour les lignes F-010, qui continuent
+   * d'utiliser `PropertyAmortissementBase.dateMiseEnService`.
+   */
+  dateDebut?: string;
 }
 
 export interface PropertyAmortissementBase {

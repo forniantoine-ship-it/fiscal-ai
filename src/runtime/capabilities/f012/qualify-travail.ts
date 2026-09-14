@@ -14,7 +14,8 @@ export type TravauxQualificationChoix =
 export type QualifyTravailInput = {
   description: string;
   montant: number;
-  natureIntervention: NatureIntervention;
+  /** Absente = qualification "incertain" (JUG-008) — résolue via le seuil SAV-015. */
+  natureIntervention?: NatureIntervention;
   /** Seuil tolérance SAV-015 (€ HT) — utilisé uniquement en cas d'ambiguïté. */
   seuilTolerance?: number;
 };

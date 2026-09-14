@@ -13,6 +13,7 @@ import {
   buildFiscalYearClosure,
   canCloseFiscalYear,
   canCreateNextFiscalYear,
+  composantsF012DepuisBase,
   createNextDeclarationDraft,
   createNextFiscalYear,
   extractAmortissementBase,
@@ -20,12 +21,15 @@ import {
   extractFinancementBases,
   extractIdentity,
   latestClosure,
+  mergeComposantsF012,
   resolveArchivedFiscalYearAccess,
   resolveStocksOuverture,
 } from "./fiscal-year-cycle";
 import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
+import type { PropertyAmortissementBase } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
+import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { runDeclarationGeneration } from "../declaration/run-declaration-generation";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 
@@ -369,6 +373,160 @@ describe("extractDossierLevelDataFromWorkspace", () => {
     assert.deepEqual(financements, []);
     // Non-mutation du workspace source.
     assert.equal(workspace.properties[0].amortissementBase, undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P0-B — Contrat N → N+1 pour les composants F-012 : identité stable, base/
+// date/durée conservées, accumulation sans perte, sans double comptage.
+// ---------------------------------------------------------------------------
+function composantTravaux(overrides: Partial<ComposantNouveau> = {}): ComposantNouveau {
+  return {
+    id: "travaux-1",
+    label: "Extension véranda",
+    montant: 12000,
+    dureeAnnees: 18,
+    dotationAnnuelle: 667,
+    nature: "amélioration",
+    dateDebut: "2025-09-01",
+    origin: "f012_travaux",
+    ...overrides,
+  };
+}
+
+describe("mergeComposantsF012 / composantsF012DepuisBase — P0-B", () => {
+  it("1/2/3/4/5 — un composant F-012 de l'exercice est repris avec le même id, la même date, la même base, la même durée", () => {
+    const merged = mergeComposantsF012([composantTravaux()], undefined);
+    assert.equal(merged.length, 1);
+    assert.deepEqual(merged[0], composantTravaux());
+  });
+
+  it("11 — plusieurs composants créés la même année sont tous repris indépendamment", () => {
+    const a = composantTravaux({ id: "travaux-1", label: "Extension" });
+    const b = composantTravaux({ id: "copro-1", label: "Toiture copro", origin: "f012_copro" });
+    const merged = mergeComposantsF012([a, b], undefined);
+    assert.equal(merged.length, 2);
+    assert.ok(merged.some((c) => c.id === "travaux-1"));
+    assert.ok(merged.some((c) => c.id === "copro-1"));
+  });
+
+  it("9/10 — un composant déjà présent dans la base persistée n'est jamais dupliqué par le même composant produit à nouveau (même id)", () => {
+    const base: PropertyAmortissementBase = {
+      composants: [
+        { id: "travaux-1", label: "Extension véranda", montant: 12000, dureeAnnees: 18, origin: "f012_travaux", dateDebut: "2025-09-01" },
+      ],
+    };
+    // Même composant, encore présent dans `chargesAssistant` (cas normal
+    // pendant l'exercice où F-012 vient de le créer, avant toute transition).
+    const merged = mergeComposantsF012([composantTravaux()], base);
+    assert.equal(merged.length, 1, "jamais compté deux fois — fusion par id, pas concaténation");
+  });
+
+  it("accumulation sur deux exercices : un composant créé en N-1 (dans la base) et un autre créé en N (dans chargesAssistant) coexistent tous les deux", () => {
+    const baseN: PropertyAmortissementBase = {
+      composants: [
+        { id: "travaux-ancien", label: "Toiture 2023", montant: 8000, dureeAnnees: 20, origin: "f012_travaux", dateDebut: "2023-03-01" },
+      ],
+    };
+    const nouveauEnN = composantTravaux({ id: "travaux-nouveau", label: "Véranda 2025" });
+    const merged = mergeComposantsF012([nouveauEnN], baseN);
+    assert.equal(merged.length, 2, "le composant de N-1 n'est jamais perdu, celui de N n'est jamais oublié");
+    assert.ok(merged.some((c) => c.id === "travaux-ancien"));
+    assert.ok(merged.some((c) => c.id === "travaux-nouveau"));
+  });
+
+  it("composantsF012DepuisBase ignore silencieusement une ligne F-010 (sans id/origin/dateDebut) — jamais un composant F-012 inventé", () => {
+    const base: PropertyAmortissementBase = {
+      composants: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75 }],
+    };
+    assert.deepEqual(composantsF012DepuisBase(base), []);
+  });
+});
+
+describe("extractAmortissementBase — P0-B, accumulation F-012 N → N+1", () => {
+  it("2/4/5 — un composant F-012 créé cet exercice est persisté avec id/origine/date/base/durée, en plus des lignes F-010", () => {
+    const logementAmortissement: DeclarationDraft["logementAmortissement"] = {
+      prixRevient: 125136,
+      valeurTerrain: 17960,
+      valeurBati: 107176,
+      baseAmortissableBati: 107176,
+      montantMobilier: 5400,
+      dotationAnnuelle: 1500,
+      dureeMoyenneAnnees: 30,
+      prorataRatio: 1,
+      plan: {
+        lignes: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 }],
+        totalAnnuelExercice: 372,
+        totalBrut: 37186,
+      },
+      fieldSources: {},
+      computedAt: NOW,
+    };
+
+    const base = extractAmortissementBase(
+      logementAmortissement,
+      "2023-06-01",
+      [composantTravaux()],
+      undefined,
+    );
+
+    assert.equal(base?.composants.length, 2, "ligne F-010 + composant F-012, aucune perte");
+    const f012 = base?.composants.find((c) => c.id === "travaux-1");
+    assert.equal(f012?.montant, 12000);
+    assert.equal(f012?.dureeAnnees, 18);
+    assert.equal(f012?.dateDebut, "2025-09-01");
+    assert.equal(f012?.origin, "f012_travaux");
+  });
+
+  it("13 — dossier sans composant F-012 : comportement historique inchangé (seules les lignes F-010, comme avant ce chantier)", () => {
+    const logementAmortissement: DeclarationDraft["logementAmortissement"] = {
+      prixRevient: 125136,
+      valeurTerrain: 17960,
+      valeurBati: 107176,
+      baseAmortissableBati: 107176,
+      montantMobilier: 5400,
+      dotationAnnuelle: 1500,
+      dureeMoyenneAnnees: 30,
+      prorataRatio: 1,
+      plan: {
+        lignes: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 }],
+        totalAnnuelExercice: 372,
+        totalBrut: 37186,
+      },
+      fieldSources: {},
+      computedAt: NOW,
+    };
+    const base = extractAmortissementBase(logementAmortissement, "2024-04-15");
+    assert.deepEqual(base, {
+      composants: [{ label: "Gros œuvre", montant: 37186, dureeAnnees: 75 }],
+      valeurTerrain: 17960,
+      montantMobilier: 5400,
+      dateMiseEnService: "2024-04-15",
+    });
+  });
+
+  it("1 — N+1 : `logementAmortissement` absent (non rejoué), le composant F-012 déjà persisté (N) est reporté sans recréation, les lignes F-010 déjà persistées ne sont pas perdues", () => {
+    const existingBase: PropertyAmortissementBase = {
+      composants: [
+        { label: "Gros œuvre", montant: 37186, dureeAnnees: 75 },
+        { id: "travaux-1", label: "Extension véranda", montant: 12000, dureeAnnees: 18, origin: "f012_travaux", dateDebut: "2025-09-01" },
+      ],
+      valeurTerrain: 17960,
+      montantMobilier: 5400,
+      dateMiseEnService: "2023-06-01",
+    };
+
+    // N+1 : chargesAssistant/logementAmortissement vides (createNextDeclarationDraft).
+    const baseNPlus1 = extractAmortissementBase(undefined, undefined, undefined, existingBase);
+
+    assert.equal(baseNPlus1?.composants.length, 2, "ni la ligne F-010 ni le composant F-012 ne sont perdus");
+    assert.ok(baseNPlus1?.composants.some((c) => c.label === "Gros œuvre"), "ligne F-010 reportée");
+    const f012 = baseNPlus1?.composants.find((c) => c.id === "travaux-1");
+    assert.ok(f012, "3 — même identité reportée");
+    assert.equal(f012?.montant, 12000, "4 — base d'origine conservée");
+    assert.equal(f012?.dureeAnnees, 18, "5 — durée conservée");
+    assert.equal(f012?.dateDebut, "2025-09-01", "date propre conservée");
+    assert.equal(baseNPlus1?.dateMiseEnService, "2023-06-01", "métadonnées Property-level reportées elles aussi");
   });
 });
 

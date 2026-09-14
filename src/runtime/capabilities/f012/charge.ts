@@ -30,6 +30,8 @@ export type ChargeTravauxPayload = {
   choix?: TravauxQualificationChoix;
   natureIntervention?: NatureIntervention;
   montantReparation?: number;
+  /** TRF-0028 — date propre au composant (fin des travaux / mise en service), jamais celle du bien. */
+  dateDebut?: string;
 };
 
 export type Charge = {
@@ -49,6 +51,8 @@ export type Charge = {
   travaux?: ChargeTravauxPayload;
   coproType?: CoproLigneType;
   grosTravauxDeductible?: boolean;
+  /** P0-A — date propre au composant copro (gros travaux), jamais celle du bien. */
+  dateDebut?: string;
   financingOverlap?: "assurance_emprunteur";
   exclusionReason?: ChargeExclusionReason;
   documentIds?: string[];
@@ -158,6 +162,7 @@ export function createRecordedCharge(
   if (partial.travaux !== undefined) charge.travaux = partial.travaux;
   if (partial.coproType !== undefined) charge.coproType = partial.coproType;
   if (partial.grosTravauxDeductible !== undefined) charge.grosTravauxDeductible = partial.grosTravauxDeductible;
+  if (partial.dateDebut !== undefined) charge.dateDebut = partial.dateDebut;
   if (partial.financingOverlap !== undefined) charge.financingOverlap = partial.financingOverlap;
   if (partial.exclusionReason !== undefined) charge.exclusionReason = partial.exclusionReason;
   if (partial.documentIds !== undefined) charge.documentIds = partial.documentIds;

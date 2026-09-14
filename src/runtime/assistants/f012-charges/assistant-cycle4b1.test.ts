@@ -44,6 +44,9 @@ describe("F-012 — Cycle 4B1 : correction du montant 0 dans la qualification tr
       montant: 0,
     });
     turn = await assistant.handle(turn.state, { type: "submit_travaux_qualification", choix: "amelioration" });
+    // P0-A (TRF-0028) — date propre requise avant la création du composant.
+    assert.equal(turn.state.travauxSubStep, "date");
+    turn = await assistant.handle(turn.state, { type: "submit_travaux_date", dateDebut: "2024-05-01" });
     assert.equal(turn.state.travauxSubStep, undefined);
     assert.equal(turn.state.collected.travaux[0]?.natureIntervention, "amélioration");
     assert.equal(turn.event, "COMPOSANT_NOUVEAU");

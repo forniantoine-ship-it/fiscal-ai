@@ -6,11 +6,14 @@ import type { ComposantNouveau } from "./types";
  * Paramètre JUG-013 ; requiert SAV-024.
  */
 export type CreateComposantTravauxInput = {
+  /** P0-B/D — identité stable du composant (voir `ComposantNouveau.id`). */
+  id: string;
   label: string;
   montant: number;
   nature: "amélioration" | "construction" | "renouvellement";
   dureeAmortissement?: number;
   dateDebut: string;
+  origin: "f012_travaux" | "f012_copro";
 };
 
 export type CreateComposantTravauxOutput = {
@@ -31,12 +34,14 @@ export function createComposantTravaux(
 
   return {
     composant: {
+      id: input.id,
       label: input.label,
       montant: round2(input.montant),
       dureeAnnees,
       dotationAnnuelle,
       nature: input.nature,
       dateDebut: input.dateDebut,
+      origin: input.origin,
     },
   };
 }

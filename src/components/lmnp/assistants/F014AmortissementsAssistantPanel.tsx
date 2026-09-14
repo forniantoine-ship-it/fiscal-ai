@@ -11,6 +11,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
+import { mergeComposantsF012 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   F014AmortissementsAssistant,
   fiscalResultMatchesAmortissementTotal,
@@ -117,6 +118,18 @@ export function F014AmortissementsAssistantPanel() {
   const { workspace, dispatch } = useLmnp();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
+  // P0-B — un composant F-012 créé un exercice antérieur doit continuer à
+  // s'amortir sans que `chargesAssistant` (vidé à chaque N+1) ait besoin de
+  // le reporter : la base persistée (`Property.amortissementBase`, mise à
+  // jour à chaque transition N → N+1, voir fiscal-year-cycle.ts) porte
+  // désormais ces composants. Fusion par id — jamais un doublon si les deux
+  // sources se recoupent (même exercice où F-012 vient de créer le
+  // composant, avant toute transition).
+  const amortissementBase = workspace.properties[0]?.amortissementBase;
+  const composantsNouveaux = useMemo(
+    () => mergeComposantsF012(draft?.chargesAssistant?.composantsNouveaux, amortissementBase),
+    [draft?.chargesAssistant?.composantsNouveaux, amortissementBase],
+  );
 
   const assistant = useMemo(
     () =>
@@ -130,14 +143,14 @@ export function F014AmortissementsAssistantPanel() {
           dateMiseEnService: draft?.dateMiseEnService,
           planLogement: draft?.logementAmortissement?.plan,
           prorataRatio: draft?.logementAmortissement?.prorataRatio,
-          composantsNouveaux: draft?.chargesAssistant?.composantsNouveaux,
+          composantsNouveaux,
           planValidePrecedemment: Boolean(draft?.amortissementAssistant?.validatedAt),
           anneeValidationInitiale: draft?.amortissementAssistant?.anneeValidationInitiale ?? null,
         },
       ),
     [
       draft?.amortissementAssistant,
-      draft?.chargesAssistant?.composantsNouveaux,
+      composantsNouveaux,
       draft?.dateMiseEnService,
       draft?.logementAmortissement,
       fiscalYear,

@@ -482,6 +482,39 @@ function TravauxSplitField({
   );
 }
 
+function TravauxDateField({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean;
+  onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState("");
+  return (
+    <div className="flex flex-col gap-5">
+      <label style={labelStyle}>
+        Date de fin des travaux / mise en service du composant
+        <input
+          type="date"
+          style={inputStyle}
+          id="travaux-date-debut"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </label>
+      <Button
+        className="w-full"
+        disabled={disabled || !value}
+        onClick={() => {
+          if (value) onSubmit(value);
+        }}
+      >
+        Continuer
+      </Button>
+    </div>
+  );
+}
+
 function AmountActions({
   disabled,
   onValidate,
@@ -1030,7 +1063,9 @@ export function F012ChargesAssistantPanel() {
   // désormais mutuellement exclusifs.
   const travauxAwaitingQualification =
     currentCategory === "travaux" &&
-    (state.travauxSubStep === "qualification" || state.travauxSubStep === "split");
+    (state.travauxSubStep === "qualification" ||
+      state.travauxSubStep === "split" ||
+      state.travauxSubStep === "date");
   const showPaper =
     state.step === "category_collect" &&
     state.familyPhase === "paper" &&
@@ -1048,6 +1083,7 @@ export function F012ChargesAssistantPanel() {
     state.familyPhase !== "paper" &&
     state.familyPhase !== "review";
   const travauxSplit = state.travauxSubStep === "split";
+  const travauxDate = state.travauxSubStep === "date";
   // Cycle 4E — même convention que F-010/F-011 : un historique non vide et
   // une étape non terminale, jamais un bouton mort.
   const canGoBack = Boolean(state.history && state.history.length > 0) && state.step !== "complete";
@@ -1359,6 +1395,13 @@ export function F012ChargesAssistantPanel() {
           <TravauxSplitField
             disabled={busy}
             onSubmit={(value) => void runAction({ type: "submit_travaux_split", montantReparation: value })}
+          />
+        ) : null}
+
+        {travauxDate ? (
+          <TravauxDateField
+            disabled={busy}
+            onSubmit={(value) => void runAction({ type: "submit_travaux_date", dateDebut: value })}
           />
         ) : null}
 

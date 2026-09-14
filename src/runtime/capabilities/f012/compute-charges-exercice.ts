@@ -22,8 +22,11 @@ export type TravauxInput = {
   id: string;
   description: string;
   montant: number;
-  natureIntervention: NatureIntervention;
+  /** Absente = qualification "incertain" (JUG-008) — résolue via SAV-015 par `qualifyTravail`. */
+  natureIntervention?: NatureIntervention;
   montantReparation?: number;
+  /** TRF-0028 — date propre au composant (fin des travaux / mise en service), jamais celle du bien. */
+  dateDebut?: string;
   source?: FieldSource;
 };
 
@@ -185,25 +188,40 @@ export function computeChargesExercice(
         continue;
       }
       if (row.type === "appel_gros_travaux" && row.grosTravauxDeductible === false) {
-        const created = createComposantTravaux({
-          label: row.description ?? "Appel fonds gros travaux",
-          montant: row.montant,
-          nature: "amélioration",
-          dateDebut: input.dateMiseEnService,
-        });
-        composantsNouveaux.push(created.composant);
-        lignes.push(
-          ligne({
-            id: `copro-gros-travaux-${row.description ?? "appel"}`,
-            description: row.description ?? "Appel gros travaux copropriété",
+        const ligneId = row.id ?? `copro-gros-travaux-${row.description ?? "appel"}`;
+        // P0-A — même garde que pour les travaux F-012 : un appel de fonds
+        // gros travaux immobilisé a besoin de sa propre date (fin des
+        // travaux / mise en service du composant), jamais celle du bien.
+        if (!row.dateDebut) {
+          anomalies.push({
+            severity: "error",
+            message:
+              `La date de fin des travaux / mise en service de « ${row.description ?? "Appel fonds gros travaux"} » (gros travaux copropriété) est nécessaire avant de pouvoir l'amortir.`,
+            field: ligneId,
+          });
+        } else {
+          const created = createComposantTravaux({
+            id: ligneId,
+            label: row.description ?? "Appel fonds gros travaux",
             montant: row.montant,
-            categorie: "copropriete",
-            deductibilite: "amortissement",
-            montantAmortissable: row.montant,
-            source: src("copropriete"),
-            regleAppliquee: "TRF-0028 — immobilisation après qualification",
-          }),
-        );
+            nature: "amélioration",
+            dateDebut: row.dateDebut,
+            origin: "f012_copro",
+          });
+          composantsNouveaux.push(created.composant);
+          lignes.push(
+            ligne({
+              id: ligneId,
+              description: row.description ?? "Appel gros travaux copropriété",
+              montant: row.montant,
+              categorie: "copropriete",
+              deductibilite: "amortissement",
+              montantAmortissable: row.montant,
+              source: src("copropriete"),
+              regleAppliquee: "TRF-0028 — immobilisation après qualification",
+            }),
+          );
+        }
       }
     }
     if (copro.coproprieteDeductible !== 0) {
@@ -320,25 +338,40 @@ export function computeChargesExercice(
         );
       }
       if (split.immobilisation > 0) {
-        const created = createComposantTravaux({
-          label: travail.description,
-          montant: split.immobilisation,
-          nature: "amélioration",
-          dateDebut: input.dateMiseEnService,
-        });
-        composantsNouveaux.push(created.composant);
-        lignes.push(
-          ligne({
+        // TRF-0028 — la part "amélioration" devient un composant amortissable :
+        // sa propre date (fin des travaux / mise en service) est obligatoire,
+        // jamais la date de mise en service du bien. Si elle manque, le
+        // composant reste bloquant plutôt que de recevoir une date inventée.
+        if (!travail.dateDebut) {
+          anomalies.push({
+            severity: "error",
+            message:
+              `La date de fin des travaux de « ${travail.description} » (part amélioration) est nécessaire avant de pouvoir l'amortir.`,
+            field: travail.id,
+          });
+        } else {
+          const created = createComposantTravaux({
             id: `${travail.id}-immo`,
-            description: `${travail.description} (part amélioration)`,
+            label: travail.description,
             montant: split.immobilisation,
-            categorie: "travaux",
-            deductibilite: "amortissement",
-            montantAmortissable: split.immobilisation,
-            source,
-            regleAppliquee: "TRF-0026 + TRF-0028 — facture mixte",
-          }),
-        );
+            nature: "amélioration",
+            dateDebut: travail.dateDebut,
+            origin: "f012_travaux",
+          });
+          composantsNouveaux.push(created.composant);
+          lignes.push(
+            ligne({
+              id: `${travail.id}-immo`,
+              description: `${travail.description} (part amélioration)`,
+              montant: split.immobilisation,
+              categorie: "travaux",
+              deductibilite: "amortissement",
+              montantAmortissable: split.immobilisation,
+              source,
+              regleAppliquee: "TRF-0026 + TRF-0028 — facture mixte",
+            }),
+          );
+        }
       }
       continue;
     }
@@ -370,6 +403,17 @@ export function computeChargesExercice(
           regleAppliquee: qualified.regleAppliquee,
         }),
       );
+    } else if (!travail.dateDebut) {
+      // TRF-0028 — même garde que ci-dessus : une immobilisation (qualification
+      // explicite ou "incertain" résolue par prudence, JUG-008) sans date propre
+      // reste bloquante — jamais 0 charge / 0 immobilisation silencieux, jamais
+      // une date héritée du bien.
+      anomalies.push({
+        severity: "error",
+        message:
+          `La date de fin des travaux / mise en service de « ${travail.description} » est nécessaire avant de pouvoir l'amortir.`,
+        field: travail.id,
+      });
     } else {
       const nature =
         travail.natureIntervention === "construction"
@@ -378,10 +422,12 @@ export function computeChargesExercice(
             ? "renouvellement"
             : "amélioration";
       const created = createComposantTravaux({
+        id: travail.id,
         label: travail.description,
         montant: travail.montant,
         nature,
-        dateDebut: input.dateMiseEnService,
+        dateDebut: travail.dateDebut,
+        origin: "f012_travaux",
       });
       composantsNouveaux.push(created.composant);
       lignes.push(

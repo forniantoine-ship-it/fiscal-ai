@@ -6,11 +6,15 @@ import { round2 } from "./types";
  * Le fonds de travaux ALUR est exclu (F-012 — contrainte métier validée).
  */
 export type CoproLigneInput = {
+  /** Identité stable de la ligne (Charge Registry) — nécessaire pour l'id du composant créé (P0-B/D). */
+  id?: string;
   type: CoproLigneType;
   montant: number;
   description?: string;
   /** Pour appel gros travaux : true si qualifié charge (entretien), false si immobilisation. */
   grosTravauxDeductible?: boolean;
+  /** P0-A — date propre au composant (fin des travaux / mise en service), jamais celle du bien. */
+  dateDebut?: string;
 };
 
 export type ComputeCoproDeductibleInput = {

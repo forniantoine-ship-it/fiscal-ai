@@ -38,12 +38,21 @@ export interface LigneCharge {
 }
 
 export interface ComposantNouveau {
+  /**
+   * P0-B/D — identité stable, jamais régénérée : dérivée de l'id de la
+   * Charge d'origine (F-012), jamais d'un index de tableau ni d'un id
+   * aléatoire recalculé à chaque compute. Condition nécessaire à la reprise
+   * N → N+1 (le composant doit rester le même objet identifiable).
+   */
+  id: string;
   label: string;
   montant: number;
   dureeAnnees: number;
   dotationAnnuelle: number;
   nature: "amélioration" | "construction" | "renouvellement";
   dateDebut: string;
+  /** P0-B — origine du composant, conservée pour traçabilité et pour la reprise N+1. */
+  origin: "f012_travaux" | "f012_copro";
 }
 
 export interface ChargesExerciceResult {

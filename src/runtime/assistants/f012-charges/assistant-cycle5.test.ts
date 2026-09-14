@@ -311,13 +311,39 @@ describe("F-012 Cycle 5 — équivalence fiscale collected → registry → comp
     assert.ok(oldResult.charges.lignes.some((l) => l.id === "divers-ass" && l.deductibilite === "non_deductible"));
   });
 
-  it("travaux incertain (sans nature) : omis des deux côtés", () => {
-    assertFiscalEquivalent(
-      {
-        ...emptyCollected(),
-        travaux: [{ id: "travaux-1", description: "Incertain", montant: 2000, choix: "incertain" }],
-      },
-      { profil: { ...PROFIL_SIMPLE, travaux: true } },
+  it("travaux incertain (sans nature), montant < seuil SAV-015 : équivalence OLD/NEW rompue par le correctif P1-A (charge, plus jamais un drop silencieux)", () => {
+    // P1-A — l'ancien flux (OLD) droppait tout item "incertain" avant même
+    // `computeChargesExercice` (voir `computeFromCollectedDirect` ci-dessus,
+    // qui filtre `!t.natureIntervention`) : c'était exactement le bug
+    // (0 charge / 0 immobilisation en silence). Le nouveau flux (NEW, via le
+    // registry) transmet désormais l'item et laisse `qualifyTravail` (SAV-015)
+    // trancher — cette divergence OLD/NEW est le correctif attendu, plus une
+    // régression, donc ce cas ne peut plus passer par `assertFiscalEquivalent`.
+    const collected: F012CollectedData = {
+      ...emptyCollected(),
+      travaux: [{ id: "travaux-1", description: "Incertain", montant: 300, choix: "incertain" }],
+    };
+    const newResult = computeFromCollectedViaRegistry(collected, {}, { ...PROFIL_SIMPLE, travaux: true });
+    assert.equal(newResult.charges.totalDeductible, 300, "sous le seuil SAV-015 (500€) : déductible en charge");
+    assert.equal(newResult.charges.totalAmortissable, 0);
+    assert.equal(newResult.anomalies.length, 0);
+  });
+
+  it("travaux incertain (sans nature), montant ≥ seuil SAV-015 : jamais 0/0 silencieux — bloque tant que la date manque", () => {
+    const collected: F012CollectedData = {
+      ...emptyCollected(),
+      travaux: [{ id: "travaux-1", description: "Incertain", montant: 9000, choix: "incertain" }],
+    };
+    const newResult = computeFromCollectedViaRegistry(collected, {}, { ...PROFIL_SIMPLE, travaux: true });
+    // JUG-008 : immobilisation par prudence au-delà du seuil — mais sans date
+    // propre (TRF-0028) le composant ne peut pas être créé : l'item reste
+    // bloquant (anomalie "error"), jamais 0 charge ET 0 immobilisation validés.
+    assert.equal(newResult.charges.totalDeductible, 0);
+    assert.equal(newResult.charges.totalAmortissable, 0);
+    assert.equal(newResult.charges.composantsNouveaux.length, 0);
+    assert.ok(
+      newResult.anomalies.some((a) => a.severity === "error" && a.field === "travaux-1"),
+      "l'item incertain non résolu bloque la validation, il ne disparaît jamais silencieusement",
     );
   });
 });

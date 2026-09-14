@@ -405,11 +405,17 @@ export async function persistFiscalYearClosureAndTransition(params: {
     updatedAt: now,
   };
 
-  // Même reset que le reducer CREATE_NEXT_FISCAL_YEAR — properties[] n'est
-  // PAS régénéré (mêmes IDs, mêmes biens ; Property reste Dossier-level).
+  // P0-B — `properties` ici (calculé juste au-dessus par
+  // extractDossierLevelDataFromWorkspace()) porte l'`amortissementBase`
+  // fraîchement fusionnée (F-010 + composants F-012 de CET exercice, cf.
+  // mergeComposantsF012()) — mêmes IDs, mêmes biens (Property reste
+  // Dossier-level), mais jamais `workspace.properties` tel quel : cet objet
+  // stale ne porte jamais les composants F-012 créés dans l'exercice qui se
+  // clôture, ce qui les aurait rendus invisibles en N+1 malgré leur
+  // persistance sur `dossier.properties` (deux structures divergentes).
   const nextWorkspace: PersistedWorkspace = {
     fiscalYear: nextFiscalYear,
-    properties: workspace.properties,
+    properties,
     documents: [],
     extractions: [],
     validationItems: [],

@@ -98,7 +98,6 @@ function mapLigneToComposant(
 
 function mapComposantNouveau(
   composant: ComposantNouveau,
-  index: number,
   exerciceFiscal: number,
 ): ComposantAmortissement {
   const composantAmorti = {
@@ -129,7 +128,10 @@ function mapComposantNouveau(
   const prorataRatio = composant.dotationAnnuelle > 0 ? prorata.ratio : 1;
 
   return {
-    id: `f012-${index}`,
+    // P0-B/D — identité stable dérivée du composant lui-même (F-012), jamais
+    // de l'index dans le tableau : condition nécessaire à la reprise N → N+1
+    // (le même composant doit garder le même id d'un exercice à l'autre).
+    id: composant.id,
     nom_technique: composant.label,
     nom_courant: composant.label,
     base_amortissable: composant.montant,
@@ -161,8 +163,8 @@ export function composePlanAmortissement(
     mapLigneToComposant(ligne, index, premiereAnnee, input.prorataRatio, input.exerciceFiscal),
   );
 
-  const nouveauxElements = (input.composantsNouveaux ?? []).map((c, index) =>
-    mapComposantNouveau(c, index, input.exerciceFiscal),
+  const nouveauxElements = (input.composantsNouveaux ?? []).map((c) =>
+    mapComposantNouveau(c, input.exerciceFiscal),
   );
 
   const totalDotations = round2(

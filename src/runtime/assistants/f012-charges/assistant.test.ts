@@ -48,8 +48,22 @@ describe("F-012 — Assistant Charges", () => {
       type: "submit_travaux_qualification",
       choix: "amelioration",
     });
+    state = turn.state;
+
+    // P0-A (TRF-0028) — un composant amortissable n'est jamais créé avec la
+    // date de mise en service du BIEN : sa propre date est demandée avant
+    // toute finalisation, et rien n'est encore ajouté à `collected.travaux`.
+    assert.equal(turn.event, undefined);
+    assert.equal(state.travauxSubStep, "date");
+    assert.equal(state.collected.travaux.length, 0);
+
+    turn = await assistant.handle(state, {
+      type: "submit_travaux_date",
+      dateDebut: "2025-03-15",
+    });
 
     assert.equal(turn.event, "COMPOSANT_NOUVEAU");
     assert.equal(turn.state.collected.travaux.length, 1);
+    assert.equal(turn.state.collected.travaux[0]?.dateDebut, "2025-03-15");
   });
 });

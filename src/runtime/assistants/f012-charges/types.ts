@@ -34,6 +34,8 @@ export interface F012TravauxDraft {
   choix?: TravauxQualificationChoix;
   natureIntervention?: NatureIntervention;
   montantReparation?: number;
+  /** TRF-0028 — date propre au composant (fin des travaux / mise en service), jamais celle du bien. */
+  dateDebut?: string;
 }
 
 export interface F012DiversItem {
@@ -157,7 +159,7 @@ export type F012HistorySnapshot = {
   queuedTravaux?: F012QueuedTravaux[];
   pendingFamilyFreeText?: string;
   pendingSlotNudge?: "gli" | "comptable";
-  travauxSubStep?: "description" | "qualification" | "split";
+  travauxSubStep?: "description" | "qualification" | "split" | "date";
   fieldSources: Partial<Record<string, FieldSource>>;
   familyInventory?: ChargeFamilyId[];
   currentFamilyIndex?: number;
@@ -198,7 +200,7 @@ export interface F012State {
   queuedTravaux?: F012QueuedTravaux[];
   pendingFamilyFreeText?: string;
   pendingSlotNudge?: "gli" | "comptable";
-  travauxSubStep?: "description" | "qualification" | "split";
+  travauxSubStep?: "description" | "qualification" | "split" | "date";
   result?: F012Result;
   fieldSources: Partial<Record<string, FieldSource>>;
   familyInventory?: ChargeFamilyId[];
@@ -318,6 +320,7 @@ export type F012Action =
   | { type: "submit_travaux_description"; description: string; montant: number }
   | { type: "submit_travaux_qualification"; choix: TravauxQualificationChoix }
   | { type: "submit_travaux_split"; montantReparation: number }
+  | { type: "submit_travaux_date"; dateDebut: string }
   | { type: "finish_travaux_category" }
   | { type: "confirm_completeness"; hasOther: boolean; familyId?: ChargeFamilyId; freeText?: string }
   /** Cycle 13A — une relance compagnon, une seule fois. */
@@ -364,7 +367,7 @@ export type F012PersistedState = {
   queuedTravaux?: F012QueuedTravaux[];
   pendingFamilyFreeText?: string;
   pendingSlotNudge?: "gli" | "comptable";
-  travauxSubStep?: "description" | "qualification" | "split";
+  travauxSubStep?: "description" | "qualification" | "split" | "date";
   fieldSources: Partial<Record<string, FieldSource>>;
   /**
    * Cycle 5 — projection métier dérivée de `collected` (jamais `result`).

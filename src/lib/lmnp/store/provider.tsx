@@ -408,8 +408,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
     await runCreateNextFiscalYear({
       dossierId: getCurrentDossierId(),
       workspace: toPersisted(stateRef.current),
-      dispatchCreateNextFiscalYear: (nextFiscalYear) =>
-        dispatch({ type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear }),
+      dispatchCreateNextFiscalYear: (nextFiscalYear, properties) =>
+        dispatch({ type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear, properties }),
       onError: setNextFiscalYearError,
     });
   }, []);

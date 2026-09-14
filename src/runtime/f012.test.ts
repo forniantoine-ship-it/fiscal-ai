@@ -81,6 +81,9 @@ describe("F-012 — cas travaux complexe", () => {
           montant: 12000,
           natureIntervention: "entretien",
           montantReparation: 4000,
+          // TRF-0028 — date propre au composant (fin des travaux), jamais
+          // celle du bien (`dateMiseEnService` ci-dessus, 2023-01-01).
+          dateDebut: "2024-06-01",
         },
       ],
     });
@@ -89,6 +92,79 @@ describe("F-012 — cas travaux complexe", () => {
     assert.equal(result.charges.totalAmortissable, 8000);
     assert.equal(result.charges.composantsNouveaux.length, 1);
     assert.equal(result.charges.composantsNouveaux[0]?.montant, 8000);
+    assert.equal(result.charges.composantsNouveaux[0]?.dateDebut, "2024-06-01");
+    assert.equal(result.anomalies.length, 0);
+  });
+});
+
+describe("P0-A copro — appel gros travaux : date propre au composant, jamais celle du bien", () => {
+  // Bien mis en service en 2023 ; appel de fonds gros travaux copropriété
+  // achevé/mis en service en 2025 seulement — même anti-pattern que pour les
+  // travaux F-012 "classiques", même correctif attendu.
+  it("bloque sans date propre — jamais une date héritée du bien", () => {
+    const result = computeChargesExercice({
+      exerciceFiscal: 2024,
+      dateMiseEnService: "2023-01-01",
+      coproLignes: [
+        { id: "copro-1", type: "appel_gros_travaux", montant: 12000, grosTravauxDeductible: false },
+      ],
+    });
+    assert.equal(result.charges.composantsNouveaux.length, 0, "aucun composant créé sans date propre");
+    assert.equal(result.charges.totalAmortissable, 0);
+    assert.ok(
+      result.anomalies.some((a) => a.severity === "error" && a.field === "copro-1"),
+      "l'absence de date propre doit bloquer, jamais être invisible",
+    );
+  });
+
+  it("aucune dotation avant l'année de la date propre du composant (2023, 2024), première dotation en 2025", () => {
+    const withDate = (exerciceFiscal: number) =>
+      computeChargesExercice({
+        exerciceFiscal,
+        dateMiseEnService: "2023-01-01",
+        coproLignes: [
+          {
+            id: "copro-1",
+            type: "appel_gros_travaux",
+            montant: 12000,
+            grosTravauxDeductible: false,
+            dateDebut: "2025-09-01",
+          },
+        ],
+      });
+
+    for (const exerciceFiscal of [2023, 2024]) {
+      const result = withDate(exerciceFiscal);
+      // Le composant est créé (base connue) mais sans dotation avant sa
+      // propre date de mise en service — vérifié ici au niveau F-012 ; la
+      // dotation par exercice elle-même est calculée par F-014 (voir
+      // f014.test.ts, même principe déjà validé pour les travaux).
+      assert.equal(result.charges.composantsNouveaux[0]?.dateDebut, "2025-09-01");
+      assert.equal(result.anomalies.length, 0);
+    }
+
+    const result2025 = withDate(2025);
+    assert.equal(result2025.charges.composantsNouveaux.length, 1);
+    assert.equal(result2025.charges.composantsNouveaux[0]?.montant, 12000);
+    assert.equal(result2025.charges.composantsNouveaux[0]?.origin, "f012_copro");
+    assert.equal(result2025.charges.totalAmortissable, 12000);
+  });
+
+  it("identité stable dérivée de l'id de la ligne copro, jamais d'un index régénéré", () => {
+    const result = computeChargesExercice({
+      exerciceFiscal: 2025,
+      dateMiseEnService: "2023-01-01",
+      coproLignes: [
+        {
+          id: "copro-gros-travaux-toiture",
+          type: "appel_gros_travaux",
+          montant: 9000,
+          grosTravauxDeductible: false,
+          dateDebut: "2025-01-01",
+        },
+      ],
+    });
+    assert.equal(result.charges.composantsNouveaux[0]?.id, "copro-gros-travaux-toiture");
   });
 });
 

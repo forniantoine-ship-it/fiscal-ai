@@ -133,7 +133,11 @@ describe("CREATE_NEXT_FISCAL_YEAR — même dossier, exercice suivant (P0-1 v2)"
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
 
-    const next = lmnpReducer(closed, { type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear });
+    const next = lmnpReducer(closed, {
+      type: "CREATE_NEXT_FISCAL_YEAR",
+      nextFiscalYear,
+      properties: closed.properties,
+    });
 
     // T-P0-7 — N+1 pointe vers N, même dossier, année exacte. (updatedAt est
     // recalculé par finalizeState()/applyWorkspaceProgress(), un mécanisme
@@ -160,6 +164,52 @@ describe("CREATE_NEXT_FISCAL_YEAR — même dossier, exercice suivant (P0-1 v2)"
     assert.equal(next.declarationDraft?.siren, "123456789");
   });
 
+  it("P0-B — properties dispatchées (amortissementBase fusionnée) appliquées telles quelles, jamais state.properties (stale)", () => {
+    const closed = lmnpReducer(
+      baseState({
+        fiscalYear: baseFiscalYear({ dossierId: "dossier-1", status: "closed" }),
+        declarationDraft: { completedSteps: [], fiscalResult: fiscalResult() },
+      }),
+      { type: "JOURNEY_MARK_TRANSMITTED" },
+    );
+    assert.equal(closed.properties[0]?.amortissementBase, undefined, "état en mémoire avant dispatch : pas encore l'amortissementBase persistée");
+
+    const nextFiscalYear: FiscalYear = {
+      id: "fy-2",
+      year: closed.fiscalYear.year + 1,
+      status: "draft",
+      regime: "reel",
+      propertyIds: closed.fiscalYear.propertyIds,
+      dossierId: "dossier-1",
+      previousFiscalYearId: closed.fiscalYear.id,
+      closures: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const propertiesAvecComposantF012: Property[] = [
+      {
+        ...closed.properties[0]!,
+        amortissementBase: {
+          composants: [
+            { id: "travaux-1", label: "Extension", montant: 12000, dureeAnnees: 18, origin: "f012_travaux", dateDebut: "2025-06-01" },
+          ],
+        },
+      },
+    ];
+
+    const next = lmnpReducer(closed, {
+      type: "CREATE_NEXT_FISCAL_YEAR",
+      nextFiscalYear,
+      properties: propertiesAvecComposantF012,
+    });
+
+    assert.equal(
+      next.properties[0]?.amortissementBase?.composants[0]?.id,
+      "travaux-1",
+      "les properties dispatchées (avec amortissementBase) sont appliquées, pas les stale de state.properties",
+    );
+  });
+
   it("T-P0-6 — N reste intégralement conservé en mémoire jusqu'au dispatch — le reducer ne mute jamais N", () => {
     const closed = lmnpReducer(
       baseState({ declarationDraft: { completedSteps: [], fiscalResult: fiscalResult() } }),
@@ -177,7 +227,7 @@ describe("CREATE_NEXT_FISCAL_YEAR — même dossier, exercice suivant (P0-1 v2)"
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
-    lmnpReducer(closed, { type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear });
+    lmnpReducer(closed, { type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear, properties: closed.properties });
     assert.equal(JSON.stringify(closed.fiscalYear), snapshotBefore, "N n'est jamais muté par la création de N+1");
   });
 });

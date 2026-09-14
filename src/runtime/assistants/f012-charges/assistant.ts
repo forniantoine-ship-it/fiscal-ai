@@ -4,7 +4,7 @@ import {
 } from "../../capabilities/f012/compute-charges-exercice";
 import type { CoproLigneInput } from "../../capabilities/f012/compute-copro-deductible";
 import { detectFinancementOverlap } from "../../capabilities/f012/detect-financement-overlap";
-import { mapChoixToNature } from "../../capabilities/f012/qualify-travail";
+import { mapChoixToNature, splitMixteTravaux } from "../../capabilities/f012/qualify-travail";
 import type { NatureIntervention } from "../../capabilities/f012/types";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import { explainCharges } from "../../presentation/explain-charges";
@@ -201,6 +201,14 @@ function travauxQualificationPrompt(): F012Message {
 
 function travauxSplitPrompt(): F012Message {
   return { role: "assistant", content: "Pouvez-vous estimer la part remise en état (€) ?" };
+}
+
+function travauxDatePrompt(): F012Message {
+  return {
+    role: "assistant",
+    content:
+      "Cette dépense sera amortie comme un nouveau composant. Quelle est la date de fin des travaux (ou de mise en service de ce composant) ? Cette date peut être différente de la mise en service du bien.",
+  };
 }
 
 function confirmAllPrompt(unresolvedLabels: string[] = []): F012Message {
@@ -1047,6 +1055,25 @@ export class F012ChargesAssistant {
         }
 
         const natureIntervention = choixToNature(action.choix);
+        const pendingWithNature: Partial<F012TravauxDraft> = {
+          ...state.pendingTravaux,
+          choix: action.choix,
+          ...(natureIntervention ? { natureIntervention } : {}),
+        };
+
+        // TRF-0028 — un composant amortissable a besoin de sa propre date
+        // (fin des travaux / mise en service), jamais celle du bien : on la
+        // demande avant de finaliser, uniquement quand un composant sera
+        // effectivement créé (nature "amélioration" issue du choix explicite).
+        if (natureIntervention === "amélioration") {
+          messages.push(travauxDatePrompt());
+          return {
+            state: { ...state, pendingTravaux: pendingWithNature, travauxSubStep: "date" },
+            messages,
+            completed: false,
+          };
+        }
+
         const draft: F012TravauxDraft = {
           id: state.pendingTravaux.id!,
           description: state.pendingTravaux.description,
@@ -1073,6 +1100,31 @@ export class F012ChargesAssistant {
           // remboursée), seule l'absence réelle du champ doit bloquer ici.
           return { state, messages, completed: false };
         }
+        messages.push({
+          role: "user",
+          content: `Part réparation : ${action.montantReparation.toLocaleString("fr-FR")} €`,
+        });
+        const split = splitMixteTravaux(state.pendingTravaux.montant, action.montantReparation);
+        const pendingWithSplit: Partial<F012TravauxDraft> = {
+          ...state.pendingTravaux,
+          choix: "mixte",
+          natureIntervention: "entretien",
+          montantReparation: action.montantReparation,
+        };
+
+        // TRF-0028 — la part "amélioration" d'une facture mixte devient un
+        // composant amortissable : sa date propre est requise avant de
+        // finaliser, exactement comme pour une qualification "amélioration"
+        // pure.
+        if (split.immobilisation > 0) {
+          messages.push(travauxDatePrompt());
+          return {
+            state: { ...state, pendingTravaux: pendingWithSplit, travauxSubStep: "date" },
+            messages,
+            completed: false,
+          };
+        }
+
         const draft: F012TravauxDraft = {
           id: state.pendingTravaux.id!,
           description: state.pendingTravaux.description,
@@ -1085,15 +1137,36 @@ export class F012ChargesAssistant {
           { ...state.collected, travaux: [...state.collected.travaux, draft] },
           ["travaux"],
         );
-        messages.push({
-          role: "user",
-          content: `Part réparation : ${action.montantReparation.toLocaleString("fr-FR")} €`,
-        });
+        return this.afterTravauxRecorded(state, messages, collected, draft, { event: undefined });
+      }
+
+      case "submit_travaux_date": {
+        if (!state.pendingTravaux?.description || state.pendingTravaux.montant === undefined || !action.dateDebut) {
+          return { state, messages, completed: false };
+        }
+        const draft: F012TravauxDraft = {
+          id: state.pendingTravaux.id!,
+          description: state.pendingTravaux.description,
+          montant: state.pendingTravaux.montant,
+          choix: state.pendingTravaux.choix,
+          natureIntervention: state.pendingTravaux.natureIntervention,
+          montantReparation: state.pendingTravaux.montantReparation,
+          dateDebut: action.dateDebut,
+        };
+        const collected = clearFamilyCoverageIntents(
+          { ...state.collected, travaux: [...state.collected.travaux, draft] },
+          ["travaux"],
+        );
+        messages.push({ role: "user", content: `Date : ${action.dateDebut}` });
         return this.afterTravauxRecorded(state, messages, collected, draft, { event: "COMPOSANT_NOUVEAU" });
       }
 
       case "finish_travaux_category": {
-        if (state.travauxSubStep === "qualification" || state.travauxSubStep === "split") {
+        if (
+          state.travauxSubStep === "qualification" ||
+          state.travauxSubStep === "split" ||
+          state.travauxSubStep === "date"
+        ) {
           const reentry = this.buildReentryTurn(state);
           return { state: reentry.state, messages: [...messages, ...reentry.messages], completed: false };
         }
@@ -1505,6 +1578,9 @@ export class F012ChargesAssistant {
         }
         if (state.travauxSubStep === "split") {
           return { state, messages: [travauxSplitPrompt()] };
+        }
+        if (state.travauxSubStep === "date") {
+          return { state, messages: [travauxDatePrompt()] };
         }
         if (state.travauxSubStep === "description") {
           return { state, messages: [travauxDescriptionPrompt()] };

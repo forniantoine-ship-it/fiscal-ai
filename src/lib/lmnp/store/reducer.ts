@@ -127,9 +127,16 @@ export type LmnpAction =
    * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — distinct de CREATE_NEW_DECLARATION :
    * même dossier, nouvel exercice. `nextFiscalYear` doit être exactement
    * celui déjà persisté par persistFiscalYearTransition() (create-next-
-   * fiscal-year.ts) — jamais recalculé dans le reducer.
+   * fiscal-year.ts) — jamais recalculé dans le reducer. `properties`
+   * (P0-B) porte l'`amortissementBase` fusionnée par cette même fonction —
+   * jamais remplacée par `state.properties` (stale, sans les composants
+   * F-012 de l'exercice qui vient de se clôturer).
    */
-  | { type: "CREATE_NEXT_FISCAL_YEAR"; nextFiscalYear: PersistedWorkspace["fiscalYear"] }
+  | {
+      type: "CREATE_NEXT_FISCAL_YEAR";
+      nextFiscalYear: PersistedWorkspace["fiscalYear"];
+      properties: PersistedWorkspace["properties"];
+    }
   /**
    * Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
    * "Clôturer et continuer" : clôture explicite de N + transition vers N+1
@@ -1125,9 +1132,11 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       return finalizeState({
         ...state,
         fiscalYear: action.nextFiscalYear,
-        // properties[] n'est PAS régénéré : mêmes IDs, mêmes biens (Property
-        // reste conceptuellement Dossier-level — voir fiscal-year-cycle.ts).
-        properties: state.properties,
+        // P0-B — mêmes IDs, mêmes biens (Property reste conceptuellement
+        // Dossier-level — voir fiscal-year-cycle.ts), mais `action.properties`
+        // porte l'`amortissementBase` fusionnée par persistFiscalYearTransition()
+        // — jamais `state.properties` (stale, cf. commentaire du type d'action).
+        properties: action.properties,
         documents: [],
         extractions: [],
         validationItems: [],

@@ -23,6 +23,7 @@ import type {
   FinancementBase,
   PatrimoineOuvertureResult,
   PropertyAmortissementBase,
+  PropertyAmortissementComposant,
   StocksOuvertureResult,
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
@@ -32,6 +33,8 @@ import {
   reporterRanNPlusUn,
   resolveOuvertureCompteExploitantNPlusUn,
 } from "@/runtime/capabilities/bilan/resolve-ouverture-n-plus-1";
+import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
+import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
 
 /** Champs d'identité — Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) — jamais remis à zéro au passage N → N+1. */
@@ -52,27 +55,110 @@ const IDENTITY_FIELDS = [
 ] as const satisfies readonly (keyof DeclarationDraft)[];
 
 /**
- * Extrait la base F-010 stable (composants, valeurTerrain, montantMobilier,
- * dateMiseEnService) depuis la sortie d'assistant courante — jamais l'inverse.
- * `dotationAnnuelle` n'existe pas sur `PlanLigne` (TRF-0012) : reconstituée
- * par `montant / dureeAnnees`, exactement la formule déjà utilisée par
- * `compose-plan-amortissement.ts` (`dotationAnnuellePleine`) — aucune
- * nouvelle règle, une lecture identique d'un calcul déjà approuvé.
+ * P0-B — reconstruit un `ComposantNouveau` (forme F-012, consommée par
+ * `composePlanAmortissement()`) depuis sa forme persistée
+ * (`PropertyAmortissementComposant`). `dotationAnnuelle` n'est pas persistée
+ * séparément (dérivée, `montant / dureeAnnees`, comme pour les lignes F-010,
+ * cf. commentaire historique ci-dessous) — jamais une seconde vérité stockée
+ * qui pourrait diverger de la base d'origine.
+ */
+function composantVersComposantNouveau(c: PropertyAmortissementComposant): ComposantNouveau | undefined {
+  if (!c.id || !c.origin || !c.dateDebut) return undefined;
+  return {
+    id: c.id,
+    label: c.label,
+    montant: c.montant,
+    dureeAnnees: c.dureeAnnees,
+    dotationAnnuelle: round2(c.montant / c.dureeAnnees),
+    nature: c.nature ?? "amélioration",
+    dateDebut: c.dateDebut,
+    origin: c.origin,
+  };
+}
+
+/**
+ * P0-B — liste, depuis une base persistée, les seuls composants d'origine
+ * F-012 (jamais les lignes F-010, qui n'ont pas d'`id`/`origin`).
+ */
+export function composantsF012DepuisBase(
+  base: PropertyAmortissementBase | undefined,
+): ComposantNouveau[] {
+  return (base?.composants ?? [])
+    .map(composantVersComposantNouveau)
+    .filter((c): c is ComposantNouveau => c !== undefined);
+}
+
+/**
+ * P0-B — Contrat N → N+1 : un composant F-012 créé en N doit devenir une
+ * immobilisation EXISTANTE en N+1 (même id, même base, même date, même
+ * durée), jamais recréée comme une nouvelle dépense F-012. Fusionne les
+ * composants F-012 déjà persistés (`fromBase`, reportés depuis un exercice
+ * antérieur) avec ceux produits par CET exercice (`fromExercice`, encore
+ * frais dans `chargesAssistant.composantsNouveaux`) : dédoublonnage par
+ * `id`, la valeur la plus fraîche gagne (même composant, jamais compté deux
+ * fois). Fonction pure, réutilisée à l'identique par `extractAmortissementBase`
+ * (persistance) et par l'Assistant F-014 (calcul en direct dans l'exercice
+ * courant, avant toute transition N → N+1) — une seule règle de fusion.
+ */
+export function mergeComposantsF012(
+  fromExercice: ComposantNouveau[] | undefined,
+  fromBase: PropertyAmortissementBase | undefined,
+): ComposantNouveau[] {
+  const merged = new Map<string, ComposantNouveau>();
+  for (const c of composantsF012DepuisBase(fromBase)) merged.set(c.id, c);
+  for (const c of fromExercice ?? []) merged.set(c.id, c);
+  return [...merged.values()];
+}
+
+/**
+ * Extrait la base F-010/F-012 stable (composants, valeurTerrain,
+ * montantMobilier, dateMiseEnService) depuis la sortie d'assistant courante
+ * — jamais l'inverse. `dotationAnnuelle` n'existe pas sur `PlanLigne`
+ * (TRF-0012) : reconstituée par `montant / dureeAnnees`, exactement la
+ * formule déjà utilisée par `compose-plan-amortissement.ts`
+ * (`dotationAnnuellePleine`) — aucune nouvelle règle, une lecture identique
+ * d'un calcul déjà approuvé.
+ *
+ * P0-B — `composantsNouveaux` (F-012, CET exercice) et `existingBase`
+ * (reportée d'un exercice antérieur) sont fusionnés via `mergeComposantsF012`
+ * plutôt que l'un remplaçant l'autre : c'est ce qui permet à un composant
+ * créé en N de survivre au-delà de N sans être recréé, ET à un composant
+ * créé en N+1 de s'ajouter sans perdre ceux de N. Si `logementAmortissement`
+ * est absent (F-010 non rejoué cet exercice — cas normal en N+1), les lignes
+ * F-010 de `existingBase` sont conservées telles quelles plutôt que perdues.
  */
 export function extractAmortissementBase(
   logementAmortissement: DeclarationDraft["logementAmortissement"],
   dateMiseEnService: string | undefined,
+  composantsNouveaux?: ComposantNouveau[],
+  existingBase?: PropertyAmortissementBase,
 ): PropertyAmortissementBase | undefined {
-  if (!logementAmortissement) return undefined;
+  const composantsF010 = logementAmortissement
+    ? logementAmortissement.plan.lignes.map((ligne) => ({
+        label: ligne.label,
+        montant: ligne.montant,
+        dureeAnnees: ligne.dureeAnnees,
+      }))
+    : (existingBase?.composants ?? []).filter((c) => c.origin === undefined);
+
+  const composantsF012 = mergeComposantsF012(composantsNouveaux, existingBase).map((c) => ({
+    id: c.id,
+    label: c.label,
+    montant: c.montant,
+    dureeAnnees: c.dureeAnnees,
+    origin: c.origin,
+    nature: c.nature,
+    dateDebut: c.dateDebut,
+  }));
+
+  const composants = [...composantsF010, ...composantsF012];
+  if (composants.length === 0) return undefined;
+
   return {
-    composants: logementAmortissement.plan.lignes.map((ligne) => ({
-      label: ligne.label,
-      montant: ligne.montant,
-      dureeAnnees: ligne.dureeAnnees,
-    })),
-    valeurTerrain: logementAmortissement.valeurTerrain,
-    montantMobilier: logementAmortissement.montantMobilier,
-    dateMiseEnService,
+    composants,
+    valeurTerrain: logementAmortissement?.valeurTerrain ?? existingBase?.valeurTerrain,
+    montantMobilier: logementAmortissement?.montantMobilier ?? existingBase?.montantMobilier,
+    dateMiseEnService: dateMiseEnService ?? existingBase?.dateMiseEnService,
   };
 }
 
@@ -449,9 +535,16 @@ export function extractDossierLevelDataFromWorkspace(workspace: PersistedWorkspa
   financements: FinancementBase[];
 } {
   const draft = workspace.declarationDraft;
+  // P0-B — la base EXISTANTE (reportée d'un exercice antérieur, déjà portée
+  // par `workspace.properties[0]` avant cet appel) est le point de fusion :
+  // sans elle, tout composant F-012 déjà accumulé sur un exercice précédent
+  // serait perdu dès la transition suivante (remplacé plutôt qu'étendu).
+  const existingBase = workspace.properties[0]?.amortissementBase;
   const amortissementBase = extractAmortissementBase(
     draft?.logementAmortissement,
     draft?.dateMiseEnService,
+    draft?.chargesAssistant?.composantsNouveaux,
+    existingBase,
   );
   const properties = workspace.properties.map((property, index) =>
     // P0-1 — mono-bien en pratique (D2 différé) : la base extraite est

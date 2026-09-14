@@ -14,7 +14,7 @@ import {
   __testResetCreateNextFiscalYearGuard,
 } from "./create-next-fiscal-year";
 import type { PersistedWorkspace } from "./persistence";
-import type { FiscalYear } from "../types";
+import type { FiscalYear, Property } from "../types";
 import type { FiscalYearClosure } from "../types/dossier";
 import type { PersistFiscalYearTransitionResult } from "./dossier-db";
 
@@ -95,6 +95,54 @@ describe("runCreateNextFiscalYear — préconditions (P0-1 v2)", () => {
     assert.equal(stub.calls.length, 1);
     assert.deepEqual(dispatched, nextFiscalYear, "le FiscalYear dispatché est EXACTEMENT celui renvoyé par la persistance, jamais recalculé");
     assert.equal(error, null);
+  });
+
+  it("P0-B — dispatch `properties` = celles du Dossier persisté (amortissementBase fusionnée), jamais `workspace.properties` stale", async () => {
+    __testResetCreateNextFiscalYearGuard();
+    const nextFiscalYear = baseFiscalYear({ id: "fy-2", year: 2026, status: "draft", previousFiscalYearId: "fy-1", closures: [] });
+    const persistedProperties: Property[] = [
+      {
+        id: "prop-1",
+        label: "Mon bien",
+        address: "1 rue X",
+        city: "Lyon",
+        postalCode: "69000",
+        amortissementBase: {
+          composants: [
+            { id: "travaux-1", label: "Extension", montant: 12000, dureeAnnees: 18, origin: "f012_travaux", dateDebut: "2025-06-01" },
+          ],
+        },
+      },
+    ];
+    const fn = async (params: { dossierId: string; workspace: PersistedWorkspace; now: string }) => {
+      const result: PersistFiscalYearTransitionResult = {
+        dossier: {
+          id: params.dossierId,
+          properties: persistedProperties,
+          financements: [],
+          fiscalYearIds: [],
+          createdAt: params.now,
+          updatedAt: params.now,
+        },
+        closedFiscalYear: { ...params.workspace.fiscalYear, dossierId: params.dossierId, documents: [], extractions: [], validationItems: [], ledgerEntries: [] },
+        nextFiscalYear,
+      };
+      return result;
+    };
+
+    let dispatchedProperties: Property[] | null = null;
+    await runCreateNextFiscalYear({
+      dossierId: "dossier-1",
+      workspace: baseWorkspace(),
+      persistTransition: fn,
+      dispatchCreateNextFiscalYear: (_fy, properties) => {
+        dispatchedProperties = properties;
+      },
+      onError: () => {},
+    });
+
+    assert.deepEqual(dispatchedProperties, persistedProperties);
+    assert.equal(dispatchedProperties?.[0]?.amortissementBase?.composants[0]?.id, "travaux-1");
   });
 
   it("T-P0-9 — les documents de N sont transmis tels quels à la persistance, jamais supprimés ni altérés par cette orchestration", async () => {

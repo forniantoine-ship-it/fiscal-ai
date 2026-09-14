@@ -36,7 +36,7 @@ describe("F-012 — Cycle 4B : sécurisation du micro-flux travaux", () => {
     assert.equal(turn.event, undefined);
   });
 
-  it("B — description + montant → amélioration : COMPOSANT_NOUVEAU, jamais comptée comme charge", async () => {
+  it("B — description + montant → amélioration : date propre requise, puis COMPOSANT_NOUVEAU, jamais comptée comme charge", async () => {
     const assistant = new F012ChargesAssistant(ctx, DEPS);
     let turn = await reachTravaux(assistant);
     turn = await assistant.handle(turn.state, {
@@ -45,8 +45,16 @@ describe("F-012 — Cycle 4B : sécurisation du micro-flux travaux", () => {
       montant: 8000,
     });
     turn = await assistant.handle(turn.state, { type: "submit_travaux_qualification", choix: "amelioration" });
+    // P0-A (TRF-0028) — pas encore de composant tant que sa propre date
+    // n'est pas connue ; jamais celle du bien (DEPS.dateMiseEnService).
+    assert.equal(turn.event, undefined);
+    assert.equal(turn.state.travauxSubStep, "date");
+    assert.equal(turn.state.collected.travaux.length, 0);
+
+    turn = await assistant.handle(turn.state, { type: "submit_travaux_date", dateDebut: "2025-06-01" });
     assert.equal(turn.event, "COMPOSANT_NOUVEAU");
     assert.equal(turn.state.collected.travaux[0]?.natureIntervention, "amélioration");
+    assert.equal(turn.state.collected.travaux[0]?.dateDebut, "2025-06-01");
   });
 
   it("C — split réparation/amélioration (facture mixte)", async () => {
@@ -60,8 +68,14 @@ describe("F-012 — Cycle 4B : sécurisation du micro-flux travaux", () => {
     turn = await assistant.handle(turn.state, { type: "submit_travaux_qualification", choix: "mixte" });
     assert.equal(turn.state.travauxSubStep, "split");
     turn = await assistant.handle(turn.state, { type: "submit_travaux_split", montantReparation: 4000 });
+    // Part amélioration (8000 €) > 0 : sa propre date est requise avant finalisation.
+    assert.equal(turn.state.travauxSubStep, "date");
+    assert.equal(turn.state.collected.travaux.length, 0);
+
+    turn = await assistant.handle(turn.state, { type: "submit_travaux_date", dateDebut: "2024-09-01" });
     assert.equal(turn.state.travauxSubStep, undefined);
     assert.equal(turn.state.collected.travaux[0]?.montantReparation, 4000);
+    assert.equal(turn.state.collected.travaux[0]?.dateDebut, "2024-09-01");
   });
 
   it("D — split, montant entièrement réparation (immobilisation nulle) : toujours ajoutée, jamais perdue", async () => {
@@ -80,6 +94,10 @@ describe("F-012 — Cycle 4B : sécurisation du micro-flux travaux", () => {
     turn = await assistant.handle(turn.state, { type: "submit_travaux_description", description: "Extension", montant: 5000 });
     turn = await assistant.handle(turn.state, { type: "submit_travaux_qualification", choix: "mixte" });
     turn = await assistant.handle(turn.state, { type: "submit_travaux_split", montantReparation: 0 });
+    // Part amélioration (5000 €) > 0 : sa propre date est requise avant finalisation.
+    assert.equal(turn.state.travauxSubStep, "date");
+    assert.equal(turn.state.collected.travaux.length, 0);
+    turn = await assistant.handle(turn.state, { type: "submit_travaux_date", dateDebut: "2024-11-20" });
     assert.equal(turn.state.collected.travaux.length, 1);
     assert.equal(turn.state.collected.travaux[0]?.montantReparation, 0);
   });

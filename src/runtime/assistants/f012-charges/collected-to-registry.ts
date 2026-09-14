@@ -183,6 +183,7 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
         source: collected.documentIdsByFamily?.syndic?.length ? "document" : undefined,
         coproType: ligne.type,
         grosTravauxDeductible: ligne.grosTravauxDeductible,
+        dateDebut: ligne.dateDebut,
         documentIds: collected.documentIdsByFamily?.syndic,
       }),
     );
@@ -204,6 +205,7 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
           ...(t.choix !== undefined ? { choix: t.choix } : {}),
           ...(t.natureIntervention !== undefined ? { natureIntervention: t.natureIntervention } : {}),
           ...(t.montantReparation !== undefined ? { montantReparation: t.montantReparation } : {}),
+          ...(t.dateDebut !== undefined ? { dateDebut: t.dateDebut } : {}),
         },
         reviewNeeded: t.choix === "incertain" ? true : undefined,
       }),

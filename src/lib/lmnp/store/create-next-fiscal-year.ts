@@ -17,7 +17,7 @@
 import { persistFiscalYearTransition, type PersistFiscalYearTransitionResult } from "./dossier-db";
 import { canCreateNextFiscalYear } from "../services/dossier/fiscal-year-cycle";
 import type { PersistedWorkspace } from "./persistence";
-import type { FiscalYear } from "../types/domain";
+import type { FiscalYear, Property } from "../types/domain";
 
 /**
  * Garde de réentrance minimale, même onglet uniquement (variable de module,
@@ -33,7 +33,14 @@ export type RunCreateNextFiscalYearParams = {
   workspace: PersistedWorkspace;
   /** Injectable pour les tests — sinon `new Date().toISOString()`. */
   now?: string;
-  dispatchCreateNextFiscalYear: (nextFiscalYear: FiscalYear) => void;
+  /**
+   * P0-B — `properties` porte l'`amortissementBase` fusionnée par
+   * `persistFiscalYearTransition()` (F-010 + composants F-012 de l'exercice
+   * qui se clôture) : le reducer doit l'appliquer telle quelle, jamais
+   * conserver `state.properties` (stale, sans les composants F-012 créés
+   * dans l'exercice qui vient de se clôturer).
+   */
+  dispatchCreateNextFiscalYear: (nextFiscalYear: FiscalYear, properties: Property[]) => void;
   onError: (message: string | null) => void;
   /**
    * Injectable pour les tests (même pattern que `deleteOnServer` dans
@@ -79,7 +86,7 @@ export async function runCreateNextFiscalYear(
     // `result.nextFiscalYear` est EXACTEMENT ce qui vient d'être écrit en
     // IndexedDB — jamais recalculé pour le dispatch (éviterait un second
     // id aléatoire divergent de celui persisté).
-    dispatchCreateNextFiscalYear(result.nextFiscalYear);
+    dispatchCreateNextFiscalYear(result.nextFiscalYear, result.dossier.properties);
   } catch (error) {
     onError(
       error instanceof Error ? error.message : "Échec de la création de l'exercice suivant.",

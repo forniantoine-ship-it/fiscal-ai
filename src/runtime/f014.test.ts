@@ -34,10 +34,12 @@ const CAS_NOMINAL = computeAmortizationPlan({
 describe("F-014 — composition plan (intégration F-010 + F-012)", () => {
   it("consomme le plan F-010 sans le recalculer", () => {
     const travaux = createComposantTravaux({
+      id: "travaux-cuisine",
       label: "Cuisine équipée",
       montant: 12000,
       nature: "amélioration",
       dateDebut: "2024-06-01",
+      origin: "f012_travaux",
     });
 
     const composed = composePlanAmortissement({
@@ -86,10 +88,12 @@ describe("F-014 — composition plan (intégration F-010 + F-012)", () => {
 
   it("détermine PROF-003 si nouveaux travaux F-012", () => {
     const travaux = createComposantTravaux({
+      id: "travaux-isolation",
       label: "Isolation combles",
       montant: 8000,
       nature: "amélioration",
       dateDebut: "2025-03-01",
+      origin: "f012_travaux",
     });
     const composed = composePlanAmortissement({
       exerciceFiscal: 2025,
@@ -102,6 +106,200 @@ describe("F-014 — composition plan (intégration F-010 + F-012)", () => {
     });
     assert.equal(determineAmortissementProfil(composed.plan), "PROF-003");
     assert.equal(composed.plan.nouveaux_elements.length, 1);
+  });
+});
+
+describe("P0-A — date propre au composant travaux (TRF-0028), jamais celle du bien", () => {
+  // Bien mis en service le 01/06/2023 ; travaux (composant F-012) mis en
+  // service en 2025 seulement. Le composant ne doit jamais hériter de la
+  // date de mise en service du bien (2023) : aucune dotation avant 2025.
+  const DATE_MISE_EN_SERVICE_BIEN = "2023-06-01";
+  const composantTravaux = createComposantTravaux({
+    id: "travaux-veranda",
+    label: "Extension véranda",
+    montant: 18000,
+    nature: "amélioration",
+    dateDebut: "2025-09-01",
+    origin: "f012_travaux",
+  }).composant;
+
+  it("A — aucune dotation sur le composant travaux avant son année de mise en service (2023, 2024)", () => {
+    for (const exerciceFiscal of [2023, 2024]) {
+      const composed = composePlanAmortissement({
+        exerciceFiscal,
+        dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+        planLogement: CAS_NOMINAL.plan,
+        prorataRatio: 1,
+        composantsNouveaux: [composantTravaux],
+      });
+      const ligneTravaux = composed.plan.nouveaux_elements[0];
+      assert.equal(ligneTravaux?.dotation_exercice, 0, `exercice ${exerciceFiscal} : aucune dotation attendue`);
+    }
+  });
+
+  it("B — première dotation en 2025, proratisée sur la date propre du composant (pas celle du bien)", () => {
+    const composed = composePlanAmortissement({
+      exerciceFiscal: 2025,
+      dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantTravaux],
+    });
+    const ligneTravaux = composed.plan.nouveaux_elements[0];
+    assert.ok(ligneTravaux, "le composant doit apparaître dans nouveaux_elements");
+    assert.ok(ligneTravaux!.dotation_exercice > 0, "2025 : première dotation, non nulle");
+    // Prorata sur 4 mois (sept.-déc.) : nettement < la dotation annuelle pleine.
+    assert.ok(ligneTravaux!.dotation_exercice < ligneTravaux!.dotation_annuelle_pleine);
+    assert.equal(ligneTravaux!.est_proratisee, true);
+  });
+
+  it("cumul et VNC restent cohérents après la première année proratisée (2026)", () => {
+    const composed2025 = composePlanAmortissement({
+      exerciceFiscal: 2025,
+      dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantTravaux],
+    });
+    const composed2026 = composePlanAmortissement({
+      exerciceFiscal: 2026,
+      dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantTravaux],
+      planValidePrecedemment: true,
+      anneeValidationInitiale: 2025,
+    });
+    const l2025 = composed2025.plan.nouveaux_elements[0]!;
+    const l2026 = composed2026.plan.nouveaux_elements[0]!;
+    assert.ok(l2026.dotation_exercice > 0);
+    assert.equal(Math.round(l2026.dotation_exercice), Math.round(composantTravaux.dotationAnnuelle));
+    assert.ok(l2026.base_amortissable === composantTravaux.montant);
+  });
+
+  it("même principe pour un composant issu d'un appel gros travaux copropriété (origin f012_copro)", () => {
+    const composantCopro = createComposantTravaux({
+      id: "copro-toiture",
+      label: "Réfection toiture (appel de fonds)",
+      montant: 12000,
+      nature: "amélioration",
+      dateDebut: "2025-09-01",
+      origin: "f012_copro",
+    }).composant;
+
+    for (const exerciceFiscal of [2023, 2024]) {
+      const composed = composePlanAmortissement({
+        exerciceFiscal,
+        dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+        planLogement: CAS_NOMINAL.plan,
+        prorataRatio: 1,
+        composantsNouveaux: [composantCopro],
+      });
+      assert.equal(composed.plan.nouveaux_elements[0]?.dotation_exercice, 0, `exercice ${exerciceFiscal}`);
+    }
+
+    const composed2025 = composePlanAmortissement({
+      exerciceFiscal: 2025,
+      dateMiseEnService: DATE_MISE_EN_SERVICE_BIEN,
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantCopro],
+    });
+    assert.ok(composed2025.plan.nouveaux_elements[0]!.dotation_exercice > 0, "première dotation en 2025");
+    assert.equal(composed2025.plan.nouveaux_elements[0]?.id, "copro-toiture");
+  });
+});
+
+describe("P0-B — reprise N → N+1 d'un composant F-012 (sans redémarrage, sans double comptage)", () => {
+  // Composant amorti sur 3 ans seulement (base réduite pour observer
+  // facilement l'amortissement total sans construire un cas à 18 ans).
+  const composantCourt = createComposantTravaux({
+    id: "travaux-court",
+    label: "Petit équipement",
+    montant: 12000,
+    nature: "amélioration",
+    dureeAmortissement: 3,
+    dateDebut: "2025-01-01",
+    origin: "f012_travaux",
+  }).composant;
+
+  it("8 — la dotation de chaque exercice N, N+1, N+2 est calculée sans redémarrer l'amortissement (même composant, mêmes paramètres, exercices successifs)", () => {
+    const dotations: number[] = [];
+    for (const exerciceFiscal of [2025, 2026, 2027]) {
+      const composed = composePlanAmortissement({
+        exerciceFiscal,
+        dateMiseEnService: "2023-06-01",
+        planLogement: CAS_NOMINAL.plan,
+        prorataRatio: 1,
+        composantsNouveaux: [composantCourt],
+        planValidePrecedemment: exerciceFiscal > 2025,
+        anneeValidationInitiale: exerciceFiscal > 2025 ? 2025 : null,
+      });
+      dotations.push(composed.plan.nouveaux_elements[0]!.dotation_exercice);
+    }
+    // 2025 = 12 000/3 = 4000 (pas de prorata, mise en service au 01/01) ;
+    // 2026 = 4000 (deuxième annuité) ; 2027 = 4000 (troisième et dernière).
+    assert.deepEqual(dotations, [4000, 4000, 4000]);
+    const cumulTotal = dotations.reduce((a, b) => a + b, 0);
+    assert.equal(cumulTotal, composantCourt.montant, "single count — le cumul sur 3 exercices égale exactement la base, jamais plus");
+  });
+
+  it("6/7 — cumul et VNC en N+1 tiennent compte du cumul de N, jamais recalculés comme si le composant était neuf", () => {
+    const composedN = composePlanAmortissement({
+      exerciceFiscal: 2025,
+      dateMiseEnService: "2023-06-01",
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantCourt],
+    });
+    const composedNPlus1 = composePlanAmortissement({
+      exerciceFiscal: 2026,
+      dateMiseEnService: "2023-06-01",
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantCourt],
+      planValidePrecedemment: true,
+      anneeValidationInitiale: 2025,
+    });
+    const ligneN = composedN.plan.nouveaux_elements[0]!;
+    const ligneNPlus1 = composedNPlus1.plan.nouveaux_elements[0]!;
+    assert.equal(ligneN.dotation_exercice, 4000);
+    assert.equal(ligneNPlus1.dotation_exercice, 4000);
+  });
+
+  it("12 — composant totalement amorti (exercice au-delà de sa durée) : aucune dotation supplémentaire", () => {
+    const composedApresFin = composePlanAmortissement({
+      exerciceFiscal: 2029, // 2025 + 3 ans de durée + marge
+      dateMiseEnService: "2023-06-01",
+      planLogement: CAS_NOMINAL.plan,
+      prorataRatio: 1,
+      composantsNouveaux: [composantCourt],
+      planValidePrecedemment: true,
+      anneeValidationInitiale: 2025,
+    });
+    const ligne = composedApresFin.plan.nouveaux_elements[0]!;
+    assert.equal(ligne.dotation_exercice, 0, "totalement amorti — aucune dotation supplémentaire");
+  });
+
+  it("14 — gros travaux copro sur bien mis en service en 2023 : aucune dotation en 2023/2024, comme pour les travaux F-012 classiques", () => {
+    const composantCoproTardif = createComposantTravaux({
+      id: "copro-tardif",
+      label: "Ravalement copro",
+      montant: 9000,
+      nature: "amélioration",
+      dateDebut: "2025-04-01",
+      origin: "f012_copro",
+    }).composant;
+    for (const exerciceFiscal of [2023, 2024]) {
+      const composed = composePlanAmortissement({
+        exerciceFiscal,
+        dateMiseEnService: "2023-06-01",
+        planLogement: CAS_NOMINAL.plan,
+        prorataRatio: 1,
+        composantsNouveaux: [composantCoproTardif],
+      });
+      assert.equal(composed.plan.nouveaux_elements[0]?.dotation_exercice, 0);
+    }
   });
 });
 

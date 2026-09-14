@@ -63,10 +63,12 @@ export function chargeRegistryToComputeInput(
         fieldSources.copropriete = charge.provenance;
         if (charge.coproType) {
           coproLignes.push({
+            id: charge.id,
             type: charge.coproType,
             montant: charge.amount,
             description: charge.description,
             grosTravauxDeductible: charge.grosTravauxDeductible,
+            dateDebut: charge.dateDebut,
           });
         }
         break;
@@ -81,14 +83,17 @@ export function chargeRegistryToComputeInput(
         break;
       case "travaux": {
         fieldSources[`travaux-${charge.id}`] = charge.provenance;
-        const nature = charge.travaux?.natureIntervention;
-        if (!nature) break;
+        // P1-A — une qualification "incertain" (nature absente) n'est plus
+        // exclue silencieusement ici : elle est transmise au moteur, qui
+        // applique le repli KS existant (SAV-015, cas ambigu) plutôt que de
+        // disparaître avec 0 charge / 0 immobilisation.
         travaux.push({
           id: charge.id,
           description: charge.description ?? "",
           montant: charge.amount,
-          natureIntervention: nature,
+          natureIntervention: charge.travaux?.natureIntervention,
           montantReparation: charge.travaux?.montantReparation,
+          dateDebut: charge.travaux?.dateDebut,
           source: charge.provenance,
         });
         break;
