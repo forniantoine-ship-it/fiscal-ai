@@ -48,6 +48,22 @@ function orientationPrompt(): F010Message {
   };
 }
 
+/**
+ * Miroir F-011 (`blockedMissingDatePrompt`) : dateMiseEnService (F-009,
+ * RAI-003) est la seule source légitime de cette date — F010 ne la demande
+ * jamais lui-même et ne l'invente jamais (ni 01/01, ni la date d'acquisition,
+ * ni la date de début d'activité).
+ */
+function blockedMissingDatePrompt(): F010Message {
+  return {
+    role: "assistant",
+    content:
+      "Il me manque la date de mise en service du logement pour calculer correctement l'amortissement " +
+      "(elle détermine le prorata de la première année). " +
+      "Complétez d'abord l'étape Activité, puis revenez ici — je ne peux pas deviner cette date.",
+  };
+}
+
 function natureLabel(nature: F010Nature): string {
   return NATURE_SUGGESTIONS.find((s) => s.id === nature)?.label ?? nature;
 }
@@ -322,11 +338,55 @@ export class F010LogementAssistant {
       review: persisted.review,
     };
 
+    // Arbitrage dateMiseEnService (Option B), miroir F-011 : un blocage
+    // persisté n'est jamais recontourné — la précondition F-009 est
+    // revérifiée à chaque reprise, jamais supposée résolue. Si elle l'est
+    // entretemps (F-009 complété), on avance directement vers le plan calculé
+    // avec la VRAIE date — aucune réponse F010 déjà saisie n'est reperdue ou
+    // redemandée.
+    if (state.step === "blocked_missing_date") {
+      const result = this.computePlan(state);
+      if (!result) {
+        return { state, messages: [blockedMissingDatePrompt()], completed: false };
+      }
+      return {
+        state: { ...state, step: "review_plan", result },
+        messages: [buildF010ResumeMessage(persisted)],
+        completed: false,
+      };
+    }
+
+    // Réserve 1 (audit Option B) : un `review_plan` repris sans que la
+    // précondition F-009 soit satisfaite (dossier ancien jamais réellement
+    // complété avec une vraie date, ou dep manquante au moment de ce resume)
+    // ne doit jamais laisser un écran vide — `review_plan` n'affiche son
+    // contenu que si `state.result` existe. Jamais confirmé (P0-3 l'exige),
+    // donc rien de métier n'est détruit en le renvoyant vers le blocage :
+    // aucune réponse F010 n'est perdue, aucune date n'est inventée.
+    if (state.step === "review_plan") {
+      const result = this.computePlan(state);
+      if (!result) {
+        return {
+          state: { ...state, step: "blocked_missing_date" },
+          messages: [blockedMissingDatePrompt()],
+          completed: false,
+        };
+      }
+      state.result = result;
+    }
+
     // P1 (reload/complete) : `result` n'est jamais persisté (toujours recalculé,
     // cf. commentaire de `F010PersistedState`) — recalculé ici aussi pour
-    // `"complete"`, pas seulement `"review_plan"`, sinon la synthèse et l'écran
-    // de modification (`go_back` depuis COMPLETE) retrouvent un état sans plan.
-    if (state.step === "review_plan" || state.step === "complete") {
+    // `"complete"`. Contrat distinct de `review_plan` ci-dessus : un
+    // `complete` a déjà été confirmé (P0-3 exige `planValide` à ce moment-là)
+    // et `persistCompletion` a déjà écrit `logementAmortissement` dans le
+    // draft, indépendamment de ce `F010State` — le renvoyer vers
+    // `blocked_missing_date` détruirait à tort ce résultat métier déjà
+    // persisté. L'écran `complete` ne dépend d'ailleurs jamais de
+    // `state.result` pour s'afficher (ses actions n'en ont pas besoin) : si
+    // la précondition manque désormais, la synthèse reste simplement
+    // absente, sans écran vide ni régression du contrat existant.
+    if (state.step === "complete") {
       const result = this.computePlan(state);
       if (result) state.result = result;
     }
@@ -597,10 +657,18 @@ export class F010LogementAssistant {
           return { state: advance(staged, {}, missingStep), messages, completed: false };
         }
 
+        // Arbitrage dateMiseEnService (Option B) : tous les champs F010 sont
+        // désormais connus (missingStep ci-dessus est null), mais le calcul
+        // final reste impossible sans la précondition F-009 — jamais un plan
+        // fictif basé sur une date inventée.
         const result = this.computePlan(staged);
-        const next = advance(staged, { result: result! }, "review_plan");
-        messages.push({ role: "assistant", content: result!.explanation });
-        if (!result!.planValide) {
+        if (!result) {
+          messages.push(blockedMissingDatePrompt());
+          return { state: advance(staged, {}, "blocked_missing_date"), messages, completed: false };
+        }
+        const next = advance(staged, { result }, "review_plan");
+        messages.push({ role: "assistant", content: result.explanation });
+        if (!result.planValide) {
           messages.push({
             role: "assistant",
             content:
@@ -701,8 +769,14 @@ export class F010LogementAssistant {
 
     const missing = nextMissingF010Field(state);
     if (missing === null) {
+      // Arbitrage dateMiseEnService (Option B) : tous les champs F010 sont
+      // connus, mais sans la précondition F-009, aucun plan — jamais
+      // "review_plan" avec un résultat fictif ou absent silencieusement.
       const result = this.computePlan(state);
-      return { state: advance(state, result ? { result } : {}, "review_plan") };
+      if (!result) {
+        return { state: advance(state, {}, "blocked_missing_date"), message: blockedMissingDatePrompt() };
+      }
+      return { state: advance(state, { result }, "review_plan") };
     }
     const nextState = advance(state, {}, stepForF010Field(missing));
     return { state: nextState, message: buildF010ReviewTransitionMessage(missing) ?? undefined };
@@ -720,7 +794,18 @@ export class F010LogementAssistant {
       return null;
     }
 
-    const dateDebut = this.deps.dateMiseEnService ?? `${this.ctx.fiscalYear}-01-01`;
+    // Arbitrage dateMiseEnService (F-009/F-010, Option B) : cette date n'est
+    // jamais collectée ni devinée ici — F-010 est seul consommateur, F-009
+    // reste seul propriétaire (RAI-003). Sans elle, aucun plan n'est produit
+    // (jamais `${fiscalYear}-01-01`, jamais dateAcquisition/dateDebutActivite
+    // en substitut) : le seul appelant légitime a déjà vérifié cette
+    // précondition avant d'arriver ici (cf. "submit_ventilation",
+    // `leaveReviewIfComplete`, `resume`) et route vers `blocked_missing_date`
+    // s'il manque — ce `null` reste une défense structurelle, pas le chemin
+    // normal.
+    if (this.deps.dateMiseEnService === undefined) {
+      return null;
+    }
 
     const computed = computeAmortizationPlan({
       prixAcquisition: state.prixAcquisition,
@@ -731,7 +816,7 @@ export class F010LogementAssistant {
       typeBien: state.typeBien,
       ratioTerrain: state.ratioTerrain,
       mobilierMode: state.mobilierMode ?? "lot",
-      dateMiseEnService: dateDebut,
+      dateMiseEnService: this.deps.dateMiseEnService,
       exerciceFiscal: this.ctx.fiscalYear,
     });
 

@@ -86,6 +86,7 @@ export const F010_STEP_TITLES: Record<F010State["step"], string> = {
   collect_frais: "Frais de notaire",
   collect_mobilier: "Mobilier inclus",
   ventilation: "Ventilation terrain et bâti",
+  blocked_missing_date: "Date de mise en service requise",
   review_plan: "Validation du plan d'amortissement",
   complete: "Logement configuré",
 };
@@ -2226,6 +2227,21 @@ export function F010LogementAssistantPanel() {
                 Précédent
               </Button>
             </form>
+          ) : null}
+
+          {step === "blocked_missing_date" ? (
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button href={LMNP_ROUTES.activite} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
+                Aller à l&apos;Activité
+              </Button>
+              <Button
+                href={LMNP_ROUTES.dashboard}
+                variant="secondary"
+                className={`w-full ${F010_FOCUS_BUTTON_CLASS}`}
+              >
+                Retour au tableau de bord
+              </Button>
+            </div>
           ) : null}
 
           {step === "review_plan" && state.result ? (

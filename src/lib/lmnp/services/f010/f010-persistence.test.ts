@@ -265,9 +265,16 @@ describe("J. session COMPLETE réellement persistée → resume_complete, jamais
   });
 });
 
+// Arbitrage dateMiseEnService (Option B) : ces tests exercent un calcul de
+// plan réel (review_plan/complete), qui exige désormais explicitement la
+// précondition F-009 — jamais plus le fallback silencieux `${fiscalYear}-01-01`.
+// Fixture explicite, partagée par les deux describes ci-dessous, pour ne pas
+// répéter mécaniquement la même date dans chaque test.
+const deps = { dateMiseEnService: "2024-04-15" };
+
 describe("Non-régression : résultat jamais mis en cache", () => {
   it("resume() sur review_plan recalcule le plan plutôt que de faire confiance à une valeur persistée (result n'existe pas dans F010PersistedState)", () => {
-    const assistant = new F010LogementAssistant(ctx);
+    const assistant = new F010LogementAssistant(ctx, deps);
     const persisted: F010PersistedState = {
       step: "review_plan",
       fieldSources: {},
@@ -308,7 +315,7 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
   }
 
   it("SCÉNARIO 1 — complete → persist → reload : la synthèse complète est disponible (state.result présent, pas seulement step='complete')", async () => {
-    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const completed = await completeF010Session(new F010LogementAssistant(ctx, deps));
     assert.equal(completed.completed, true);
     assert.equal(completed.state.step, "complete");
 
@@ -316,7 +323,7 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
     const decision = resolveF010ResumeDecision({ persisted, isLegacyComplete: true });
     assert.deepEqual(decision, { kind: "resume_complete" });
 
-    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    const resumed = new F010LogementAssistant(ctx, deps).resume(persisted);
     assert.equal(resumed.state.step, "complete");
     assert.ok(resumed.state.result, "la synthèse doit être reconstruite après reload, pas absente");
     assert.equal(resumed.state.result!.planValide, true);
@@ -325,9 +332,9 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
   });
 
   it("SCÉNARIO 2 — complete → reload → Modifier mes réponses : go_back ouvre review_plan avec les réponses existantes, pas un écran vide", async () => {
-    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const completed = await completeF010Session(new F010LogementAssistant(ctx, deps));
     const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
-    const assistant = new F010LogementAssistant(ctx);
+    const assistant = new F010LogementAssistant(ctx, deps);
     const resumed = assistant.resume(persisted);
 
     const modifyTurn = await assistant.handle(resumed.state, { type: "go_back" });
@@ -339,9 +346,9 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
   });
 
   it("SCÉNARIO 3 — complete → reload → Modifier sans changement : aucune donnée métier confirmée n'est perdue", async () => {
-    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const completed = await completeF010Session(new F010LogementAssistant(ctx, deps));
     const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
-    const assistant = new F010LogementAssistant(ctx);
+    const assistant = new F010LogementAssistant(ctx, deps);
     const resumed = assistant.resume(persisted);
     const before = resumed.state;
 
@@ -357,9 +364,9 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
   });
 
   it("SCÉNARIO 4 — complete → reload → Modifier → changement réel : recalcul cohérent, nouvel état persistable sans transcript", async () => {
-    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const completed = await completeF010Session(new F010LogementAssistant(ctx, deps));
     const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
-    const assistant = new F010LogementAssistant(ctx);
+    const assistant = new F010LogementAssistant(ctx, deps);
     const resumed = assistant.resume(persisted);
     const originalValeurTerrain = resumed.state.result!.valeurTerrain;
 
@@ -395,19 +402,19 @@ describe("P1 — reload/complete → modify (scénarios obligatoires 1-6)", () =
     const decision = resolveF010ResumeDecision({ persisted, isLegacyComplete: true });
     assert.deepEqual(decision, { kind: "resume_complete" });
 
-    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    const resumed = new F010LogementAssistant(ctx, deps).resume(persisted);
     assert.equal(resumed.state.step, "complete");
     assert.ok(resumed.state.result);
     assert.equal(resumed.state.confirmed, undefined, "champ absent du blob persisté : jamais inventé, reste undefined");
   });
 
   it("SCÉNARIO 6 — aucun transcript conversationnel n'est requis ni produit pour reprendre une session complète", async () => {
-    const completed = await completeF010Session(new F010LogementAssistant(ctx));
+    const completed = await completeF010Session(new F010LogementAssistant(ctx, deps));
     const persisted = toF010PersistedState(completed.state, "2026-09-13T10:00:00.000Z");
 
     assert.equal("messages" in persisted, false, "F010PersistedState ne porte aucun champ messages/transcript");
 
-    const resumed = new F010LogementAssistant(ctx).resume(persisted);
+    const resumed = new F010LogementAssistant(ctx, deps).resume(persisted);
     assert.equal(resumed.state.step, "complete");
     assert.ok(resumed.state.result, "la reprise ne dépend d'aucun historique de messages, seulement des champs structurés");
   });

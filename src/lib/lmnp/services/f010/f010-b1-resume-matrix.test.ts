@@ -84,7 +84,13 @@ describe("B1-1 reprise après reload — matrice A→I", () => {
       "2026-08-28T10:00:00.000Z",
     );
     assert.equal(decide(persisted, false), "resume_step");
-    assert.equal(new F010LogementAssistant(ctx).resume(persisted).state.step, "review_plan");
+    // dateMiseEnService (Option B, réserve 1) : un review_plan ne recalcule un
+    // vrai plan que si la précondition F-009 est fournie — sinon resume()
+    // bascule sur blocked_missing_date (couvert séparément dans
+    // assistant.test.ts). Ce test-ci exerce le cas nominal, précondition
+    // satisfaite.
+    const assistant = new F010LogementAssistant(ctx, { dateMiseEnService: "2024-04-15" });
+    assert.equal(assistant.resume(persisted).state.step, "review_plan");
   });
 
   it("D. complete + refresh, F010PersistedState réel présent → resume_complete, jamais legacy_complete (P1)", () => {

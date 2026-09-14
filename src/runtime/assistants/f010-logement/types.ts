@@ -13,6 +13,14 @@ export type F010Step =
   | "collect_frais"
   | "collect_mobilier"
   | "ventilation"
+  /**
+   * Précondition F-009 (`dateMiseEnService`) non satisfaite au moment où le
+   * calcul final devient nécessaire — miroir de F-011 (`blocked_missing_date`).
+   * Aucune date n'est jamais inventée pour en sortir : seule une nouvelle
+   * vérification de la dépendance (au prochain `resume()`) peut débloquer,
+   * jamais une confirmation manuelle de ce step.
+   */
+  | "blocked_missing_date"
   | "review_plan"
   | "complete";
 
