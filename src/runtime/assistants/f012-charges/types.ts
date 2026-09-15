@@ -18,6 +18,7 @@ import type {
   NatureIntervention,
   ProfilCharges,
 } from "../../capabilities/f012/types";
+import type { TaxeFonciereIntegrityCheck } from "./taxe-fonciere-legacy-integrity";
 
 export type F012Step =
   | "profilage"
@@ -212,6 +213,12 @@ export type F012HistorySnapshot = {
    * remplacement.
    */
   pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  /**
+   * Blocker #3 — marker d'intégrité legacy taxe foncière (Lot A). Absent =
+   * jamais vérifié. Jamais un status "pending" : le pending se dérive de
+   * `certainly_exposed && !isTaxeFonciereIntegrityCheckValid(...)`.
+   */
+  taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
 };
 
 /**
@@ -286,6 +293,7 @@ export function snapshotF012State(state: F012State): F012HistorySnapshot {
     analyzedDocumentIds: state.analyzedDocumentIds,
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
     pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
+    taxeFonciereIntegrityCheck: state.taxeFonciereIntegrityCheck,
   };
 }
 
@@ -313,6 +321,8 @@ export interface F012State {
   pendingTaxeFonciereExpense?: Expense;
   /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
   pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  /** Blocker #3 — voir `F012HistorySnapshot.taxeFonciereIntegrityCheck`. */
+  taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
 }
 
 export interface F012Suggestion {
@@ -521,6 +531,8 @@ export type F012PersistedState = {
   pendingTaxeFonciereExpense?: Expense;
   /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
   pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  /** Blocker #3 — source de vérité persistée du marker d'intégrité legacy. */
+  taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
   updatedAt: string;
 };
 
@@ -549,6 +561,7 @@ export function toF012PersistedState(state: F012State, updatedAt: string): F012P
     analyzedDocumentIds: state.analyzedDocumentIds,
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
     pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
+    taxeFonciereIntegrityCheck: state.taxeFonciereIntegrityCheck,
     updatedAt,
   };
 }

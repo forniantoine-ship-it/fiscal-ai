@@ -401,6 +401,7 @@ export class F012ChargesAssistant {
       analyzedDocumentIds: persisted.analyzedDocumentIds,
       pendingTaxeFonciereExpense: persisted.pendingTaxeFonciereExpense,
       pendingTaxeFonciereReplace: persisted.pendingTaxeFonciereReplace,
+      taxeFonciereIntegrityCheck: persisted.taxeFonciereIntegrityCheck,
     };
 
     const reentry = this.buildReentryTurn(baseState);
@@ -537,6 +538,7 @@ export class F012ChargesAssistant {
       analyzedDocumentIds: previous.analyzedDocumentIds,
       pendingTaxeFonciereExpense: previous.pendingTaxeFonciereExpense,
       pendingTaxeFonciereReplace: previous.pendingTaxeFonciereReplace,
+      taxeFonciereIntegrityCheck: previous.taxeFonciereIntegrityCheck,
       result: undefined,
       history: history.slice(0, -1),
     };
