@@ -95,6 +95,7 @@ import {
 } from "./family-coverage-intents";
 import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import {
+  buildPendingTaxeFonciereReplace,
   buildTaxeFonciereReplaceCandidate,
   createInitialF012State,
   hasBlockingAnomaly,
@@ -111,6 +112,11 @@ import {
   type F012State,
   type F012TravauxDraft,
 } from "./types";
+import {
+  buildTaxeFonciereVerifiedMatchCheck,
+  buildTaxeFonciereVerifiedUserDecisionCheck,
+  detectTaxeFonciereLegacyRisk,
+} from "./taxe-fonciere-legacy-integrity";
 import {
   amountPaidLabel,
   amountWhereToLook,
@@ -402,6 +408,8 @@ export class F012ChargesAssistant {
       pendingTaxeFonciereExpense: persisted.pendingTaxeFonciereExpense,
       pendingTaxeFonciereReplace: persisted.pendingTaxeFonciereReplace,
       taxeFonciereIntegrityCheck: persisted.taxeFonciereIntegrityCheck,
+      taxeFonciereIntegrityBlocker1Bridge: persisted.taxeFonciereIntegrityBlocker1Bridge,
+      taxeFonciereIntegrityAttestationRequired: persisted.taxeFonciereIntegrityAttestationRequired,
     };
 
     const reentry = this.buildReentryTurn(baseState);
@@ -539,6 +547,8 @@ export class F012ChargesAssistant {
       pendingTaxeFonciereExpense: previous.pendingTaxeFonciereExpense,
       pendingTaxeFonciereReplace: previous.pendingTaxeFonciereReplace,
       taxeFonciereIntegrityCheck: previous.taxeFonciereIntegrityCheck,
+      taxeFonciereIntegrityBlocker1Bridge: previous.taxeFonciereIntegrityBlocker1Bridge,
+      taxeFonciereIntegrityAttestationRequired: previous.taxeFonciereIntegrityAttestationRequired,
       result: undefined,
       history: history.slice(0, -1),
     };
@@ -878,14 +888,17 @@ export class F012ChargesAssistant {
             : undefined;
         if (
           existingForConflict &&
-          (existingForConflict.documentId !== confirmed.documentId || existingForConflict.montant !== confirmed.montant)
+          (state.taxeFonciereIntegrityBlocker1Bridge ||
+            existingForConflict.documentId !== confirmed.documentId ||
+            existingForConflict.montant !== confirmed.montant)
         ) {
           messages.push(taxeFonciereReplaceMessage(existingForConflict, confirmed));
           return {
             state: {
               ...state,
               pendingTaxeFonciereExpense: undefined,
-              pendingTaxeFonciereReplace: { existing: existingForConflict, candidate: confirmed },
+              pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, existingForConflict, confirmed),
+              taxeFonciereIntegrityBlocker1Bridge: undefined,
             },
             messages,
             completed: false,
@@ -896,7 +909,12 @@ export class F012ChargesAssistant {
           ["impots"],
         );
         return this.previewAndAdvanceFamily(
-          { ...state, collected, pendingTaxeFonciereExpense: undefined },
+          {
+            ...state,
+            collected,
+            pendingTaxeFonciereExpense: undefined,
+            taxeFonciereIntegrityBlocker1Bridge: undefined,
+          },
           messages,
         );
       }
@@ -924,6 +942,8 @@ export class F012ChargesAssistant {
         // l'utilisateur reste volontairement hors garde pour un même
         // `documentId` déjà actif (non-régression F/G, Fix 3) — seule la
         // comparaison de `documentId` change de sémantique selon la source.
+        // Blocker #3 — si le pont intégrité #1→#2 est actif, forcer le
+        // replace `legacy_integrity` même à documentId identique.
         const existingActiveForCorrect = state.collected.taxeFonciereExpense;
         const existingForConflictForCorrect: Expense | undefined = isActiveTaxeFonciereExpense(existingActiveForCorrect)
           ? existingActiveForCorrect
@@ -935,13 +955,22 @@ export class F012ChargesAssistant {
                 origin: "manual",
               })
             : undefined;
-        if (existingForConflictForCorrect && existingForConflictForCorrect.documentId !== corrected.documentId) {
+        if (
+          existingForConflictForCorrect &&
+          (state.taxeFonciereIntegrityBlocker1Bridge ||
+            existingForConflictForCorrect.documentId !== corrected.documentId)
+        ) {
           messages.push(taxeFonciereReplaceMessage(existingForConflictForCorrect, corrected));
           return {
             state: {
               ...state,
               pendingTaxeFonciereExpense: undefined,
-              pendingTaxeFonciereReplace: { existing: existingForConflictForCorrect, candidate: corrected },
+              pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(
+                state,
+                existingForConflictForCorrect,
+                corrected,
+              ),
+              taxeFonciereIntegrityBlocker1Bridge: undefined,
             },
             messages,
             completed: false,
@@ -952,7 +981,12 @@ export class F012ChargesAssistant {
           ["impots"],
         );
         return this.previewAndAdvanceFamily(
-          { ...state, collected, pendingTaxeFonciereExpense: undefined },
+          {
+            ...state,
+            collected,
+            pendingTaxeFonciereExpense: undefined,
+            taxeFonciereIntegrityBlocker1Bridge: undefined,
+          },
           messages,
         );
       }
@@ -961,6 +995,21 @@ export class F012ChargesAssistant {
         const pending = state.pendingTaxeFonciereExpense;
         if (!pending) return { state, messages, completed: false };
         messages.push({ role: "user", content: "Ignorer ce document" });
+        // Blocker #3 — #1 ouvert par la vérif legacy (`bridge`) : ignore =
+        // rejeter la re-vérification automatique, JAMAIS remplacer A (même
+        // documentId). A reste active ; B3 reste unresolved + attestation.
+        if (state.taxeFonciereIntegrityBlocker1Bridge) {
+          return {
+            state: {
+              ...state,
+              pendingTaxeFonciereExpense: undefined,
+              taxeFonciereIntegrityBlocker1Bridge: undefined,
+              taxeFonciereIntegrityAttestationRequired: true,
+            },
+            messages,
+            completed: false,
+          };
+        }
         // Blocker #2 — ignorer un NOUVEAU document ne doit jamais écraser une
         // taxe foncière déjà active d'un autre document : l'ancienne reste
         // seule source de vérité, aucun résidu du document ignoré.
@@ -995,8 +1044,23 @@ export class F012ChargesAssistant {
           { ...state.collected, taxeFonciereExpense: pendingReplace.candidate },
           ["impots"],
         );
+        const integrityCheck =
+          pendingReplace.openedBy === "legacy_integrity"
+            ? buildTaxeFonciereVerifiedUserDecisionCheck({
+                legacyExpense: pendingReplace.existing,
+                resolvedExpense: pendingReplace.candidate,
+                checkedAt: new Date().toISOString(),
+              })
+            : state.taxeFonciereIntegrityCheck;
         return this.previewAndAdvanceFamily(
-          { ...state, collected, pendingTaxeFonciereReplace: undefined },
+          {
+            ...state,
+            collected,
+            pendingTaxeFonciereReplace: undefined,
+            taxeFonciereIntegrityCheck: integrityCheck ?? state.taxeFonciereIntegrityCheck,
+            taxeFonciereIntegrityAttestationRequired: undefined,
+            taxeFonciereIntegrityBlocker1Bridge: undefined,
+          },
           messages,
         );
       }
@@ -1006,13 +1070,128 @@ export class F012ChargesAssistant {
         if (!pendingReplace) return { state, messages, completed: false };
         messages.push({ role: "user", content: "Conserver l'avis existant" });
         // `collected.taxeFonciereExpense` (existing) n'est jamais touché ici
-        // — seule la sortie du conflit, sans écriture. Le total est réémis
-        // pour rester cohérent avec les autres sorties de décision taxe
-        // foncière (`confirm`/`correct`/`replace`).
+        // — seule la sortie du conflit, sans écriture. Blocker #3 : si
+        // `openedBy === "legacy_integrity"`, aucun marker — attestation
+        // manuelle obligatoire (Lot C).
+        const attestationRequired = pendingReplace.openedBy === "legacy_integrity" ? true : state.taxeFonciereIntegrityAttestationRequired;
         return this.previewAndAdvanceFamily(
-          { ...state, pendingTaxeFonciereReplace: undefined },
+          {
+            ...state,
+            pendingTaxeFonciereReplace: undefined,
+            taxeFonciereIntegrityAttestationRequired: attestationRequired,
+            taxeFonciereIntegrityBlocker1Bridge: undefined,
+          },
           messages,
         );
+      }
+
+      case "apply_taxe_fonciere_integrity_verify": {
+        // Exclusion mutuelle (invariant 9ea53b9) : ne jamais ouvrir une 4ᵉ
+        // décision concurrente à Review / Replace / documentReview impots.
+        if (
+          state.pendingTaxeFonciereExpense ||
+          state.pendingTaxeFonciereReplace ||
+          (state.documentReview && state.documentReview.familyId === "impots")
+        ) {
+          messages.push({
+            role: "assistant",
+            content:
+              "Une décision taxe foncière est déjà en cours — terminez-la avant de lancer la vérification d'intégrité.",
+          });
+          return { state, messages, completed: false };
+        }
+
+        const risk = detectTaxeFonciereLegacyRisk({ collected: state.collected });
+        if (risk.kind !== "certainly_exposed") {
+          return { state, messages, completed: false };
+        }
+
+        const { result, checkedAt } = action;
+        switch (result.kind) {
+          case "match": {
+            // Marker décrit A conservée (resolvedMontant = A), pas le montant
+            // documentaire éventuellement ≠ A dans la tolérance.
+            const check = buildTaxeFonciereVerifiedMatchCheck({
+              legacyExpense: risk.expense,
+              checkedAt,
+            });
+            if (!check) {
+              return {
+                state: {
+                  ...state,
+                  taxeFonciereIntegrityAttestationRequired: true,
+                },
+                messages,
+                completed: false,
+              };
+            }
+            messages.push({
+              role: "assistant",
+              content: "Le montant de taxe foncière retenu est cohérent avec votre avis.",
+            });
+            return {
+              state: {
+                ...state,
+                taxeFonciereIntegrityCheck: check,
+                taxeFonciereIntegrityAttestationRequired: undefined,
+                taxeFonciereIntegrityBlocker1Bridge: undefined,
+              },
+              messages,
+              completed: false,
+            };
+          }
+          case "amount_divergence": {
+            const candidate: Expense = {
+              ...result.candidate,
+              decision: "confirmed",
+              montant: result.resolvedMontant,
+              montantExtrait: result.resolvedMontant,
+            };
+            messages.push(taxeFonciereReplaceMessage(risk.expense, candidate));
+            return {
+              state: {
+                ...state,
+                pendingTaxeFonciereReplace: {
+                  existing: risk.expense,
+                  candidate,
+                  openedBy: "legacy_integrity",
+                },
+                taxeFonciereIntegrityBlocker1Bridge: undefined,
+              },
+              messages,
+              completed: false,
+            };
+          }
+          case "internal_amount_conflict": {
+            messages.push(taxeFonciereExpenseReceivedMessage(result.candidate));
+            return {
+              state: {
+                ...state,
+                pendingTaxeFonciereExpense: result.candidate,
+                taxeFonciereIntegrityBlocker1Bridge: true,
+              },
+              messages,
+              completed: false,
+            };
+          }
+          case "source_missing":
+          case "source_unreadable": {
+            messages.push({
+              role: "assistant",
+              content:
+                "Nous n'avons pas pu retrouver ou relire le fichier de votre avis. Téléversez-le à nouveau, ou indiquez le montant annuel total figurant sur l'avis.",
+            });
+            return {
+              state: {
+                ...state,
+                taxeFonciereIntegrityAttestationRequired: true,
+              },
+              messages,
+              completed: false,
+            };
+          }
+        }
+        return { state, messages, completed: false };
       }
 
       case "confirm_proposal":
@@ -1170,7 +1349,8 @@ export class F012ChargesAssistant {
               return {
                 state: {
                   ...state,
-                  pendingTaxeFonciereReplace: { existing: activeExpense, candidate },
+                  pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, activeExpense, candidate),
+                  taxeFonciereIntegrityBlocker1Bridge: undefined,
                   familyPhase: "card",
                   documentReview: undefined,
                 },
@@ -1470,7 +1650,8 @@ export class F012ChargesAssistant {
           });
           messages.push(taxeFonciereReplaceMessage(activeExpense, candidate));
           return {
-            state: { ...state, pendingTaxeFonciereReplace: { existing: activeExpense, candidate } },
+            state: { ...state, pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, activeExpense, candidate),
+                  taxeFonciereIntegrityBlocker1Bridge: undefined },
             messages,
             completed: false,
           };
@@ -1500,7 +1681,8 @@ export class F012ChargesAssistant {
           });
           messages.push(taxeFonciereReplaceMessage(existing, candidate));
           return {
-            state: { ...state, pendingTaxeFonciereReplace: { existing, candidate } },
+            state: { ...state, pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, existing, candidate),
+                  taxeFonciereIntegrityBlocker1Bridge: undefined },
             messages,
             completed: false,
           };
@@ -2515,7 +2697,8 @@ export class F012ChargesAssistant {
         });
         messages.push(taxeFonciereReplaceMessage(activeExpense, candidate));
         return {
-          state: { ...nextState, pendingTaxeFonciereReplace: { existing: activeExpense, candidate } },
+          state: { ...nextState, pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, activeExpense, candidate),
+                  taxeFonciereIntegrityBlocker1Bridge: undefined },
           messages,
           completed: false,
         };
@@ -2547,7 +2730,8 @@ export class F012ChargesAssistant {
         });
         messages.push(taxeFonciereReplaceMessage(existing, candidate));
         return {
-          state: { ...nextState, pendingTaxeFonciereReplace: { existing, candidate } },
+          state: { ...nextState, pendingTaxeFonciereReplace: buildPendingTaxeFonciereReplace(state, existing, candidate),
+                  taxeFonciereIntegrityBlocker1Bridge: undefined },
           messages,
           completed: false,
         };

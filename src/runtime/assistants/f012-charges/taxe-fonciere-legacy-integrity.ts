@@ -1,14 +1,16 @@
 /**
- * Blocker #3 (F012 V2 — taxe foncière) — Lot A : détection structurelle des
- * dossiers legacy exposés au collapse N-Expenses → last-write-wins, plus
- * contrat du marker d'intégrité et de sa validité.
- *
- * Pure detection / validity only — aucune re-extraction, aucun routage
- * Blocker #1/#2, aucune mutation Registry / UI / generation gate.
+ * Blocker #3 (F012 V2 — taxe foncière) — Lot A : détection structurelle +
+ * marker d'intégrité ; Lot B : vérification documentaire pure (sans mutation)
+ * réutilisant `expensesFromTaxeFonciereCorpus` / Blocker #1.
  */
 
 import type { Expense } from "../../capabilities/f012/expense";
 import type { F012CollectedData } from "./types";
+import {
+  expensesFromTaxeFonciereCorpus,
+  taxeFonciereExpenseMissingAmount,
+} from "./expense-from-taxe-fonciere";
+import { TAXE_FONCIERE_AMOUNT_TOLERANCE } from "./proposals-from-taxe-fonciere";
 
 /** Version produit V1 du check d'intégrité — bump futur invalide les markers antérieurs. */
 export const TAXE_FONCIERE_INTEGRITY_CHECK_VERSION = 1 as const;
@@ -119,4 +121,139 @@ export function isTaxeFonciereIntegrityCheckValid(input: {
   if (expense.documentId !== check.againstDocumentId) return false;
 
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Blocker #3 — Lot B : vérification documentaire pure + helpers de marker
+// ---------------------------------------------------------------------------
+
+export type TaxeFonciereIntegrityVerifyResult =
+  | {
+      kind: "match";
+      legacyMontant: number;
+      resolvedMontant: number;
+      candidate: Expense;
+    }
+  | {
+      kind: "amount_divergence";
+      legacyMontant: number;
+      resolvedMontant: number;
+      candidate: Expense;
+    }
+  | {
+      kind: "internal_amount_conflict";
+      legacyMontant: number;
+      candidate: Expense;
+    }
+  | { kind: "source_missing"; legacyMontant: number }
+  | { kind: "source_unreadable"; legacyMontant: number };
+
+/**
+ * Re-lit le document source via le pipeline Expense existant — AUCUNE mutation
+ * de `legacyExpense` / collected / Registry / marker / pending.
+ */
+export async function verifyTaxeFonciereAgainstSource(input: {
+  legacyExpense: Expense;
+  fiscalYear: number;
+  sourceFile: File | null;
+  extractText: (file: File) => Promise<string>;
+}): Promise<TaxeFonciereIntegrityVerifyResult> {
+  const legacyMontant = input.legacyExpense.montant;
+
+  if (input.sourceFile === null) {
+    return { kind: "source_missing", legacyMontant };
+  }
+
+  // Sans documentId persistant, aucune preuve documentaire traçable n'est
+  // possible (un File en mémoire ≠ identité). Pas d'id synthétique.
+  const documentId = input.legacyExpense.documentId;
+  if (documentId === undefined) {
+    return { kind: "source_unreadable", legacyMontant };
+  }
+
+  const corpus = (await input.extractText(input.sourceFile)).trim();
+  if (!corpus) {
+    return { kind: "source_unreadable", legacyMontant };
+  }
+
+  const expenses = expensesFromTaxeFonciereCorpus({
+    corpus,
+    documentId,
+    fiscalYear: input.fiscalYear,
+  });
+  const candidate = expenses[0];
+  if (!candidate) {
+    return { kind: "source_unreadable", legacyMontant };
+  }
+
+  if (candidate.montantConflict) {
+    return { kind: "internal_amount_conflict", legacyMontant, candidate };
+  }
+
+  if (
+    candidate.montantExtrait === undefined ||
+    !Number.isFinite(candidate.montant) ||
+    taxeFonciereExpenseMissingAmount(candidate)
+  ) {
+    return { kind: "source_unreadable", legacyMontant };
+  }
+
+  // Montant lu dans le document (peut différer de A dans la tolérance).
+  const resolvedMontant = candidate.montant;
+  const withinTolerance =
+    Math.abs(legacyMontant - resolvedMontant) <= TAXE_FONCIERE_AMOUNT_TOLERANCE;
+
+  if (withinTolerance) {
+    return { kind: "match", legacyMontant, resolvedMontant, candidate };
+  }
+
+  return { kind: "amount_divergence", legacyMontant, resolvedMontant, candidate };
+}
+
+/**
+ * Marker `verified_match` — A est conservée : `resolvedMontant` = A.montant
+ * (pas le montant documentaire éventuellement légèrement différent).
+ * Exige un `documentId` réel sur l'Expense legacy.
+ */
+export function buildTaxeFonciereVerifiedMatchCheck(input: {
+  legacyExpense: Expense;
+  checkedAt: string;
+}): TaxeFonciereIntegrityCheck | undefined {
+  const againstDocumentId = input.legacyExpense.documentId;
+  if (againstDocumentId === undefined) return undefined;
+  if (!Number.isFinite(input.legacyExpense.montant)) {
+    return undefined;
+  }
+  return {
+    status: "verified_match",
+    checkVersion: TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
+    checkedAt: input.checkedAt,
+    againstDocumentId,
+    persistedMontantAtCheck: input.legacyExpense.montant,
+    resolvedMontant: input.legacyExpense.montant,
+  };
+}
+
+/**
+ * Marker `verified_user_decision` après accept Blocker #2 ouvert par l'intégrité.
+ * Exige un `documentId` réel (resolved ou legacy) — jamais d'identité inventée.
+ */
+export function buildTaxeFonciereVerifiedUserDecisionCheck(input: {
+  legacyExpense: Expense;
+  resolvedExpense: Expense;
+  checkedAt: string;
+}): TaxeFonciereIntegrityCheck | undefined {
+  const againstDocumentId = input.resolvedExpense.documentId ?? input.legacyExpense.documentId;
+  if (againstDocumentId === undefined) return undefined;
+  if (!Number.isFinite(input.legacyExpense.montant) || !Number.isFinite(input.resolvedExpense.montant)) {
+    return undefined;
+  }
+  return {
+    status: "verified_user_decision",
+    checkVersion: TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
+    checkedAt: input.checkedAt,
+    againstDocumentId,
+    persistedMontantAtCheck: input.legacyExpense.montant,
+    resolvedMontant: input.resolvedExpense.montant,
+  };
 }

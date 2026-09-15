@@ -18,7 +18,24 @@ import type {
   NatureIntervention,
   ProfilCharges,
 } from "../../capabilities/f012/types";
-import type { TaxeFonciereIntegrityCheck } from "./taxe-fonciere-legacy-integrity";
+import type {
+  TaxeFonciereIntegrityCheck,
+  TaxeFonciereIntegrityVerifyResult,
+} from "./taxe-fonciere-legacy-integrity";
+
+/** Blocker #3 — origine d'ouverture de `pendingTaxeFonciereReplace`. */
+export type TaxeFonciereReplaceOpenedBy = "user_document" | "legacy_integrity";
+
+export type TaxeFoncierePendingReplace = {
+  existing: Expense;
+  candidate: Expense;
+  /**
+   * Absent / `"user_document"` = Blocker #2 nominal (decline conserve A, fin).
+   * `"legacy_integrity"` = ouvert par Blocker #3 : decline ne pose PAS de
+   * marker et exige une attestation manuelle (`taxeFonciereIntegrityAttestationRequired`).
+   */
+  openedBy?: TaxeFonciereReplaceOpenedBy;
+};
 
 export type F012Step =
   | "profilage"
@@ -212,13 +229,26 @@ export type F012HistorySnapshot = {
    * corrigée par l'utilisateur, en attente d'un choix explicite de
    * remplacement.
    */
-  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  pendingTaxeFonciereReplace?: TaxeFoncierePendingReplace;
   /**
    * Blocker #3 — marker d'intégrité legacy taxe foncière (Lot A). Absent =
    * jamais vérifié. Jamais un status "pending" : le pending se dérive de
    * `certainly_exposed && !isTaxeFonciereIntegrityCheckValid(...)`.
    */
   taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
+  /**
+   * Blocker #3 — pont #1→#2 : vrai quand `pendingTaxeFonciereExpense` a été
+   * ouvert par `apply_taxe_fonciere_integrity_verify` (conflit interne). Le
+   * prochain `confirm`/`correct` qui ouvre un replace doit poser
+   * `openedBy: "legacy_integrity"`.
+   */
+  taxeFonciereIntegrityBlocker1Bridge?: boolean;
+  /**
+   * Blocker #3 — true après decline d'un replace `legacy_integrity`, ou
+   * source missing/unreadable : attestation manuelle requise (Lot C UI).
+   * Aucun marker tant que non résolu.
+   */
+  taxeFonciereIntegrityAttestationRequired?: boolean;
 };
 
 /**
@@ -272,6 +302,22 @@ export function buildTaxeFonciereReplaceCandidate(input: {
   };
 }
 
+/**
+ * Blocker #3 — si le pont #1→#2 est actif, le replace doit porter
+ * `openedBy: "legacy_integrity"` (decline ≠ intégrité OK). Sinon comportement
+ * Blocker #2 nominal (`openedBy` absent).
+ */
+export function buildPendingTaxeFonciereReplace(
+  state: { taxeFonciereIntegrityBlocker1Bridge?: boolean },
+  existing: Expense,
+  candidate: Expense,
+): TaxeFoncierePendingReplace {
+  if (state.taxeFonciereIntegrityBlocker1Bridge) {
+    return { existing, candidate, openedBy: "legacy_integrity" };
+  }
+  return { existing, candidate };
+}
+
 /** Capture les champs dignes d'être restaurés par GO_BACK — jamais `result`, jamais `history` lui-même. */
 export function snapshotF012State(state: F012State): F012HistorySnapshot {
   return {
@@ -294,6 +340,8 @@ export function snapshotF012State(state: F012State): F012HistorySnapshot {
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
     pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
     taxeFonciereIntegrityCheck: state.taxeFonciereIntegrityCheck,
+    taxeFonciereIntegrityBlocker1Bridge: state.taxeFonciereIntegrityBlocker1Bridge,
+    taxeFonciereIntegrityAttestationRequired: state.taxeFonciereIntegrityAttestationRequired,
   };
 }
 
@@ -320,9 +368,13 @@ export interface F012State {
   /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
   pendingTaxeFonciereExpense?: Expense;
   /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
-  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  pendingTaxeFonciereReplace?: TaxeFoncierePendingReplace;
   /** Blocker #3 — voir `F012HistorySnapshot.taxeFonciereIntegrityCheck`. */
   taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
+  /** Blocker #3 — voir `F012HistorySnapshot.taxeFonciereIntegrityBlocker1Bridge`. */
+  taxeFonciereIntegrityBlocker1Bridge?: boolean;
+  /** Blocker #3 — voir `F012HistorySnapshot.taxeFonciereIntegrityAttestationRequired`. */
+  taxeFonciereIntegrityAttestationRequired?: boolean;
 }
 
 export interface F012Suggestion {
@@ -382,8 +434,22 @@ export type F012Action =
    * Blocker #2 — tranche `pendingTaxeFonciereReplace` en faveur de l'avis
    * déjà retenu : `collected.taxeFonciereExpense` (`existing`) reste
    * intégralement inchangé, `candidate` n'est jamais écrit nulle part.
+   * Si `openedBy === "legacy_integrity"` : aucun marker ; pose
+   * `taxeFonciereIntegrityAttestationRequired` (attestation obligatoire).
    */
   | { type: "decline_taxe_fonciere_replace" }
+  /**
+   * Blocker #3 — applique le résultat de `verifyTaxeFonciereAgainstSource`
+   * (déjà calculé hors mutation) : match → marker ; divergence → replace
+   * `legacy_integrity` ; conflit interne → pending #1 + bridge ; source
+   * absente/illisible → attestation required. Refuse si un pending #1/#2
+   * ou documentReview impots est déjà ouvert.
+   */
+  | {
+      type: "apply_taxe_fonciere_integrity_verify";
+      result: TaxeFonciereIntegrityVerifyResult;
+      checkedAt: string;
+    }
   | { type: "confirm_proposal"; proposalId: string }
   | { type: "modify_proposal"; proposalId: string; amount: number }
   | { type: "ignore_proposal"; proposalId: string; reason?: string }
@@ -530,9 +596,13 @@ export type F012PersistedState = {
   /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
   pendingTaxeFonciereExpense?: Expense;
   /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
-  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+  pendingTaxeFonciereReplace?: TaxeFoncierePendingReplace;
   /** Blocker #3 — source de vérité persistée du marker d'intégrité legacy. */
   taxeFonciereIntegrityCheck?: TaxeFonciereIntegrityCheck;
+  /** Blocker #3 — pont #1→#2 (persisté pour survivre au reload). */
+  taxeFonciereIntegrityBlocker1Bridge?: boolean;
+  /** Blocker #3 — attestation manuelle requise après decline intégrité / source absente. */
+  taxeFonciereIntegrityAttestationRequired?: boolean;
   updatedAt: string;
 };
 
@@ -562,6 +632,8 @@ export function toF012PersistedState(state: F012State, updatedAt: string): F012P
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
     pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
     taxeFonciereIntegrityCheck: state.taxeFonciereIntegrityCheck,
+    taxeFonciereIntegrityBlocker1Bridge: state.taxeFonciereIntegrityBlocker1Bridge,
+    taxeFonciereIntegrityAttestationRequired: state.taxeFonciereIntegrityAttestationRequired,
     updatedAt,
   };
 }
