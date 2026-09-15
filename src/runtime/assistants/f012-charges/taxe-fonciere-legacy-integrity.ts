@@ -257,3 +257,76 @@ export function buildTaxeFonciereVerifiedUserDecisionCheck(input: {
     resolvedMontant: input.resolvedExpense.montant,
   };
 }
+
+/** Marker `user_attested_no_document` — aucune preuve documentaire, escape manuel. */
+export function buildTaxeFonciereUserAttestedCheck(input: {
+  legacyExpense: Expense;
+  resolvedMontant: number;
+  checkedAt: string;
+}): TaxeFonciereIntegrityCheck | undefined {
+  if (!Number.isFinite(input.legacyExpense.montant) || !Number.isFinite(input.resolvedMontant)) {
+    return undefined;
+  }
+  if (!(input.resolvedMontant > 0)) return undefined;
+  return {
+    status: "user_attested_no_document",
+    checkVersion: TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
+    checkedAt: input.checkedAt,
+    persistedMontantAtCheck: input.legacyExpense.montant,
+    resolvedMontant: input.resolvedMontant,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Blocker #3 — Lot C : statut d'intégrité dérivé (pure)
+// ---------------------------------------------------------------------------
+
+/**
+ * Statut produit à partir de détection A + validité marker — aucune I/O.
+ * `unresolved` = certainly_exposed et marker absent/invalide (génération bloquée).
+ */
+export type TaxeFonciereIntegrityStatus =
+  | { kind: "none" }
+  | {
+      kind: "resolved";
+      check: TaxeFonciereIntegrityCheck;
+      expense: Expense;
+    }
+  | {
+      kind: "unresolved";
+      expense: Expense;
+      matchedId: string;
+      /** True si escape attestation manuelle déjà exigée (decline B3 / source absente). */
+      attestationRequired: boolean;
+    };
+
+/**
+ * Dérive le statut d'intégrité legacy TF. Pure. Réutilise exclusivement
+ * `detectTaxeFonciereLegacyRisk` + `isTaxeFonciereIntegrityCheckValid`.
+ */
+export function resolveTaxeFonciereIntegrityStatus(input: {
+  collected: F012CollectedData;
+  check: TaxeFonciereIntegrityCheck | undefined;
+  attestationRequired?: boolean;
+  currentCheckVersion?: typeof TAXE_FONCIERE_INTEGRITY_CHECK_VERSION;
+}): TaxeFonciereIntegrityStatus {
+  const currentCheckVersion = input.currentCheckVersion ?? TAXE_FONCIERE_INTEGRITY_CHECK_VERSION;
+  const risk = detectTaxeFonciereLegacyRisk({ collected: input.collected });
+  if (risk.kind !== "certainly_exposed") {
+    return { kind: "none" };
+  }
+  const valid = isTaxeFonciereIntegrityCheckValid({
+    check: input.check,
+    expense: risk.expense,
+    currentCheckVersion,
+  });
+  if (valid && input.check) {
+    return { kind: "resolved", check: input.check, expense: risk.expense };
+  }
+  return {
+    kind: "unresolved",
+    expense: risk.expense,
+    matchedId: risk.matchedId,
+    attestationRequired: input.attestationRequired === true,
+  };
+}

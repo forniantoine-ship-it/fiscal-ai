@@ -49,4 +49,33 @@ describe("resolveF012ResumeDecision — Cycle 2", () => {
     const decision = resolveF012ResumeDecision({ persisted: persisted("profilage"), isLegacyComplete: false });
     assert.deepEqual(decision, { kind: "start" });
   });
+
+  it("Blocker #3 — resume_complete + Expense legacy sans marker → integrity_verification_required", () => {
+    const base = persisted("complete");
+    const withLegacy: F012PersistedState = {
+      ...base,
+      collected: {
+        ...base.collected,
+        taxeFonciereExpense: {
+          id: "expense-doc-doc-X-prelevement:10",
+          exerciceFiscal: 2024,
+          montant: 150,
+          description: "Taxe foncière",
+          origin: "document",
+          documentId: "doc-X",
+          fieldSources: { montant: "extracted" },
+          category: "taxe_fonciere",
+          decision: "confirmed",
+        },
+      },
+    };
+    const decision = resolveF012ResumeDecision({
+      persisted: withLegacy,
+      isLegacyComplete: true,
+    });
+    assert.deepEqual(decision, {
+      kind: "integrity_verification_required",
+      underlying: "resume_complete",
+    });
+  });
 });

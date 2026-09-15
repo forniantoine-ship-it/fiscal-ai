@@ -450,6 +450,17 @@ export type F012Action =
       result: TaxeFonciereIntegrityVerifyResult;
       checkedAt: string;
     }
+  /**
+   * Blocker #3 Lot C — attestation manuelle du montant annuel (escape sans
+   * document). Pose marker `user_attested_no_document` ; Expense active
+   * `modified` au montant attesté. Interdit si pending #1/#2 / documentReview
+   * impots ouverts.
+   */
+  | {
+      type: "attest_taxe_fonciere_annual_amount";
+      amount: number;
+      checkedAt: string;
+    }
   | { type: "confirm_proposal"; proposalId: string }
   | { type: "modify_proposal"; proposalId: string; amount: number }
   | { type: "ignore_proposal"; proposalId: string; reason?: string }

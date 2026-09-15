@@ -461,6 +461,9 @@ Payé le 15/03/2024
     // et monte réellement `TaxeFonciereReplaceForm`.
     assert.match(panelSource, /const showTaxeFonciereReplace = Boolean\(state\.pendingTaxeFonciereReplace\)/);
     assert.match(panelSource, /!showTaxeFonciereReview &&\s*\n\s*!showTaxeFonciereReplace/);
+    assert.match(panelSource, /TaxeFonciereIntegrityEscapeForm/);
+    assert.match(captureSource, /export function TaxeFonciereIntegrityEscapeForm/);
+    assert.match(captureSource, /openedBy === "legacy_integrity"/);
     assert.match(
       panelSource,
       /showTaxeFonciereReplace && state\.pendingTaxeFonciereReplace \?[\s\S]{0,120}<TaxeFonciereReplaceForm/,

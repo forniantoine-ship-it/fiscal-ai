@@ -113,6 +113,7 @@ import {
   type F012TravauxDraft,
 } from "./types";
 import {
+  buildTaxeFonciereUserAttestedCheck,
   buildTaxeFonciereVerifiedMatchCheck,
   buildTaxeFonciereVerifiedUserDecisionCheck,
   detectTaxeFonciereLegacyRisk,
@@ -1052,7 +1053,7 @@ export class F012ChargesAssistant {
                 checkedAt: new Date().toISOString(),
               })
             : state.taxeFonciereIntegrityCheck;
-        return this.previewAndAdvanceFamily(
+        return this.afterTaxeFonciereIntegrityMutation(
           {
             ...state,
             collected,
@@ -1062,19 +1063,26 @@ export class F012ChargesAssistant {
             taxeFonciereIntegrityBlocker1Bridge: undefined,
           },
           messages,
+          { markComplete: true },
         );
       }
 
       case "decline_taxe_fonciere_replace": {
         const pendingReplace = state.pendingTaxeFonciereReplace;
         if (!pendingReplace) return { state, messages, completed: false };
-        messages.push({ role: "user", content: "Conserver l'avis existant" });
+        messages.push({
+          role: "user",
+          content:
+            pendingReplace.openedBy === "legacy_integrity"
+              ? "Indiquer un autre montant"
+              : "Conserver l'avis existant",
+        });
         // `collected.taxeFonciereExpense` (existing) n'est jamais touché ici
         // — seule la sortie du conflit, sans écriture. Blocker #3 : si
         // `openedBy === "legacy_integrity"`, aucun marker — attestation
         // manuelle obligatoire (Lot C).
         const attestationRequired = pendingReplace.openedBy === "legacy_integrity" ? true : state.taxeFonciereIntegrityAttestationRequired;
-        return this.previewAndAdvanceFamily(
+        return this.afterTaxeFonciereIntegrityMutation(
           {
             ...state,
             pendingTaxeFonciereReplace: undefined,
@@ -1082,6 +1090,7 @@ export class F012ChargesAssistant {
             taxeFonciereIntegrityBlocker1Bridge: undefined,
           },
           messages,
+          { markComplete: false },
         );
       }
 
@@ -1192,6 +1201,75 @@ export class F012ChargesAssistant {
           }
         }
         return { state, messages, completed: false };
+      }
+
+      case "attest_taxe_fonciere_annual_amount": {
+        // Escape manuel Blocker #3 — jamais concurrent à #1/#2 / review impots.
+        if (
+          state.pendingTaxeFonciereExpense ||
+          state.pendingTaxeFonciereReplace ||
+          (state.documentReview && state.documentReview.familyId === "impots")
+        ) {
+          messages.push({
+            role: "assistant",
+            content:
+              "Une décision taxe foncière est déjà en cours — terminez-la avant l'attestation manuelle.",
+          });
+          return { state, messages, completed: false };
+        }
+
+        const risk = detectTaxeFonciereLegacyRisk({ collected: state.collected });
+        if (risk.kind !== "certainly_exposed") {
+          return { state, messages, completed: false };
+        }
+
+        const amount = action.amount;
+        if (!Number.isFinite(amount) || !(amount > 0)) {
+          messages.push({
+            role: "assistant",
+            content: "Indiquez un montant annuel de taxe foncière strictement positif.",
+          });
+          return { state, messages, completed: false };
+        }
+
+        const check = buildTaxeFonciereUserAttestedCheck({
+          legacyExpense: risk.expense,
+          resolvedMontant: amount,
+          checkedAt: action.checkedAt,
+        });
+        if (!check) {
+          return { state, messages, completed: false };
+        }
+
+        const attested: Expense = {
+          ...risk.expense,
+          montant: amount,
+          decision: "modified",
+          fieldSources: { ...risk.expense.fieldSources, montant: "manual" },
+        };
+        const collected = clearFamilyCoverageIntents(
+          { ...state.collected, taxeFonciereExpense: attested },
+          ["impots"],
+        );
+        messages.push({
+          role: "user",
+          content: `Je confirme que ${amount.toLocaleString("fr-FR")} € est le montant annuel total de ma taxe foncière pour cet exercice.`,
+        });
+        messages.push({
+          role: "assistant",
+          content: "Montant annuel de taxe foncière enregistré pour cet exercice.",
+        });
+        return this.afterTaxeFonciereIntegrityMutation(
+          {
+            ...state,
+            collected,
+            taxeFonciereIntegrityCheck: check,
+            taxeFonciereIntegrityAttestationRequired: undefined,
+            taxeFonciereIntegrityBlocker1Bridge: undefined,
+          },
+          messages,
+          { markComplete: true },
+        );
       }
 
       case "confirm_proposal":
@@ -2999,6 +3077,30 @@ export class F012ChargesAssistant {
       content: `Total charges déductibles à ce stade : ${Math.round(preview.charges.totalDeductible).toLocaleString("fr-FR")} €`,
     });
     return this.advancePastCurrentFamily(state, messages);
+  }
+
+  /**
+   * Blocker #3 Lot C — après mutation d'intégrité (attest / accept|decline
+   * replace B3) : sur `complete`/`aggregate_review` on recalcule le résultat
+   * sans avancer de famille (reprise resume_complete) ; sinon même chemin
+   * `previewAndAdvanceFamily` que le flux mid-parcours.
+   * `markComplete` : sur step `complete`, déclenche `persistCompletion` panel
+   * pour rafraîchir Registry / `chargesAssistant` après résolution réussie.
+   */
+  private afterTaxeFonciereIntegrityMutation(
+    state: F012State,
+    messages: F012Message[],
+    options: { markComplete: boolean },
+  ): F012AssistantTurn {
+    if (state.step === "complete" || state.step === "aggregate_review") {
+      const result = this.buildResult(state);
+      return {
+        state: { ...state, result },
+        messages,
+        completed: state.step === "complete" && options.markComplete,
+      };
+    }
+    return this.previewAndAdvanceFamily(state, messages);
   }
 
   private categoryIsFilled(collected: F012State["collected"], categoryId: F012CategoryId): boolean {

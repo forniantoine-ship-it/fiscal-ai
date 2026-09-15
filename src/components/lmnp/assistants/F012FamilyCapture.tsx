@@ -1034,18 +1034,25 @@ export function TaxeFonciereReviewForm({
  * silencieusement, même invariant que le conflit `montantConflict` du
  * Blocker #1) et les deux actions possibles (`confirm_taxe_fonciere_replace`
  * / `decline_taxe_fonciere_replace`, `F012Action`, types.ts).
+ *
+ * Blocker #3 — quand `openedBy === "legacy_integrity"`, copy §15 (divergence)
+ * et le decline mène à l'attestation manuelle (pas un « conserver » fiscalement
+ * défendable).
  */
 export function TaxeFonciereReplaceForm({
   existing,
   candidate,
   disabled,
   onAction,
+  openedBy = "user_document",
 }: {
   existing: Expense;
   candidate: Expense;
   disabled: boolean;
   onAction: (action: F012Action) => void;
+  openedBy?: "user_document" | "legacy_integrity";
 }) {
+  const legacyIntegrity = openedBy === "legacy_integrity";
   return (
     <div
       style={{
@@ -1055,31 +1062,175 @@ export function TaxeFonciereReplaceForm({
       }}
     >
       <p style={typography.body.desktop}>
-        Une taxe foncière est déjà enregistrée pour cet exercice :{" "}
-        <strong>{existing.montant.toLocaleString("fr-FR")} €</strong>
-        {existing.documentId ? ` (document ${existing.documentId})` : ""}. Le nouveau document indique{" "}
-        <strong>{candidate.montant.toLocaleString("fr-FR")} €</strong>
-        {candidate.documentId ? ` (document ${candidate.documentId})` : ""}. Voulez-vous remplacer l'avis existant
-        par ce nouveau document ?
+        {legacyIntegrity ? (
+          <>
+            Le montant actuellement retenu est de{" "}
+            <strong>{existing.montant.toLocaleString("fr-FR")} €</strong>. Sur votre avis, nous
+            retrouvons <strong>{candidate.montant.toLocaleString("fr-FR")} €</strong>. Confirmez le
+            montant annuel à utiliser.
+          </>
+        ) : (
+          <>
+            Une taxe foncière est déjà enregistrée pour cet exercice :{" "}
+            <strong>{existing.montant.toLocaleString("fr-FR")} €</strong>
+            {existing.documentId ? ` (document ${existing.documentId})` : ""}. Le nouveau document
+            indique <strong>{candidate.montant.toLocaleString("fr-FR")} €</strong>
+            {candidate.documentId ? ` (document ${candidate.documentId})` : ""}. Voulez-vous
+            remplacer l&apos;avis existant par ce nouveau document ?
+          </>
+        )}
       </p>
 
       <div className="flex flex-wrap gap-2" style={{ marginTop: spacing.scale[2] }}>
         <ReviewActionButton
           blocked={disabled}
-          aria-label="Remplacer"
+          aria-label={legacyIntegrity ? `Utiliser ${candidate.montant} €` : "Remplacer"}
           onClick={() => onAction({ type: "confirm_taxe_fonciere_replace" })}
         >
-          Remplacer par le nouveau montant
+          {legacyIntegrity
+            ? `Utiliser ${candidate.montant.toLocaleString("fr-FR")} €`
+            : "Remplacer par le nouveau montant"}
         </ReviewActionButton>
         <ReviewActionButton
           variant="secondary"
           blocked={disabled}
-          aria-label="Conserver l'existant"
+          aria-label={legacyIntegrity ? "Indiquer un autre montant" : "Conserver l'existant"}
           onClick={() => onAction({ type: "decline_taxe_fonciere_replace" })}
         >
-          Conserver l'avis existant
+          {legacyIntegrity ? "Indiquer un autre montant" : "Conserver l'avis existant"}
         </ReviewActionButton>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Blocker #3 Lot C — escape re-upload / attestation manuelle quand la
+ * vérification auto est impossible ou refusée (source manquante, decline B3).
+ * Copy figée §15.
+ */
+export function TaxeFonciereIntegrityEscapeForm({
+  legacyMontant,
+  attestationRequired,
+  verifying,
+  disabled,
+  onVerifyNow,
+  onReupload,
+  onAttest,
+}: {
+  legacyMontant: number;
+  attestationRequired: boolean;
+  verifying: boolean;
+  disabled: boolean;
+  onVerifyNow: () => void;
+  onReupload: (file: File) => void;
+  onAttest: (amount: number) => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const parsed = parseAmountOptional(amount);
+  const canAttest = parsed !== undefined && parsed > 0 && confirmed && !disabled && !verifying;
+
+  return (
+    <div
+      style={{
+        padding: spacing.scale[3],
+        borderRadius: radius.md,
+        border: `1px solid ${colors.border.subtle}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: spacing.scale[3],
+      }}
+    >
+      <p style={typography.body.desktop}>
+        Nous devons vérifier une information de votre taxe foncière avant de finaliser votre
+        déclaration.
+      </p>
+      {attestationRequired ? (
+        <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+          Nous n&apos;avons pas pu retrouver le fichier de votre avis. Téléversez-le à nouveau, ou
+          indiquez le montant annuel total figurant sur l&apos;avis.
+        </p>
+      ) : (
+        <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+          Montant actuellement retenu : {legacyMontant.toLocaleString("fr-FR")} €.
+        </p>
+      )}
+
+      {!attestationRequired ? (
+        <ReviewActionButton
+          blocked={disabled || verifying}
+          aria-label="Vérifier maintenant"
+          onClick={onVerifyNow}
+        >
+          {verifying ? "Vérification en cours…" : "Vérifier maintenant"}
+        </ReviewActionButton>
+      ) : null}
+
+      <label style={labelStyle}>
+        Téléverser à nouveau l&apos;avis de taxe foncière
+        <input
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.webp,.txt"
+          disabled={disabled || verifying}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onReupload(file);
+            event.target.value = "";
+          }}
+          style={inputStyle}
+        />
+      </label>
+
+      <label style={labelStyle}>
+        Montant annuel total figurant sur l&apos;avis (€)
+        <input
+          type="text"
+          inputMode="decimal"
+          value={amount}
+          disabled={disabled || verifying}
+          onChange={(event) => {
+            setAmount(event.target.value);
+            setConfirmed(false);
+          }}
+          style={inputStyle}
+          placeholder="ex. 1500"
+        />
+      </label>
+
+      <label
+        style={{
+          ...typography.caption.desktop,
+          color: colors.text.secondary,
+          display: "flex",
+          gap: spacing.scale[2],
+          alignItems: "flex-start",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={confirmed}
+          disabled={disabled || verifying || parsed === undefined || !(parsed > 0)}
+          onChange={(event) => setConfirmed(event.target.checked)}
+          style={{ marginTop: 4 }}
+        />
+        <span>
+          Je confirme que{" "}
+          {parsed !== undefined && parsed > 0 ? `${parsed.toLocaleString("fr-FR")} €` : "…"} est le
+          montant annuel total de ma taxe foncière pour cet exercice.
+        </span>
+      </label>
+
+      <ReviewActionButton
+        blocked={!canAttest}
+        aria-label="Confirmer le montant annuel"
+        onClick={() => {
+          if (parsed === undefined || !(parsed > 0)) return;
+          onAttest(parsed);
+        }}
+      >
+        Enregistrer le montant annuel
+      </ReviewActionButton>
     </div>
   );
 }

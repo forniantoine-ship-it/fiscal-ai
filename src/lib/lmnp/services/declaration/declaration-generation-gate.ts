@@ -1,7 +1,7 @@
 import type { Anomaly } from "@/runtime";
 import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
-import { runDeclarationGeneration } from "./run-declaration-generation";
+import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } from "./run-declaration-generation";
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
 import type { PatrimonialState } from "@/runtime/capabilities/bilan/types";
 import {
@@ -75,6 +75,20 @@ function recoveryItemsFromAnomalies(anomalies: Anomaly[]): MissingDossierItem[] 
   const items: MissingDossierItem[] = [];
   for (const anomaly of anomalies) {
     if (anomaly.severity !== "fatal" && anomaly.severity !== "error") continue;
+    // Blocker #3 Lot C — message utilisateur §15, pas le code technique.
+    if (anomaly.message === TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED) {
+      const integrityItem: MissingDossierItem = {
+        id: "charges-taxe-fonciere-integrity",
+        label:
+          "Nous devons vérifier une information de votre taxe foncière avant de finaliser votre déclaration.",
+        href: LMNP_ROUTES.chargesAssistant,
+      };
+      if (!seen.has(integrityItem.id)) {
+        seen.add(integrityItem.id);
+        items.push(integrityItem);
+      }
+      continue;
+    }
     const mapped = anomaly.field ? RECOVERY_BY_FIELD[anomaly.field] : undefined;
     const item = mapped ?? {
       id: anomaly.field ?? anomaly.message,

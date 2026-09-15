@@ -21,6 +21,12 @@ import {
   analyzeDocumentaryReview,
   DOCUMENTARY_REVIEW_UPLOAD_CATEGORY,
 } from "@/lib/lmnp/services/f012/f012-documentary-review-upload";
+import { extractPdfTextClient } from "@/lib/lmnp/services/activite-ocr-text";
+import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
+import {
+  resolveTaxeFonciereIntegrityStatus,
+  verifyTaxeFonciereAgainstSource,
+} from "@/runtime/assistants/f012-charges/taxe-fonciere-legacy-integrity";
 import {
   amountPaidLabel,
   amountWhereToLook,
@@ -41,7 +47,18 @@ import {
   resolveSituationalProfilage,
   situationalProfilageQuestions,
 } from "@/runtime/assistants/f012-charges/situational-profilage";
-import { CoverageRecap, CompletenessCatchForm, DocumentReviewForm, FamilyCard, FamilyManualForm, FamilyPaperUpload, SlotNudgeForm, TaxeFonciereReplaceForm, TaxeFonciereReviewForm } from "./F012FamilyCapture";
+import {
+  CoverageRecap,
+  CompletenessCatchForm,
+  DocumentReviewForm,
+  FamilyCard,
+  FamilyManualForm,
+  FamilyPaperUpload,
+  SlotNudgeForm,
+  TaxeFonciereIntegrityEscapeForm,
+  TaxeFonciereReplaceForm,
+  TaxeFonciereReviewForm,
+} from "./F012FamilyCapture";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import {
@@ -723,7 +740,7 @@ function CategoryForm({
 }
 
 export function F012ChargesAssistantPanel() {
-  const { workspace, dispatch, flushWorkspace } = useLmnp();
+  const { workspace, dispatch, flushWorkspace, getFile } = useLmnp();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
 
@@ -843,6 +860,8 @@ export function F012ChargesAssistantPanel() {
   }, [state]);
 
   const [busy, setBusy] = useState(false);
+  const [integrityVerifying, setIntegrityVerifying] = useState(false);
+  const integrityAutoAttemptedRef = useRef(false);
 
   /**
    * Persiste l'état conversationnel F012 (Cycle 2) — jamais le résultat
@@ -944,6 +963,119 @@ export function F012ChargesAssistantPanel() {
     [persistCompletion, persistSession],
   );
 
+  async function extractIntegrityText(file: File): Promise<string> {
+    if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+      return file.text();
+    }
+    try {
+      return await extractPdfTextClient(file);
+    } catch {
+      return "";
+    }
+  }
+
+  const runIntegrityVerify = useCallback(
+    async (sourceFile: File | null) => {
+      const current = stateRef.current;
+      const status = resolveTaxeFonciereIntegrityStatus({
+        collected: current.collected,
+        check: current.taxeFonciereIntegrityCheck,
+        attestationRequired: current.taxeFonciereIntegrityAttestationRequired,
+      });
+      if (status.kind !== "unresolved") return;
+      if (
+        current.pendingTaxeFonciereExpense ||
+        current.pendingTaxeFonciereReplace ||
+        (current.documentReview && current.documentReview.familyId === "impots")
+      ) {
+        return;
+      }
+
+      setIntegrityVerifying(true);
+      setBusy(true);
+      try {
+        const result = await verifyTaxeFonciereAgainstSource({
+          legacyExpense: status.expense,
+          fiscalYear,
+          sourceFile,
+          extractText: extractIntegrityText,
+        });
+        const turn = await assistant.handle(stateRef.current, {
+          type: "apply_taxe_fonciere_integrity_verify",
+          result,
+          checkedAt: new Date().toISOString(),
+        });
+        applyTurn(turn);
+      } finally {
+        setIntegrityVerifying(false);
+        setBusy(false);
+      }
+    },
+    [assistant, applyTurn, fiscalYear],
+  );
+
+  // Blocker #3 Lot C — auto-verify après paint initial si unresolved et
+  // document résolvable. Ne bloque pas le premier rendu (spec §10).
+  useEffect(() => {
+    if (integrityAutoAttemptedRef.current) return;
+    const current = stateRef.current;
+    const status = resolveTaxeFonciereIntegrityStatus({
+      collected: current.collected,
+      check: current.taxeFonciereIntegrityCheck,
+      attestationRequired: current.taxeFonciereIntegrityAttestationRequired,
+    });
+    if (status.kind !== "unresolved") return;
+    if (status.attestationRequired) {
+      integrityAutoAttemptedRef.current = true;
+      return;
+    }
+    if (
+      current.pendingTaxeFonciereExpense ||
+      current.pendingTaxeFonciereReplace ||
+      (current.documentReview && current.documentReview.familyId === "impots")
+    ) {
+      return;
+    }
+
+    const documentId = status.expense.documentId;
+    if (!documentId) {
+      integrityAutoAttemptedRef.current = true;
+      void runIntegrityVerify(null);
+      return;
+    }
+
+    const local = getFile(documentId);
+    if (local) {
+      integrityAutoAttemptedRef.current = true;
+      void runIntegrityVerify(local);
+      return;
+    }
+
+    const doc = workspace.documents.find((d) => d.id === documentId);
+    if (!doc) {
+      // Sans métadonnée document en workspace → source manquante.
+      integrityAutoAttemptedRef.current = true;
+      void runIntegrityVerify(null);
+      return;
+    }
+
+    let cancelled = false;
+    integrityAutoAttemptedRef.current = true;
+    void (async () => {
+      try {
+        const file = await resolveDocumentFile(doc, getFile);
+        if (cancelled) return;
+        await runIntegrityVerify(file);
+      } catch {
+        if (cancelled) return;
+        await runIntegrityVerify(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getFile, runIntegrityVerify, workspace.documents]);
+
   const runAction = useCallback(
     async (action: F012Action) => {
       setBusy(true);
@@ -968,6 +1100,49 @@ export function F012ChargesAssistantPanel() {
     [assistant, applyTurn, dispatch],
   );
 
+  const analyzeImpotsReupload = useCallback(
+    async (file: File) => {
+      setBusy(true);
+      try {
+        const result = await analyzeImpotsDocument(file, fiscalYear);
+        if (result.status === "not_authenticated") {
+          alert("Utilisateur non connecté");
+          return;
+        }
+        if (result.status === "upload_failed") {
+          alert("L'envoi du document a échoué — réessayez.");
+          return;
+        }
+        dispatch({
+          type: "UPLOAD_DOCUMENTS",
+          files: [
+            {
+              file: result.uploadedFile,
+              documentId: result.documentId,
+              isSupabaseDocumentId: true,
+              category: IMPOTS_UPLOAD_CATEGORY,
+            },
+          ],
+        });
+        if (result.status === "extraction_failed") {
+          alert("Nous n'avons pas pu lire ce document — vous pouvez renseigner le montant manuellement.");
+          return;
+        }
+        for (const expense of result.expenses) {
+          applyTurn(
+            await assistant.handle(stateRef.current, {
+              type: "receive_taxe_fonciere_expense",
+              expense,
+            }),
+          );
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [assistant, applyTurn, dispatch, fiscalYear],
+  );
+
   const analyzePaperFile = useCallback(
     async (file: File) => {
       const familyId =
@@ -983,50 +1158,7 @@ export function F012ChargesAssistantPanel() {
       // (assurances/gestion/syndic) restent intégralement sur le chemin
       // `ChargeProposal` historique — aucun comportement hybride pour impots.
       if (familyId === "impots") {
-        setBusy(true);
-        try {
-          const result = await analyzeImpotsDocument(file, fiscalYear);
-          if (result.status === "not_authenticated") {
-            alert("Utilisateur non connecté");
-            return;
-          }
-          if (result.status === "upload_failed") {
-            alert("L'envoi du document a échoué — réessayez.");
-            return;
-          }
-          // Le document est réellement stocké (Storage + table `documents`)
-          // dès que l'upload réussit — enregistré ici, que l'extraction
-          // réussisse ou non, pour que `REMOVE_DOCUMENT` puisse ensuite le
-          // retrouver (§7 : plus jamais un id F012 invisible du registre).
-          dispatch({
-            type: "UPLOAD_DOCUMENTS",
-            files: [
-              {
-                file: result.uploadedFile,
-                documentId: result.documentId,
-                isSupabaseDocumentId: true,
-                category: IMPOTS_UPLOAD_CATEGORY,
-              },
-            ],
-          });
-          if (result.status === "extraction_failed") {
-            // Document réel enregistré, mais AUCUNE Expense fabriquée sans
-            // donnée réelle (§3.B) — l'utilisateur reste libre de saisir le
-            // montant manuellement via le formulaire existant.
-            alert("Nous n'avons pas pu lire ce document — vous pouvez renseigner le montant manuellement.");
-            return;
-          }
-          for (const expense of result.expenses) {
-            applyTurn(
-              await assistant.handle(stateRef.current, {
-                type: "receive_taxe_fonciere_expense",
-                expense,
-              }),
-            );
-          }
-        } finally {
-          setBusy(false);
-        }
+        await analyzeImpotsReupload(file);
         return;
       }
 
@@ -1078,7 +1210,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, fiscalYear],
+    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear],
   );
 
   const handleSuggestion = useCallback(
@@ -1209,13 +1341,26 @@ export function F012ChargesAssistantPanel() {
   // (les deux boutons remplacer/conserver ne sont jamais masqués par
   // `showPaper`, même défaut que celui déjà corrigé pour `showTaxeFonciereReview`).
   const showTaxeFonciereReplace = Boolean(state.pendingTaxeFonciereReplace);
+  const integrityStatus = resolveTaxeFonciereIntegrityStatus({
+    collected: state.collected,
+    check: state.taxeFonciereIntegrityCheck,
+    attestationRequired: state.taxeFonciereIntegrityAttestationRequired,
+  });
+  // Escape / banner B3 uniquement hors décisions #1/#2 / review impots
+  // (exclusion mutuelle §11).
+  const showTaxeFonciereIntegrityEscape =
+    integrityStatus.kind === "unresolved" &&
+    !showTaxeFonciereReview &&
+    !showTaxeFonciereReplace &&
+    !(state.documentReview?.familyId === "impots");
   const showPaper =
     state.step === "category_collect" &&
     state.familyPhase === "paper" &&
     currentFamily !== undefined &&
     isDocumentaryFamily(currentFamily) &&
     !showTaxeFonciereReview &&
-    !showTaxeFonciereReplace;
+    !showTaxeFonciereReplace &&
+    !showTaxeFonciereIntegrityEscape;
   // Fix 4 (Blocker #2, re-re-audit) — au boundary réel du panel (pas
   // seulement le reducer) : `TaxeFonciereReviewForm`/`TaxeFonciereReplaceForm`
   // et `DocumentReviewForm` ne doivent JAMAIS être actionnables ensemble
@@ -1271,6 +1416,8 @@ export function F012ChargesAssistantPanel() {
     showPaper ||
     showReview ||
     showTaxeFonciereReview ||
+    showTaxeFonciereReplace ||
+    showTaxeFonciereIntegrityEscape ||
     state.step === "completeness" ||
     state.step === "aggregate_review";
   const parsedQuestion = lastAssistant && !hideEngineQuestion ? splitQuestion(lastAssistant.content) : null;
@@ -1305,6 +1452,8 @@ export function F012ChargesAssistantPanel() {
     !showPaper &&
     !showReview &&
     !showTaxeFonciereReview &&
+    !showTaxeFonciereReplace &&
+    !showTaxeFonciereIntegrityEscape &&
     !showCategory
       ? lastAssistant.suggestions
       : undefined;
@@ -1479,9 +1628,54 @@ export function F012ChargesAssistantPanel() {
           <TaxeFonciereReplaceForm
             existing={state.pendingTaxeFonciereReplace.existing}
             candidate={state.pendingTaxeFonciereReplace.candidate}
+            openedBy={state.pendingTaxeFonciereReplace.openedBy ?? "user_document"}
             disabled={busy}
             onAction={(action) => void runAction(action)}
           />
+        ) : null}
+
+        {showTaxeFonciereIntegrityEscape && integrityStatus.kind === "unresolved" ? (
+          <div style={{ marginBottom: spacing.scale[6] }}>
+            <TaxeFonciereIntegrityEscapeForm
+              legacyMontant={integrityStatus.expense.montant}
+              attestationRequired={integrityStatus.attestationRequired}
+              verifying={integrityVerifying}
+              disabled={busy}
+              onVerifyNow={() => {
+                const documentId = integrityStatus.expense.documentId;
+                if (!documentId) {
+                  void runIntegrityVerify(null);
+                  return;
+                }
+                const local = getFile(documentId);
+                if (local) {
+                  void runIntegrityVerify(local);
+                  return;
+                }
+                const doc = workspace.documents.find((d) => d.id === documentId);
+                if (!doc) {
+                  void runIntegrityVerify(null);
+                  return;
+                }
+                void (async () => {
+                  try {
+                    const file = await resolveDocumentFile(doc, getFile);
+                    await runIntegrityVerify(file);
+                  } catch {
+                    await runIntegrityVerify(null);
+                  }
+                })();
+              }}
+              onReupload={(file) => void analyzeImpotsReupload(file)}
+              onAttest={(amount) =>
+                void runAction({
+                  type: "attest_taxe_fonciere_annual_amount",
+                  amount,
+                  checkedAt: new Date().toISOString(),
+                })
+              }
+            />
+          </div>
         ) : null}
 
         {showReview && state.documentReview ? (
@@ -1611,7 +1805,7 @@ export function F012ChargesAssistantPanel() {
           </div>
         ))}
 
-        {state.step === "complete" ? (
+        {state.step === "complete" && !showTaxeFonciereIntegrityEscape ? (
           <div className="flex flex-col gap-2" style={{ marginTop: spacing.scale[4] }}>
             <div className="flex flex-col gap-3 sm:flex-row">
               <Link href={LMNP_ROUTES.amortissementsAssistant} className="flex-1">

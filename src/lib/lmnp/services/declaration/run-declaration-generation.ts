@@ -10,11 +10,43 @@ import {
   type LiasseFromRfs,
 } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
+import {
+  TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
+  detectTaxeFonciereLegacyRisk,
+  isTaxeFonciereIntegrityCheckValid,
+} from "@/runtime/assistants/f012-charges/taxe-fonciere-legacy-integrity";
 import type {
   DeclarationDraft,
   FiscalEngineOutput,
   LiasseEngineOutput,
 } from "@/lib/lmnp/types/domain";
+
+/** Code anomalie stable — Blocker #3 Lot C (gate génération). */
+export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED";
+
+/**
+ * Blocker #3 — détection + validité marker uniquement (déterministe, offline).
+ * Absent `chargesAssistantState` → pas de blocage V1 (pas de preuve Expense).
+ */
+export function resolveTaxeFonciereLegacyIntegrityGenerationBlock(
+  draft: DeclarationDraft | undefined,
+): Anomaly | undefined {
+  const state = draft?.chargesAssistantState;
+  if (!state) return undefined;
+  const risk = detectTaxeFonciereLegacyRisk({ collected: state.collected });
+  if (risk.kind !== "certainly_exposed") return undefined;
+  const valid = isTaxeFonciereIntegrityCheckValid({
+    check: state.taxeFonciereIntegrityCheck,
+    expense: state.collected.taxeFonciereExpense,
+    currentCheckVersion: TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
+  });
+  if (valid) return undefined;
+  return {
+    severity: "error",
+    field: "chargesAssistant",
+    message: TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED,
+  };
+}
 
 /**
  * Cycle 25 — un dossier "generated" n'est pas forcément une liasse complète :
@@ -106,6 +138,12 @@ export function runDeclarationGeneration(
    */
   bilanInputs?: BilanInputs,
 ): DeclarationGenerationResult {
+  // Blocker #3 Lot C — avant tout calcul fiscal : TF legacy unresolved bloque.
+  const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
+  if (integrityBlock) {
+    return { status: "blocked", anomalies: [integrityBlock] };
+  }
+
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
     activite: {
