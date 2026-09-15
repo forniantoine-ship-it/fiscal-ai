@@ -1024,6 +1024,66 @@ export function TaxeFonciereReviewForm({
   );
 }
 
+/**
+ * Blocker #2 (F012 V2 — taxe foncière) — écran de conflit quand un NOUVEAU
+ * document de taxe foncière (`candidate`) est confirmé/corrigé alors qu'une
+ * `taxeFonciereExpense` `confirmed`/`modified` d'un AUTRE document
+ * (`existing`) est déjà retenue. Même pattern que `TaxeFonciereReviewForm`
+ * ci-dessus (bloc + `ReviewActionButton`) — aucune nouvelle architecture
+ * UI : montre les DEUX montants explicitement (jamais l'un choisi
+ * silencieusement, même invariant que le conflit `montantConflict` du
+ * Blocker #1) et les deux actions possibles (`confirm_taxe_fonciere_replace`
+ * / `decline_taxe_fonciere_replace`, `F012Action`, types.ts).
+ */
+export function TaxeFonciereReplaceForm({
+  existing,
+  candidate,
+  disabled,
+  onAction,
+}: {
+  existing: Expense;
+  candidate: Expense;
+  disabled: boolean;
+  onAction: (action: F012Action) => void;
+}) {
+  return (
+    <div
+      style={{
+        padding: spacing.scale[3],
+        borderRadius: radius.md,
+        border: `1px solid ${colors.border.subtle}`,
+      }}
+    >
+      <p style={typography.body.desktop}>
+        Une taxe foncière est déjà enregistrée pour cet exercice :{" "}
+        <strong>{existing.montant.toLocaleString("fr-FR")} €</strong>
+        {existing.documentId ? ` (document ${existing.documentId})` : ""}. Le nouveau document indique{" "}
+        <strong>{candidate.montant.toLocaleString("fr-FR")} €</strong>
+        {candidate.documentId ? ` (document ${candidate.documentId})` : ""}. Voulez-vous remplacer l'avis existant
+        par ce nouveau document ?
+      </p>
+
+      <div className="flex flex-wrap gap-2" style={{ marginTop: spacing.scale[2] }}>
+        <ReviewActionButton
+          blocked={disabled}
+          aria-label="Remplacer"
+          onClick={() => onAction({ type: "confirm_taxe_fonciere_replace" })}
+        >
+          Remplacer par le nouveau montant
+        </ReviewActionButton>
+        <ReviewActionButton
+          variant="secondary"
+          blocked={disabled}
+          aria-label="Conserver l'existant"
+          onClick={() => onAction({ type: "decline_taxe_fonciere_replace" })}
+        >
+          Conserver l'avis existant
+        </ReviewActionButton>
+      </div>
+    </div>
+  );
+}
+
 export function CoverageRecap({
   familyCoverage,
   onRevisit,

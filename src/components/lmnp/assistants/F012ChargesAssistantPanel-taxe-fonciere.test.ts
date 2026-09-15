@@ -417,3 +417,177 @@ describe("P0 post-audit — taxe foncière : câblage UI réel (panel → handle
     assert.deepEqual(resultAgain.expenses[0]!.montantConflict, { montantIndique: 1500, sommePrelevements: 300 });
   });
 });
+
+/**
+ * Blocker #2 — câblage UI réel du conflit de remplacement (`TaxeFonciereReplaceForm`,
+ * `pendingTaxeFonciereReplace`). Même méthode que la describe ci-dessus :
+ * `analyzeImpotsDocument` réel (boundary réseau mocké), assertions sur le
+ * VRAI code source du panel/capture pour prouver que les clics dispatchent
+ * réellement `confirm_taxe_fonciere_replace`/`decline_taxe_fonciere_replace`,
+ * et vérification du comportement moteur via `F012ChargesAssistant.handle()`
+ * avec exactement les mêmes actions.
+ */
+describe("Blocker #2 — câblage UI réel du conflit de remplacement (panel → handleSuggestion → assistant)", () => {
+  const AVIS_A_1500 = `
+Avis de taxe foncière — Année 2024
+Net à payer : 1 500,00 EUR
+Payé le 12/03/2024
+`;
+  const AVIS_B_1600 = `
+Avis de taxe foncière — Année 2024
+Net à payer : 1 600,00 EUR
+Payé le 15/03/2024
+`;
+
+  async function confirmDocumentA(assistant: F012ChargesAssistant) {
+    const start = await reachImpotsPaper(assistant);
+    const file = new File([AVIS_A_1500], "avis-A.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-blocker2-A", AVIS_A_1500));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") throw new Error("unreachable");
+    let turn = await assistant.handle(start.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.equal(turn.state.collected.taxeFonciereExpense?.documentId, "doc-blocker2-A");
+    return turn;
+  }
+
+  it("PANEL RENDER — le conflit de remplacement rend TaxeFonciereReplaceForm avec les deux montants, jamais l'écran d'upload générique", async () => {
+    // Preuve boundary panel : le gate de rendu dérive uniquement de
+    // `state.pendingTaxeFonciereReplace` (jamais d'un message transitoire),
+    // exclut `showPaper` (même défaut déjà corrigé pour showTaxeFonciereReview),
+    // et monte réellement `TaxeFonciereReplaceForm`.
+    assert.match(panelSource, /const showTaxeFonciereReplace = Boolean\(state\.pendingTaxeFonciereReplace\)/);
+    assert.match(panelSource, /!showTaxeFonciereReview &&\s*\n\s*!showTaxeFonciereReplace/);
+    assert.match(
+      panelSource,
+      /showTaxeFonciereReplace && state\.pendingTaxeFonciereReplace \?[\s\S]{0,120}<TaxeFonciereReplaceForm/,
+    );
+    assert.match(captureSource, /export function TaxeFonciereReplaceForm/);
+
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await confirmDocumentA(assistant);
+
+    const file = new File([AVIS_B_1600], "avis-B.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-blocker2-B", AVIS_B_1600));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+    turn = await assistant.handle(turn.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+
+    assert.ok(turn.state.pendingTaxeFonciereReplace, "conflit créé");
+    assert.equal(turn.state.pendingTaxeFonciereReplace?.existing.montant, 1500);
+    assert.equal(turn.state.pendingTaxeFonciereReplace?.candidate.montant, 1600);
+    assert.equal(turn.state.collected.taxeFonciereExpense?.montant, 1500, "registry inchangé tant que non résolu");
+
+    // Le message associé montre les deux montants et les deux suggestions.
+    const message = turn.messages.at(-1);
+    assert.match(message?.content ?? "", /1\s?500/);
+    assert.match(message?.content ?? "", /1\s?600/);
+    assert.ok(message?.suggestions?.some((s) => s.id === "confirm_taxe_fonciere_replace"));
+    assert.ok(message?.suggestions?.some((s) => s.id === "decline_taxe_fonciere_replace"));
+  });
+
+  it("PANEL DISPATCH REPLACE — clic 'Remplacer' dispatche confirm_taxe_fonciere_replace (suggestion-chip ET TaxeFonciereReplaceForm), moteur remplace atomiquement", async () => {
+    assert.match(
+      panelSource,
+      /suggestionId === "confirm_taxe_fonciere_replace"\) \{\s*\n\s*void runAction\(\{ type: "confirm_taxe_fonciere_replace" \}\);/,
+    );
+    assert.match(captureSource, /onClick=\{\(\) => onAction\(\{ type: "confirm_taxe_fonciere_replace" \}\)\}/);
+
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await confirmDocumentA(assistant);
+    const file = new File([AVIS_B_1600], "avis-B.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-blocker2-B-confirm", AVIS_B_1600));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+    turn = await assistant.handle(turn.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.ok(turn.state.pendingTaxeFonciereReplace);
+
+    // Même action que celle dispatchée par le bouton "Remplacer par le nouveau montant".
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_replace" });
+
+    assert.equal(turn.state.pendingTaxeFonciereReplace, undefined);
+    assert.equal(turn.state.collected.taxeFonciereExpense?.documentId, "doc-blocker2-B-confirm");
+    assert.equal(turn.state.collected.taxeFonciereExpense?.montant, 1600);
+    assert.equal(chargeTotalFor(turn.state).charges.totalDeductible, 1600);
+  });
+
+  it("PANEL DISPATCH DECLINE — clic 'Conserver l'existant' dispatche decline_taxe_fonciere_replace (suggestion-chip ET TaxeFonciereReplaceForm), ancienne préservée", async () => {
+    assert.match(
+      panelSource,
+      /suggestionId === "decline_taxe_fonciere_replace"\) \{\s*\n\s*void runAction\(\{ type: "decline_taxe_fonciere_replace" \}\);/,
+    );
+    assert.match(captureSource, /onClick=\{\(\) => onAction\(\{ type: "decline_taxe_fonciere_replace" \}\)\}/);
+
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await confirmDocumentA(assistant);
+    const beforeExpense = turn.state.collected.taxeFonciereExpense;
+    const file = new File([AVIS_B_1600], "avis-B.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-blocker2-B-decline", AVIS_B_1600));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+    turn = await assistant.handle(turn.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.ok(turn.state.pendingTaxeFonciereReplace);
+
+    // Même action que celle dispatchée par le bouton "Conserver l'avis existant".
+    turn = await assistant.handle(turn.state, { type: "decline_taxe_fonciere_replace" });
+
+    assert.equal(turn.state.pendingTaxeFonciereReplace, undefined);
+    assert.deepEqual(turn.state.collected.taxeFonciereExpense, beforeExpense, "ancienne dépense intégralement préservée");
+    assert.equal(chargeTotalFor(turn.state).charges.totalDeductible, 1500);
+  });
+
+  it("PANEL RELOAD — reload PENDANT un conflit de remplacement non résolu : state ET message de reprise restent actionnables", async () => {
+    const before = new F012ChargesAssistant(ctx, DEPS);
+    let turn = await confirmDocumentA(before);
+    const file = new File([AVIS_B_1600], "avis-B.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-blocker2-B-reload", AVIS_B_1600));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+    turn = await before.handle(turn.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+    turn = await before.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.ok(turn.state.pendingTaxeFonciereReplace);
+
+    const persisted = toF012PersistedState(turn.state, TS);
+    const after = new F012ChargesAssistant(ctx, DEPS);
+    const resumed = after.resume(persisted);
+
+    // 1) STATE RESTORED
+    assert.ok(resumed.state.pendingTaxeFonciereReplace, "conflit restauré dans le state");
+    assert.equal(resumed.state.pendingTaxeFonciereReplace?.existing.montant, 1500);
+    assert.equal(resumed.state.pendingTaxeFonciereReplace?.candidate.montant, 1600);
+    assert.equal(resumed.state.collected.taxeFonciereExpense?.documentId, "doc-blocker2-A", "toujours l'ancienne, non résolu");
+
+    // 2) MESSAGE RESTORED/ACTIONABLE — jamais l'invite d'upload générique.
+    const resumeMessage = resumed.messages.at(-1);
+    assert.ok(resumeMessage?.suggestions?.some((s) => s.id === "confirm_taxe_fonciere_replace"));
+    assert.ok(resumeMessage?.suggestions?.some((s) => s.id === "decline_taxe_fonciere_replace"));
+    assert.doesNotMatch(
+      resumeMessage?.content ?? "",
+      /vous pouvez aussi indiquer le montant sans document/i,
+      "ne doit jamais retomber sur l'invite d'upload générique",
+    );
+
+    // Puis clic Remplacer → remplacement atomique après reload.
+    const replaced = await after.handle(resumed.state, { type: "confirm_taxe_fonciere_replace" });
+    assert.equal(replaced.state.collected.taxeFonciereExpense?.documentId, "doc-blocker2-B-reload");
+    assert.equal(chargeTotalFor(replaced.state).charges.totalDeductible, 1600);
+  });
+});

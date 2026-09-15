@@ -95,8 +95,10 @@ import {
 } from "./family-coverage-intents";
 import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import {
+  buildTaxeFonciereReplaceCandidate,
   createInitialF012State,
   hasBlockingAnomaly,
+  isActiveTaxeFonciereExpense,
   shouldResumeF012,
   snapshotF012State,
   toF012PersistedState,
@@ -264,6 +266,46 @@ function taxeFonciereExpenseReceivedMessage(expense: Expense): F012Message {
   };
 }
 
+/**
+ * Fix 1 (re-audit Blocker #2) — un troisième document (ou toute autre
+ * action touchant la taxe foncière) arrivant pendant qu'un conflit
+ * `pendingTaxeFonciereReplace` est déjà ouvert (A actif, B en attente de
+ * décision) ne doit JAMAIS être absorbé silencieusement comme nouveau
+ * candidate : une seule décision de remplacement actionnable à la fois.
+ * Rejette avec le MÊME état (référence inchangée, jamais de transition
+ * enregistrée dans l'historique GO_BACK) — A reste seule vérité fiscale
+ * active, B reste l'unique candidate jusqu'à décision explicite.
+ */
+function taxeFonciereReplacePendingMessage(): F012Message {
+  return {
+    role: "assistant",
+    content:
+      "Une décision est déjà en attente sur le document précédent de taxe foncière — merci de d'abord la trancher (remplacer ou conserver) avant d'envoyer un nouveau document.",
+  };
+}
+
+/**
+ * Blocker #2 — présente le conflit de remplacement : montant actuellement
+ * retenu, montant proposé par le nouveau document, deux actions explicites.
+ * Même convention que `taxeFonciereExpenseReceivedMessage` ci-dessus —
+ * jamais un montant choisi silencieusement (même invariant que Blocker #1,
+ * à un niveau différent : ici deux documents distincts, pas deux sources du
+ * même document).
+ */
+function taxeFonciereReplaceMessage(existing: Expense, candidate: Expense): F012Message {
+  return {
+    role: "assistant",
+    content:
+      `Une taxe foncière est déjà enregistrée pour cet exercice : ${existing.montant.toLocaleString("fr-FR")} €. ` +
+      `Le nouveau document indique ${candidate.montant.toLocaleString("fr-FR")} €. ` +
+      `Voulez-vous remplacer l'avis existant par ce nouveau document ?`,
+    suggestions: [
+      { id: "confirm_taxe_fonciere_replace", label: "Remplacer par le nouveau montant" },
+      { id: "decline_taxe_fonciere_replace", label: "Conserver l'avis existant" },
+    ],
+  };
+}
+
 function confirmAllPrompt(unresolvedLabels: string[] = []): F012Message {
   const suggestions: Array<{ id: string; label: string }> = [];
   if (unresolvedLabels.length > 0) {
@@ -358,6 +400,7 @@ export class F012ChargesAssistant {
       documentReview: persisted.documentReview,
       analyzedDocumentIds: persisted.analyzedDocumentIds,
       pendingTaxeFonciereExpense: persisted.pendingTaxeFonciereExpense,
+      pendingTaxeFonciereReplace: persisted.pendingTaxeFonciereReplace,
     };
 
     const reentry = this.buildReentryTurn(baseState);
@@ -493,6 +536,7 @@ export class F012ChargesAssistant {
       documentReview: previous.documentReview,
       analyzedDocumentIds: previous.analyzedDocumentIds,
       pendingTaxeFonciereExpense: previous.pendingTaxeFonciereExpense,
+      pendingTaxeFonciereReplace: previous.pendingTaxeFonciereReplace,
       result: undefined,
       history: history.slice(0, -1),
     };
@@ -645,6 +689,39 @@ export class F012ChargesAssistant {
       }
 
       case "receive_document_proposals": {
+        // Fix 1 (re-audit Blocker #2) — même garde que
+        // `receive_taxe_fonciere_expense` ci-dessus, pour le chemin
+        // historique `ChargeProposal` : un nouveau document "impots" ne
+        // doit jamais être mis en revue tant qu'un conflit de remplacement
+        // taxe foncière est déjà ouvert (sans quoi `commit_document_review`
+        // pourrait plus tard produire un second conflit concurrent).
+        // Fix 4 (re-re-audit) — étendu à `pendingTaxeFonciereExpense` : ce
+        // chemin historique n'était gaté QUE contre `pendingTaxeFonciereReplace`,
+        // jamais contre une Expense A simplement "pending" (pas encore
+        // décidée). Un document B pouvait donc entrer en revue pendant que A
+        // attendait toujours sa décision, ouvrant `documentReview` en
+        // parallèle de `TaxeFonciereReviewForm` — jamais deux décisions taxe
+        // foncière actionnables à la fois (invariant Fix 4).
+        if (action.familyId === "impots" && (state.pendingTaxeFonciereReplace || state.pendingTaxeFonciereExpense)) {
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        // Fix 5B (re-re-re-audit) — symétrique de la garde ci-dessus : un
+        // `documentReview` "impots" DÉJÀ OUVERT (document A reçu via ce
+        // MÊME chemin `receive_document_proposals`, pas encore commité) doit
+        // aussi bloquer l'entrée d'un document B via ce chemin. Sans cette
+        // garde, B écrasait silencieusement A à la ligne `documentReview:
+        // { ...draftReview, conflicts }` ci-dessous : A disparaissait sans
+        // message, et B était en plus absorbé dans `analyzedDocumentIds`
+        // comme si son workflow avait été correctement consommé (il a été
+        // gaté, pas traité — retourne AVANT cette ligne, donc B n'y entre
+        // jamais). Return avec la MÊME référence `state` (comme les gardes
+        // Fix 1/Fix 4 voisines) : jamais de transition enregistrée dans
+        // l'historique GO_BACK pour un no-op.
+        if (state.documentReview?.familyId === "impots") {
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
         if (isDocumentAlreadyAnalyzed(state.analyzedDocumentIds, action.documentId)) {
           messages.push({
             role: "assistant",
@@ -693,6 +770,46 @@ export class F012ChargesAssistant {
       // reste inchangé pour les autres familles documentaires (assurances,
       // gestion, syndic).
       case "receive_taxe_fonciere_expense": {
+        // Fix 1 (re-audit Blocker #2) — un conflit de remplacement déjà
+        // ouvert (A→B) doit être tranché avant qu'un troisième document
+        // (C) ne puisse même entrer en revue : jamais un second
+        // `pendingTaxeFonciereExpense` qui écraserait B silencieusement, et
+        // jamais `pendingTaxeFonciereExpense`/`pendingTaxeFonciereReplace`
+        // actionnables simultanément (garantit par construction l'exclusion
+        // UI Review/Replace — TaxeFonciereReviewForm ne peut alors jamais
+        // se monter tant que TaxeFonciereReplaceForm est affiché).
+        if (state.pendingTaxeFonciereReplace) {
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        // Fix 4 (re-re-audit, sens inverse) — un `documentReview` "impots"
+        // déjà ouvert (chemin historique `ChargeProposal`, en attente de
+        // décision utilisateur) doit aussi bloquer l'entrée par CE chemin :
+        // sans cette garde, `TaxeFonciereReviewForm` (pour ce nouveau B) et
+        // `DocumentReviewForm` (pour le document déjà en revue) devenaient
+        // simultanément actionnables. Scopé strictement à "impots" — un
+        // `documentReview` assurances/gestion/syndic ne bloque jamais ce
+        // chemin (familles indépendantes).
+        if (state.documentReview?.familyId === "impots") {
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        // Fix 5A (re-re-re-audit) — un `pendingTaxeFonciereExpense` A
+        // DÉJÀ OUVERT (pas encore décidé — confirm/correct/ignore) doit
+        // aussi bloquer l'entrée d'un document B via CE MÊME chemin
+        // `receive_taxe_fonciere_expense` : sans cette garde, B écrasait
+        // silencieusement A à la ligne `pendingTaxeFonciereExpense:
+        // action.expense` ci-dessous, sans jamais passer par le conflit de
+        // remplacement explicite (`pendingTaxeFonciereReplace`) — A
+        // disparaissait sans message, `collected`/Registry/total restaient
+        // inchangés (aucune perte fiscale), mais A comme décision
+        // actionnable disparaissait purement et simplement. Même convention
+        // que les gardes Fix 1/Fix 4 voisines : MÊME référence `state`
+        // renvoyée (no-op, jamais d'entrée dans l'historique GO_BACK).
+        if (state.pendingTaxeFonciereExpense) {
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
         messages.push(taxeFonciereExpenseReceivedMessage(action.expense));
         return {
           state: { ...state, pendingTaxeFonciereExpense: action.expense },
@@ -717,6 +834,61 @@ export class F012ChargesAssistant {
         }
         messages.push({ role: "user", content: "Oui, ce montant est correct" });
         const confirmed: Expense = { ...pending, decision: "confirmed" };
+        // Blocker #2 — un document DIFFÉRENT de celui déjà retenu (actif)
+        // n'écrase jamais silencieusement : bascule vers l'état de conflit
+        // explicite plutôt que d'écrire `collected.taxeFonciereExpense` ici.
+        // Même `documentId` ET même montant (recommit) → aucune des deux
+        // conditions ne s'active, comportement idempotent inchangé (CASE 2).
+        // Fix 3 (re-audit) — même `documentId` mais montant RÉSULTANT
+        // différent (ex. une ré-extraction OCR produit un nouveau
+        // `montantExtrait` que l'utilisateur n'a fait que confirmer tel
+        // quel, sans jamais le taper lui-même) doit AUSSI passer par ce
+        // conflit explicite : `documentId` seul n'est plus un gage
+        // suffisant d'idempotence, seule l'identité (documentId + montant)
+        // l'est. `correct_taxe_fonciere_expense` (montant TAPÉ par
+        // l'utilisateur) reste volontairement hors de cette garde : la
+        // saisie du montant EST déjà la transition explicite et traçable
+        // requise par la mission — non-régression du parcours "corriger la
+        // même dépense déjà confirmée" (voir tests Phase 2, reload F/G).
+        // Fix 2 (re-audit, sens symétrique) — AUCUNE `taxeFonciereExpense`
+        // active pour l'instant (première Expense de ce dossier) mais un
+        // scalaire `collected.taxeFonciere` légataire (saisie manuelle/
+        // ancien parcours) existe déjà : la première Expense confirmée ne
+        // doit pas non plus l'écraser silencieusement, même défaut que
+        // "Expense active → scalaire concurrent" mais dans l'autre sens
+        // ("scalaire actif → Expense concurrente"). Représenté par la MÊME
+        // `Expense` candidate synthétique que les autres writers gatés
+        // (`buildTaxeFonciereReplaceCandidate`) : jamais un `documentId`,
+        // donc toujours divergente d'une Expense documentaire réelle —
+        // conflit ouvert systématiquement (même invariant que CASE 3BIS :
+        // deux sources différentes restent deux sources différentes, même
+        // si les montants concordent).
+        const existingActive = state.collected.taxeFonciereExpense;
+        const existingForConflict: Expense | undefined = isActiveTaxeFonciereExpense(existingActive)
+          ? existingActive
+          : state.collected.taxeFonciere !== undefined
+            ? buildTaxeFonciereReplaceCandidate({
+                amount: state.collected.taxeFonciere,
+                description: "Taxe foncière (saisie existante)",
+                exercise: this.ctx.fiscalYear,
+                origin: "manual",
+              })
+            : undefined;
+        if (
+          existingForConflict &&
+          (existingForConflict.documentId !== confirmed.documentId || existingForConflict.montant !== confirmed.montant)
+        ) {
+          messages.push(taxeFonciereReplaceMessage(existingForConflict, confirmed));
+          return {
+            state: {
+              ...state,
+              pendingTaxeFonciereExpense: undefined,
+              pendingTaxeFonciereReplace: { existing: existingForConflict, candidate: confirmed },
+            },
+            messages,
+            completed: false,
+          };
+        }
         const collected = clearFamilyCoverageIntents(
           { ...state.collected, taxeFonciereExpense: confirmed },
           ["impots"],
@@ -740,6 +912,39 @@ export class F012ChargesAssistant {
           decision: "modified",
           fieldSources: { ...pending.fieldSources, montant: "user_correction" },
         };
+        // Blocker #2 — même garde que `confirm_taxe_fonciere_expense`
+        // ci-dessus (documentId différent → conflit), ET même extension
+        // symétrique Fix 2 (re-audit) : à défaut d'Expense active, un
+        // scalaire `collected.taxeFonciere` légataire compte comme
+        // "existing" via une candidate synthétique (jamais de `documentId`
+        // ⇒ toujours différent d'un `documentId` réel ⇒ conflit ouvert
+        // systématiquement, même montant ou non). Le montant TAPÉ ici par
+        // l'utilisateur reste volontairement hors garde pour un même
+        // `documentId` déjà actif (non-régression F/G, Fix 3) — seule la
+        // comparaison de `documentId` change de sémantique selon la source.
+        const existingActiveForCorrect = state.collected.taxeFonciereExpense;
+        const existingForConflictForCorrect: Expense | undefined = isActiveTaxeFonciereExpense(existingActiveForCorrect)
+          ? existingActiveForCorrect
+          : state.collected.taxeFonciere !== undefined
+            ? buildTaxeFonciereReplaceCandidate({
+                amount: state.collected.taxeFonciere,
+                description: "Taxe foncière (saisie existante)",
+                exercise: this.ctx.fiscalYear,
+                origin: "manual",
+              })
+            : undefined;
+        if (existingForConflictForCorrect && existingForConflictForCorrect.documentId !== corrected.documentId) {
+          messages.push(taxeFonciereReplaceMessage(existingForConflictForCorrect, corrected));
+          return {
+            state: {
+              ...state,
+              pendingTaxeFonciereExpense: undefined,
+              pendingTaxeFonciereReplace: { existing: existingForConflictForCorrect, candidate: corrected },
+            },
+            messages,
+            completed: false,
+          };
+        }
         const collected = clearFamilyCoverageIntents(
           { ...state.collected, taxeFonciereExpense: corrected },
           ["impots"],
@@ -754,6 +959,20 @@ export class F012ChargesAssistant {
         const pending = state.pendingTaxeFonciereExpense;
         if (!pending) return { state, messages, completed: false };
         messages.push({ role: "user", content: "Ignorer ce document" });
+        // Blocker #2 — ignorer un NOUVEAU document ne doit jamais écraser une
+        // taxe foncière déjà active d'un autre document : l'ancienne reste
+        // seule source de vérité, aucun résidu du document ignoré.
+        const existingActiveForIgnore = state.collected.taxeFonciereExpense;
+        if (
+          isActiveTaxeFonciereExpense(existingActiveForIgnore) &&
+          existingActiveForIgnore.documentId !== pending.documentId
+        ) {
+          return {
+            state: { ...state, pendingTaxeFonciereExpense: undefined },
+            messages,
+            completed: false,
+          };
+        }
         const ignored: Expense = { ...pending, decision: "ignored" };
         return {
           state: {
@@ -764,6 +983,34 @@ export class F012ChargesAssistant {
           messages,
           completed: false,
         };
+      }
+
+      case "confirm_taxe_fonciere_replace": {
+        const pendingReplace = state.pendingTaxeFonciereReplace;
+        if (!pendingReplace) return { state, messages, completed: false };
+        messages.push({ role: "user", content: "Remplacer par le nouveau montant" });
+        const collected = clearFamilyCoverageIntents(
+          { ...state.collected, taxeFonciereExpense: pendingReplace.candidate },
+          ["impots"],
+        );
+        return this.previewAndAdvanceFamily(
+          { ...state, collected, pendingTaxeFonciereReplace: undefined },
+          messages,
+        );
+      }
+
+      case "decline_taxe_fonciere_replace": {
+        const pendingReplace = state.pendingTaxeFonciereReplace;
+        if (!pendingReplace) return { state, messages, completed: false };
+        messages.push({ role: "user", content: "Conserver l'avis existant" });
+        // `collected.taxeFonciereExpense` (existing) n'est jamais touché ici
+        // — seule la sortie du conflit, sans écriture. Le total est réémis
+        // pour rester cohérent avec les autres sorties de décision taxe
+        // foncière (`confirm`/`correct`/`replace`).
+        return this.previewAndAdvanceFamily(
+          { ...state, pendingTaxeFonciereReplace: undefined },
+          messages,
+        );
       }
 
       case "confirm_proposal":
@@ -853,7 +1100,22 @@ export class F012ChargesAssistant {
           return { state, messages, completed: false };
         }
         if (review.familyId === "impots") {
-          const applied = applyImpotsReview({ collected: state.collected, review, fiscalYear: this.ctx.fiscalYear });
+          const applied = applyImpotsReview({
+            collected: state.collected,
+            review,
+            fiscalYear: this.ctx.fiscalYear,
+            // Fix 4 (re-re-audit) — défense en profondeur : même si l'entrée
+            // (`receive_document_proposals`) a été contournée (état
+            // reconstruit, rejeu direct), `applyImpotsReview` doit lui-même
+            // refuser d'écrire `collected.taxeFonciere` tant qu'une Expense
+            // pending/replace existe — jamais une seule garde suffisante.
+            pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
+            pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
+          });
+          if (applied.outcome === "blocked_pending_expense") {
+            messages.push(taxeFonciereReplacePendingMessage());
+            return { state, messages, completed: false };
+          }
           if (applied.outcome === "blocked_conflict") {
             const open = (review.conflicts ?? []).find(
               (conflict) => conflict.choice !== "keep_existing" && conflict.choice !== "use_document",
@@ -882,6 +1144,38 @@ export class F012ChargesAssistant {
               },
               messages,
             );
+          }
+          // Fix 2 (re-audit Blocker #2) — le chemin historique `ChargeProposal`
+          // n'écrit plus jamais `collected.taxeFonciere` quand une
+          // `taxeFonciereExpense` est déjà active (voir `applyImpotsReview`,
+          // apply-document-review.ts) : route vers le MÊME conflit de
+          // remplacement que le chemin document → Expense. `documentReview`
+          // est vidé ici pour la même raison que les autres sorties de ce
+          // bloc — jamais `DocumentReviewForm` ET `TaxeFonciereReplaceForm`
+          // actionnables simultanément (exclusion UI par construction).
+          if (applied.outcome === "blocked_active_expense") {
+            const activeExpense = state.collected.taxeFonciereExpense;
+            if (isActiveTaxeFonciereExpense(activeExpense) && applied.activeExpenseConflict) {
+              const candidate = buildTaxeFonciereReplaceCandidate({
+                amount: applied.activeExpenseConflict.amount,
+                description: "Taxe foncière (document — ancien parcours)",
+                exercise: this.ctx.fiscalYear,
+                origin: "legacy_migration",
+                documentId: applied.activeExpenseConflict.documentId,
+              });
+              messages.push({ role: "user", content: "Lignes confirmées" });
+              messages.push(taxeFonciereReplaceMessage(activeExpense, candidate));
+              return {
+                state: {
+                  ...state,
+                  pendingTaxeFonciereReplace: { existing: activeExpense, candidate },
+                  familyPhase: "card",
+                  documentReview: undefined,
+                },
+                messages,
+                completed: false,
+              };
+            }
           }
           if (applied.outcome === "missing" || !applied.wroteCharge) {
             messages.push({
@@ -1124,13 +1418,98 @@ export class F012ChargesAssistant {
         });
       }
 
-      case "submit_taxe_fonciere":
+      case "submit_taxe_fonciere": {
+        // Fix 1/Fix 2 (re-audit Blocker #2) — parcours legacy par catégorie
+        // (hors flux "famille") : même garde que `submit_family_impots`
+        // (`commitFamilyExpenses`) — un conflit déjà ouvert verrouille la
+        // saisie ; une `taxeFonciereExpense` déjà active route vers le
+        // même conflit de remplacement plutôt que d'écrire un scalaire
+        // concurrent invisible.
+        if (state.pendingTaxeFonciereReplace) {
+          messages.push({ role: "user", content: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €` });
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        // Fix 6A (Blocker #2, gap résiduel signalé par Fix 5) — un
+        // `pendingTaxeFonciereExpense` A DÉJÀ OUVERT (chemin document →
+        // Expense, pas encore décidé — confirm/correct/ignore) doit aussi
+        // bloquer ce chemin manuel/legacy : sans cette garde, B écrivait
+        // directement `collected.taxeFonciere` via `afterCategoryInput`
+        // ci-dessous pendant que A restait pending, produisant deux
+        // décisions taxe foncière actionnables/appliquées simultanément
+        // (violation de l'exclusion mutuelle globale). Même convention que
+        // les gardes Fix 1/Fix 4/Fix 5 voisines : MÊME référence `state`
+        // renvoyée (no-op, jamais d'entrée dans l'historique GO_BACK).
+        if (state.pendingTaxeFonciereExpense) {
+          messages.push({ role: "user", content: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €` });
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        // Fix 6B (Blocker #2, gap résiduel symétrique) — un `documentReview`
+        // "impots" DÉJÀ OUVERT (chemin historique `ChargeProposal`, pas
+        // encore décidé) doit aussi bloquer ce chemin manuel/legacy, pour la
+        // même raison que Fix 6A. Scopé strictement à "impots" — un
+        // `documentReview` assurances/gestion/syndic ne bloque jamais ce
+        // chemin (familles indépendantes), comme pour les gardes Fix 4/Fix 5
+        // voisines.
+        if (state.documentReview?.familyId === "impots") {
+          messages.push({ role: "user", content: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €` });
+          messages.push(taxeFonciereReplacePendingMessage());
+          return { state, messages, completed: false };
+        }
+        const activeExpense = state.collected.taxeFonciereExpense;
+        if (isActiveTaxeFonciereExpense(activeExpense)) {
+          messages.push({ role: "user", content: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €` });
+          const candidate = buildTaxeFonciereReplaceCandidate({
+            amount: action.montant,
+            description: "Taxe foncière (saisie manuelle)",
+            exercise: this.ctx.fiscalYear,
+            origin: "manual",
+          });
+          messages.push(taxeFonciereReplaceMessage(activeExpense, candidate));
+          return {
+            state: { ...state, pendingTaxeFonciereReplace: { existing: activeExpense, candidate } },
+            messages,
+            completed: false,
+          };
+        }
+        // Fix 7D (Blocker #2 gap résiduel — double comptage scalaire↔scalaire,
+        // sens family→manuel) — symétrique de `applyOne` (family-expense-apply.ts,
+        // cas "taxe_fonciere") : un scalaire `collected.taxeFonciere` déjà
+        // défini (ex. via `submit_family_impots`) avec un montant DIFFÉRENT
+        // ne doit jamais être écrasé silencieusement par ce chemin manuel/
+        // legacy (`afterCategoryInput` fait une affectation directe, sans
+        // aucune détection de conflit). Même montant → idempotent, tombe
+        // dans `afterCategoryInput` ci-dessous sans conflit (réaffectation
+        // de la même valeur).
+        if (state.collected.taxeFonciere !== undefined && state.collected.taxeFonciere !== action.montant) {
+          messages.push({ role: "user", content: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €` });
+          const existing = buildTaxeFonciereReplaceCandidate({
+            amount: state.collected.taxeFonciere,
+            description: "Taxe foncière (saisie existante)",
+            exercise: this.ctx.fiscalYear,
+            origin: "manual",
+          });
+          const candidate = buildTaxeFonciereReplaceCandidate({
+            amount: action.montant,
+            description: "Taxe foncière (saisie manuelle)",
+            exercise: this.ctx.fiscalYear,
+            origin: "manual",
+          });
+          messages.push(taxeFonciereReplaceMessage(existing, candidate));
+          return {
+            state: { ...state, pendingTaxeFonciereReplace: { existing, candidate } },
+            messages,
+            completed: false,
+          };
+        }
         return this.afterCategoryInput(state, messages, {
           taxeFonciere: action.montant,
           fieldKey: "taxe_fonciere",
           source: action.source,
           userContent: `Taxe foncière : ${action.montant.toLocaleString("fr-FR")} €`,
         });
+      }
 
       case "submit_assurance_pno":
         return this.afterCategoryInput(state, messages, {
@@ -1769,6 +2148,22 @@ export class F012ChargesAssistant {
       // ci-dessous et réémettait l'invite d'upload générique au lieu du
       // message de confirmation/correction — la proposition restait dans le
       // state mais jamais réellement visible/actionnable à l'écran.
+      // Blocker #2 — un conflit de remplacement en attente doit rester
+      // actionnable après un reload, exactement comme `pendingTaxeFonciereExpense`
+      // ci-dessous (même défaut évité : sans cette branche, la reprise
+      // retomberait sur "paper" et réémettrait l'invite d'upload générique
+      // au lieu du choix remplacer/conserver).
+      if (state.pendingTaxeFonciereReplace) {
+        return {
+          state,
+          messages: [
+            taxeFonciereReplaceMessage(
+              state.pendingTaxeFonciereReplace.existing,
+              state.pendingTaxeFonciereReplace.candidate,
+            ),
+          ],
+        };
+      }
       if (state.pendingTaxeFonciereExpense) {
         return {
           state,
@@ -2028,6 +2423,38 @@ export class F012ChargesAssistant {
       freeText?: string;
     },
   ): F012AssistantTurn {
+    // Fix 1 (re-audit Blocker #2, généralisé aux writers non-document) —
+    // pendant qu'un conflit de remplacement taxe foncière est ouvert, la
+    // famille "impots" reste verrouillée : aucune autre saisie ne doit
+    // pouvoir avancer tant que la décision n'est pas tranchée (même
+    // invariant que la garde côté document, `receive_taxe_fonciere_expense`
+    // ci-dessus).
+    if (input.familyId === "impots" && state.pendingTaxeFonciereReplace) {
+      messages.push({ role: "user", content: input.userContent });
+      messages.push(taxeFonciereReplacePendingMessage());
+      return { state, messages, completed: false };
+    }
+    // Fix 6E (défense en profondeur, alias `submit_family_impots`) — cette
+    // garde ne couvrait jusqu'ici QUE `pendingTaxeFonciereReplace`, jamais
+    // `pendingTaxeFonciereExpense` (chemin document → Expense, pas encore
+    // décidé) ni `documentReview` "impots" ouvert (chemin historique
+    // `ChargeProposal`) — exactement les deux gaps que Fix 6A/6B ont fermés
+    // pour `submit_taxe_fonciere` (voir plus loin dans ce fichier). Sans
+    // cette garde, la carte famille (`submit_family_impots`) contournait
+    // Fix 6A/6B : B pouvait écrire directement `collected.taxeFonciere` via
+    // `applyFamilyExpenses`/`applyOne` (qui ne connaît que l'Expense ACTIVE,
+    // jamais l'état "pending" porté par `F012State`) pendant que A restait
+    // pending/en revue, sans jamais passer par une décision explicite. Même
+    // convention que les gardes voisines : MÊME référence `state` renvoyée
+    // (no-op, jamais d'entrée dans l'historique GO_BACK).
+    if (
+      input.familyId === "impots" &&
+      (state.pendingTaxeFonciereExpense || state.documentReview?.familyId === "impots")
+    ) {
+      messages.push({ role: "user", content: input.userContent });
+      messages.push(taxeFonciereReplacePendingMessage());
+      return { state, messages, completed: false };
+    }
     messages.push({ role: "user", content: input.userContent });
     const freeText = input.freeText?.trim();
     if (freeText && isAmbiguousAmountText(freeText)) {
@@ -2070,6 +2497,60 @@ export class F012ChargesAssistant {
       collected,
       pendingFamilyFreeText: foreign.length > 0 ? freeText : undefined,
     };
+    // Fix 2 (re-audit Blocker #2) — voir `applyOne` (family-expense-apply.ts) :
+    // une `taxeFonciereExpense` active bloque ce scalaire ; route vers le
+    // même conflit de remplacement explicite (`pendingTaxeFonciereReplace`)
+    // plutôt que le message générique ci-dessous, en conservant toute autre
+    // écriture déjà appliquée par ce même tour (ex. "autre_taxe").
+    if (applied.blocked?.kind === "taxe_fonciere_active_expense") {
+      const activeExpense = state.collected.taxeFonciereExpense;
+      if (isActiveTaxeFonciereExpense(activeExpense)) {
+        const candidate = buildTaxeFonciereReplaceCandidate({
+          amount: applied.blocked.amount ?? 0,
+          description: applied.blocked.description ?? "Taxe foncière (saisie manuelle)",
+          exercise: this.ctx.fiscalYear,
+          origin: "manual",
+        });
+        messages.push(taxeFonciereReplaceMessage(activeExpense, candidate));
+        return {
+          state: { ...nextState, pendingTaxeFonciereReplace: { existing: activeExpense, candidate } },
+          messages,
+          completed: false,
+        };
+      }
+    }
+    // Fix 7 (Blocker #2 gap résiduel — double comptage scalaire↔scalaire) —
+    // voir `applyOne` (family-expense-apply.ts) : un scalaire
+    // `collected.taxeFonciere` déjà défini avec un montant différent bloque
+    // désormais ce writer au lieu de créer une `familyLine` "divers"
+    // parasite. Route vers le MÊME conflit de remplacement explicite que
+    // "taxe_fonciere_active_expense" ci-dessus — la candidate "existing" est
+    // construite à partir du scalaire actif via `buildTaxeFonciereReplaceCandidate`
+    // (même convention que `confirm_taxe_fonciere_expense`/`correct_taxe_fonciere_expense`
+    // pour représenter un scalaire légataire comme candidate de conflit).
+    if (applied.blocked?.kind === "taxe_fonciere_scalar_conflict") {
+      const existingAmount = state.collected.taxeFonciere;
+      if (existingAmount !== undefined) {
+        const existing = buildTaxeFonciereReplaceCandidate({
+          amount: existingAmount,
+          description: "Taxe foncière (saisie existante)",
+          exercise: this.ctx.fiscalYear,
+          origin: "manual",
+        });
+        const candidate = buildTaxeFonciereReplaceCandidate({
+          amount: applied.blocked.amount ?? 0,
+          description: applied.blocked.description ?? "Taxe foncière (saisie manuelle)",
+          exercise: this.ctx.fiscalYear,
+          origin: "manual",
+        });
+        messages.push(taxeFonciereReplaceMessage(existing, candidate));
+        return {
+          state: { ...nextState, pendingTaxeFonciereReplace: { existing, candidate } },
+          messages,
+          completed: false,
+        };
+      }
+    }
     if (applied.blocked) {
       const message =
         applied.blocked.kind === "assurance_emprunteur" && input.familyId === "assurances"

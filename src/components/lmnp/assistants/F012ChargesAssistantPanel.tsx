@@ -41,7 +41,7 @@ import {
   resolveSituationalProfilage,
   situationalProfilageQuestions,
 } from "@/runtime/assistants/f012-charges/situational-profilage";
-import { CoverageRecap, CompletenessCatchForm, DocumentReviewForm, FamilyCard, FamilyManualForm, FamilyPaperUpload, SlotNudgeForm, TaxeFonciereReviewForm } from "./F012FamilyCapture";
+import { CoverageRecap, CompletenessCatchForm, DocumentReviewForm, FamilyCard, FamilyManualForm, FamilyPaperUpload, SlotNudgeForm, TaxeFonciereReplaceForm, TaxeFonciereReviewForm } from "./F012FamilyCapture";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import {
@@ -1115,6 +1115,15 @@ export function F012ChargesAssistantPanel() {
       if (suggestionId === "ignore_taxe_fonciere_expense") {
         void runAction({ type: "ignore_taxe_fonciere_expense" });
       }
+      // Blocker #2 — mêmes conventions que ci-dessus : ces deux suggestions
+      // arrivent avec le message de conflit de remplacement (`taxeFonciereReplaceMessage`,
+      // assistant.ts) et sont aussi câblées directement par `TaxeFonciereReplaceForm`.
+      if (suggestionId === "confirm_taxe_fonciere_replace") {
+        void runAction({ type: "confirm_taxe_fonciere_replace" });
+      }
+      if (suggestionId === "decline_taxe_fonciere_replace") {
+        void runAction({ type: "decline_taxe_fonciere_replace" });
+      }
       const filetFamily: Record<string, "impots" | "syndic" | "assurances" | "gestion" | "travaux" | "autres"> = {
         completeness_travaux: "travaux",
         completeness_syndic: "syndic",
@@ -1194,13 +1203,34 @@ export function F012ChargesAssistantPanel() {
   // ignorer (bloc `suggestions` ci-dessous, gardé par `!showPaper`) — ni les
   // clics ni le formulaire de correction n'étaient jamais accessibles.
   const showTaxeFonciereReview = Boolean(state.pendingTaxeFonciereExpense);
+  // Blocker #2 — même garde que `showTaxeFonciereReview` ci-dessus : dès
+  // qu'un conflit de remplacement est en attente (`pendingTaxeFonciereReplace`),
+  // l'écran d'upload générique doit céder la place à `TaxeFonciereReplaceForm`
+  // (les deux boutons remplacer/conserver ne sont jamais masqués par
+  // `showPaper`, même défaut que celui déjà corrigé pour `showTaxeFonciereReview`).
+  const showTaxeFonciereReplace = Boolean(state.pendingTaxeFonciereReplace);
   const showPaper =
     state.step === "category_collect" &&
     state.familyPhase === "paper" &&
     currentFamily !== undefined &&
     isDocumentaryFamily(currentFamily) &&
-    !showTaxeFonciereReview;
-  const showReview = state.familyPhase === "review" && Boolean(state.documentReview);
+    !showTaxeFonciereReview &&
+    !showTaxeFonciereReplace;
+  // Fix 4 (Blocker #2, re-re-audit) — au boundary réel du panel (pas
+  // seulement le reducer) : `TaxeFonciereReviewForm`/`TaxeFonciereReplaceForm`
+  // et `DocumentReviewForm` ne doivent JAMAIS être actionnables ensemble
+  // pour la taxe foncière. Le reducer (assistant.ts) garantit déjà que
+  // `documentReview` "impots" et `pendingTaxeFonciereExpense`/
+  // `pendingTaxeFonciereReplace` ne coexistent normalement pas, mais cette
+  // condition de rendu reste la dernière ligne de défense si un état
+  // incohérent existait malgré tout (ex. reprise d'un état persisté
+  // antérieur à ce correctif). Scopé strictement à "impots" — un
+  // `documentReview` assurances/gestion/syndic n'est jamais masqué par ces
+  // deux drapeaux (indépendants de ces familles).
+  const showReview =
+    state.familyPhase === "review" &&
+    Boolean(state.documentReview) &&
+    !(state.documentReview?.familyId === "impots" && (showTaxeFonciereReview || showTaxeFonciereReplace));
   const showCategory =
     state.step === "category_collect" &&
     currentCategory &&
@@ -1440,6 +1470,15 @@ export function F012ChargesAssistantPanel() {
           <TaxeFonciereReviewForm
             expense={state.pendingTaxeFonciereExpense}
             year={fiscalYear}
+            disabled={busy}
+            onAction={(action) => void runAction(action)}
+          />
+        ) : null}
+
+        {showTaxeFonciereReplace && state.pendingTaxeFonciereReplace ? (
+          <TaxeFonciereReplaceForm
+            existing={state.pendingTaxeFonciereReplace.existing}
+            candidate={state.pendingTaxeFonciereReplace.candidate}
             disabled={busy}
             onAction={(action) => void runAction(action)}
           />

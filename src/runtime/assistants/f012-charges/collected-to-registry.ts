@@ -278,6 +278,20 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
   }
 
   for (const line of collected.familyLines ?? []) {
+    // Fix 7 (Blocker #2 gap résiduel — défense en profondeur, dette
+    // historique) — avant ce correctif, un scalaire `collected.taxeFonciere`
+    // divergent pouvait produire une `familyLine` parasite
+    // (familyId "impots", category "divers", id préfixé "taxe-fonciere:" —
+    // seul producteur de ce préfixe, voir `extraLineId("taxe-fonciere", …)`,
+    // désormais retiré de `applyOne`). Un état persisté antérieur à ce
+    // correctif peut encore porter une telle ligne : elle ne représente
+    // jamais une charge distincte, toujours un doublon de la taxe foncière
+    // déjà comptée ci-dessus (Expense ou scalaire). Ne JAMAIS la
+    // recompter ici — pas de migration générale de `familyLines`, juste ce
+    // filtre ciblé au moment de construire le Registry.
+    if (line.familyId === "impots" && line.category === "divers" && line.id.startsWith("taxe-fonciere:")) {
+      continue;
+    }
     if (charges.some((charge) => charge.id === line.id)) continue;
     charges.push(
       createRecordedCharge({

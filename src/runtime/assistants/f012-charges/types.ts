@@ -196,7 +196,74 @@ export type F012HistorySnapshot = {
   analyzedDocumentIds?: string[];
   /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
   pendingTaxeFonciereExpense?: Expense;
+  /**
+   * Blocker #2 (F012 V2 — taxe foncière) — état explicite de conflit quand un
+   * NOUVEAU `documentId` de taxe foncière est confirmé/corrigé alors qu'une
+   * `taxeFonciereExpense` `confirmed`/`modified` d'un AUTRE document existe
+   * déjà dans `collected`. Ni `collected.taxeFonciereExpense` ni le Charge
+   * Registry ne sont modifiés tant que ce conflit n'est pas tranché
+   * (`confirm_taxe_fonciere_replace` / `decline_taxe_fonciere_replace`) —
+   * même principe de blocage explicite que `montantConflict` (Blocker #1),
+   * à un niveau différent : ici on compare deux `Expense` déjà résolues
+   * (documents différents), jamais un second passage dans
+   * `resolveTaxeFonciereAnnualAmount`. `existing` = la dépense active
+   * actuellement retenue ; `candidate` = la nouvelle dépense confirmée/
+   * corrigée par l'utilisateur, en attente d'un choix explicite de
+   * remplacement.
+   */
+  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
 };
+
+/**
+ * Fix Blocker #2 (re-audit) — une `taxeFonciereExpense` compte comme
+ * "active" (occupant réellement le slot scalaire) uniquement `confirmed`/
+ * `modified`. Centralisé ici (au lieu de dupliqué dans assistant.ts,
+ * family-expense-apply.ts, apply-document-review.ts, qui l'importent tous
+ * depuis ce module déjà partagé) — un seul prédicat, jamais une
+ * redéfinition divergente d'un fichier à l'autre.
+ */
+export function isActiveTaxeFonciereExpense(expense: Expense | undefined): expense is Expense {
+  return expense !== undefined && (expense.decision === "confirmed" || expense.decision === "modified");
+}
+
+/**
+ * Fix Blocker #2 (re-audit) — construit une `Expense` candidate synthétique
+ * pour les chemins qui n'ont jamais produit de vraie `Expense` documentaire
+ * (saisie manuelle scalaire — `submit_taxe_fonciere`/`submit_family_impots`
+ * — ou ancien chemin `ChargeProposal` — `receive_document_proposals` +
+ * `commit_document_review` familyId "impots") mais dont la nouvelle valeur
+ * entre en conflit avec une `taxeFonciereExpense` déjà active. RÉUTILISE le
+ * mécanisme `pendingTaxeFonciereReplace` existant (jamais une seconde
+ * architecture de conflit parallèle) : cette candidate devient
+ * `collected.taxeFonciereExpense` UNIQUEMENT si l'utilisateur choisit
+ * explicitement `confirm_taxe_fonciere_replace` ; `decline_taxe_fonciere_replace`
+ * la jette sans jamais l'écrire nulle part — jamais un scalaire concurrent
+ * silencieux. `origin` distingue la source réelle : "manual" (saisie
+ * directe) / "legacy_migration" (ancien chemin documentaire `ChargeProposal`,
+ * cf. `ExpenseOrigin`, expense.ts).
+ */
+export function buildTaxeFonciereReplaceCandidate(input: {
+  amount: number;
+  description: string;
+  exercise: number;
+  origin: "manual" | "legacy_migration";
+  documentId?: string;
+}): Expense {
+  return {
+    id:
+      input.origin === "legacy_migration" && input.documentId
+        ? `expense-doc-${input.documentId}-taxe-fonciere-legacy`
+        : `expense-manual-taxe-fonciere-${input.exercise}`,
+    exerciceFiscal: input.exercise,
+    montant: input.amount,
+    description: input.description,
+    origin: input.origin,
+    documentId: input.documentId,
+    category: "taxe_fonciere",
+    decision: "confirmed",
+    fieldSources: { montant: input.origin === "manual" ? "manual" : "extracted" },
+  };
+}
 
 /** Capture les champs dignes d'être restaurés par GO_BACK — jamais `result`, jamais `history` lui-même. */
 export function snapshotF012State(state: F012State): F012HistorySnapshot {
@@ -218,6 +285,7 @@ export function snapshotF012State(state: F012State): F012HistorySnapshot {
     documentReview: state.documentReview,
     analyzedDocumentIds: state.analyzedDocumentIds,
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
+    pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
   };
 }
 
@@ -243,6 +311,8 @@ export interface F012State {
   history?: F012HistorySnapshot[];
   /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
   pendingTaxeFonciereExpense?: Expense;
+  /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
+  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
 }
 
 export interface F012Suggestion {
@@ -292,6 +362,18 @@ export type F012Action =
   | { type: "correct_taxe_fonciere_expense"; montant: number }
   /** Écarte l'Expense en attente → decision="ignored", jamais projetée en Charge. */
   | { type: "ignore_taxe_fonciere_expense" }
+  /**
+   * Blocker #2 — tranche `pendingTaxeFonciereReplace` en faveur du nouveau
+   * document : remplace atomiquement `collected.taxeFonciereExpense` par
+   * `candidate`, l'ancienne dépense (`existing`) n'est plus active.
+   */
+  | { type: "confirm_taxe_fonciere_replace" }
+  /**
+   * Blocker #2 — tranche `pendingTaxeFonciereReplace` en faveur de l'avis
+   * déjà retenu : `collected.taxeFonciereExpense` (`existing`) reste
+   * intégralement inchangé, `candidate` n'est jamais écrit nulle part.
+   */
+  | { type: "decline_taxe_fonciere_replace" }
   | { type: "confirm_proposal"; proposalId: string }
   | { type: "modify_proposal"; proposalId: string; amount: number }
   | { type: "ignore_proposal"; proposalId: string; reason?: string }
@@ -437,6 +519,8 @@ export type F012PersistedState = {
   analyzedDocumentIds?: string[];
   /** F012 V2 Phase 2 — candidate en attente de confirmation/correction/rejet (famille "impots" migrée), jamais encore projetée en Charge. */
   pendingTaxeFonciereExpense?: Expense;
+  /** Blocker #2 — voir `F012HistorySnapshot.pendingTaxeFonciereReplace`. */
+  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
   updatedAt: string;
 };
 
@@ -464,6 +548,7 @@ export function toF012PersistedState(state: F012State, updatedAt: string): F012P
     documentReview: state.documentReview,
     analyzedDocumentIds: state.analyzedDocumentIds,
     pendingTaxeFonciereExpense: state.pendingTaxeFonciereExpense,
+    pendingTaxeFonciereReplace: state.pendingTaxeFonciereReplace,
     updatedAt,
   };
 }

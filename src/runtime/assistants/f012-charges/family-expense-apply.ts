@@ -13,7 +13,7 @@ import {
 import type { F012CategoryId } from "../../capabilities/f012/types";
 import { CHARGE_FAMILY_IDS } from "../../capabilities/f012/charge";
 import { clearFamilyCoverageIntents } from "./family-coverage-intents";
-import type { F012CollectedData, F012DiversItem, F012FamilyLine } from "./types";
+import { isActiveTaxeFonciereExpense, type F012CollectedData, type F012DiversItem, type F012FamilyLine } from "./types";
 import {
   parseFamilyExpenseMentions,
   paymentBelongsToExercise,
@@ -35,7 +35,18 @@ export type ApplyFamilyExpensesInput = {
 export type ApplyFamilyExpensesResult = {
   collected: F012CollectedData;
   wrote: boolean;
-  blocked?: { kind: "capital_pret" | "assurance_emprunteur" | "out_of_year"; message: string };
+  blocked?: {
+    kind:
+      | "capital_pret"
+      | "assurance_emprunteur"
+      | "out_of_year"
+      | "taxe_fonciere_active_expense"
+      | "taxe_fonciere_scalar_conflict";
+    message: string;
+    /** Fix 2 (re-audit Blocker #2) — présent pour "taxe_fonciere_active_expense" ET "taxe_fonciere_scalar_conflict" (Fix 7) : le montant que ce writer aurait écrit, à router vers `pendingTaxeFonciereReplace` (assistant.ts) plutôt qu'un scalaire concurrent ou une `familyLine` "divers" parasite. */
+    amount?: number;
+    description?: string;
+  };
   overlapMessage?: string;
   /** Cycle 12B — travaux à qualifier, jamais écrits comme collectés. */
   pendingQualification?: ParsedExpense[];
@@ -150,18 +161,54 @@ function applyOne(
 
   switch (expense.kind) {
     case "taxe_fonciere": {
-      if (collected.taxeFonciere === expense.amount) return { collected, wrote: false };
-      if (collected.taxeFonciere !== undefined && collected.taxeFonciere !== expense.amount) {
-        const id = extraLineId("taxe-fonciere", expense.description, exercise, collected.familyLines ?? []);
+      // Fix 2 (re-audit Blocker #2) — une `taxeFonciereExpense` déjà active
+      // (confirmed/modified, chemin document → Expense) est la SEULE
+      // vérité fiscale pour cette famille : cette saisie manuelle/freeText
+      // ne doit jamais créer un `collected.taxeFonciere` scalaire concurrent
+      // qui resterait invisible du Charge Registry (priorité Expense >
+      // scalaire, collected-to-registry.ts) mais persisterait en état,
+      // prêt à ressurgir au moindre changement de cette priorité. Bloqué
+      // ici, jamais écrit — l'appelant (assistant.ts, `commitFamilyExpenses`)
+      // route ce montant vers `pendingTaxeFonciereReplace`, RÉUTILISANT le
+      // même mécanisme de décision explicite que Blocker #2 (jamais une
+      // seconde architecture de conflit).
+      if (isActiveTaxeFonciereExpense(collected.taxeFonciereExpense)) {
         return {
-          collected: pushLine(collected, {
-            id,
-            familyId: "impots",
-            category: "divers",
+          collected,
+          wrote: false,
+          blocked: {
+            kind: "taxe_fonciere_active_expense",
+            message:
+              "Une taxe foncière issue d'un document est déjà active pour cet exercice. Une décision de remplacement est nécessaire avant d'enregistrer cette saisie.",
+            amount: expense.amount,
             description: expense.description,
-            montant: expense.amount,
-          }),
-          wrote: true,
+          },
+        };
+      }
+      if (collected.taxeFonciere === expense.amount) return { collected, wrote: false };
+      // Fix 7 (Blocker #2 gap résiduel — double comptage scalaire↔scalaire) —
+      // un scalaire `collected.taxeFonciere` déjà défini avec un montant
+      // DIFFÉRENT ne doit plus jamais retomber dans le comportement
+      // générique des family expenses (`extraLineId` + `familyLine` "divers"
+      // additive, conçu pour des familles où plusieurs lignes légitimes
+      // coexistent, ex. plusieurs assurances) : pour la taxe foncière, une
+      // seule valeur fiscale est possible par exercice. Bloque ici, comme le
+      // cas "Expense active" juste au-dessus — l'appelant (assistant.ts,
+      // `commitFamilyExpenses`) route ce montant vers
+      // `pendingTaxeFonciereReplace`, RÉUTILISANT le même mécanisme de
+      // décision explicite que Blocker #2, jamais une seconde architecture
+      // de conflit ni une ligne fiscale fantôme.
+      if (collected.taxeFonciere !== undefined && collected.taxeFonciere !== expense.amount) {
+        return {
+          collected,
+          wrote: false,
+          blocked: {
+            kind: "taxe_fonciere_scalar_conflict",
+            message:
+              "Une taxe foncière est déjà enregistrée pour cet exercice avec un montant différent. Une décision de remplacement est nécessaire avant d'enregistrer cette saisie.",
+            amount: expense.amount,
+            description: expense.description,
+          },
         };
       }
       return { collected: { ...collected, taxeFonciere: expense.amount }, wrote: true };

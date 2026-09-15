@@ -5,7 +5,8 @@
 
 import type { FieldSource } from "../../contracts/FieldSource";
 import type { CoproLigneInput } from "../../capabilities/f012/compute-copro-deductible";
-import type { F012CollectedData } from "./types";
+import type { Expense } from "../../capabilities/f012/expense";
+import { isActiveTaxeFonciereExpense, type F012CollectedData } from "./types";
 import {
   isProposalRecordable,
   proposalAmount,
@@ -198,13 +199,41 @@ export function conflictsForSyndicReview(input: {
   return conflicts;
 }
 
-export type ApplyReviewOutcome = "wrote" | "all_ignored" | "blocked_conflict" | "missing" | "out_of_year";
+export type ApplyReviewOutcome =
+  | "wrote"
+  | "all_ignored"
+  | "blocked_conflict"
+  | "missing"
+  | "out_of_year"
+  | "blocked_active_expense"
+  | "blocked_pending_expense";
 
 export function applyImpotsReview(input: {
   collected: F012CollectedData;
   review: F012DocumentReview;
   fiscalYear: number;
-}): { collected: F012CollectedData; wroteCharge: boolean; outcome: ApplyReviewOutcome; provenance?: FieldSource } {
+  /**
+   * Fix 4 (Blocker #2, re-re-audit) — défense en profondeur : le chemin
+   * historique `ChargeProposal` (`commit_document_review`) ne doit JAMAIS
+   * pouvoir écrire `collected.taxeFonciere` tant qu'une décision taxe
+   * foncière concurrente est en attente (`pendingTaxeFonciereExpense` /
+   * `pendingTaxeFonciereReplace`, tous deux portés par `F012State`, jamais
+   * par `F012CollectedData` — d'où leur passage explicite ici). Ceci reste
+   * vrai même si la garde d'entrée (`receive_document_proposals`,
+   * assistant.ts) a été contournée (état reconstruit, rejeu direct) : un
+   * seul appelant ne peut jamais suffire à garantir l'invariant, la
+   * fonction qui écrit réellement `collected` doit elle-même refuser.
+   */
+  pendingTaxeFonciereExpense?: Expense;
+  pendingTaxeFonciereReplace?: { existing: Expense; candidate: Expense };
+}): {
+  collected: F012CollectedData;
+  wroteCharge: boolean;
+  outcome: ApplyReviewOutcome;
+  provenance?: FieldSource;
+  /** Fix 2 (re-audit Blocker #2) — présent uniquement pour "blocked_active_expense" : le montant résolu par ce chemin historique, à router vers `pendingTaxeFonciereReplace` (assistant.ts) plutôt qu'écrire `collected.taxeFonciere`. */
+  activeExpenseConflict?: { amount: number; documentId: string };
+} {
   const unresolved = (input.review.conflicts ?? []).filter((conflict) => !isConflictResolved(conflict));
   if (unresolved.length > 0) {
     return { collected: input.collected, wroteCharge: false, outcome: "blocked_conflict" };
@@ -230,6 +259,35 @@ export function applyImpotsReview(input: {
       collected: input.collected,
       wroteCharge: false,
       outcome: confirmedOutOfYear ? "out_of_year" : "missing",
+    };
+  }
+  // Fix 4 (Blocker #2, re-re-audit) — un document A reçu via le chemin
+  // Expense (`pendingTaxeFonciereExpense`, pas encore décidé) ou un
+  // conflit de remplacement déjà ouvert (`pendingTaxeFonciereReplace`) doit
+  // bloquer CE chemin historique AUSSI, même si l'Expense de A n'est pas
+  // encore "active" (`isActiveTaxeFonciereExpense` ne voit que
+  // `collected.taxeFonciereExpense`, jamais l'état "pending" — c'est
+  // exactement le trou que ce Fix comble) : sans cette garde, B pouvait
+  // écrire directement `collected.taxeFonciere` sans jamais mentionner A.
+  if (input.pendingTaxeFonciereExpense || input.pendingTaxeFonciereReplace) {
+    return { collected: input.collected, wroteCharge: false, outcome: "blocked_pending_expense" };
+  }
+  // Fix 2 (re-audit Blocker #2) — le chemin `ChargeProposal` historique
+  // écrivait directement `collected.taxeFonciere` sans jamais consulter
+  // `collected.taxeFonciereExpense` (le chemin document → Expense, source
+  // canonique dès qu'elle est active). Un scalaire écrit ici resterait
+  // invisible du Charge Registry (priorité Expense > scalaire,
+  // collected-to-registry.ts) mais persisterait en état — jamais un
+  // remplacement/état concurrent silencieux : bloqué ici, l'appelant
+  // (assistant.ts, `commit_document_review`) route ce montant vers
+  // `pendingTaxeFonciereReplace`, RÉUTILISANT le même mécanisme de décision
+  // explicite que Blocker #2 (jamais une seconde architecture de conflit).
+  if (isActiveTaxeFonciereExpense(input.collected.taxeFonciereExpense)) {
+    return {
+      collected: input.collected,
+      wroteCharge: false,
+      outcome: "blocked_active_expense",
+      activeExpenseConflict: { amount: taxeFonciere, documentId: input.review.documentId },
     };
   }
   return {
