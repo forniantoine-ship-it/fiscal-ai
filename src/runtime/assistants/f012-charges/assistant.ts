@@ -14,17 +14,16 @@ import { validateCharges } from "../../capabilities/f012/validate-charges";
 import { familyIdForCategory, type ChargeFamilyId } from "../../capabilities/f012/charge";
 import { incompleteCoverages } from "../../capabilities/f012/family-coverage";
 import {
-  applyAssurancesReview,
-  applyGestionReview,
   applyImpotsReview,
-  applySyndicReview,
   decideProposalGroup,
   isDocumentAlreadyAnalyzed,
   reconcileReviewConflicts,
   resolveDocumentConflict,
 } from "./apply-document-review";
+import { applyDocumentReviewAsExpenses } from "./expense-from-document-review";
 import {
   isDocumentaryFamily,
+  isProposalRecordable,
   missingDocumentFieldMessage,
   paperInviteMessage,
   type ChargeProposal,
@@ -64,7 +63,7 @@ import {
   unresolvedFamilyLabels,
   visibleWarningText,
 } from "./completeness-honesty";
-import { collectedToChargeRegistry } from "./collected-to-registry";
+import { ChargeRegistryCollisionError, collectedToChargeRegistry } from "./collected-to-registry";
 import {
   applyFamilyExpenses,
   ensureFamilyInInventories,
@@ -224,6 +223,24 @@ function hasTaxeFonciereValue(collected: F012State["collected"]): boolean {
   return collected.taxeFonciere !== undefined || collected.taxeFonciereExpense !== undefined;
 }
 
+/**
+ * F012 V2 Phase 3 — même principe que `hasTaxeFonciereValue` ci-dessus,
+ * généralisé aux trois familles migrées dont les dépenses documentaires
+ * vivent dans `collected.documentExpenses[]` (assurances/gestion/syndic) :
+ * une catégorie est "renseignée" via le champ scalaire legacy OU via au
+ * moins une `Expense` de cette catégorie — jamais un second point de vérité
+ * indépendant ailleurs. Ne filtre pas sur `isExpenseRecordable` : une
+ * dépense "pending"/"ignored" documente déjà que la catégorie a été
+ * examinée (même sémantique que `reviewedEmptyFamilies` pour le chemin
+ * ChargeProposal), donc ne doit pas redéclencher une invite de saisie.
+ */
+function hasDocumentExpenseForCategory(
+  collected: F012State["collected"],
+  category: "assurance_pno" | "assurance_gli" | "honoraires_gestion" | "honoraires_comptable" | "copropriete",
+): boolean {
+  return (collected.documentExpenses ?? []).some((expense) => expense.category === category);
+}
+
 /** F012 V2 Phase 2 — présente la dépense (Expense) extraite du document avant confirmation/correction/rejet. */
 function taxeFonciereExpenseReceivedMessage(expense: Expense): F012Message {
   const content =
@@ -363,16 +380,42 @@ export class F012ChargesAssistant {
    * d'historique conservé.
    */
   async handle(state: F012State, action: F012Action): Promise<F012AssistantTurn> {
-    if (action.type === "go_back") return this.handleGoBack(state);
+    try {
+      if (action.type === "go_back") return this.handleGoBack(state);
 
-    const current = this.skipPendingNudgeIfContinuing(state, action);
-    const turn = await this.dispatch(current, action);
-    if (action.type === "restart" || turn.state === state) return turn;
+      const current = this.skipPendingNudgeIfContinuing(state, action);
+      const turn = await this.dispatch(current, action);
+      if (action.type === "restart" || turn.state === state) return turn;
 
-    return {
-      ...turn,
-      state: { ...turn.state, history: [...(state.history ?? []), snapshotF012State(state)] },
-    };
+      return {
+        ...turn,
+        state: { ...turn.state, history: [...(state.history ?? []), snapshotF012State(state)] },
+      };
+    } catch (error) {
+      // Durcissement défensif post-audit — une collision d'identifiants
+      // résiduelle dans le Charge Registry (voir `ChargeRegistryCollisionError`,
+      // collected-to-registry.ts) ne doit jamais devenir un crash brut non
+      // maîtrisé pour l'utilisateur : point d'entrée public unique de
+      // l'assistant, `handle()` est le seul boundary approprié pour
+      // intercepter cette exception NOMMÉE et rendre un état diagnosticable
+      // au lieu de la laisser remonter. Toute autre erreur continue de se
+      // propager sans être avalée — jamais un catch générique silencieux.
+      if (error instanceof ChargeRegistryCollisionError) {
+        console.error("[F012ChargesAssistant] Charge Registry collision détectée", error);
+        return {
+          state,
+          messages: [
+            {
+              role: "assistant",
+              content:
+                "Une incohérence a été détectée dans les charges de ce dossier (identifiants en collision) — aucune donnée n'a été modifiée. Réessayez ; si le problème persiste, contactez le support.",
+            },
+          ],
+          completed: false,
+        };
+      }
+      throw error;
+    }
   }
 
   /**
@@ -800,24 +843,70 @@ export class F012ChargesAssistant {
           });
           return { state, messages, completed: false };
         }
-        const applied =
-          review.familyId === "impots"
-            ? applyImpotsReview({ collected: state.collected, review, fiscalYear: this.ctx.fiscalYear })
-            : review.familyId === "assurances"
-              ? applyAssurancesReview({ collected: state.collected, review, fiscalYear: this.ctx.fiscalYear })
-              : review.familyId === "gestion"
-                ? applyGestionReview({ collected: state.collected, review, fiscalYear: this.ctx.fiscalYear })
-                : applySyndicReview({ collected: state.collected, review });
-        if (applied.outcome === "blocked_conflict") {
-          const open = (review.conflicts ?? []).find(
-            (conflict) => conflict.choice !== "keep_existing" && conflict.choice !== "use_document",
-          );
-          messages.push({
-            role: "assistant",
-            content: open ? conflictMessage(open) : "Deux montants différents : choisissez lequel garder.",
-          });
-          return { state, messages, completed: false };
+        if (review.familyId === "impots") {
+          const applied = applyImpotsReview({ collected: state.collected, review, fiscalYear: this.ctx.fiscalYear });
+          if (applied.outcome === "blocked_conflict") {
+            const open = (review.conflicts ?? []).find(
+              (conflict) => conflict.choice !== "keep_existing" && conflict.choice !== "use_document",
+            );
+            messages.push({
+              role: "assistant",
+              content: open ? conflictMessage(open) : "Deux montants différents : choisissez lequel garder.",
+            });
+            return { state, messages, completed: false };
+          }
+          if (applied.outcome === "out_of_year") {
+            messages.push({
+              role: "assistant",
+              content: "Ce paiement n'appartient pas à cet exercice. Je n'inscris pas de montant.",
+            });
+            return { state, messages, completed: false };
+          }
+          if (applied.outcome === "all_ignored") {
+            messages.push({ role: "user", content: "Lignes non comptées" });
+            return this.advancePastCurrentFamily(
+              {
+                ...state,
+                collected: markFamilyReviewedEmpty(applied.collected, review.familyId),
+                familyPhase: "card",
+                documentReview: undefined,
+              },
+              messages,
+            );
+          }
+          if (applied.outcome === "missing" || !applied.wroteCharge) {
+            messages.push({
+              role: "assistant",
+              content: missingDocumentFieldMessage(),
+            });
+            return { state, messages, completed: false };
+          }
+          const collected = clearFamilyCoverageIntents(applied.collected, [review.familyId]);
+          const next = {
+            ...state,
+            collected,
+            fieldSources: {
+              ...state.fieldSources,
+              taxe_fonciere: applied.provenance ?? "extracted",
+            },
+            familyPhase: "card" as const,
+            documentReview: undefined,
+          };
+          messages.push({ role: "user", content: "Lignes confirmées" });
+          return this.previewAndAdvanceFamily(next, messages);
         }
+
+        // F012 V2 Phase 3 — assurances/gestion/syndic : persistance canonique
+        // `Expense` (§8/§9 de la mission), additive par rapport aux champs
+        // scalaires legacy (jamais un conflit possible ici, voir
+        // `reconcileReviewConflicts` — un seul point d'écriture pour les
+        // trois familles, `applyDocumentReviewAsExpenses`, jamais trois
+        // fonctions quasi identiques).
+        const applied = applyDocumentReviewAsExpenses({
+          collected: state.collected,
+          review,
+          fiscalYear: this.ctx.fiscalYear,
+        });
         if (applied.outcome === "out_of_year") {
           messages.push({
             role: "assistant",
@@ -845,33 +934,41 @@ export class F012ChargesAssistant {
           return { state, messages, completed: false };
         }
         const collected = clearFamilyCoverageIntents(applied.collected, [review.familyId]);
+        const hasHonorairesGestion = review.proposals.some(
+          (proposal) =>
+            isProposalRecordable(proposal) &&
+            (proposal.gestionKind === "gestion" ||
+              proposal.gestionKind === "mise_en_location" ||
+              proposal.gestionKind === "autre" ||
+              proposal.gestionKind === "etat_des_lieux"),
+        );
+        const hasHonorairesComptable = review.proposals.some(
+          (proposal) =>
+            isProposalRecordable(proposal) &&
+            (proposal.gestionKind === "comptable" || proposal.gestionKind === "logiciel"),
+        );
+        const hasAssurancePno = review.proposals.some(
+          (proposal) => isProposalRecordable(proposal) && proposal.insuranceKind === "logement",
+        );
+        const hasAssuranceGli = review.proposals.some(
+          (proposal) => isProposalRecordable(proposal) && proposal.insuranceKind === "gli",
+        );
         const next = {
           ...state,
           collected,
           fieldSources: {
             ...state.fieldSources,
-            ...(review.familyId === "impots"
-              ? { taxe_fonciere: applied.provenance ?? "extracted" }
-              : review.familyId === "assurances"
+            ...(review.familyId === "assurances"
+              ? {
+                  ...(hasAssurancePno ? { assurance_pno: applied.provenance ?? "extracted" } : {}),
+                  ...(hasAssuranceGli ? { assurance_gli: applied.provenance ?? "extracted" } : {}),
+                }
+              : review.familyId === "gestion"
                 ? {
-                    ...(applied.collected.assurancePno !== undefined
-                      ? { assurance_pno: applied.provenance ?? "extracted" }
-                      : {}),
-                    ...(applied.collected.assuranceGli !== undefined
-                      ? { assurance_gli: applied.provenance ?? "extracted" }
-                      : {}),
+                    ...(hasHonorairesGestion ? { honoraires_gestion: applied.provenance ?? "extracted" } : {}),
+                    ...(hasHonorairesComptable ? { honoraires_comptable: applied.provenance ?? "extracted" } : {}),
                   }
-                : review.familyId === "gestion"
-                  ? {
-                      ...(applied.collected.honorairesGestion !== undefined ||
-                      applied.collected.fraisEtatDesLieux !== undefined
-                        ? { honoraires_gestion: applied.provenance ?? "extracted" }
-                        : {}),
-                      ...(applied.collected.honorairesComptable !== undefined
-                        ? { honoraires_comptable: applied.provenance ?? "extracted" }
-                        : {}),
-                    }
-                  : { copropriete: applied.provenance ?? "extracted" }),
+                : { copropriete: applied.provenance ?? "extracted" }),
           },
           familyPhase: "card" as const,
           documentReview: undefined,
@@ -1653,6 +1750,22 @@ export class F012ChargesAssistant {
     }
 
     if (state.step === "category_collect") {
+      // Correctif post-audit P0 — une `Expense` "taxe foncière" en attente
+      // de décision (`pendingTaxeFonciereExpense`, famille "impots" migrée
+      // Phase 2) doit rester actionnable après un reload, exactement comme
+      // `documentReview` ci-dessous pour les autres familles documentaires.
+      // Avant ce correctif, cette branche était absente : `familyPhase`
+      // reste "paper" après réception de l'Expense (`receive_taxe_fonciere_expense`
+      // ne le change pas), donc la reprise retombait sur la branche "paper"
+      // ci-dessous et réémettait l'invite d'upload générique au lieu du
+      // message de confirmation/correction — la proposition restait dans le
+      // state mais jamais réellement visible/actionnable à l'écran.
+      if (state.pendingTaxeFonciereExpense) {
+        return {
+          state,
+          messages: [taxeFonciereExpenseReceivedMessage(state.pendingTaxeFonciereExpense)],
+        };
+      }
       if (state.familyPhase === "review" && state.documentReview) {
         return {
           state,
@@ -1795,9 +1908,14 @@ export class F012ChargesAssistant {
       },
       renseigne: {
         taxeFonciere: hasTaxeFonciereValue(state.collected),
-        assurancePno: state.collected.assurancePno !== undefined,
-        copropriete: state.collected.coproLignes.length > 0,
-        honorairesGestion: state.collected.honorairesGestion !== undefined,
+        assurancePno:
+          state.collected.assurancePno !== undefined ||
+          hasDocumentExpenseForCategory(state.collected, "assurance_pno"),
+        copropriete:
+          state.collected.coproLignes.length > 0 || hasDocumentExpenseForCategory(state.collected, "copropriete"),
+        honorairesGestion:
+          state.collected.honorairesGestion !== undefined ||
+          hasDocumentExpenseForCategory(state.collected, "honoraires_gestion"),
         travaux: state.collected.travaux.length > 0,
       },
       totalDeductible: computed.charges.totalDeductible,
@@ -2212,15 +2330,20 @@ export class F012ChargesAssistant {
       case "taxe_fonciere":
         return hasTaxeFonciereValue(collected);
       case "assurance_pno":
-        return collected.assurancePno !== undefined;
+        return collected.assurancePno !== undefined || hasDocumentExpenseForCategory(collected, "assurance_pno");
       case "assurance_gli":
-        return collected.assuranceGli !== undefined;
+        return collected.assuranceGli !== undefined || hasDocumentExpenseForCategory(collected, "assurance_gli");
       case "copropriete":
-        return collected.coproLignes.length > 0;
+        return collected.coproLignes.length > 0 || hasDocumentExpenseForCategory(collected, "copropriete");
       case "honoraires_gestion":
-        return collected.honorairesGestion !== undefined;
+        return (
+          collected.honorairesGestion !== undefined || hasDocumentExpenseForCategory(collected, "honoraires_gestion")
+        );
       case "honoraires_comptable":
-        return collected.honorairesComptable !== undefined;
+        return (
+          collected.honorairesComptable !== undefined ||
+          hasDocumentExpenseForCategory(collected, "honoraires_comptable")
+        );
       case "travaux":
         return collected.travaux.length > 0;
       case "frais_bancaires":

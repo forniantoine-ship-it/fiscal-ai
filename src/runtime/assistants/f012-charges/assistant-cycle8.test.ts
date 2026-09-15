@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { computeChargesExercice } from "../../capabilities/f012/compute-charges-exercice";
 import { F012ChargesAssistant } from "./assistant";
 import { collectedToChargeRegistry } from "./collected-to-registry";
+import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import { applyImpotsReview, decideProposalGroup, isDocumentAlreadyAnalyzed } from "./apply-document-review";
 import type { ChargeProposal } from "./charge-proposal";
 import { proposalsFromCoproCorpus } from "./proposals-from-copro";
@@ -418,7 +419,8 @@ describe("F-012 Cycle 8 — review documentaire", () => {
       }
     }
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.ok(turn.state.collected.coproLignes.some((item) => item.montant === 420));
+    // F012 V2 Phase 3 — syndic migré vers `Expense` (collected.documentExpenses).
+    assert.ok((turn.state.collected.documentExpenses ?? []).some((expense) => expense.montant === 420));
     assert.equal(turn.state.fieldSources.copropriete, "user_correction");
   });
 
@@ -466,7 +468,7 @@ describe("F-012 Cycle 8 — review documentaire", () => {
       amount: 200,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.coproLignes[0]?.montant, 200);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 200);
   });
 
   it("U — document sans classification claire : proposition, pas d'échec", () => {
@@ -525,14 +527,15 @@ describe("F-012 Cycle 8 — review documentaire", () => {
       familyId: "syndic",
       proposals: first,
     });
-    const afterFirst = turn.state.collected.coproLignes.length;
+    // F012 V2 Phase 3 — syndic migré vers `Expense` (collected.documentExpenses).
+    const afterFirst = (turn.state.collected.documentExpenses ?? []).length;
     const second = proposalsFromCoproCorpus({ corpus: DECOMPTE_S2, documentId: "s2", fiscalYear: YEAR });
     turn = await receiveAndConfirm(assistant, turn.state, {
       documentId: "s2",
       familyId: "syndic",
       proposals: second,
     });
-    assert.ok(turn.state.collected.coproLignes.length > afterFirst);
+    assert.ok((turn.state.collected.documentExpenses ?? []).length > afterFirst);
     assert.deepEqual(turn.state.collected.documentIdsByFamily?.syndic, ["s1", "s2"]);
   });
 
@@ -664,17 +667,24 @@ describe("F-012 Cycle 8 — review documentaire", () => {
       familyId: "syndic",
       proposals: syndicProposals,
     });
-    const fromRegistry = computeChargesExercice({
-      exerciceFiscal: YEAR,
-      dateMiseEnService: "2023-01-01",
-      taxeFonciere: turn.state.collected.taxeFonciere,
-      coproLignes: turn.state.collected.coproLignes,
+    // F012 V2 Phase 3 — syndic migré vers `Expense` (collected.documentExpenses,
+    // jamais `coproLignes` pour ce chemin) : le total réel passe par le
+    // pipeline complet (collectedToChargeRegistry → chargeRegistryToComputeInput),
+    // pas par une reconstruction manuelle qui ignorerait cette source.
+    const registry = collectedToChargeRegistry({
+      collected: turn.state.collected,
+      categoryInventory: turn.state.categoryInventory,
+      fieldSources: turn.state.fieldSources,
+      exercise: YEAR,
     });
+    const computeInput = chargeRegistryToComputeInput(registry, { dateMiseEnService: "2023-01-01" });
+    const fromRegistry = computeChargesExercice(computeInput);
     assert.equal(fromRegistry.charges.totalDeductible, manual.charges.totalDeductible);
     assert.equal(turn.state.collected.taxeFonciere, 1200);
-    assert.ok(turn.state.collected.coproLignes.some((ligne) => ligne.montant === 800));
+    const syndicExpenses = turn.state.collected.documentExpenses ?? [];
+    assert.ok(syndicExpenses.some((expense) => expense.montant === 800));
     assert.equal(
-      turn.state.collected.coproLignes.some((ligne) => ligne.type === "fonds_travaux"),
+      syndicExpenses.some((expense) => expense.coproType === "fonds_travaux"),
       false,
     );
   });

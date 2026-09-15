@@ -197,6 +197,154 @@ describe("REMOVE_DOCUMENT — invalidation des confirmations Charges/Crédit/Amo
     assert.equal(next.declarationDraft?.chargesConfirmedAt, "2026-01-01T00:00:00Z");
   });
 
+  it("#1d F012 V2 Phase 3 — document source d'une Expense syndic (collected.documentExpenses) supprimé → chargesConfirmedAt invalidé, Expense repasse pending, Charge disparaît du calcul fiscal réel", async () => {
+    // Vérifie jusqu'au résultat fiscal (§11/§13 de la mission) : preuve que
+    // `expenseToCharge()` transmet bien `coproType` (sans quoi
+    // `chargeRegistryToComputeInput` abandonnerait silencieusement la ligne,
+    // voir le commentaire sur `Expense.coproType`, expense.ts) AVANT
+    // suppression, puis que la suppression du document fait disparaître la
+    // Charge du total déductible — pas seulement `chargesConfirmedAt`.
+    const lmnpReducer = await loadReducer();
+    const collectedWithExpense = {
+      coproLignes: [],
+      travaux: [],
+      divers: [],
+      skippedCategories: [],
+      documentExpenses: [
+        {
+          id: "expense-doc-doc-syndic-1-provisions:800",
+          exerciceFiscal: 2026,
+          montant: 800,
+          montantExtrait: 800,
+          description: "Charges de l'immeuble",
+          origin: "document",
+          documentId: "doc-syndic-1",
+          fieldSources: { montant: "extracted" },
+          category: "copropriete",
+          coproType: "provisions",
+          decision: "confirmed",
+        },
+      ],
+    };
+    const state = baseState(
+      [doc("doc-syndic-1", "charges")],
+      {
+        completedSteps: ["charges"],
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        chargesAssistantState: {
+          step: "complete",
+          categoryInventory: [],
+          currentCategoryIndex: 0,
+          collected: collectedWithExpense,
+          fieldSources: {},
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+      },
+    );
+
+    const { collectedToChargeRegistry } = await import("../../../runtime/assistants/f012-charges/collected-to-registry");
+    const { chargeRegistryToComputeInput } = await import(
+      "../../../runtime/assistants/f012-charges/registry-to-compute-input"
+    );
+    const { computeChargesExercice } = await import("../../../runtime/capabilities/f012/compute-charges-exercice");
+
+    const beforeRegistry = collectedToChargeRegistry({
+      collected: collectedWithExpense as any,
+      categoryInventory: [],
+      fieldSources: {},
+      exercise: 2026,
+    });
+    assert.equal(
+      beforeRegistry.charges.find((c) => c.familyId === "syndic")?.amount,
+      800,
+      "la Charge syndic doit exister AVANT suppression (preuve que coproType a bien traversé expenseToCharge)",
+    );
+    const beforeCompute = computeChargesExercice(
+      chargeRegistryToComputeInput(beforeRegistry, { dateMiseEnService: "2023-01-01" }),
+    );
+    assert.equal(
+      beforeCompute.charges.totalDeductible,
+      800,
+      "le total fiscal réel doit inclure les 800 € AVANT suppression — preuve que coproType n'est pas silencieusement perdu",
+    );
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-syndic-1" });
+
+    assert.equal(next.declarationDraft?.chargesConfirmedAt, undefined);
+    const collectedAfter = (next.declarationDraft?.chargesAssistantState as any)?.collected;
+    const expenseAfter = collectedAfter?.documentExpenses?.[0];
+    assert.notEqual(expenseAfter?.decision, "confirmed", "l'Expense syndic ne doit plus être exploitable en Charge");
+    assert.equal(expenseAfter?.reviewNeeded, true);
+    assert.equal(expenseAfter?.montant, 800, "le montant n'est pas effacé, seule la validation redevient nécessaire");
+    assert.equal(expenseAfter?.documentId, "doc-syndic-1", "le documentId reste intact — jamais reconstruit");
+
+    const afterRegistry = collectedToChargeRegistry({
+      collected: collectedAfter,
+      categoryInventory: [],
+      fieldSources: {},
+      exercise: 2026,
+    });
+    assert.equal(
+      afterRegistry.charges.some((c) => c.familyId === "syndic"),
+      false,
+      "la Charge syndic doit disparaître du Charge Registry après suppression du document",
+    );
+    const afterCompute = computeChargesExercice(
+      chargeRegistryToComputeInput(afterRegistry, { dateMiseEnService: "2023-01-01" }),
+    );
+    assert.equal(
+      afterCompute.charges.totalDeductible,
+      0,
+      "le total fiscal réel doit tomber à 0 après suppression du document — jusqu'au résultat, pas seulement le flag de confirmation",
+    );
+  });
+
+  it("#1e F012 V2 Phase 3 — document non contributeur d'une Expense de documentExpenses supprimé → chargesConfirmedAt conservé, Expense intacte", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      [doc("doc-syndic-1", "charges"), doc("doc-autre", "autre")],
+      {
+        completedSteps: ["charges"],
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        chargesAssistantState: {
+          step: "complete",
+          categoryInventory: [],
+          currentCategoryIndex: 0,
+          collected: {
+            coproLignes: [],
+            travaux: [],
+            divers: [],
+            skippedCategories: [],
+            documentExpenses: [
+              {
+                id: "expense-doc-doc-syndic-1-provisions:800",
+                exerciceFiscal: 2026,
+                montant: 800,
+                montantExtrait: 800,
+                description: "Charges de l'immeuble",
+                origin: "document",
+                documentId: "doc-syndic-1",
+                fieldSources: { montant: "extracted" },
+                category: "copropriete",
+                coproType: "provisions",
+                decision: "confirmed",
+              },
+            ],
+          },
+          fieldSources: {},
+          updatedAt: "2026-01-01T00:00:00Z",
+        } as any,
+      },
+    );
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-autre" });
+
+    assert.equal(next.declarationDraft?.chargesConfirmedAt, "2026-01-01T00:00:00Z");
+    const expenseAfter = (next.declarationDraft?.chargesAssistantState as any)?.collected?.documentExpenses?.[0];
+    assert.equal(expenseAfter?.decision, "confirmed");
+    assert.equal(expenseAfter?.montant, 800);
+  });
+
   it("#3 Crédit : document contributeur supprimé → creditConfirmedAt supprimé", async () => {
     const lmnpReducer = await loadReducer();
     const state = baseState(

@@ -1,4 +1,5 @@
 import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
+import { invalidateExpensesForDocument } from "@/runtime/capabilities/f012/expense";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import {
   createLedgerEntryFromField,
@@ -720,12 +721,17 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       // sémantique que "jamais encore validée" ailleurs dans ce modèle,
       // aucune règle nouvelle) — `montant`/`montantExtrait` restent intacts,
       // rien n'est effacé, seule la validation redevient nécessaire.
-      if (
-        declarationDraft &&
-        declarationDraft.chargesAssistantState?.collected.taxeFonciereExpense?.documentId === action.documentId
-      ) {
-        const chargesAssistantState = declarationDraft.chargesAssistantState;
-        const taxeFonciereExpense = chargesAssistantState.collected.taxeFonciereExpense!;
+      // F012 V2 Phase 3 — même invariant, généralisé (§11 de la mission) au
+      // tableau `documentExpenses` (assurances/gestion/syndic migrées) via
+      // `invalidateExpensesForDocument()` (expense.ts, un seul mécanisme
+      // partagé) plutôt que trois branches quasi identiques supplémentaires.
+      const chargesAssistantState = declarationDraft?.chargesAssistantState;
+      const taxeFonciereContributes =
+        chargesAssistantState?.collected.taxeFonciereExpense?.documentId === action.documentId;
+      const documentExpensesContribute = (chargesAssistantState?.collected.documentExpenses ?? []).some(
+        (expense) => expense.documentId === action.documentId,
+      );
+      if (declarationDraft && chargesAssistantState && (taxeFonciereContributes || documentExpensesContribute)) {
         declarationDraft = {
           ...declarationDraft,
           chargesConfirmedAt: undefined,
@@ -733,11 +739,23 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
             ...chargesAssistantState,
             collected: {
               ...chargesAssistantState.collected,
-              taxeFonciereExpense: {
-                ...taxeFonciereExpense,
-                decision: "pending",
-                reviewNeeded: true,
-              },
+              ...(taxeFonciereContributes
+                ? {
+                    taxeFonciereExpense: {
+                      ...chargesAssistantState.collected.taxeFonciereExpense!,
+                      decision: "pending" as const,
+                      reviewNeeded: true,
+                    },
+                  }
+                : {}),
+              ...(documentExpensesContribute
+                ? {
+                    documentExpenses: invalidateExpensesForDocument(
+                      chargesAssistantState.collected.documentExpenses ?? [],
+                      action.documentId,
+                    ),
+                  }
+                : {}),
             },
           },
         };

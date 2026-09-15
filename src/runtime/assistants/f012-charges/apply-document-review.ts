@@ -91,26 +91,21 @@ export function reconcileReviewConflicts(input: {
   review: F012DocumentReview;
   fiscalYear: number;
 }): DocumentAmountConflict[] {
-  const next =
-    input.review.familyId === "impots"
-      ? conflictsForImpotsReview({
-          collected: input.collected,
-          proposals: input.review.proposals,
-          fiscalYear: input.fiscalYear,
-        })
-      : input.review.familyId === "assurances"
-        ? conflictsForAssurancesReview({
-            collected: input.collected,
-            proposals: input.review.proposals,
-            fiscalYear: input.fiscalYear,
-          })
-        : input.review.familyId === "gestion"
-          ? conflictsForGestionReview({
-              collected: input.collected,
-              proposals: input.review.proposals,
-              fiscalYear: input.fiscalYear,
-            })
-          : conflictsForSyndicReview({ collected: input.collected, proposals: input.review.proposals });
+  // Phase 3 — assurances/gestion/syndic écrivent désormais dans
+  // `collected.documentExpenses` (additif, jamais un remplacement du champ
+  // scalaire legacy — voir `expense-from-document-review.ts`) : il n'existe
+  // plus de valeur unique à "garder ou remplacer", donc plus de conflit
+  // possible pour ces trois familles. `conflictsForAssurancesReview`/
+  // `conflictsForGestionReview`/`conflictsForSyndicReview` restent définies
+  // et exportées ci-dessous (non supprimées, §8 de la mission) mais ne sont
+  // plus appelées ici.
+  const next = input.review.familyId === "impots"
+    ? conflictsForImpotsReview({
+        collected: input.collected,
+        proposals: input.review.proposals,
+        fiscalYear: input.fiscalYear,
+      })
+    : [];
   return next.map((conflict) => {
     const previous = input.review.conflicts?.find(
       (item) =>
@@ -529,6 +524,9 @@ function withReviewedDocument(
   };
 }
 
-function uniqueIds(ids: string[]): string[] {
+/** Exportée pour réutilisation par `expense-from-document-review.ts` (Phase 3) — même dédoublonnage, jamais une seconde implémentation. */
+export function uniqueIds(ids: string[]): string[] {
   return [...new Set(ids)];
 }
+
+export { withReviewedDocument };

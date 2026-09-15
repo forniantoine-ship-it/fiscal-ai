@@ -17,6 +17,7 @@ import type {
   F012DocumentReview,
   FamilyCoverage,
 } from "@/runtime";
+import type { Expense } from "@/runtime/capabilities/f012/expense";
 import { missingDocumentFieldMessage, paperInviteMessage } from "@/runtime";
 import {
   canConfirmAll,
@@ -916,6 +917,105 @@ export function DocumentReviewForm({
       >
         Enregistrer les lignes confirmées
       </ReviewActionButton>
+    </div>
+  );
+}
+
+/**
+ * Correctif post-audit P0 — écran de revue pour la dépense "taxe foncière"
+ * extraite d'un document (`Expense`, famille "impots" migrée Phase 2).
+ * Même pattern UI que `DocumentReviewForm` ci-dessus (input + `ReviewActionButton`,
+ * bascule "Modifier" → "Enregistrer la correction") — aucune nouvelle
+ * architecture, simplement adapté à `Expense` (un seul montant, pas de
+ * `ChargeProposal[]`/groupes) puisque `correct_taxe_fonciere_expense` prend
+ * un montant unique (`F012Action`, types.ts) plutôt qu'un `proposalId`.
+ * Rendue dès que `pendingTaxeFonciereExpense` existe — y compris après un
+ * reload (état restauré par `resume()`/`buildReentryTurn`) : la proposition
+ * reste réellement actionnable, pas seulement présente dans le state.
+ */
+export function TaxeFonciereReviewForm({
+  expense,
+  year,
+  disabled,
+  onAction,
+}: {
+  expense: Expense;
+  year: number;
+  disabled: boolean;
+  onAction: (action: F012Action) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [amount, setAmount] = useState(
+    expense.montantExtrait !== undefined ? String(expense.montantExtrait).replace(".", ",") : "",
+  );
+  const missingAmount = expense.montantExtrait === undefined;
+
+  const saveCorrection = () => {
+    const parsed = parseAmountOptional(amount);
+    if (parsed === undefined) return;
+    onAction({ type: "correct_taxe_fonciere_expense", montant: parsed });
+    setEditing(false);
+  };
+
+  return (
+    <div
+      style={{
+        padding: spacing.scale[3],
+        borderRadius: radius.md,
+        border: `1px solid ${colors.border.subtle}`,
+      }}
+    >
+      <p style={typography.body.desktop}>
+        {missingAmount
+          ? "Montant non lu dans ce document — renseignez-le."
+          : `${expense.montantExtrait!.toLocaleString("fr-FR")} € lus dans le document`}
+      </p>
+
+      {missingAmount || editing ? (
+        <label style={labelStyle}>
+          {amountPaidLabel(year)}
+          <input
+            style={inputStyle}
+            aria-label={missingAmount ? "Renseigner le montant" : "Corriger le montant"}
+            value={amount}
+            onChange={(event) => setAmount(event.target.value)}
+          />
+        </label>
+      ) : null}
+
+      <div className="flex flex-wrap gap-2" style={{ marginTop: spacing.scale[2] }}>
+        {!missingAmount ? (
+          <ReviewActionButton
+            blocked={disabled}
+            aria-label="Confirmer"
+            onClick={() => onAction({ type: "confirm_taxe_fonciere_expense" })}
+          >
+            Oui, ce montant est correct
+          </ReviewActionButton>
+        ) : null}
+        <ReviewActionButton
+          variant="secondary"
+          blocked={disabled || (editing && parseAmountOptional(amount) === undefined)}
+          aria-label={missingAmount ? "Renseigner le montant" : "Corriger"}
+          onClick={() => {
+            if (missingAmount || editing) {
+              saveCorrection();
+              return;
+            }
+            setEditing(true);
+          }}
+        >
+          {missingAmount ? "Renseigner" : editing ? "Enregistrer la correction" : "Corriger"}
+        </ReviewActionButton>
+        <ReviewActionButton
+          variant="secondary"
+          blocked={disabled}
+          aria-label="Ignorer"
+          onClick={() => onAction({ type: "ignore_taxe_fonciere_expense" })}
+        >
+          Ignorer ce document
+        </ReviewActionButton>
+      </div>
     </div>
   );
 }

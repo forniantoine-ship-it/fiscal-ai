@@ -18,6 +18,10 @@ import { resolveF012ResumeDecision } from "@/lib/lmnp/services/f012/f012-resume"
 import { composantsNouveauxChanged } from "@/lib/lmnp/services/f012/f012-amortissement-freshness";
 import { analyzeImpotsDocument, IMPOTS_UPLOAD_CATEGORY } from "@/lib/lmnp/services/f012/f012-impots-document-upload";
 import {
+  analyzeDocumentaryReview,
+  DOCUMENTARY_REVIEW_UPLOAD_CATEGORY,
+} from "@/lib/lmnp/services/f012/f012-documentary-review-upload";
+import {
   amountPaidLabel,
   amountWhereToLook,
   categoryLabel,
@@ -37,9 +41,7 @@ import {
   resolveSituationalProfilage,
   situationalProfilageQuestions,
 } from "@/runtime/assistants/f012-charges/situational-profilage";
-import { proposalsFromExistingParsers } from "@/lib/lmnp/services/f012/f012-document-analysis";
-import { extractPdfTextClient } from "@/lib/lmnp/services/activite-ocr-text";
-import { CoverageRecap, CompletenessCatchForm, DocumentReviewForm, FamilyCard, FamilyManualForm, FamilyPaperUpload, SlotNudgeForm } from "./F012FamilyCapture";
+import { CoverageRecap, CompletenessCatchForm, DocumentReviewForm, FamilyCard, FamilyManualForm, FamilyPaperUpload, SlotNudgeForm, TaxeFonciereReviewForm } from "./F012FamilyCapture";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import {
@@ -1028,31 +1030,47 @@ export function F012ChargesAssistantPanel() {
         return;
       }
 
+      // F012 V2 Phase 3 — familles "assurances"/"gestion"/"syndic" migrées :
+      // upload réel (même pipeline Supabase que "impots", Phase 2) — jamais
+      // plus l'id synthétique `f012-doc-*` ci-dessous pour ces familles. La
+      // revue reste `ChargeProposal[]` / `DocumentReviewForm` (aucune
+      // nouvelle UI, §1 de la mission) ; seule la persistance au commit
+      // change (voir `commit_document_review` → `applyDocumentReviewAsExpenses`).
       setBusy(true);
       try {
-        let text = "";
-        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-          text = await file.text();
-        } else {
-          try {
-            text = await extractPdfTextClient(file);
-          } catch {
-            text = "";
-          }
+        const result = await analyzeDocumentaryReview(file, familyId, fiscalYear);
+        if (result.status === "not_authenticated") {
+          alert("Utilisateur non connecté");
+          return;
         }
-        const documentId = `f012-doc-${file.name}-${file.size}`;
-        const proposals = proposalsFromExistingParsers({
-          familyId,
-          corpus: { text, fileName: file.name },
-          documentId,
-          fiscalYear,
+        if (result.status === "upload_failed") {
+          alert("L'envoi du document a échoué — réessayez.");
+          return;
+        }
+        // Document réellement stocké dès que l'upload réussit — enregistré
+        // ici que l'extraction réussisse ou non, pour que REMOVE_DOCUMENT
+        // puisse ensuite le retrouver (même garantie que "impots").
+        dispatch({
+          type: "UPLOAD_DOCUMENTS",
+          files: [
+            {
+              file: result.uploadedFile,
+              documentId: result.documentId,
+              isSupabaseDocumentId: true,
+              category: DOCUMENTARY_REVIEW_UPLOAD_CATEGORY,
+            },
+          ],
         });
+        if (result.status === "extraction_failed") {
+          alert("Nous n'avons pas pu lire ce document — vous pouvez renseigner le montant manuellement.");
+          return;
+        }
         applyTurn(
           await assistant.handle(stateRef.current, {
             type: "receive_document_proposals",
-            documentId,
+            documentId: result.documentId,
             familyId,
-            proposals,
+            proposals: result.proposals,
             fileName: file.name,
           }),
         );
@@ -1082,6 +1100,20 @@ export function F012ChargesAssistantPanel() {
       }
       if (suggestionId === "slot_nudge_yes" && stateRef.current.pendingSlotNudge) {
         void runAction({ type: "respond_slot_nudge", slot: stateRef.current.pendingSlotNudge, accepted: true });
+      }
+      // Correctif post-audit P0 — `confirm_taxe_fonciere_expense` /
+      // `ignore_taxe_fonciere_expense` arrivent comme suggestions du message
+      // `taxeFonciereExpenseReceivedMessage` (assistant.ts) : avant ce
+      // correctif, aucune branche ne les dispatchait ici (cliquer ne faisait
+      // rien). `correct_taxe_fonciere_expense` a besoin d'un montant, donc
+      // n'est jamais une simple suggestion : elle est câblée directement par
+      // `TaxeFonciereReviewForm` (même convention que `DocumentReviewForm`
+      // pour `modify_proposal`, qui n'utilise pas non plus `handleSuggestion`).
+      if (suggestionId === "confirm_taxe_fonciere_expense") {
+        void runAction({ type: "confirm_taxe_fonciere_expense" });
+      }
+      if (suggestionId === "ignore_taxe_fonciere_expense") {
+        void runAction({ type: "ignore_taxe_fonciere_expense" });
       }
       const filetFamily: Record<string, "impots" | "syndic" | "assurances" | "gestion" | "travaux" | "autres"> = {
         completeness_travaux: "travaux",
@@ -1154,11 +1186,20 @@ export function F012ChargesAssistantPanel() {
     (state.travauxSubStep === "qualification" ||
       state.travauxSubStep === "split" ||
       state.travauxSubStep === "date");
+  // Correctif post-audit P0 — dès qu'une `Expense` "taxe foncière" est en
+  // attente de décision (`pendingTaxeFonciereExpense`), l'écran d'upload
+  // doit céder la place à `TaxeFonciereReviewForm` : avant ce correctif,
+  // `familyPhase` restait "paper" après réception de l'Expense, donc
+  // `showPaper` restait vrai et masquait les boutons confirmer/corriger/
+  // ignorer (bloc `suggestions` ci-dessous, gardé par `!showPaper`) — ni les
+  // clics ni le formulaire de correction n'étaient jamais accessibles.
+  const showTaxeFonciereReview = Boolean(state.pendingTaxeFonciereExpense);
   const showPaper =
     state.step === "category_collect" &&
     state.familyPhase === "paper" &&
     currentFamily !== undefined &&
-    isDocumentaryFamily(currentFamily);
+    isDocumentaryFamily(currentFamily) &&
+    !showTaxeFonciereReview;
   const showReview = state.familyPhase === "review" && Boolean(state.documentReview);
   const showCategory =
     state.step === "category_collect" &&
@@ -1199,6 +1240,7 @@ export function F012ChargesAssistantPanel() {
     showSlotNudge ||
     showPaper ||
     showReview ||
+    showTaxeFonciereReview ||
     state.step === "completeness" ||
     state.step === "aggregate_review";
   const parsedQuestion = lastAssistant && !hideEngineQuestion ? splitQuestion(lastAssistant.content) : null;
@@ -1208,7 +1250,7 @@ export function F012ChargesAssistantPanel() {
     showFamilyManual,
     showSlotNudge,
     showPaper,
-    showReview,
+    showReview: showReview || showTaxeFonciereReview,
     completeness: state.step === "completeness" ? completenessCopy(fiscalYear) : null,
     isAggregateReview: state.step === "aggregate_review",
     familyPhrase: currentFamily ? familyCardPhrase(currentFamily, fiscalYear) : null,
@@ -1232,6 +1274,7 @@ export function F012ChargesAssistantPanel() {
     !showSlotNudge &&
     !showPaper &&
     !showReview &&
+    !showTaxeFonciereReview &&
     !showCategory
       ? lastAssistant.suggestions
       : undefined;
@@ -1390,6 +1433,15 @@ export function F012ChargesAssistantPanel() {
             disabled={busy}
             onFile={(file) => void analyzePaperFile(file)}
             onManual={() => void runAction({ type: "open_family_manual" })}
+          />
+        ) : null}
+
+        {showTaxeFonciereReview && state.pendingTaxeFonciereExpense ? (
+          <TaxeFonciereReviewForm
+            expense={state.pendingTaxeFonciereExpense}
+            year={fiscalYear}
+            disabled={busy}
+            onAction={(action) => void runAction(action)}
           />
         ) : null}
 

@@ -12,6 +12,7 @@ import { aggregateFiscalInputs } from "../../capabilities/f006/aggregate-inputs"
 import { computeChargesExercice } from "../../capabilities/f012/compute-charges-exercice";
 import { F012ChargesAssistant } from "./assistant";
 import { collectedToChargeRegistry } from "./collected-to-registry";
+import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import { applyGestionReview } from "./apply-document-review";
 import { canConfirmAll, everydayProposalNote, everydayProposalTitle } from "./document-review-decisions";
 import { isDocumentaryFamily } from "./charge-proposal";
@@ -201,7 +202,8 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(proposals.find((item) => item.gestionKind === "gestion")?.amount, 480);
     const { assistant, turn: start } = await startGestion();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ges-a", proposals });
-    assert.equal(turn.state.collected.honorairesGestion, 480);
+    // F012 V2 Phase 3 — gestion migrée vers `Expense` (collected.documentExpenses).
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 480);
     const charge = registryOf(turn.state).charges.find((item) => item.familyId === "gestion");
     assert.equal(charge?.amount, 480);
     assert.equal(charge?.source, "document");
@@ -235,8 +237,21 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ges-c", proposals });
     const charges = registryOf(turn.state).charges.filter((item) => item.familyId === "gestion");
     assert.equal(charges.some((item) => item.amount === 12_000), false);
-    assert.equal(turn.state.collected.honorairesGestion, 780);
-    assert.equal(turn.state.collected.fraisEtatDesLieux, 150);
+    // F012 V2 Phase 3 — gestion migrée vers `Expense` (collected.documentExpenses) :
+    // "gestion" (480), "état des lieux" (150) et "mise en location" (300)
+    // restent 3 dépenses distinctes et traçables (jamais recombinées en 2
+    // "slots" comme le faisait le modèle scalaire legacy) ; le total
+    // fiscal — même catégorie `honoraires_gestion` pour les trois, comme le
+    // modèle legacy le traitait déjà via ses deux slots additionnés — reste
+    // strictement identique : 480 + 150 + 300 = 930.
+    const gestionExpenses = (turn.state.collected.documentExpenses ?? []).filter(
+      (expense) => expense.category === "honoraires_gestion",
+    );
+    assert.equal(
+      gestionExpenses.reduce((sum, expense) => sum + expense.montant, 0),
+      930,
+    );
+    assert.ok(gestionExpenses.some((expense) => expense.montant === 150 && expense.description === "État des lieux"));
   });
 
   it("D — honoraires gestion", () => {
@@ -282,7 +297,8 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(proposals[0]?.amount, 360);
     const { assistant, turn: start } = await startGestion();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ges-g", proposals });
-    assert.equal(turn.state.collected.honorairesComptable, 360);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 360);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.category, "honoraires_comptable");
   });
 
   it("H — logiciel", async () => {
@@ -295,7 +311,8 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(proposals[0]?.amount, 120);
     const { assistant, turn: start } = await startGestion();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ges-h", proposals });
-    assert.equal(turn.state.collected.honorairesComptable, 120);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 120);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.category, "honoraires_comptable");
   });
 
   it("I — paiement N", () => {
@@ -381,7 +398,7 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
       amount: 480,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.honorairesGestion, 480);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 480);
     assert.equal(turn.state.fieldSources.honoraires_gestion, "user_correction");
   });
 
@@ -404,7 +421,7 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
       amount: 500,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.honorairesGestion, 500);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 500);
     assert.equal(turn.state.fieldSources.honoraires_gestion, "user_correction");
   });
 
@@ -453,7 +470,14 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(coverageOf(turn.state)?.status, "unknown");
   });
 
-  it("S — conflit manuel / document", async () => {
+  it("S — manuel + document : additif, jamais un conflit qui écrase", async () => {
+    // F012 V2 Phase 3 — le chemin document (assurances/gestion/syndic) écrit
+    // désormais dans `collected.documentExpenses`, JAMAIS dans le champ
+    // scalaire `honorairesGestion` (réservé à la saisie manuelle). Il n'y a
+    // donc plus de "conflit" à arbitrer entre une valeur manuelle existante
+    // et un document confirmé : les deux coexistent, additivement — jamais
+    // d'écrasement silencieux (l'un ne peut jamais remplacer l'autre), et
+    // jamais de perte non plus (la valeur manuelle reste intacte).
     const { assistant, turn: start } = await startGestion();
     let turn = await assistant.handle(start.state, { type: "open_family_manual" });
     turn = await assistant.handle(turn.state, { type: "submit_family_gestion", honorairesGestion: 480 });
@@ -468,17 +492,16 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
       familyId: "gestion",
       proposals,
     });
-    assert.ok(turn.state.documentReview?.conflicts?.some((item) => item.existingAmount === 480 && item.incomingAmount === 500));
+    assert.deepEqual(turn.state.documentReview?.conflicts ?? [], []);
     turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposals[0]!.id });
-    const blocked = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(blocked.state.familyPhase, "review");
-    turn = await assistant.handle(blocked.state, {
-      type: "resolve_document_conflict",
-      choice: "keep_existing",
-      label: "Frais de l'agence",
-    });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
     assert.equal(turn.state.collected.honorairesGestion, 480);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 500);
+    const charges = registryOf(turn.state).charges.filter((item) => item.familyId === "gestion");
+    assert.equal(
+      charges.reduce((sum, charge) => sum + charge.amount, 0),
+      980,
+    );
     const useDoc = applyGestionReview({
       collected: { coproLignes: [], travaux: [], divers: [], skippedCategories: [], honorairesGestion: 480 },
       review: {
@@ -492,7 +515,14 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(useDoc.collected.honorairesGestion, 500);
   });
 
-  it("T — document + document complémentaire : une seule Charge", async () => {
+  it("T — document + document complémentaire : deux Charges traçables, jamais fusionnées", async () => {
+    // F012 V2 Phase 3 — chaque document produit sa/ses propre(s) `Expense`,
+    // distincte(s) par construction (`deriveExpenseIdFromDocument`) : deux
+    // documents ne sont plus fusionnés dans un seul total scalaire (comme le
+    // faisait le modèle legacy) mais restent deux Charges séparées et
+    // traçables jusqu'à leur document d'origine — jamais un double comptage
+    // pour autant (chaque document ne compte qu'une fois), et la SOMME reste
+    // strictement identique à l'ancien comportement.
     const { assistant, turn: start } = await startGestion();
     const contrat = proposalsFromGestionCorpus({
       corpus: CONTRAT_AGENCE,
@@ -517,11 +547,19 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
       fiscalYear: YEAR,
     });
     turn = await receiveAndConfirm(assistant, turn.state, { documentId: "releve-b", proposals: releve });
-    assert.equal(turn.state.collected.honorairesGestion, 480);
+    assert.equal(turn.state.collected.honorairesGestion, undefined);
     assert.deepEqual(turn.state.collected.documentIdsByFamily?.gestion, ["contrat-a", "releve-b"]);
+    const gestionCharges = registryOf(turn.state).charges.filter(
+      (item) => item.familyId === "gestion" && item.category === "honoraires_gestion",
+    );
+    assert.equal(gestionCharges.length, 2);
     assert.equal(
-      registryOf(turn.state).charges.filter((item) => item.familyId === "gestion" && item.category === "honoraires_gestion").length,
-      1,
+      gestionCharges.reduce((sum, charge) => sum + charge.amount, 0),
+      960,
+    );
+    assert.deepEqual(
+      new Set(gestionCharges.map((charge) => charge.documentIds?.[0])),
+      new Set(["contrat-a", "releve-b"]),
     );
   });
 
@@ -578,12 +616,12 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     });
     turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposals[0]!.id });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.honorairesGestion, 480);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 480);
     turn = await assistant.handle(turn.state, { type: "go_back" });
     assert.equal(turn.state.familyPhase, "review");
-    assert.equal(turn.state.collected.honorairesGestion, undefined);
+    assert.equal((turn.state.collected.documentExpenses ?? []).length, 0);
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.honorairesGestion, 480);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 480);
     assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "gestion").length, 1);
   });
 
@@ -626,12 +664,18 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
         fiscalYear: YEAR,
       }),
     });
-    const fromRegistry = computeChargesExercice({
-      exerciceFiscal: YEAR,
-      dateMiseEnService: "2023-01-01",
-      honorairesGestion: turn.state.collected.honorairesGestion,
-      fraisEtatDesLieux: turn.state.collected.fraisEtatDesLieux,
+    // F012 V2 Phase 3 — gestion migrée vers `Expense` : le total réel passe
+    // par le pipeline complet (collectedToChargeRegistry →
+    // chargeRegistryToComputeInput), plus par une reconstruction manuelle
+    // des champs scalaires qui ne verrait jamais `documentExpenses`.
+    const registry = collectedToChargeRegistry({
+      collected: turn.state.collected,
+      categoryInventory: turn.state.categoryInventory,
+      fieldSources: turn.state.fieldSources,
+      exercise: YEAR,
     });
+    const computeInput = chargeRegistryToComputeInput(registry, { dateMiseEnService: "2023-01-01" });
+    const fromRegistry = computeChargesExercice(computeInput);
     assert.equal(fromRegistry.charges.totalDeductible, manual.charges.totalDeductible);
     assert.equal(fromRegistry.charges.totalDeductible, 930);
   });

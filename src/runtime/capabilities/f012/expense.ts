@@ -37,7 +37,7 @@ import {
 } from "./charge";
 import { createComposantTravaux } from "./create-composant-travaux";
 import { qualifyTravail, splitMixteTravaux } from "./qualify-travail";
-import type { ChargeCategorie, ComposantNouveau, NatureIntervention } from "./types";
+import type { ChargeCategorie, ComposantNouveau, CoproLigneType, NatureIntervention } from "./types";
 
 /**
  * Origine de la donnée — distincte de `FieldSource` (provenance KS par
@@ -135,6 +135,18 @@ export interface Expense {
   /** Ambiguïté nécessitant un arbitrage explicite — même contrat que `Charge.reviewNeeded`. */
   reviewNeeded?: boolean;
   decision: ExpenseDecision;
+  /**
+   * Phase 3 — même contrat que `Charge.coproType` (charge.ts), nécessaire
+   * UNIQUEMENT pour la famille "syndic" : `chargeRegistryToComputeInput`
+   * (registry-to-compute-input.ts) reconstruit `coproLignes` à partir de
+   * `Charge.coproType` et ABANDONNE SILENCIEUSEMENT toute Charge "copropriete"
+   * dont `coproType` est absent (jamais comptée par `computeCoproDeductible`,
+   * bien que visible dans le Charge Registry) — sans ce champ, une dépense de
+   * syndic validée disparaîtrait silencieusement du résultat fiscal. Absent
+   * hors catégorie "copropriete" — pas un champ spéculatif : requis par un
+   * consommateur réel existant, pas ajouté "pour plus tard".
+   */
+  coproType?: CoproLigneType;
 }
 
 /**
@@ -152,6 +164,26 @@ export interface Expense {
  */
 export function deriveExpenseIdFromDocument(documentId: string, itemKey: string): string {
   return `expense-doc-${documentId}-${itemKey}`;
+}
+
+/**
+ * Phase 3 (§11 — REMOVE_DOCUMENT) — UN SEUL mécanisme de généralisation de
+ * l'invalidation "document supprimé" pour un tableau d'`Expense`, réutilisé
+ * par toute famille dont les dépenses documentaires vivent dans un tableau
+ * (`F012CollectedData.documentExpenses`) plutôt qu'un champ scalaire unique.
+ * Jamais 4 branches de reducer quasi identiques : ce helper encode la seule
+ * règle nécessaire — une `Expense` dont le document a disparu redevient
+ * `"pending"`/`reviewNeeded` (jamais silencieusement recomptée par
+ * `collected-to-registry.ts`, qui relit `Expense` directement à chaque
+ * calcul), `montant`/`montantExtrait`/`documentId` restent intacts. Une
+ * `Expense` d'un autre document n'est jamais touchée.
+ */
+export function invalidateExpensesForDocument(expenses: Expense[], documentId: string): Expense[] {
+  return expenses.map((expense) =>
+    expense.documentId === documentId
+      ? { ...expense, decision: "pending" as const, reviewNeeded: true }
+      : expense,
+  );
 }
 
 /** Une décision "ignored" ou "pending" ne peut jamais devenir une Charge — même garde que `isProposalRecordable()` (charge-proposal.ts), appliquée ici au niveau de la dépense entière plutôt qu'à un seul champ montant. */
@@ -269,6 +301,10 @@ export function expenseToCharge(expense: Expense): ExpenseToChargeOutput {
             dateDebut: expense.dateDebut,
           }
         : undefined,
+    // Phase 3 — voir le commentaire sur `Expense.coproType` : sans ce
+    // passage, une Charge "copropriete" issue d'une Expense serait
+    // silencieusement exclue du calcul fiscal (chargeRegistryToComputeInput).
+    coproType: familyId === "syndic" ? expense.coproType : undefined,
     // Phase 2 — l'ambiguïté charge/immobilisation (JUG-008) ne concerne que
     // les travaux : une dépense hors "travaux" (ex. taxe foncière) n'a pas
     // de `qualificationRetenue` à arbitrer et ne doit jamais être marquée

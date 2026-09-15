@@ -79,6 +79,23 @@ export interface F012CollectedData {
    * historique inchangé.
    */
   taxeFonciereExpense?: Expense;
+  /**
+   * F012 V2 Phase 3 — SOURCE canonique pour les dépenses documentaires des
+   * familles "assurances", "gestion" et "syndic" une fois migrées (même
+   * contrat que `taxeFonciereExpense` ci-dessus, mutualisé en tableau car ces
+   * trois familles peuvent produire PLUSIEURS dépenses par document — jamais
+   * un second modèle, jamais un index de tableau comme identité : chaque
+   * `Expense.id` reste dérivée de `deriveExpenseIdFromDocument`).
+   * S'AJOUTE aux champs scalaires legacy ci-dessous (`assurancePno`,
+   * `honorairesGestion`, `coproLignes`, etc.) plutôt que de les remplacer :
+   * la saisie manuelle continue de les écrire, jamais ce tableau — même
+   * principe additif déjà établi par `familyLines` (Cycle 12A) pour des
+   * lignes supplémentaires dans une famille déjà couverte par un slot
+   * scalaire. `collected-to-registry.ts` projette les deux sources
+   * simultanément (jamais en conflit : elles n'écrivent jamais la même
+   * donnée depuis la Phase 3).
+   */
+  documentExpenses?: Expense[];
   assurancePno?: number;
   assuranceGli?: number;
   coproLignes: CoproLigneInput[];

@@ -13,6 +13,7 @@ import { computeChargesExercice } from "../../capabilities/f012/compute-charges-
 import { detectFinancementOverlap } from "../../capabilities/f012/detect-financement-overlap";
 import { F012ChargesAssistant } from "./assistant";
 import { collectedToChargeRegistry } from "./collected-to-registry";
+import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import { applyAssurancesReview } from "./apply-document-review";
 import { canConfirmAll, everydayProposalNote, everydayProposalTitle } from "./document-review-decisions";
 import { isDocumentaryFamily } from "./charge-proposal";
@@ -203,7 +204,8 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.equal(logement?.amount, 300);
     const { assistant, turn: start } = await startAssurances();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ass-a", proposals });
-    assert.equal(turn.state.collected.assurancePno, 300);
+    // F012 V2 Phase 3 — assurances migrée vers `Expense` (collected.documentExpenses).
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
     const charge = registryOf(turn.state).charges.find((item) => item.familyId === "assurances");
     assert.equal(charge?.amount, 300);
     assert.equal(charge?.source, "document");
@@ -232,7 +234,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.equal(logement[0]?.amount, 600);
     const { assistant, turn: start } = await startAssurances();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ass-c", proposals });
-    assert.equal(turn.state.collected.assurancePno, 600);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 600);
     assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 1);
   });
 
@@ -289,7 +291,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       amount: 600,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, 600);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 600);
     assert.equal(turn.state.fieldSources.assurance_pno, "user_correction");
     assert.deepEqual(turn.state.collected.documentIdsByFamily?.assurances, ["ass-f"]);
   });
@@ -310,14 +312,14 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       proposals,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, undefined);
+    assert.equal(turn.state.collected.documentExpenses, undefined);
     turn = await assistant.handle(turn.state, {
       type: "fill_proposal_manual",
       proposalId: proposals[0]!.id,
       amount: 280,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, 280);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 280);
   });
 
   it("H — modification", async () => {
@@ -339,7 +341,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       amount: 310,
     });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, 310);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 310);
     assert.equal(turn.state.fieldSources.assurance_pno, "user_correction");
   });
 
@@ -381,7 +383,11 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 0);
   });
 
-  it("K — conflit manuel / document", async () => {
+  it("K — manuel + document : additif, jamais un conflit qui écrase", async () => {
+    // F012 V2 Phase 3 — même changement que pour "gestion" (voir cycle10,
+    // test S) : le chemin document écrit dans `documentExpenses`, jamais
+    // dans `assurancePno` (réservé à la saisie manuelle) — plus de conflit
+    // à arbitrer, les deux coexistent additivement.
     const { assistant, turn: start } = await startAssurances();
     let turn = await assistant.handle(start.state, { type: "open_family_manual" });
     turn = await assistant.handle(turn.state, { type: "submit_family_assurance", montant: 300 });
@@ -396,18 +402,16 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       familyId: "assurances",
       proposals,
     });
-    assert.ok(turn.state.documentReview?.conflicts?.some((item) => item.existingAmount === 300 && item.incomingAmount === 320));
+    assert.deepEqual(turn.state.documentReview?.conflicts ?? [], []);
     turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposals[0]!.id });
-    const blocked = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(blocked.state.familyPhase, "review");
-    turn = await assistant.handle(blocked.state, {
-      type: "resolve_document_conflict",
-      choice: "keep_existing",
-      label: "Assurance du logement",
-    });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
     assert.equal(turn.state.collected.assurancePno, 300);
-    assert.equal(turn.state.fieldSources.assurance_pno, "manual");
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 320);
+    const charges = registryOf(turn.state).charges.filter((item) => item.familyId === "assurances");
+    assert.equal(
+      charges.reduce((sum, charge) => sum + charge.amount, 0),
+      620,
+    );
     const useDoc = applyAssurancesReview({
       collected: { coproLignes: [], travaux: [], divers: [], skippedCategories: [], assurancePno: 300 },
       review: {
@@ -423,7 +427,10 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.equal(useDoc.collected.assurancePno, 320);
   });
 
-  it("L — document + document complémentaire : une seule Charge", async () => {
+  it("L — document + document complémentaire : deux Charges traçables, jamais fusionnées", async () => {
+    // F012 V2 Phase 3 — même principe que gestion (cycle10, test T) : deux
+    // documents restent deux `Expense`/Charges distinctes et traçables,
+    // jamais fusionnées dans un seul total — la somme reste correcte.
     const { assistant, turn: start } = await startAssurances();
     const contrat = proposalsFromAssuranceCorpus({
       corpus: CONTRAT_SANS_PAIEMENT,
@@ -448,9 +455,14 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       fiscalYear: YEAR,
     });
     turn = await receiveAndConfirm(assistant, turn.state, { documentId: "releve-b", proposals: paiement });
-    assert.equal(turn.state.collected.assurancePno, 300);
+    assert.equal(turn.state.collected.assurancePno, undefined);
     assert.deepEqual(turn.state.collected.documentIdsByFamily?.assurances, ["contrat-a", "releve-b"]);
-    assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 1);
+    const charges = registryOf(turn.state).charges.filter((item) => item.familyId === "assurances");
+    assert.equal(charges.length, 2);
+    assert.equal(
+      charges.reduce((sum, charge) => sum + charge.amount, 0),
+      600,
+    );
   });
 
   it("M — assurance emprunteur seule : jamais une Charge F-012", async () => {
@@ -480,7 +492,8 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.ok(pret?.exclusionReason);
     const { assistant, turn: start } = await startAssurances();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ass-n", proposals });
-    assert.equal(turn.state.collected.assurancePno, 300);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.category, "assurance_pno");
     assert.equal(turn.state.collected.assuranceGli, undefined);
     assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 1);
   });
@@ -547,9 +560,9 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     const resumedModify = assistant.resume(afterModify);
     assert.equal(resumedModify.state.documentReview?.proposals[0]?.modifiedAmount, 310);
     const committed = await assistant.handle(resumedModify.state, { type: "commit_document_review" });
-    assert.equal(committed.state.collected.assurancePno, 310);
+    assert.equal(committed.state.collected.documentExpenses?.[0]?.montant, 310);
     const afterCommit = toF012PersistedStateWithRegistry(committed.state, TS, YEAR);
-    assert.equal(assistant.resume(afterCommit).state.collected.assurancePno, 310);
+    assert.equal(assistant.resume(afterCommit).state.collected.documentExpenses?.[0]?.montant, 310);
     assert.equal(registryOf(assistant.resume(afterCommit).state).charges.filter((item) => item.familyId === "assurances").length, 1);
   });
 
@@ -568,12 +581,12 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     });
     turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposals[0]!.id });
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, 300);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
     turn = await assistant.handle(turn.state, { type: "go_back" });
     assert.equal(turn.state.familyPhase, "review");
-    assert.equal(turn.state.collected.assurancePno, undefined);
+    assert.equal((turn.state.collected.documentExpenses ?? []).length, 0);
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.equal(turn.state.collected.assurancePno, 300);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
     assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 1);
   });
 
@@ -619,14 +632,18 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
         fiscalYear: YEAR,
       }),
     });
-    const fromRegistry = computeChargesExercice({
-      exerciceFiscal: YEAR,
-      dateMiseEnService: "2023-01-01",
-      assurancePno: turn.state.collected.assurancePno,
+    // F012 V2 Phase 3 — le total réel passe par le pipeline complet.
+    const registry = collectedToChargeRegistry({
+      collected: turn.state.collected,
+      categoryInventory: turn.state.categoryInventory,
+      fieldSources: turn.state.fieldSources,
+      exercise: YEAR,
     });
+    const computeInput = chargeRegistryToComputeInput(registry, { dateMiseEnService: "2023-01-01" });
+    const fromRegistry = computeChargesExercice(computeInput);
     assert.equal(fromRegistry.charges.totalDeductible, manual.charges.totalDeductible);
     assert.equal(fromRegistry.charges.totalDeductible, 300);
-    assert.equal(turn.state.collected.assurancePno, 300);
+    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
   });
 
   it("U — F-006 consomme le même total", async () => {
@@ -665,7 +682,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
         fiscalYear: YEAR,
       }),
     });
-    assert.equal(mixte.state.collected.assurancePno, 300);
+    assert.equal(mixte.state.collected.documentExpenses?.[0]?.montant, 300);
 
     const { assistant: a2, turn: s2 } = await startAssurances(DEPS_F011);
     let credit = await a2.handle(s2.state, { type: "open_family_manual" });

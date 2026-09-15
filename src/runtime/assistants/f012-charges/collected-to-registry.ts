@@ -19,7 +19,7 @@ import {
   type FamilyCoverage,
 } from "../../capabilities/f012/charge";
 import { resolveFamilyCoverage } from "../../capabilities/f012/family-coverage";
-import { expenseToCharge, isExpenseRecordable } from "../../capabilities/f012/expense";
+import { expenseToCharge, isExpenseRecordable, type Expense } from "../../capabilities/f012/expense";
 import { unknownReasonForFamily } from "./family-coverage-intents";
 import { toF012PersistedState, type F012CollectedData, type F012PersistedState, type F012State } from "./types";
 
@@ -30,6 +30,23 @@ export type CollectedToRegistryInput = {
   fieldSources: Partial<Record<string, FieldSource>>;
   exercise: number;
 };
+
+/**
+ * Durcissement défensif — exception NOMMÉE (distinguable par `instanceof`)
+ * pour une collision d'identifiants résiduelle dans `collectedToChargeRegistry`.
+ * Jamais catchée ici ni transformée en résultat silencieux : c'est
+ * `F012ChargesAssistant.handle()` (assistant.ts) qui la catche explicitement
+ * pour produire un message utilisateur diagnosticable plutôt qu'un crash
+ * brut — toute autre erreur continue de se propager sans être interceptée.
+ */
+export class ChargeRegistryCollisionError extends Error {
+  readonly collidingIds: string[];
+  constructor(collidingIds: string[]) {
+    super(`Charge Registry : collision d'identifiants (${collidingIds.join(", ") || "inconnu"})`);
+    this.name = "ChargeRegistryCollisionError";
+    this.collidingIds = collidingIds;
+  }
+}
 
 const FAMILY_CATEGORIES: Record<ChargeFamilyId, F012CategoryId[]> = {
   impots: ["taxe_fonciere"],
@@ -70,6 +87,12 @@ function scalarCharge(input: {
   });
 }
 
+function recordableDocumentExpensesForExercise(expenses: Expense[] | undefined, exercise: number): Expense[] {
+  return (expenses ?? []).filter(
+    (expense) => isExpenseRecordable(expense) && expense.exerciceFiscal === exercise,
+  );
+}
+
 function travauxQualification(t: F012CollectedData["travaux"][number]): Charge["qualification"] {
   if (t.choix === "mixte") return "mixte";
   if (t.natureIntervention) return t.natureIntervention;
@@ -103,6 +126,21 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
       }),
     );
   }
+  // F012 V2 Phase 3 — dépenses documentaires "assurances"/"gestion"/"syndic"
+  // migrées vers `Expense` (collected.documentExpenses), ADDITIVES aux
+  // champs scalaires/tableau legacy ci-dessous (jamais un remplacement,
+  // jamais les deux au titre de la MÊME dépense — voir le commentaire sur
+  // `F012CollectedData.documentExpenses` et `expense-from-document-review.ts` :
+  // la saisie manuelle continue d'écrire les champs legacy, le commit de
+  // revue documentaire pour ces familles n'écrit plus JAMAIS ces champs).
+  // Filtré sur l'exercice courant : une Expense dont l'exercice extrait
+  // diffère (paiement à cheval sur l'année suivante) ne doit jamais devenir
+  // une Charge de CET exercice (même garde que l'ancien chemin ChargeProposal,
+  // qui bloquait déjà l'écriture — "out_of_year" — dans ce cas).
+  for (const expense of recordableDocumentExpensesForExercise(collected.documentExpenses, exercise)) {
+    charges.push(expenseToCharge(expense).charge);
+  }
+
   if (collected.assurancePno !== undefined) {
     charges.push(
       scalarCharge({
@@ -260,7 +298,23 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
   const ids = charges.map((c) => c.id);
   const unique = new Set(ids);
   if (unique.size !== ids.length) {
-    throw new Error("Charge Registry : collision d'identifiants");
+    const seen = new Set<string>();
+    const collidingIds: string[] = [];
+    for (const id of ids) {
+      if (seen.has(id)) collidingIds.push(id);
+      seen.add(id);
+    }
+    // Durcissement défensif post-audit — cette collision ne devrait plus
+    // jamais se produire pour le cas syndic (voir `withOccurrenceDiscriminatedIds`,
+    // proposals-from-copro.ts) : si elle subsiste malgré tout (donnée
+    // corrompue, nouvelle source non couverte), un throw brut ici remontait
+    // jusqu'à `F012ChargesAssistant.handle()` sans être catché et crashait
+    // l'app côté utilisateur. `ChargeRegistryCollisionError` reste une
+    // exception explicite (jamais avalée silencieusement, jamais une
+    // Charge Registry incohérente renvoyée comme si de rien n'était) — c'est
+    // `handle()` qui la catche pour produire un message utilisateur
+    // diagnosticable au lieu d'un crash (voir assistant.ts).
+    throw new ChargeRegistryCollisionError(collidingIds);
   }
 
   return {

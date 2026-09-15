@@ -409,9 +409,15 @@ describe("F-012 Cycle 7 — documentaire impôts / syndic", () => {
       }
     }
     turn = await assistant.handle(turn.state, { type: "commit_document_review" });
-    assert.ok(turn.state.collected.coproLignes.length > 0);
+    // F012 V2 Phase 3 — syndic migré vers `Expense` (collected.documentExpenses),
+    // `coproLignes` reste réservé à la saisie manuelle (jamais écrit par ce
+    // chemin document désormais).
+    const syndicExpenses = (turn.state.collected.documentExpenses ?? []).filter(
+      (expense) => expense.category === "copropriete",
+    );
+    assert.ok(syndicExpenses.length > 0);
     assert.equal(
-      turn.state.collected.coproLignes.some((ligne) => ligne.type === "fonds_travaux"),
+      syndicExpenses.some((expense) => expense.coproType === "fonds_travaux"),
       false,
     );
   });
