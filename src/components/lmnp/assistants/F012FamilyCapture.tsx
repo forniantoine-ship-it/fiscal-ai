@@ -966,9 +966,13 @@ export function TaxeFonciereReviewForm({
       }}
     >
       <p style={typography.body.desktop}>
-        {missingAmount
-          ? "Montant non lu dans ce document — renseignez-le."
-          : `${expense.montantExtrait!.toLocaleString("fr-FR")} € lus dans le document`}
+        {expense.montantConflict
+          ? // Correctif Blocker #1 — les deux montants divergents sont montrés
+            // explicitement, jamais l'un choisi silencieusement (mission §6).
+            `Deux montants différents détectés : ${expense.montantConflict.montantIndique.toLocaleString("fr-FR")} € indiqués sur l'avis, ${expense.montantConflict.sommePrelevements.toLocaleString("fr-FR")} € pour la somme des prélèvements. Renseignez le bon montant.`
+          : missingAmount
+            ? "Montant non lu dans ce document — renseignez-le."
+            : `${expense.montantExtrait!.toLocaleString("fr-FR")} € lus dans le document`}
       </p>
 
       {missingAmount || editing ? (

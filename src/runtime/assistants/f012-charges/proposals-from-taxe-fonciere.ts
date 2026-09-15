@@ -8,7 +8,11 @@ import {
   normalizeChargeDateValue,
   parseFrenchCurrencyAmount,
 } from "@/lib/lmnp/services/charges/charge-parse-utils";
-import { parseTaxeFonciereDocument } from "@/lib/lmnp/services/charges/parse-taxe-fonciere-document";
+import {
+  parseTaxeFonciereDocument,
+  type TaxeFonciereParseResult,
+} from "@/lib/lmnp/services/charges/parse-taxe-fonciere-document";
+import { hasPrimaryPayableSignal } from "@/lib/lmnp/services/charges/taxe-fonciere-amount-selection";
 import type { ChargeProposal } from "./charge-proposal";
 
 export type TaxeFonciereProposalInput = {
@@ -53,6 +57,122 @@ export function extractPrelevements(corpus: string): number[] {
   return amounts;
 }
 
+/**
+ * Agrégation explicite, pure et testable isolément — la somme ne dépend que
+ * des VALEURS des prélèvements, jamais de leur position dans le tableau —
+ * stable au reorder par construction (addition commutative), aucun état,
+ * aucun effet de bord. Réutilisée par les deux chemins (`Expense` ET
+ * `ChargeProposal` historique) — une seule implémentation, jamais deux
+ * sommes divergentes.
+ */
+export function sumPrelevements(prelevements: number[]): number {
+  return prelevements.reduce((sum, amount) => sum + amount, 0);
+}
+
+/**
+ * Correctif Blocker #1 (post-re-audit) : tolérance d'arrondi OCR pour
+ * réconcilier `montantPayable` (montant annuel explicite, ancré sur un
+ * libellé fiable — voir `taxe-fonciere-amount-selection.ts`,
+ * `PRIMARY_PAYABLE_LABELS`) et la somme des prélèvements détectés
+ * (mensualités OCR, susceptibles d'un écart de quelques centimes à 1€ par
+ * arrondi cumulé sur plusieurs échéances). Documentée explicitement (mission
+ * §7) : 1500 vs 1499 ou 1501 reste "concordant" ; tout écart supérieur est
+ * un désaccord réel entre deux sources, jamais absorbé silencieusement.
+ */
+export const TAXE_FONCIERE_AMOUNT_TOLERANCE = 1;
+
+/**
+ * Résolution UNIQUE du montant annuel de taxe foncière — centralise la règle
+ * de priorité entre `montantPayable` (montant annuel explicite, ancré sur un
+ * libellé fiable type "net à payer"/"montant à payer"/"total des impôts"/
+ * "solde à payer", voir `taxe-fonciere-amount-selection.ts`) et la somme des
+ * prélèvements détectés dans le corpus. Réutilisée par `expensesFromTaxeFonciereCorpus`
+ * ET `proposalsFromTaxeFonciereCorpus` — une seule règle métier, jamais deux
+ * règles divergentes dans le repo (correctif Blocker #1, mission §1/§4).
+ *
+ * Invariant de sécurité : si les deux sources sont renseignées ET divergent
+ * au-delà de la tolérance d'arrondi, AUCUNE valeur n'est choisie
+ * silencieusement — `status: "divergent"` force une review utilisateur
+ * explicite (les deux chemins consommateurs bloquent alors toute
+ * confirmation automatique via leurs mécanismes existants : `missingFields`
+ * côté `ChargeProposal`, `reviewNeeded`/`taxeFonciereExpenseMissingAmount`
+ * côté `Expense`).
+ *
+ * Un seul prélèvement isolé (`prelevements.length < 2`) ne prouve jamais, à
+ * lui seul, le montant annuel total — il est ignoré au profit du montant
+ * explicite s'il existe (même règle que l'historique `annualImpotsAmount`,
+ * `document-review-decisions.ts`), jamais combiné ni comparé.
+ */
+export type TaxeFonciereAmountResolution =
+  | { status: "explicit_only"; amount: number }
+  | { status: "prelevements_only"; amount: number; prelevementsCount: number }
+  | {
+      status: "concordant";
+      amount: number;
+      montantIndique: number;
+      sommePrelevements: number;
+      prelevementsCount: number;
+    }
+  | {
+      status: "divergent";
+      montantIndique: number;
+      sommePrelevements: number;
+      prelevementsCount: number;
+    }
+  | { status: "insufficient" };
+
+export function resolveTaxeFonciereAnnualAmount(input: {
+  montantPayable: number | undefined;
+  /**
+   * Correctif Blocker #1 (re-audit — découverte en test) : le ranking
+   * déterministe (`taxe-fonciere-amount-selection.ts`) peut retenir un
+   * candidat `montantPayable` sans AUCUN signal positif (score=0, ex. un
+   * nombre OCR isolé près d'une année) quand c'est le seul candidat trouvé —
+   * ce n'est PAS un signal fiable au sens de la mission ("ancré sur un
+   * libellé fiable type 'net à payer'..."). Par défaut `true` (comportement
+   * historique inchangé pour le cas mono-source) : seuls les appelants qui
+   * COMPARENT `montantPayable` aux prélèvements doivent explicitement
+   * passer le résultat réel de `hasPrimaryPayableSignal()` — sinon un faux
+   * positif OCR bloquerait à tort une agrégation de prélèvements par
+   * ailleurs fiable (cas démontré par `AVIS_10_PRELEVEMENTS` en test).
+   */
+  montantPayableReliable?: boolean;
+  prelevements: number[];
+}): TaxeFonciereAmountResolution {
+  const { montantPayable, prelevements } = input;
+  const montantPayableReliable = input.montantPayableReliable ?? true;
+
+  if (prelevements.length < 2) {
+    if (montantPayable !== undefined) return { status: "explicit_only", amount: montantPayable };
+    return { status: "insufficient" };
+  }
+
+  const sommePrelevements = sumPrelevements(prelevements);
+  if (montantPayable === undefined || !montantPayableReliable) {
+    return { status: "prelevements_only", amount: sommePrelevements, prelevementsCount: prelevements.length };
+  }
+
+  const diverges = Math.abs(montantPayable - sommePrelevements) > TAXE_FONCIERE_AMOUNT_TOLERANCE;
+  if (diverges) {
+    return {
+      status: "divergent",
+      montantIndique: montantPayable,
+      sommePrelevements,
+      prelevementsCount: prelevements.length,
+    };
+  }
+
+  // Concordant (égal ou dans la tolérance d'arrondi) : le montant explicite,
+  // ancré sur un libellé fiable, sert de référence canonique.
+  return {
+    status: "concordant",
+    amount: montantPayable,
+    montantIndique: montantPayable,
+    sommePrelevements,
+    prelevementsCount: prelevements.length,
+  };
+}
+
 function missingFields(input: {
   amount?: number;
   exercise?: number;
@@ -65,6 +185,19 @@ function missingFields(input: {
   return missing;
 }
 
+/**
+ * `montantPayable` n'est comparable aux prélèvements que s'il est ancré sur
+ * un libellé primaire fiable ("net à payer"/"montant à payer"/"total des
+ * impôts"/"total à payer"/"solde à payer") — jamais un candidat retenu par
+ * défaut (seul candidat trouvé, score=0, aucun signal). Réutilisée par les
+ * deux chemins (`Expense` ET `ChargeProposal`), une seule règle.
+ */
+export function isMontantPayableReliable(parsed: TaxeFonciereParseResult): boolean {
+  const deterministicDefault = parsed.amountFieldRanking?.deterministicDefault;
+  if (!deterministicDefault) return false;
+  return hasPrimaryPayableSignal(deterministicDefault.positiveSignals);
+}
+
 export function proposalsFromTaxeFonciereCorpus(input: TaxeFonciereProposalInput): ChargeProposal[] {
   const parsed = parseTaxeFonciereDocument(input.corpus, { logTraces: false });
   const paymentDate = extractPaymentDate(input.corpus);
@@ -75,7 +208,39 @@ export function proposalsFromTaxeFonciereCorpus(input: TaxeFonciereProposalInput
   const exercise = paymentYear ?? (Number.isFinite(impositionYear) ? impositionYear : undefined);
   const prelevements = extractPrelevements(input.corpus);
 
-  if (prelevements.length >= 2) {
+  const resolution = resolveTaxeFonciereAnnualAmount({
+    montantPayable: parsed.data?.montantPayable,
+    montantPayableReliable: isMontantPayableReliable(parsed),
+    prelevements,
+  });
+
+  // Correctif Blocker #1 : deux sources renseignées ET divergentes au-delà
+  // de la tolérance — jamais un découpage par prélèvement qui jetterait
+  // silencieusement `montantPayable` (défaut démontré par le re-audit).
+  // Une seule proposition, montant volontairement absent : `missingFields`
+  // inclut "amount", donc `canConfirmAll`/`hasMissingRecordableAmount`
+  // (document-review-decisions.ts, mécanisme déjà existant) bloquent toute
+  // confirmation automatique — même garde que le cas "montant non lu"
+  // ci-dessous, réutilisée telle quelle, aucune nouvelle architecture.
+  if (resolution.status === "divergent") {
+    return [
+      {
+        id: `${input.documentId}:taxe-fonciere`,
+        documentId: input.documentId,
+        familyId: "impots",
+        description:
+          `Taxe foncière — montant à vérifier ` +
+          `(document : ${resolution.montantIndique.toLocaleString("fr-FR")} €, ` +
+          `prélèvements détectés : ${resolution.sommePrelevements.toLocaleString("fr-FR")} €)`,
+        exercise,
+        paymentDate,
+        missingFields: missingFields({ exercise, paymentDate }),
+        decision: "pending",
+      },
+    ];
+  }
+
+  if (resolution.status === "prelevements_only" || resolution.status === "concordant") {
     const groupId = `${input.documentId}:taxe-annuelle`;
     return prelevements.map((amount, index) => ({
       id: `${input.documentId}:prelevement:${index + 1}`,
@@ -91,7 +256,7 @@ export function proposalsFromTaxeFonciereCorpus(input: TaxeFonciereProposalInput
     }));
   }
 
-  const amount = parsed.data?.montantPayable;
+  const amount = resolution.status === "explicit_only" ? resolution.amount : undefined;
   if (amount === undefined) {
     return [
       {

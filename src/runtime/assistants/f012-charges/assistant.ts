@@ -243,8 +243,15 @@ function hasDocumentExpenseForCategory(
 
 /** F012 V2 Phase 2 — présente la dépense (Expense) extraite du document avant confirmation/correction/rejet. */
 function taxeFonciereExpenseReceivedMessage(expense: Expense): F012Message {
-  const content =
-    expense.montantExtrait !== undefined
+  const content = expense.montantConflict
+    ? // Correctif Blocker #1 — divergence explicite, jamais un montant choisi
+      // silencieusement : les deux valeurs sont montrées, aucune n'est
+      // présentée comme certaine (mission §6).
+      `Le document indique deux montants différents pour cette taxe foncière : ` +
+      `${expense.montantConflict.montantIndique.toLocaleString("fr-FR")} € indiqués sur l'avis, ` +
+      `${expense.montantConflict.sommePrelevements.toLocaleString("fr-FR")} € pour la somme des prélèvements détectés. ` +
+      `Merci de vérifier et de renseigner le bon montant.`
+    : expense.montantExtrait !== undefined
       ? `Nous avons lu ${expense.montantExtrait.toLocaleString("fr-FR")} € de taxe foncière dans ce document. Est-ce le bon montant ?`
       : "Nous n'avons pas pu lire le montant dans ce document. Vous pouvez le renseigner manuellement.";
   return {
@@ -702,7 +709,9 @@ export class F012ChargesAssistant {
         if (taxeFonciereExpenseMissingAmount(pending)) {
           messages.push({
             role: "assistant",
-            content: "Aucun montant n'a pu être lu dans ce document — renseignez-le avant de confirmer.",
+            content: pending.montantConflict
+              ? `Deux montants différents ont été détectés (${pending.montantConflict.montantIndique.toLocaleString("fr-FR")} € indiqués sur l'avis, ${pending.montantConflict.sommePrelevements.toLocaleString("fr-FR")} € pour la somme des prélèvements) — renseignez le bon montant avant de confirmer.`
+              : "Aucun montant n'a pu être lu dans ce document — renseignez-le avant de confirmer.",
           });
           return { state, messages, completed: false };
         }

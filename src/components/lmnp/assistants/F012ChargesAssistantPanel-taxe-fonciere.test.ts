@@ -98,6 +98,22 @@ Net à payer : 1 000,00 EUR
 Payé le 12/03/2024
 `;
 
+/** 10 prélèvements de 150,00 € — cas nominal de l'audit P0 (perte silencieuse de 1350€ avant correctif). */
+const AVIS_10_PRELEVEMENTS = `
+Avis de taxe foncière — Année 2024
+${Array.from({ length: 10 }, (_, i) => `Prélèvement ${i + 1} : 150,00`).join("\n")}
+Payé le 12/03/2024
+`;
+
+/** Montant annuel 1500€ vs 2×150€ (300€) — divergence réelle, Blocker #1 (re-audit). */
+const AVIS_1500_ET_2_PRELEVEMENTS = `
+Avis de taxe foncière — Année 2024
+Net à payer : 1 500,00 EUR
+Prélèvement 1 : 150,00
+Prélèvement 2 : 150,00
+Payé le 12/03/2024
+`;
+
 describe("P0 post-audit — taxe foncière : câblage UI réel (panel → handleSuggestion → assistant)", () => {
   it("TAXE INITIAL UI — après upload réel (boundary réseau mocké), la proposition est actionnable, pas seulement dans le state", async () => {
     const assistant = new F012ChargesAssistant(ctx, DEPS);
@@ -299,5 +315,105 @@ describe("P0 post-audit — taxe foncière : câblage UI réel (panel → handle
     assert.equal(after_.decision, "modified");
     assert.equal(chargeTotalFor(resumed.state).charges.totalDeductible, chargeTotalFor(turn.state).charges.totalDeductible);
     assert.equal(chargeTotalFor(resumed.state).charges.totalDeductible, 1234);
+  });
+
+  it("TAXE MULTI PRELEVEMENTS (régression P0) — 10×150€ mensualisés → UNE Expense agrégée (1500€), jamais 'dernier prélèvement gagne'", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    const start = await reachImpotsPaper(assistant);
+    const file = new File([AVIS_10_PRELEVEMENTS], "avis-10x150.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(file, YEAR, mockUploadDeps("doc-real-p0-10x150", AVIS_10_PRELEVEMENTS));
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+
+    // Même contrat que `expensesFromTaxeFonciereCorpus` : une seule Expense
+    // candidate pour un document mensualisé, jamais N.
+    assert.equal(result.expenses.length, 1, "une seule Expense — jamais une par prélèvement");
+
+    // Même boucle que le panel réel (F012ChargesAssistantPanel.tsx) : si le
+    // moteur recevait encore N Expense, ce dispatch séquentiel écraserait
+    // silencieusement les précédentes (last-write-wins, défaut de l'audit).
+    let turn = start;
+    for (const expense of result.expenses) {
+      turn = await assistant.handle(turn.state, { type: "receive_taxe_fonciere_expense", expense });
+    }
+
+    assert.equal(turn.state.pendingTaxeFonciereExpense?.montantExtrait, 1500, "montant annuel reconstitué, jamais un seul prélèvement tronqué");
+
+    turn = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.equal(turn.state.collected.taxeFonciereExpense?.decision, "confirmed");
+    assert.equal(turn.state.collected.taxeFonciereExpense?.montant, 1500);
+    assert.equal(chargeTotalFor(turn.state).charges.totalDeductible, 1500, "Charge Registry : montant correct, aucune perte, aucun double comptage");
+
+    // Recommit idempotent — ré-extraire le même document doit reproduire
+    // exactement la même Expense candidate (même id, même montant), jamais
+    // un doublement ni un retour à un seul prélèvement.
+    const resultAgain = await analyzeImpotsDocument(
+      file,
+      YEAR,
+      mockUploadDeps("doc-real-p0-10x150", AVIS_10_PRELEVEMENTS),
+    );
+    assert.equal(resultAgain.status, "success");
+    if (resultAgain.status !== "success") return;
+    assert.equal(resultAgain.expenses.length, 1);
+    assert.equal(resultAgain.expenses[0]!.id, result.expenses[0]!.id);
+    assert.equal(resultAgain.expenses[0]!.montant, 1500);
+  });
+
+  it("TAXE DIVERGENCE (Blocker #1, re-audit) — montant annuel 1500 vs 2×150 détectés : jamais un montant choisi silencieusement, confirm bloqué tant que non résolu, correct débloque", async () => {
+    const assistant = new F012ChargesAssistant(ctx, DEPS);
+    const start = await reachImpotsPaper(assistant);
+    const file = new File([AVIS_1500_ET_2_PRELEVEMENTS], "avis-divergent.txt", { type: "text/plain" });
+    const result = await analyzeImpotsDocument(
+      file,
+      YEAR,
+      mockUploadDeps("doc-real-p0-divergent", AVIS_1500_ET_2_PRELEVEMENTS),
+    );
+    assert.equal(result.status, "success");
+    if (result.status !== "success") return;
+    assert.equal(result.expenses.length, 1);
+
+    let turn = await assistant.handle(start.state, {
+      type: "receive_taxe_fonciere_expense",
+      expense: result.expenses[0]!,
+    });
+
+    // Aucune valeur choisie silencieusement entre les deux sources.
+    assert.equal(turn.state.pendingTaxeFonciereExpense?.montantExtrait, undefined);
+    assert.deepEqual(turn.state.pendingTaxeFonciereExpense?.montantConflict, {
+      montantIndique: 1500,
+      sommePrelevements: 300,
+    });
+
+    // Le message de reprise montre EXPLICITEMENT les deux montants — jamais
+    // l'un présenté comme certain (mission §6).
+    const receivedMessage = turn.messages.at(-1);
+    assert.match(receivedMessage?.content ?? "", /1\s?500/);
+    assert.match(receivedMessage?.content ?? "", /300/);
+
+    // Tenter de confirmer sans corriger est bloqué (même garde que "montant non lu").
+    const blocked = await assistant.handle(turn.state, { type: "confirm_taxe_fonciere_expense" });
+    assert.equal(blocked.state.pendingTaxeFonciereExpense?.montantExtrait, undefined, "toujours pending, rien confirmé automatiquement");
+    assert.equal(blocked.state.collected.taxeFonciereExpense, undefined);
+    const blockedMessage = blocked.messages.at(-1);
+    assert.match(blockedMessage?.content ?? "", /1\s?500/);
+    assert.match(blockedMessage?.content ?? "", /300/);
+
+    // Correction explicite de l'utilisateur → seule voie de sortie.
+    turn = await assistant.handle(turn.state, { type: "correct_taxe_fonciere_expense", montant: 1500 });
+    assert.equal(turn.state.collected.taxeFonciereExpense?.decision, "modified");
+    assert.equal(turn.state.collected.taxeFonciereExpense?.montant, 1500);
+    assert.equal(chargeTotalFor(turn.state).charges.totalDeductible, 1500, "Charge Registry : montant correct après résolution explicite du conflit");
+
+    // Recommit idempotent — ré-extraire reproduit le même conflit, jamais un montant auto-résolu au second passage.
+    const resultAgain = await analyzeImpotsDocument(
+      file,
+      YEAR,
+      mockUploadDeps("doc-real-p0-divergent", AVIS_1500_ET_2_PRELEVEMENTS),
+    );
+    assert.equal(resultAgain.status, "success");
+    if (resultAgain.status !== "success") return;
+    assert.equal(resultAgain.expenses.length, 1);
+    assert.equal(resultAgain.expenses[0]!.montantExtrait, undefined);
+    assert.deepEqual(resultAgain.expenses[0]!.montantConflict, { montantIndique: 1500, sommePrelevements: 300 });
   });
 });

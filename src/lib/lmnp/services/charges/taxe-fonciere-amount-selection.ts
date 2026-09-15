@@ -103,7 +103,18 @@ const SOFT_NEGATIVE_SIGNALS: ReadonlyArray<{ pattern: RegExp; label: string; wei
   { pattern: /commune\s+de/i, label: "commune (context)", weight: 25 },
 ];
 
-function hasPrimaryPayableSignal(positiveSignals: string[]): boolean {
+/**
+ * Exportée (correctif Blocker #1, taxe foncière) — même prédicat utilisé en
+ * interne pour le scoring, réutilisé par `proposals-from-taxe-fonciere.ts`/
+ * `expense-from-taxe-fonciere.ts` pour décider si `montantPayable` est assez
+ * fiable pour être comparé à la somme des prélèvements. Un candidat sans
+ * libellé primaire ("net à payer"/"montant à payer"/"total des impôts"/
+ * "total à payer"/"solde à payer") peut être un faux positif OCR (score
+ * faible, ex. un nombre isolé près de "Année 2024") : il ne doit jamais
+ * déclencher un conflit contre une agrégation de prélèvements par ailleurs
+ * fiable.
+ */
+export function hasPrimaryPayableSignal(positiveSignals: string[]): boolean {
   return positiveSignals.some((label) => PRIMARY_PAYABLE_LABELS.has(label));
 }
 

@@ -134,6 +134,19 @@ export interface Expense {
   dateDebut?: string;
   /** Ambiguïté nécessitant un arbitrage explicite — même contrat que `Charge.reviewNeeded`. */
   reviewNeeded?: boolean;
+  /**
+   * Correctif Blocker #1 (F012 V2 — taxe foncière) : présent UNIQUEMENT
+   * quand deux sources documentaires du même document (montant annuel
+   * explicite ancré sur un libellé fiable, ET somme des prélèvements
+   * détectés) divergent au-delà de la tolérance d'arrondi documentée
+   * (`resolveTaxeFonciereAnnualAmount`, proposals-from-taxe-fonciere.ts).
+   * Sert uniquement à construire un message de review explicite — jamais
+   * consommé par `expenseToCharge()` (une `Expense` avec ce champ est
+   * toujours `pending`/`reviewNeeded`, donc jamais recordable). Absent dans
+   * tous les autres cas (source unique, sources concordantes, ou absence
+   * totale de signal).
+   */
+  montantConflict?: { montantIndique: number; sommePrelevements: number };
   decision: ExpenseDecision;
   /**
    * Phase 3 — même contrat que `Charge.coproType` (charge.ts), nécessaire
