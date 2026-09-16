@@ -71,6 +71,14 @@ const RECOVERY_BY_FIELD: Record<string, MissingDossierItem> = {
     label: "Amortissements non validés",
     href: LMNP_ROUTES.amortissementsAssistant,
   },
+  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — un prêt exclu faute de date
+  // de première échéance route vers l'écran documentaire crédit (là où
+  // `firstPaymentDate` se corrige), pas vers l'écran de validation générique.
+  "financementCharges.excludedLoanIds": {
+    id: "credit-excluded-loan",
+    label: "Un prêt doit être complété avant de continuer",
+    href: documentJourneyRoute("credit-immobilier"),
+  },
   "amortissementAssistant.status": {
     id: "amortissement-status",
     label: "Le plan d'amortissement doit être validé",

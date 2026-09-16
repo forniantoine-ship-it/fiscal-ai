@@ -238,10 +238,22 @@ export function normalizeCreditFormValues(values: CreditFormValues): CreditFormV
   return { loans: loans.length ? loans : [emptyLoanFormValues()], summary, installments: values.installments ?? [] };
 }
 
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — `firstPaymentDate` est
+ * désormais une condition de complétude au même titre que les autres champs :
+ * sans elle, `mapCreditFinancingToFinancementCharges()` exclut silencieusement
+ * le prêt du calcul des intérêts déductibles (aucune date ne peut être
+ * inventée). Réutilise le mécanisme de complétude déjà existant plutôt que
+ * d'en créer un second.
+ */
 export function isCreditProfileIncomplete(values: CreditFormValues): boolean {
   if (!values.summary.annualInterest.trim() || !values.summary.remainingCapital.trim()) return true;
   return values.loans.some(
-    (loan) => !loan.bank.trim() || !loan.borrowedAmount.trim() || !loan.monthlyPayment.trim(),
+    (loan) =>
+      !loan.bank.trim() ||
+      !loan.borrowedAmount.trim() ||
+      !loan.monthlyPayment.trim() ||
+      !loan.firstPaymentDate.trim(),
   );
 }
 

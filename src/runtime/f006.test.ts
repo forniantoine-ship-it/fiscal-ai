@@ -860,3 +860,46 @@ describe("NEXT-1 (REV-P0-03) — validateFiscalInputs bloque produceFiscalResult
     assert.ok(output.result, "un warning ne doit jamais devenir arbitrairement bloquant");
   });
 });
+
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — même principe que le boundary
+ * NEXT-1 (REV-P0-03) : un prêt réel exclu faute de date de première
+ * mensualité (`financementCharges.excludedLoanIds`) doit empêcher
+ * produceFiscalResult de produire un résultat par appel direct, y compris
+ * pour un dossier historique confirmé avant le correctif UI. L'absence totale
+ * de financement (achat comptant) reste un cas légitime, jamais bloqué.
+ */
+describe("NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — validateFiscalInputs bloque produceFiscalResult sur prêt exclu", () => {
+  it("financementCharges.excludedLoanIds non vide → génération directe BLOQUÉE (pas de result)", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      financementCharges: {
+        ...BASE_INPUT.financementCharges,
+        excludedLoanIds: ["loan-1"],
+      },
+    });
+    assert.equal(output.result, undefined);
+    assert.ok(
+      output.anomalies.some((a) => a.severity === "error" && a.field === "financementCharges.excludedLoanIds"),
+    );
+  });
+
+  it("excludedLoanIds résolu ([]) → génération PASS", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      financementCharges: { ...BASE_INPUT.financementCharges, excludedLoanIds: [] },
+    });
+    assert.ok(output.result);
+  });
+
+  it("champ excludedLoanIds absent (compat ancien état) → génération PASS", () => {
+    const output = produceFiscalResult(BASE_INPUT);
+    assert.ok(output.result);
+  });
+
+  it("aucun financement du tout (achat comptant) → jamais bloqué", () => {
+    const { financementCharges: _omitted, ...withoutFinancement } = BASE_INPUT;
+    const output = produceFiscalResult(withoutFinancement);
+    assert.ok(output.result, "l'absence de prêt est un cas légitime, pas une exclusion");
+  });
+});

@@ -727,3 +727,98 @@ describe("P0-1 — idempotence : régénération du même exercice sans modifica
     );
   });
 });
+
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — le point d'entrée réel de la
+ * génération (`runDeclarationGeneration`, appelé par `declaration-generation-
+ * gate.ts`) doit bloquer un prêt confirmé sans date de première échéance,
+ * y compris pour un dossier historique dont `financementCharges` n'a jamais
+ * porté `excludedLoanIds` (persisté avant ce correctif) : la dérivation se
+ * fait depuis `creditFinancing.loans`, source toujours disponible.
+ */
+describe("NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — runDeclarationGeneration protège rétroactivement les dossiers historiques", () => {
+  const BASE_LOAN = {
+    id: "loan-1",
+    bank: "Banque",
+    loanType: "amortissable",
+    borrowedAmount: 200000,
+    rate: 3.5,
+    durationMonths: 240,
+    monthlyPayment: 1150,
+    insurance: 300,
+    fees: 0,
+    startDate: "2020-01-01",
+    firstPaymentDate: "",
+    remainingCapital: 195000,
+  };
+
+  function baseDraft(): DeclarationDraft {
+    return {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 1000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 500, status: "validated" },
+    } as unknown as DeclarationDraft;
+  }
+
+  it("dossier historique : financementCharges sans excludedLoanIds, mais creditFinancing porte un prêt sans date → génération BLOQUÉE", () => {
+    const draft: DeclarationDraft = {
+      ...baseDraft(),
+      creditFinancing: {
+        loans: [{ ...BASE_LOAN, firstPaymentDate: "" }],
+        summary: { fiscalYearLabel: "2019", annualInterest: 6900, annualInsurance: 300, remainingCapital: 195000 },
+        installments: [],
+      },
+      financementCharges: {
+        exerciceFiscal: 2025,
+        totalInteretsEmprunt: 0,
+        totalInteretsPreExploitation: 0,
+        totalAssurance: 0,
+        totalCapitalRembourse: 0,
+        totalChargesFinancementExercice: 0,
+        prets: [],
+        fieldSources: {},
+        computedAt: "2020-01-01T00:00:00.000Z",
+        // Pas de champ `excludedLoanIds` — état tel que persisté avant NEXT-2.
+      },
+    } as unknown as DeclarationDraft;
+
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "blocked");
+  });
+
+  it("même dossier avec la date corrigée dans creditFinancing → génération PASS", () => {
+    const draft: DeclarationDraft = {
+      ...baseDraft(),
+      creditFinancing: {
+        loans: [{ ...BASE_LOAN, firstPaymentDate: "2020-02-01" }],
+        summary: { fiscalYearLabel: "2019", annualInterest: 6900, annualInsurance: 300, remainingCapital: 195000 },
+        installments: [],
+      },
+      financementCharges: {
+        exerciceFiscal: 2025,
+        totalInteretsEmprunt: 5569.75,
+        totalInteretsPreExploitation: 0,
+        totalAssurance: 300,
+        totalCapitalRembourse: 4000,
+        totalChargesFinancementExercice: 5869.75,
+        prets: [],
+        fieldSources: {},
+        computedAt: "2020-01-01T00:00:00.000Z",
+      },
+    } as unknown as DeclarationDraft;
+
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+  });
+
+  it("dossier sans aucun financement (achat comptant) → génération jamais bloquée par ce correctif", () => {
+    const generation = runDeclarationGeneration(baseDraft(), 2025);
+    assert.equal(generation.status, "generated");
+  });
+});

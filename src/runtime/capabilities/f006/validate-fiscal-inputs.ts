@@ -46,6 +46,22 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
     }
   }
 
+  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — boundary réel avant
+  // génération fiscale : un prêt réel exclu faute de date de première
+  // mensualité (`mapCreditFinancingToFinancementCharges`) ne doit jamais
+  // rester silencieux — y compris pour un dossier historique confirmé avant
+  // le correctif UI, atteint par appel programmatique direct sans passer par
+  // le gate de complétude du dossier. L'absence de financement (achat
+  // comptant) reste légitime et non signalée ici.
+  if (input.financementCharges?.excludedLoanIds?.length) {
+    anomalies.push({
+      severity: "error",
+      message:
+        "Un ou plusieurs prêts sont exclus du calcul des intérêts faute de date de première échéance connue.",
+      field: "financementCharges.excludedLoanIds",
+    });
+  }
+
   if (!input.chargesAssistant) {
     anomalies.push({
       severity: "fatal",

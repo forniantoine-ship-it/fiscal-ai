@@ -1707,13 +1707,22 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
     // 0 € au résultat fiscal. Jamais sans `dateMiseEnService` connue (précondition
     // Cycle 1) — sinon `financementCharges` reste absent, comme avant ce correctif.
     if (draft?.dateMiseEnService) {
-      const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      const { financementCharges, excludedLoanIds } = mapCreditFinancingToFinancementCharges({
         financing,
         exerciceFiscal: workspace.fiscalYear.year,
         dateMiseEnService: draft.dateMiseEnService,
         prixRevient: draft.logementAmortissement?.prixRevient,
       });
-      dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { financementCharges } });
+      // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — `excludedLoanIds` était
+      // calculé puis jamais lu : un prêt exclu faute de date disparaissait
+      // sans laisser de trace persistée, invisible à isCreditComplete() et à
+      // validateFiscalInputs() (F-006). Ce chemin reste désormais inatteignable
+      // avec une date manquante (confirmDisabled ci-dessous) ; ce champ protège
+      // les dossiers déjà persistés avant ce correctif.
+      dispatch({
+        type: "DECLARATION_PATCH_DRAFT",
+        patch: { financementCharges: { ...financementCharges, excludedLoanIds } },
+      });
     }
 
     dispatch({
@@ -1897,6 +1906,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
           revenueYear={revenueYear}
           installments={displayInstallments}
           showIncompleteWarning={incomplete}
+          confirmDisabled={incomplete}
           onConfirm={handleConfirm}
           cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
           visibleSections={visibleSections}

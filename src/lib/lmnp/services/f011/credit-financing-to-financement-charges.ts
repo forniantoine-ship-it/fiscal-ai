@@ -24,6 +24,30 @@ import type { ComputeFinancementExerciceInput, PretInput, TypePret } from "@/run
 import type { CreditFinancingData } from "@/lib/lmnp/types";
 import type { FinancementChargesOutput } from "@/lib/lmnp/types/domain";
 
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — prédicat unique de complétude
+ * de date, réutilisé par le filtre du mapper ci-dessous ET par
+ * `excludedLoanIdsFromFinancing()` (dérivation live pour le gate F-006,
+ * `run-declaration-generation.ts`/`F006FiscalEnginePanel.tsx`) : jamais deux
+ * définitions divergentes de la même règle.
+ */
+export function loanHasFirstPaymentDate(loan: Pick<CreditFinancingData["loans"][number], "firstPaymentDate">): boolean {
+  return Boolean(loan.firstPaymentDate?.trim());
+}
+
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérive, à partir de la donnée
+ * source canonique (`CreditFinancingData.loans[].firstPaymentDate`, jamais
+ * une seconde représentation de la date), la liste des prêts qui seraient
+ * exclus par `mapCreditFinancingToFinancementCharges()`. Utilisée par le
+ * gate F-006 pour protéger rétroactivement les dossiers confirmés avant ce
+ * correctif UI — `financementCharges.excludedLoanIds` persisté peut être
+ * absent pour ces dossiers, mais `creditFinancing.loans` a toujours existé.
+ */
+export function excludedLoanIdsFromFinancing(financing: CreditFinancingData | undefined): string[] {
+  return (financing?.loans ?? []).filter((loan) => !loanHasFirstPaymentDate(loan)).map((loan) => loan.id);
+}
+
 function inferTypePretFromFreeText(loanType: string | undefined): TypePret {
   const normalized = loanType?.toLowerCase() ?? "";
   if (/in\s*[\s-]?fine/.test(normalized)) return "in_fine";
@@ -60,7 +84,7 @@ export function mapCreditFinancingToFinancementCharges(
 
   const prets: PretInput[] = params.financing.loans
     .filter((loan) => {
-      const hasDate = Boolean(loan.firstPaymentDate?.trim());
+      const hasDate = loanHasFirstPaymentDate(loan);
       if (!hasDate) excludedLoanIds.push(loan.id);
       return hasDate;
     })

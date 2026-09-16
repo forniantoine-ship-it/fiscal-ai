@@ -595,6 +595,17 @@ export interface FinancementChargesOutput {
   prets: import("@/runtime").PretFinancementExercice[];
   fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
   computedAt: string;
+  /**
+   * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — identifiants des prêts
+   * confirmés par l'utilisateur mais exclus du calcul faute de date de
+   * première mensualité connue (`mapCreditFinancingToFinancementCharges`).
+   * Sans ce champ, un dossier historique confirmé avant le correctif UI
+   * n'a aucun moyen de rester visible/actionnable : l'exclusion disparaissait
+   * silencieusement dès la confirmation Tunnel A. Optionnel pour rester
+   * compatible avec les dossiers déjà persistés (absence = aucune exclusion
+   * connue, jamais une exclusion inventée).
+   */
+  excludedLoanIds?: string[];
 }
 
 /** Sortie durable de F-012 (Assistant Charges) — consommée par F-006/F-010. */

@@ -4,6 +4,7 @@ import { buildChargesExtraction, chargesFromDraft } from "./charges-profile";
 import { ventilationFromDraft } from "./amortissement-profile";
 import { revenusFromDraft } from "./revenus-profile";
 import { sessionToExtractionData } from "./revenue-gpt-ui-prefill";
+import { excludedLoanIdsFromFinancing } from "./f011/credit-financing-to-financement-charges";
 
 export const GENERATION_PRICE_TTC = 149;
 
@@ -67,8 +68,19 @@ function isLogementComplete(draft?: DeclarationDraft): boolean {
   return Boolean(draft?.logementConfirmedAt);
 }
 
+/**
+ * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — un `creditConfirmedAt` seul ne
+ * suffit plus si un prêt confirmé reste exclu du calcul fiscal faute de date
+ * de première échéance. Dérivé en direct depuis `creditFinancing.loans`
+ * (donnée source canonique, toujours persistée) plutôt que depuis un champ
+ * calculé au moment de la confirmation : protège aussi rétroactivement les
+ * dossiers confirmés avant ce correctif UI, sans exiger une nouvelle
+ * confirmation. Même logique que `isRevenusComplete` (NEXT-1) pour refléter
+ * exactement ce que `validateFiscalInputs` (F-006) bloquerait.
+ */
 function isCreditComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.creditConfirmedAt || draft?.creditDeclaredNoneAt);
+  if (!draft?.creditConfirmedAt && !draft?.creditDeclaredNoneAt) return false;
+  return excludedLoanIdsFromFinancing(draft?.creditFinancing).length === 0;
 }
 
 function isAmortissementComplete(draft?: DeclarationDraft): boolean {

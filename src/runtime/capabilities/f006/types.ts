@@ -46,6 +46,8 @@ export type FinancementFiscalInput = {
    * produit cette donnée (voir aggregate-inputs.ts).
    */
   totalAssurancePreExploitation?: number;
+  /** NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — prêts exclus faute de date, lus par `validateFiscalInputs`. */
+  excludedLoanIds?: string[];
 };
 
 export type AmortissementFiscalInput = {

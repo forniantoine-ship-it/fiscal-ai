@@ -11,6 +11,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
+import { excludedLoanIdsFromFinancing } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import {
   F006FiscalEngineAssistant,
   type F006Action,
@@ -77,8 +78,18 @@ export function F006FiscalEnginePanel() {
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
 
-  const deps = useMemo(
-    () => ({
+  const deps = useMemo(() => {
+    // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérivé en direct depuis
+    // `creditFinancing.loans` (donnée source, toujours persistée), pas depuis
+    // un champ calculé au moment de la confirmation Tunnel A : protège aussi
+    // les dossiers confirmés avant le correctif UI.
+    const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
+    const financementCharges =
+      draft?.financementCharges && excludedLoanIds.length > 0
+        ? { ...draft.financementCharges, excludedLoanIds }
+        : draft?.financementCharges;
+
+    return {
       exerciceFiscal: fiscalYear,
       activite: {
         siret: draft?.siret,
@@ -86,15 +97,14 @@ export function F006FiscalEnginePanel() {
         activityType: draft?.activityType,
       },
       logementAmortissement: draft?.logementAmortissement,
-      financementCharges: draft?.financementCharges,
+      financementCharges,
       chargesAssistant: draft?.chargesAssistant,
       revenusAssistant: draft?.revenusAssistant,
       amortissementAssistant: draft?.amortissementAssistant,
       stockDeficitsAnterieurs: draft?.fiscalResult?.stocks.deficits,
       stockAmortissementsReportes: draft?.fiscalResult?.stocks.amortissementsReportes,
-    }),
-    [draft, fiscalYear],
-  );
+    };
+  }, [draft, fiscalYear]);
 
   const assistant = useMemo(
     () =>

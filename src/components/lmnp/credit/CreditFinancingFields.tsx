@@ -568,7 +568,9 @@ export function CreditFinancingFields({
           className="mt-8 animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
           style={{ ...typography.caption.desktop, color: colors.text.muted }}
         >
-          Certaines informations restent à compléter.
+          Certaines informations restent à compléter, notamment la date de
+          première échéance de chaque prêt — indispensable pour calculer
+          correctement les intérêts déductibles.
         </p>
       ) : null}
 

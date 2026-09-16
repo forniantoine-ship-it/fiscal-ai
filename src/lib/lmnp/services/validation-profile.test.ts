@@ -450,6 +450,113 @@ function runTests(): void {
     assertEqual(revenus.status, "complete", "l'absence du champ ne doit jamais être traitée comme une anomalie inventée");
   });
 
+  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — isCreditComplete() ne doit
+  // plus se fier au seul creditConfirmedAt : un prêt confirmé mais exclu du
+  // calcul faute de date de première échéance doit garder l'étape "credit"
+  // incomplète, exactement comme F-006 (validateFiscalInputs) le bloquerait.
+  // Dérivé en direct depuis `creditFinancing.loans` (donnée source toujours
+  // persistée, y compris pour les dossiers confirmés avant ce correctif).
+  const BASE_LOAN_FOR_CREDIT_TESTS = {
+    id: "loan-1",
+    bank: "Banque",
+    loanType: "amortissable",
+    borrowedAmount: 200000,
+    rate: 3.5,
+    durationMonths: 240,
+    monthlyPayment: 1150,
+    insurance: 300,
+    fees: 0,
+    startDate: "2020-01-01",
+    firstPaymentDate: "",
+    remainingCapital: 195000,
+  };
+
+  test("NEXT-2 — creditConfirmedAt posé + prêt sans firstPaymentDate dans creditFinancing → étape Crédit INCOMPLETE", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      creditConfirmedAt: "2025-01-01T00:00:00.000Z",
+      creditFinancing: {
+        loans: [{ ...BASE_LOAN_FOR_CREDIT_TESTS, firstPaymentDate: "" }],
+        summary: { fiscalYearLabel: "2024", annualInterest: 6900, annualInsurance: 300, remainingCapital: 195000 },
+        installments: [],
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const credit = steps.find((s) => s.id === "credit");
+    if (!credit) throw new Error("step 'credit' introuvable dans buildDossierSteps()");
+    assertEqual(credit.status, "incomplete", "un prêt exclu doit garder l'étape incomplète");
+  });
+
+  test("NEXT-2 — creditConfirmedAt posé + toutes les dates renseignées → étape Crédit COMPLETE", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      creditConfirmedAt: "2025-01-01T00:00:00.000Z",
+      creditFinancing: {
+        loans: [{ ...BASE_LOAN_FOR_CREDIT_TESTS, firstPaymentDate: "2020-02-01" }],
+        summary: { fiscalYearLabel: "2024", annualInterest: 6900, annualInsurance: 300, remainingCapital: 195000 },
+        installments: [],
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const credit = steps.find((s) => s.id === "credit");
+    if (!credit) throw new Error("step 'credit' introuvable dans buildDossierSteps()");
+    assertEqual(credit.status, "complete", "sans prêt exclu, l'étape doit rester complète");
+  });
+
+  test("NEXT-2 — dossier historique confirmé avant ce correctif (creditFinancing sans date, financementCharges sans excludedLoanIds) → étape Crédit INCOMPLETE (protection rétroactive)", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      creditConfirmedAt: "2020-01-01T00:00:00.000Z",
+      creditFinancing: {
+        loans: [{ ...BASE_LOAN_FOR_CREDIT_TESTS, firstPaymentDate: "" }],
+        summary: { fiscalYearLabel: "2019", annualInterest: 6900, annualInsurance: 300, remainingCapital: 195000 },
+        installments: [],
+      },
+      financementCharges: {
+        exerciceFiscal: 2020,
+        totalInteretsEmprunt: 0,
+        totalInteretsPreExploitation: 0,
+        totalAssurance: 0,
+        totalCapitalRembourse: 0,
+        totalChargesFinancementExercice: 0,
+        prets: [],
+        fieldSources: {},
+        computedAt: "2020-01-01T00:00:00.000Z",
+        // Pas de champ `excludedLoanIds` — état tel que persisté avant NEXT-2.
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const credit = steps.find((s) => s.id === "credit");
+    if (!credit) throw new Error("step 'credit' introuvable dans buildDossierSteps()");
+    assertEqual(
+      credit.status,
+      "incomplete",
+      "un dossier historique doit redevenir actionnable même sans excludedLoanIds jamais persisté",
+    );
+  });
+
+  test("NEXT-2 — aucun creditFinancing persisté (dossier sans prêt) → étape Crédit reste COMPLETE, pas de crash", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      creditConfirmedAt: "2025-01-01T00:00:00.000Z",
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const credit = steps.find((s) => s.id === "credit");
+    if (!credit) throw new Error("step 'credit' introuvable dans buildDossierSteps()");
+    assertEqual(credit.status, "complete", "l'absence de creditFinancing ne doit jamais être traitée comme une exclusion inventée");
+  });
+
+  test("NEXT-2 — creditDeclaredNoneAt (achat comptant, aucun prêt) → étape Crédit COMPLETE, jamais bloquée", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      creditDeclaredNoneAt: "2025-01-01T00:00:00.000Z",
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const credit = steps.find((s) => s.id === "credit");
+    if (!credit) throw new Error("step 'credit' introuvable dans buildDossierSteps()");
+    assertEqual(credit.status, "complete", "un dossier sans emprunt ne doit jamais être bloqué par ce correctif");
+  });
+
   console.log(`\n${passed}/${total} tests passés`);
   if (passed !== total) process.exit(1);
 }

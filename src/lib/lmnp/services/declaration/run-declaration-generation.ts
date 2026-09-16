@@ -10,6 +10,7 @@ import {
   type LiasseFromRfs,
 } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
+import { excludedLoanIdsFromFinancing } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import {
   TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
   detectTaxeFonciereLegacyRisk,
@@ -144,6 +145,17 @@ export function runDeclarationGeneration(
     return { status: "blocked", anomalies: [integrityBlock] };
   }
 
+  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérivé en direct depuis
+  // `creditFinancing.loans` (donnée source, toujours persistée) plutôt que
+  // depuis un champ calculé au moment de la confirmation Tunnel A : protège
+  // aussi les dossiers confirmés avant le correctif UI, sans exiger une
+  // nouvelle confirmation.
+  const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
+  const financementCharges =
+    draft?.financementCharges && excludedLoanIds.length > 0
+      ? { ...draft.financementCharges, excludedLoanIds }
+      : draft?.financementCharges;
+
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
     activite: {
@@ -152,7 +164,7 @@ export function runDeclarationGeneration(
       activityType: draft?.activityType,
     },
     logementAmortissement: draft?.logementAmortissement,
-    financementCharges: draft?.financementCharges,
+    financementCharges,
     chargesAssistant: draft?.chargesAssistant,
     revenusAssistant: draft?.revenusAssistant,
     amortissementAssistant: draft?.amortissementAssistant,
