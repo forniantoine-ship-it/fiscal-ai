@@ -14,6 +14,7 @@ import { useLmnp } from "@/lib/lmnp/store";
 import { buildRecettesFromRevenusAssistant } from "@/lib/lmnp/services/f013/f013-build-recettes-from-draft";
 import {
   F013RevenusAssistant,
+  f013BlockingAnomalies,
   type ContinuiteBail,
   type F013Action,
   type F013Message,
@@ -36,6 +37,34 @@ const labelStyle = { ...typography.caption.desktop, color: colors.text.muted } a
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
+}
+
+/**
+ * N1-A (audit contradictoire NEXT-1) — logique de décision extraite en
+ * fonction pure (convention du projet, cf. F010LogementAssistantPanel) :
+ * une chaîne vide ou uniquement composée d'espaces n'est jamais un montant
+ * saisi (`Number("")`/`Number("   ")` valent 0 en JS, ce qui confondait
+ * silencieusement "non renseigné" et "0 € explicite"). Un `0` réellement
+ * tapé reste un montant valide, comportement métier inchangé.
+ * Retourne `null` quand la saisie doit être refusée (jamais soumise).
+ */
+export function computeF013AmountSubmission(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const montant = Number(trimmed.replace(",", "."));
+  if (!Number.isFinite(montant) || montant < 0) return null;
+  return montant;
+}
+
+/**
+ * N1-B (audit contradictoire NEXT-1) — même définition canonique de
+ * "bloquant" que le gate de génération (`f013BlockingAnomalies`), pas une
+ * règle inventée ici : une reprise dont l'output persisté porte encore une
+ * anomalie error/fatal non résolue ne doit jamais se présenter comme un
+ * parcours normalement terminé.
+ */
+export function computeF013CompletionBlocked(result: F013Result | undefined): boolean {
+  return Boolean(result && f013BlockingAnomalies(result.anomalies).length > 0);
 }
 
 function MessageBubble({ message }: { message: F013Message }) {
@@ -90,6 +119,7 @@ function SuggestionButton({
 
 function ResultSummary({ result }: { result: F013Result }) {
   const { recettes } = result;
+  const blocking = f013BlockingAnomalies(result.anomalies);
   return (
     <div
       style={{
@@ -107,6 +137,18 @@ function ResultSummary({ result }: { result: F013Result }) {
         <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
           Théorique : {fmtEur(recettes.revenuTheorique.montantAttendu)}
         </p>
+      ) : null}
+      {/* NEXT-1 (REV-P0-03) — rendre une anomalie bloquante visible et
+          compréhensible : sans ceci, un dossier pouvait rester incomplet
+          côté F-006 sans qu'aucun message n'explique pourquoi. */}
+      {blocking.length > 0 ? (
+        <div style={{ marginTop: spacing.scale[3] }}>
+          {blocking.map((anomaly, index) => (
+            <p key={index} style={{ ...typography.caption.desktop, color: colors.orange[600] }}>
+              ⚠ {anomaly.message}
+            </p>
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -182,7 +224,6 @@ function AmountForm({
   disabled: boolean;
 }) {
   const [amount, setAmount] = useState("");
-  const parseAmount = (v: string) => Number(v.replace(",", "."));
 
   return (
     <div className="flex flex-col gap-3" style={{ marginTop: spacing.scale[4] }}>
@@ -193,8 +234,8 @@ function AmountForm({
       <Button
         disabled={disabled}
         onClick={() => {
-          const montant = parseAmount(amount);
-          if (Number.isFinite(montant) && montant >= 0) onSubmit(montant);
+          const montant = computeF013AmountSubmission(amount);
+          if (montant !== null) onSubmit(montant);
         }}
       >
         Valider
@@ -268,7 +309,10 @@ export function F013RevenusAssistantPanel() {
         result: {
           recettes: buildRecettesFromRevenusAssistant(draft.revenusAssistant),
           explanation: "",
-          anomalies: [],
+          // NEXT-1 (REV-P0-03) — une anomalie error/fatal persistée doit
+          // survivre au rechargement, jamais redevenir `[]` par défaut (sinon
+          // le blocage disparaît silencieusement après un simple reload).
+          anomalies: draft.revenusAssistant.anomalies ?? [],
         },
       };
     }
@@ -303,6 +347,10 @@ export function F013RevenusAssistantPanel() {
             revenuTheorique: result.recettes.revenuTheorique?.montantAttendu,
             fieldSources: finalState.fieldSources,
             computedAt: new Date().toISOString(),
+            // NEXT-1 (REV-P0-03) — sans ce champ, une anomalie error/fatal
+            // calculée par l'assistant disparaissait avant d'atteindre
+            // isRevenusComplete()/validateFiscalInputs() (F-006).
+            anomalies: result.anomalies,
           },
           revenusConfirmedAt: new Date().toISOString(),
         },
@@ -385,6 +433,7 @@ export function F013RevenusAssistantPanel() {
   const showDeclaration = state.step === "declaration";
   const showPlateforme = state.step === "sources_plateforme";
   const showVacance = state.step === "ecart_vacance";
+  const showImpayeMontant = state.step === "ecart_impaye_montant";
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -464,9 +513,28 @@ export function F013RevenusAssistantPanel() {
             />
           ) : null}
 
+          {showImpayeMontant ? (
+            <AmountForm
+              label="Montant réellement perçu au titre de l'indemnité GLI (€)"
+              disabled={busy}
+              onSubmit={(montant) => void runAction({ type: "submit_impaye", gli: true, indemnite: montant })}
+            />
+          ) : null}
+
           {state.result ? <ResultSummary result={state.result} /> : null}
 
-          {state.step === "complete" ? (
+          {state.step === "complete" && computeF013CompletionBlocked(state.result) ? (
+            <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
+              <Button className="flex-1" variant="secondary" onClick={handleModifier}>
+                Corriger mes revenus
+              </Button>
+              <Link href={LMNP_ROUTES.dashboard}>
+                <Button variant="secondary">Retour au tableau de bord</Button>
+              </Link>
+            </div>
+          ) : null}
+
+          {state.step === "complete" && !computeF013CompletionBlocked(state.result) ? (
             <div style={{ marginTop: spacing.scale[4] }} className="flex gap-2">
               <Link href={LMNP_ROUTES.chargesAssistant} className="flex-1">
                 <Button className="w-full">Continuer vers Charges</Button>

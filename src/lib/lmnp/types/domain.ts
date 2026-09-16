@@ -682,6 +682,15 @@ export interface RevenusAssistantOutput {
   revenuTheorique?: number;
   fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
   computedAt: string;
+  /**
+   * NEXT-1 (REV-P0-03) — anomalies F-013 (TRF-REV-01/02) transportées jusqu'à
+   * la persistence : sans ce champ, une anomalie `error`/`fatal` calculée par
+   * `computeRecettesExercice` disparaissait avant `validateFiscalInputs`
+   * (F-006), qui ne pouvait donc jamais la bloquer. Champ optionnel pour
+   * rester compatible avec les états déjà persistés avant ce correctif
+   * (absence = aucune anomalie connue, jamais une anomalie inventée).
+   */
+  anomalies?: import("@/runtime").Anomaly[];
 }
 
 /**

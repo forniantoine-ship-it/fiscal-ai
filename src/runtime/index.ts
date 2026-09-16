@@ -337,6 +337,7 @@ export {
 
 export {
   F013RevenusAssistant,
+  blockingAnomalies as f013BlockingAnomalies,
   createInitialF013State,
   type F013Action,
   type F013AssistantTurn,

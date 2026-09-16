@@ -348,6 +348,108 @@ function runTests(): void {
     assertEqual(charges.status, "incomplete", "aucun signal de complétude sans chargesAssistant");
   });
 
+  // NEXT-1 (REV-P0-03) — isRevenusComplete() ne doit plus se fier au seul
+  // timestamp revenusConfirmedAt : une anomalie F-013 error/fatal non résolue
+  // doit garder l'étape "revenus" incomplète, exactement comme F-006
+  // (validateFiscalInputs) la bloquerait.
+  test("NEXT-1 — revenusConfirmedAt posé + anomalie severity:error non résolue → étape Revenus INCOMPLETE", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      revenusConfirmedAt: "2025-01-01T00:00:00.000Z",
+      revenusAssistant: {
+        exerciceFiscal: 2025,
+        totalRecettes: 3000,
+        loyersEncaisses: 3000,
+        indemnitesAssurance: 0,
+        recettesPlateforme: 0,
+        ajustementsJanDec: 0,
+        moisLocationEffectifs: 12,
+        fieldSources: {},
+        computedAt: "2025-01-01T00:00:00.000Z",
+        anomalies: [
+          {
+            severity: "error",
+            message: "Indemnité GLI signalée comme perçue mais montant non renseigné.",
+            field: "indemnites",
+          },
+        ],
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const revenus = steps.find((s) => s.id === "revenus");
+    if (!revenus) throw new Error("step 'revenus' introuvable dans buildDossierSteps()");
+    assertEqual(revenus.status, "incomplete", "une anomalie error non résolue doit garder l'étape incomplète");
+  });
+
+  test("NEXT-1 — revenusConfirmedAt posé + anomalies vidées (résolues) → étape Revenus COMPLETE", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      revenusConfirmedAt: "2025-01-01T00:00:00.000Z",
+      revenusAssistant: {
+        exerciceFiscal: 2025,
+        totalRecettes: 5500,
+        loyersEncaisses: 3000,
+        indemnitesAssurance: 2500,
+        recettesPlateforme: 0,
+        ajustementsJanDec: 0,
+        moisLocationEffectifs: 12,
+        fieldSources: {},
+        computedAt: "2025-01-01T00:00:00.000Z",
+        anomalies: [],
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const revenus = steps.find((s) => s.id === "revenus");
+    if (!revenus) throw new Error("step 'revenus' introuvable dans buildDossierSteps()");
+    assertEqual(revenus.status, "complete", "sans anomalie bloquante, l'étape doit rester complète");
+  });
+
+  test("NEXT-1 — revenusConfirmedAt posé + severity:warning seul → étape Revenus reste COMPLETE (warning non bloquant)", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      revenusConfirmedAt: "2025-01-01T00:00:00.000Z",
+      revenusAssistant: {
+        exerciceFiscal: 2025,
+        totalRecettes: 5500,
+        loyersEncaisses: 5500,
+        indemnitesAssurance: 0,
+        recettesPlateforme: 0,
+        ajustementsJanDec: 0,
+        moisLocationEffectifs: 12,
+        fieldSources: {},
+        computedAt: "2025-01-01T00:00:00.000Z",
+        anomalies: [{ severity: "warning", message: "Vacance longue.", field: "vacance" }],
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const revenus = steps.find((s) => s.id === "revenus");
+    if (!revenus) throw new Error("step 'revenus' introuvable dans buildDossierSteps()");
+    assertEqual(revenus.status, "complete", "un warning seul ne doit jamais bloquer l'étape");
+  });
+
+  test("NEXT-1 — ancien état persisté sans champ anomalies (avant ce correctif) → étape Revenus reste COMPLETE, pas de crash", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      revenusConfirmedAt: "2025-01-01T00:00:00.000Z",
+      revenusAssistant: {
+        exerciceFiscal: 2025,
+        totalRecettes: 5500,
+        loyersEncaisses: 5500,
+        indemnitesAssurance: 0,
+        recettesPlateforme: 0,
+        ajustementsJanDec: 0,
+        moisLocationEffectifs: 12,
+        fieldSources: {},
+        computedAt: "2025-01-01T00:00:00.000Z",
+        // Pas de champ `anomalies` — état tel que persisté avant NEXT-1.
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const revenus = steps.find((s) => s.id === "revenus");
+    if (!revenus) throw new Error("step 'revenus' introuvable dans buildDossierSteps()");
+    assertEqual(revenus.status, "complete", "l'absence du champ ne doit jamais être traitée comme une anomalie inventée");
+  });
+
   console.log(`\n${passed}/${total} tests passés`);
   if (passed !== total) process.exit(1);
 }

@@ -788,3 +788,75 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
     assert.equal(result.deficitNouveau, 0);
   });
 });
+
+/**
+ * NEXT-1 (REV-P0-03) — le "boundary réel" avant génération fiscale : une
+ * anomalie F-013 `error`/`fatal` non résolue doit empêcher produceFiscalResult
+ * de produire un résultat, par appel DIRECT du pipeline, sans passer par
+ * l'UI/les gates de complétude du dossier. C'est le test déterminant demandé
+ * par l'audit de reprise : `result` doit être absent (BLOCK), pas seulement
+ * un flag UI.
+ *
+ * `revenusAssistant` étant une sortie unique par dossier (pas de scoping par
+ * bien/lot dans le modèle F-013 actuel — confirmé par l'audit F012/F013), le
+ * test "multi-bien" demandé par le protocole d'audit (section 21/27#18) se
+ * traduit ici par : une anomalie sur le dossier bloque la génération de TOUT
+ * le dossier — il n'existe pas de notion de "bien B" isolable à ce niveau.
+ */
+describe("NEXT-1 (REV-P0-03) — validateFiscalInputs bloque produceFiscalResult sur anomalie F-013 non résolue", () => {
+  it("anomalie severity:error dans revenusAssistant.anomalies → génération directe BLOQUÉE (pas de result)", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      revenusAssistant: {
+        ...BASE_INPUT.revenusAssistant,
+        anomalies: [
+          {
+            severity: "error",
+            message: "Indemnité GLI signalée comme perçue mais montant non renseigné.",
+            field: "indemnites",
+          },
+        ],
+      },
+    });
+    assert.equal(output.result, undefined, "produceFiscalResult ne doit jamais produire de result exploitable");
+    assert.ok(
+      output.anomalies.some((a) => a.severity === "error" && a.field === "revenusAssistant.anomalies"),
+      "l'anomalie doit être répercutée dans la sortie de validation",
+    );
+  });
+
+  it("anomalie severity:fatal dans revenusAssistant.anomalies → génération directe BLOQUÉE", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      revenusAssistant: {
+        ...BASE_INPUT.revenusAssistant,
+        anomalies: [{ severity: "fatal", message: "Revenu non fiable.", field: "revenu_declare" }],
+      },
+    });
+    assert.equal(output.result, undefined);
+  });
+
+  it("anomalie résolue (anomalies: []) → génération PASS", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      revenusAssistant: { ...BASE_INPUT.revenusAssistant, anomalies: [] },
+    });
+    assert.ok(output.result, "la génération doit réussir une fois l'anomalie levée");
+  });
+
+  it("aucune anomalie transmise (champ absent, compat ancien état) → génération PASS", () => {
+    const output = produceFiscalResult(BASE_INPUT);
+    assert.ok(output.result);
+  });
+
+  it("severity:warning seul dans revenusAssistant.anomalies → ne bloque PAS la génération directe", () => {
+    const output = produceFiscalResult({
+      ...BASE_INPUT,
+      revenusAssistant: {
+        ...BASE_INPUT.revenusAssistant,
+        anomalies: [{ severity: "warning", message: "Vacance longue — justification recommandée.", field: "vacance" }],
+      },
+    });
+    assert.ok(output.result, "un warning ne doit jamais devenir arbitrairement bloquant");
+  });
+});

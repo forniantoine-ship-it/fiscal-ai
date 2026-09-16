@@ -520,7 +520,10 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
     const bridged = buildRevenusAssistantFromSession(session, fiscalYear, draft?.dateMiseEnService);
     dispatch({
       type: "DECLARATION_PATCH_DRAFT",
-      patch: { revenusAssistant: bridged.revenusAssistant },
+      // NEXT-1 (REV-P0-03) — `bridged.anomalies` était calculé puis jamais
+      // lu : une anomalie error/fatal (ex. revenu nul non justifié détecté
+      // sur l'import bancaire) disparaissait avant validateFiscalInputs (F-006).
+      patch: { revenusAssistant: { ...bridged.revenusAssistant, anomalies: bridged.anomalies } },
     });
 
     const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";

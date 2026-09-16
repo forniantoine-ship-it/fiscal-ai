@@ -18,6 +18,8 @@ export type RevenusFiscalInput = {
   recettesPlateforme?: number;
   indemnitesAssurance?: number;
   ajustementsJanDec?: number;
+  /** NEXT-1 (REV-P0-03) — anomalies F-013 non résolues, lues par `validateFiscalInputs`. */
+  anomalies?: Anomaly[];
 };
 
 export type ChargesFiscalInput = {

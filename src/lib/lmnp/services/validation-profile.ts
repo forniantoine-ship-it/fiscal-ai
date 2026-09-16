@@ -75,8 +75,19 @@ function isAmortissementComplete(draft?: DeclarationDraft): boolean {
   return Boolean(draft?.amortissementConfirmedAt);
 }
 
+/**
+ * NEXT-1 (REV-P0-03) — un `revenusConfirmedAt` seul ne suffit plus : si une
+ * anomalie `error`/`fatal` non résolue accompagne `revenusAssistant` (ex.
+ * indemnité GLI signalée sans montant, revenu nul non justifié), l'étape
+ * Revenus doit rester "incomplète" pour le dossier — même logique que
+ * `isChargesComplete` ci-dessus (refléter exactement ce que F-006 bloquerait).
+ */
 function isRevenusComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.revenusConfirmedAt);
+  if (!draft?.revenusConfirmedAt) return false;
+  const blocking = draft.revenusAssistant?.anomalies?.some(
+    (a) => a.severity === "fatal" || a.severity === "error",
+  );
+  return !blocking;
 }
 
 /**

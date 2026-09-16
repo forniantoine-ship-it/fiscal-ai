@@ -21,12 +21,29 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
       message: "Recettes non calculées (F-013 Revenus).",
       field: "revenusAssistant",
     });
-  } else if (input.revenusAssistant.exerciceFiscal !== input.exerciceFiscal) {
-    anomalies.push({
-      severity: "error",
-      message: "Exercice fiscal des recettes incohérent avec le dossier.",
-      field: "revenusAssistant.exerciceFiscal",
-    });
+  } else {
+    if (input.revenusAssistant.exerciceFiscal !== input.exerciceFiscal) {
+      anomalies.push({
+        severity: "error",
+        message: "Exercice fiscal des recettes incohérent avec le dossier.",
+        field: "revenusAssistant.exerciceFiscal",
+      });
+    }
+
+    // NEXT-1 (REV-P0-03) — boundary réel avant génération fiscale : une
+    // anomalie F-013 `error`/`fatal` non résolue (ex. indemnité GLI signalée
+    // sans montant, revenu nul non justifié) doit empêcher `produceFiscalResult`
+    // de produire un résultat, y compris par appel programmatique direct sans
+    // passer par l'UI/le gate de complétude du dossier. Un `warning` ne
+    // bloque jamais (cohérent avec `validateRevenus`/`reconcileRevenus`, TRF-REV-02).
+    for (const revenusAnomaly of input.revenusAssistant.anomalies ?? []) {
+      if (revenusAnomaly.severity !== "fatal" && revenusAnomaly.severity !== "error") continue;
+      anomalies.push({
+        severity: revenusAnomaly.severity,
+        message: revenusAnomaly.message,
+        field: "revenusAssistant.anomalies",
+      });
+    }
   }
 
   if (!input.chargesAssistant) {

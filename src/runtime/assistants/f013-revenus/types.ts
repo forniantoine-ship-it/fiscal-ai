@@ -18,6 +18,7 @@ export type F013Step =
   | "decalage_jan_dec"
   | "qualify_ecart"
   | "ecart_impaye"
+  | "ecart_impaye_montant"
   | "ecart_vacance"
   | "ecart_loyer_inferieur"
   | "ecart_surplus"

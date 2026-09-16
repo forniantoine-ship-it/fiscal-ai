@@ -53,6 +53,14 @@ const RECOVERY_BY_FIELD: Record<string, MissingDossierItem> = {
     label: "Exercice des recettes incohérent",
     href: LMNP_ROUTES.revenusAssistant,
   },
+  // NEXT-1 (REV-P0-03) — une anomalie F-013 error/fatal non résolue (indemnité
+  // GLI non chiffrée, revenu nul non justifié...) route vers l'assistant
+  // Revenus plutôt que vers l'écran de validation générique.
+  "revenusAssistant.anomalies": {
+    id: "revenus-anomalies",
+    label: "Une incohérence dans vos revenus doit être résolue",
+    href: LMNP_ROUTES.revenusAssistant,
+  },
   chargesAssistant: {
     id: "charges-assistant",
     label: "Charges non calculées",

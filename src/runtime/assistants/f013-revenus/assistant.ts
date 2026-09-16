@@ -1,5 +1,6 @@
 import { computeRecettesExercice } from "../../capabilities/f013/compute-recettes-exercice";
 import { reconcileRevenus } from "../../capabilities/f013/reconcile-revenus";
+import type { Anomaly } from "../../contracts/Anomaly";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import {
   EXP_F013_IMPAYE,
@@ -17,6 +18,24 @@ import {
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
+}
+
+/**
+ * NEXT-1 (REV-P0-01) — un montant d'indemnité GLI doit être fini, positif ou
+ * nul, jamais NaN/Infinity. Pas de plafond arbitraire (règle SAV-REV-04).
+ */
+function isValidNonNegativeAmount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/**
+ * NEXT-1 (REV-P0-03) — anomalies qui empêchent de proposer la confirmation
+ * finale. Exportée pour rester la SEULE définition de "anomalie bloquante"
+ * F-013 — réutilisée telle quelle par l'UI (résumé, resume) au lieu d'une
+ * seconde définition locale divergente (N1-B, audit contradictoire).
+ */
+export function blockingAnomalies(anomalies: Anomaly[]): Anomaly[] {
+  return anomalies.filter((a) => a.severity === "fatal" || a.severity === "error");
 }
 
 function diagnosticPrompt(): F013Message {
@@ -221,16 +240,45 @@ export class F013RevenusAssistant {
       }
 
       case "submit_impaye": {
+        // NEXT-1 (REV-P0-01) — une réponse "GLI: oui" n'est jamais suffisante en
+        // elle-même : le montant réellement perçu est obligatoire avant de
+        // pouvoir clore cette étape, sinon l'indemnité est silencieusement
+        // absente du revenu déclaré. Tant que ce montant n'est pas fourni (ou
+        // invalide), on redemande — jamais un repli à 0 qui changerait le
+        // revenu fiscal sans que l'utilisateur l'ait dit.
+        if (action.gli && !isValidNonNegativeAmount(action.indemnite)) {
+          const alreadyAsking = state.step === "ecart_impaye_montant";
+          messages.push({
+            role: "user",
+            content: alreadyAsking ? "Montant invalide" : "GLI : oui",
+          });
+          messages.push({
+            role: "assistant",
+            content: alreadyAsking
+              ? "Le montant indiqué n'est pas valide. Indiquez le montant réellement perçu au titre de l'indemnité GLI (0 si aucune indemnité n'a encore été versée)."
+              : "Quel montant avez-vous réellement perçu au titre de l'indemnité GLI ?",
+          });
+          return {
+            state: {
+              ...state,
+              step: "ecart_impaye_montant",
+              collected: { ...state.collected, impayeGli: true, impayeIndemnite: undefined },
+            },
+            messages,
+            completed: false,
+          };
+        }
+
         messages.push({
           role: "user",
           content: action.gli
-            ? `GLI : oui${action.indemnite ? ` — indemnité ${fmtEur(action.indemnite)}` : ""}`
+            ? `GLI : oui — indemnité ${fmtEur(action.indemnite as number)}`
             : "GLI : non",
         });
         const collected = {
           ...state.collected,
           impayeGli: action.gli,
-          impayeIndemnite: action.indemnite,
+          impayeIndemnite: action.gli ? (action.indemnite as number) : undefined,
         };
         if (!action.gli) {
           messages.push({ role: "assistant", content: EXP_F013_IMPAYE });
@@ -320,6 +368,14 @@ export class F013RevenusAssistant {
       case "confirm_all": {
         messages.push({ role: "user", content: "Oui, je valide" });
         const result = this.buildResult(state);
+        // NEXT-1 (REV-P0-03) — garde de dernier recours : même si cette étape
+        // était atteinte par un appel direct (hors parcours UI normal) alors
+        // qu'une anomalie bloquante subsiste, la confirmation ne doit jamais
+        // aboutir silencieusement. `buildReview` réexplique la situation et
+        // rouvre la qualification de l'écart au lieu de clore l'étape.
+        if (blockingAnomalies(result.anomalies).length > 0) {
+          return this.buildReview(state, messages);
+        }
         messages.push({ role: "assistant", content: result.explanation });
         messages.push({
           role: "assistant",
@@ -423,7 +479,24 @@ export class F013RevenusAssistant {
     }
 
     const ecart = Math.abs(reconciliation.ecart);
-    if (reconciliation.nature === "sous_declare") {
+    if (reconciliation.nature === "nul_suspect") {
+      // NEXT-1 (REV-P0-02) — un revenu déclaré nul n'est PAS une sur-déclaration :
+      // avant ce correctif, ce cas tombait dans la branche "excédent" (message
+      // et options incohérents avec la réalité). Ici il manque la totalité du
+      // revenu théorique — jamais "de plus qu'attendu".
+      messages.push({
+        role: "assistant",
+        content:
+          `Vous déclarez 0 € encaissés, alors qu'un revenu théorique de ${fmtEur(theorique)} ` +
+          "est attendu selon votre bail.\n\n" +
+          "Pouvez-vous nous aider à comprendre ?",
+        suggestions: [
+          { id: "ecart_vacance", label: "Le logement est resté vacant sur la période" },
+          { id: "ecart_impaye", label: "Des loyers n'ont pas été payés" },
+          { id: "ecart_erreur", label: "Erreur dans le montant saisi" },
+        ],
+      });
+    } else if (reconciliation.nature === "sous_declare") {
       messages.push({
         role: "assistant",
         content:
@@ -464,6 +537,35 @@ export class F013RevenusAssistant {
     event?: F013AssistantTurn["event"],
   ): F013AssistantTurn {
     const result = this.buildResult(state);
+
+    // NEXT-1 (REV-P0-03) — point de passage unique avant la confirmation
+    // finale : si une anomalie bloquante subsiste (ex. revenu nul non résolu,
+    // indemnité GLI signalée mais jamais chiffrée), on ne propose jamais le
+    // bouton de confirmation. On réexplique le blocage et on rouvre la
+    // qualification de l'écart, pour toujours laisser une issue de
+    // résolution — jamais un blocage sans sortie.
+    const blocking = blockingAnomalies(result.anomalies);
+    if (blocking.length > 0) {
+      for (const anomaly of blocking) {
+        messages.push({ role: "assistant", content: anomaly.message });
+      }
+      messages.push({
+        role: "assistant",
+        content: "Pouvez-vous préciser ou corriger cette information avant de continuer ?",
+        suggestions: [
+          { id: "ecart_vacance", label: "Le logement est resté vacant sur une période supplémentaire" },
+          { id: "ecart_impaye", label: "Des loyers n'ont pas été payés" },
+          { id: "ecart_erreur", label: "Corriger le montant saisi" },
+        ],
+      });
+      return {
+        state: { ...state, result, step: "qualify_ecart" },
+        messages,
+        completed: false,
+        event,
+      };
+    }
+
     messages.push({ role: "assistant", content: result.explanation });
     messages.push({
       role: "assistant",
@@ -498,7 +600,7 @@ export class F013RevenusAssistant {
         ? state.collected.provisionChargesMensuelle
         : undefined;
 
-    return computeRecettesExercice({
+    const computed = computeRecettesExercice({
       exerciceFiscal: this.ctx.fiscalYear,
       dateMiseEnService: this.deps.dateMiseEnService ?? `${this.ctx.fiscalYear}-01-01`,
       modeCollecte: state.modeCollecte,
@@ -513,6 +615,28 @@ export class F013RevenusAssistant {
       recettesPlateforme: state.collected.recettesPlateforme,
       fieldSources: state.fieldSources,
     });
+
+    // NEXT-1 (REV-P0-01/03) — filet de sécurité au niveau du calcul lui-même :
+    // si l'état porte "GLI: oui" sans montant chiffré (ne devrait jamais
+    // arriver via le parcours UI normal depuis ce correctif, mais un état
+    // reconstruit directement — ancien état persisté, appel programmatique —
+    // doit rester protégé), le revenu ne peut pas être considéré fiable.
+    if (state.collected.impayeGli === true && state.collected.impayeIndemnite === undefined) {
+      return {
+        ...computed,
+        anomalies: [
+          ...computed.anomalies,
+          {
+            severity: "error" as const,
+            message:
+              "Indemnité GLI signalée comme perçue mais montant non renseigné — le revenu ne peut pas être confirmé en l'état.",
+            field: "indemnites",
+          },
+        ],
+      };
+    }
+
+    return computed;
   }
 }
 
