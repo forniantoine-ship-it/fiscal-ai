@@ -17,7 +17,7 @@ import {
   resolveCaseAvecVentilationPrioritaire,
 } from "../../bilan/ventilation-tiers";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
-import type { LignePatrimonialeResolution } from "../../bilan/types";
+import type { BilanEquilibreStatus, LignePatrimonialeResolution } from "../../bilan/types";
 
 /**
  * Projection Cerfa 2033-A-SD (bilan simplifié) — consomme UNIQUEMENT la RFS
@@ -74,6 +74,19 @@ export type Form2033A = {
   cases: CerfaCase[];
   /** Jamais une valeur inventée : chaque case listée ici reste explicitement sans valeur, avec sa raison tracée. */
   casesNonAlimentees: CerfaCaseNonAlimentee[];
+  /**
+   * NEXT-5B — champ additif, diagnostic pur, jamais consommé pour produire
+   * une case : expose tel quel le statut déjà calculé par `checkBilanEquilibre()`
+   * (source unique de la notion d'équilibre/divergence bilan, `bilan/check-bilan-equilibre.ts`),
+   * pour que `resolveFinalDeclarabilityState()` (NEXT-5) distingue une case
+   * 142/180 non alimentée par simple donnée manquante (`DONNEE_MANQUANTE`/
+   * `STOCK_OUVERTURE_ABSENT`, jamais bloquant) d'une case non alimentée par
+   * divergence/déséquilibre prouvé (`DIVERGENCE_SOURCE`/`DESEQUILIBRE_REEL`,
+   * bloquant) — sans reparser le texte libre `raison`. `undefined` quand
+   * `rfs.patrimoine` est absent (aucun équilibre à constater, cf.
+   * `checkBilanEquilibre()` non appelée dans ce cas).
+   */
+  equilibreStatus?: BilanEquilibreStatus;
 };
 
 const RAISON_TRESORERIE =
@@ -207,6 +220,9 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
 
   const cases: CerfaCase[] = [];
   const casesNonAlimentees: CerfaCaseNonAlimentee[] = [];
+  // NEXT-5B — capturé au moment du seul appel existant à checkBilanEquilibre()
+  // plus bas (jamais un second appel), pour exposition additive en sortie.
+  let equilibreStatus: BilanEquilibreStatus | undefined;
 
   // Case 136 — Résultat de l'exercice. MICRO-JALON socle patrimonial P0 :
   // source UNIQUE désormais partagée avec la case 310 du 2033-B
@@ -968,6 +984,7 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     // reste le premier gate (même garde conservatrice qu'avant cette
     // correction, non allégée), 137 INCONNU en est un second, nouveau.
     const equilibre = checkBilanEquilibre({ patrimoine });
+    equilibreStatus = equilibre.status;
     const totalCapitauxPropres = resolveTotalCapitauxPropres(patrimoine, equilibre.status, equilibre.reasons);
     if (totalCapitauxPropres.status === "DISPONIBLE") {
       cases.push({
@@ -1125,5 +1142,6 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     millésime: rfs.exercice,
     cases,
     casesNonAlimentees,
+    equilibreStatus,
   };
 }

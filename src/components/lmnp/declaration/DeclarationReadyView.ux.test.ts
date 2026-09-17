@@ -82,4 +82,36 @@ describe("DeclarationReadyView — deux documents fiscaux client", () => {
     );
     assert.equal(source.includes("render-client-summary-pdf"), false);
   });
+
+  /**
+   * NEXT-5B — les deux téléchargements doivent dépendre du même prédicat de
+   * déclarabilité (final-declarability.ts), jamais l'un bloqué et l'autre
+   * livré depuis la même projection incomplète.
+   */
+  it("les deux téléchargements dépendent de resolveFinalDeclarabilityState()", () => {
+    assert.ok(source.includes('from "@/lib/lmnp/services/declaration/final-declarability"'));
+    assert.ok(source.includes("const declarability = resolveFinalDeclarabilityState("));
+  });
+
+  it("le bouton liasse est désactivé quand declarability.deliverable est faux", () => {
+    assert.ok(source.includes("const canDownloadLiasse = Boolean("));
+    const canDownloadLiasseBlock = source.slice(
+      source.indexOf("const canDownloadLiasse = Boolean("),
+      source.indexOf(");", source.indexOf("const canDownloadLiasse = Boolean(")),
+    );
+    assert.ok(
+      canDownloadLiasseBlock.includes("declarability.deliverable"),
+      "canDownloadLiasse doit référencer declarability.deliverable dans la même expression",
+    );
+  });
+
+  it("le bouton aide 2042-C-PRO est désactivé quand declarability.deliverable est faux", () => {
+    const aideButtonIndex = source.indexOf(AIDE_BUTTON);
+    const aideBlockStart = source.lastIndexOf("<Button", aideButtonIndex);
+    const aideBlock = source.slice(aideBlockStart, aideButtonIndex);
+    assert.ok(
+      aideBlock.includes("!declarability.deliverable"),
+      "le bouton d'aide 2042-C-PRO doit être désactivé par !declarability.deliverable",
+    );
+  });
 });

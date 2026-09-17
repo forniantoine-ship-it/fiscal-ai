@@ -17,6 +17,10 @@ import {
   resolveArchivedLiasseDownload,
   type ArchivedLiasseDownloadRecord,
 } from "@/lib/lmnp/services/declaration/resolve-archived-liasse-download";
+import {
+  resolveFinalDeclarabilityState,
+  FINAL_DECLARABILITY_BLOCKED_MESSAGE,
+} from "@/lib/lmnp/services/declaration/final-declarability";
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
@@ -40,6 +44,10 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
   const fiscalResult = archivedDraft?.fiscalResult ?? rfs?.fiscalResult;
   const liasseDownload = resolveArchivedLiasseDownload(record);
   const canDownloadLiasse = liasseDownload.status === "ready";
+  // NEXT-5 — même prédicat pour les deux téléchargements (aide 2042-C-PRO et
+  // liasse fiscale) : jamais l'un bloqué et l'autre livré depuis la même
+  // projection incomplète, voir final-declarability.ts.
+  const declarability = resolveFinalDeclarabilityState(archivedDraft?.liasseRfs);
 
   const [liasseDownloading, setLiasseDownloading] = useState(false);
   const [liasseDownloadError, setLiasseDownloadError] = useState<string | undefined>(undefined);
@@ -164,7 +172,7 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
           <div className="mt-4">
             <Button
               variant="secondary"
-              disabled={!rfs}
+              disabled={!rfs || !declarability.deliverable}
               onClick={() => {
                 if (!rfs) return;
                 downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }));
@@ -172,6 +180,11 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
             >
               Télécharger mon aide pour la déclaration 2042-C-PRO
             </Button>
+            {rfs && !declarability.deliverable ? (
+              <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                {FINAL_DECLARABILITY_BLOCKED_MESSAGE}
+              </p>
+            ) : null}
           </div>
         </article>
 
@@ -203,7 +216,9 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
             </Button>
             {!canDownloadLiasse ? (
               <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-                Liasse fiscale indisponible pour cet exercice.
+                {liasseDownload.status === "unavailable" && liasseDownload.reason === "internal_projection_issue"
+                  ? FINAL_DECLARABILITY_BLOCKED_MESSAGE
+                  : "Liasse fiscale indisponible pour cet exercice."}
               </p>
             ) : null}
             {liasseDownloadError ? (

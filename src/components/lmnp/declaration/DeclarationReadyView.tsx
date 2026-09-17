@@ -17,6 +17,10 @@ import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/render-aide
 import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
+import {
+  resolveFinalDeclarabilityState,
+  FINAL_DECLARABILITY_BLOCKED_MESSAGE,
+} from "@/lib/lmnp/services/declaration/final-declarability";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { useLmnp } from "@/lib/lmnp/store";
 
@@ -105,7 +109,13 @@ export function DeclarationReadyView() {
   const [liasseDownloading, setLiasseDownloading] = useState(false);
   const [liasseDownloadError, setLiasseDownloadError] = useState<string | undefined>(undefined);
   const declarationVersionId = declaration?.currentVersionId;
-  const canDownloadLiasse = Boolean(rfs && declarationVersionId && !declarationOutOfDate);
+  // NEXT-5 — même prédicat pour les deux téléchargements (aide 2042-C-PRO et
+  // liasse fiscale) : jamais l'un bloqué et l'autre livré depuis la même
+  // projection incomplète, voir final-declarability.ts.
+  const declarability = resolveFinalDeclarabilityState(workspace.declarationDraft?.liasseRfs);
+  const canDownloadLiasse = Boolean(
+    rfs && declarationVersionId && !declarationOutOfDate && declarability.deliverable,
+  );
 
   const handleDownloadLiasseFiscale = async () => {
     if (liasseDownloading || !rfs || !declarationVersionId) return;
@@ -268,7 +278,7 @@ export function DeclarationReadyView() {
           <div className="mt-4">
             <Button
               variant="secondary"
-              disabled={!rfs}
+              disabled={!rfs || !declarability.deliverable}
               onClick={() => {
                 if (!rfs) return;
                 downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }));
@@ -276,6 +286,11 @@ export function DeclarationReadyView() {
             >
               Télécharger mon aide pour la déclaration 2042-C-PRO
             </Button>
+            {rfs && !declarability.deliverable ? (
+              <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                {FINAL_DECLARABILITY_BLOCKED_MESSAGE}
+              </p>
+            ) : null}
           </div>
         </article>
 
@@ -305,6 +320,11 @@ export function DeclarationReadyView() {
               <Button onClick={handleDownloadLiasseFiscale} disabled={liasseDownloading || !canDownloadLiasse}>
                 {liasseDownloading ? "Génération en cours…" : "Télécharger ma liasse fiscale"}
               </Button>
+              {rfs && declarationVersionId && !declarationOutOfDate && !declarability.deliverable ? (
+                <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                  {FINAL_DECLARABILITY_BLOCKED_MESSAGE}
+                </p>
+              ) : null}
               {liasseDownloadError ? (
                 <p style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>{liasseDownloadError}</p>
               ) : null}

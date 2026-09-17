@@ -243,6 +243,89 @@ describe("resolveArchivedLiasseDownload — gardes", () => {
     if (fromClosureOnly.status !== "ready") throw new Error("unreachable");
     assert.equal(fromClosureOnly.input.declarationVersionId, "version-from-closure");
   });
+
+  /**
+   * NEXT-5 — une archive n'est pas un byte figé (voir en-tête de fichier) :
+   * sa liasse reste régénérée à la demande depuis le RFS historique, donc
+   * soumise au même prédicat de déclarabilité qu'une génération courante
+   * (final-declarability.ts). Fixture identique à celle qui déclenche
+   * réellement la garde de divergence F-010/F-014 dans
+   * final-declarability.test.ts (Case E) : logementAmortissement.plan
+   * (totalAnnuelExercice 372) diverge de amortissementAssistant.totalDotations
+   * (1500).
+   */
+  it("liasseRfs archivé avec divergence F-010/F-014 prouvée → indisponible, reason internal_projection_issue", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+      logementAmortissement: {
+        prixRevient: 125136,
+        valeurTerrain: 17960,
+        valeurBati: 107176,
+        baseAmortissableBati: 107176,
+        montantMobilier: 5400,
+        dotationAnnuelle: 1500,
+        dureeMoyenneAnnees: 30,
+        prorataRatio: 1,
+        plan: {
+          lignes: [
+            { label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 },
+          ],
+          totalAnnuelExercice: 372,
+          totalBrut: 37186,
+        },
+        fieldSources: {},
+        computedAt: "2026-08-31T00:00:00.000Z",
+      },
+      declaration: {
+        id: "decl-2025",
+        fiscalYearId: "fy-2025",
+        currentVersionId: "version-archive-divergente",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    } as unknown as DeclarationDraft;
+
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated", "précondition — dossier générable malgré la divergence");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    assert.ok(
+      generation.liasseRfs.form2033A.casesNonAlimentees.some((c) => c.caseId === "028" && c.categorie === "incoherence_modele"),
+      "précondition — la divergence F-010/F-014 doit être réellement présente dans cette fixture",
+    );
+
+    const archivedDraft: DeclarationDraft = { ...draft, rfs: generation.rfs, liasseRfs: generation.liasseRfs };
+    const result = resolveArchivedLiasseDownload({ year: 2025, declarationDraft: archivedDraft });
+
+    assert.equal(result.status, "unavailable");
+    if (result.status !== "unavailable") throw new Error("unreachable");
+    assert.equal(result.reason, "internal_projection_issue");
+  });
+
+  it("liasseRfs absent sur l'archive (dossier antérieur à ce champ) → jamais bloqué par ce gate, fail-open", () => {
+    const rfs = { exercice: 2025 } as FiscalRepresentation;
+    const result = resolveArchivedLiasseDownload({
+      year: 2025,
+      declarationDraft: {
+        completedSteps: [],
+        rfs,
+        declaration: {
+          id: "decl",
+          fiscalYearId: "fy",
+          currentVersionId: "version-legacy",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        // liasseRfs volontairement absent — dossier archivé avant ce champ.
+      },
+    });
+    assert.equal(result.status, "ready");
+  });
 });
 
 describe("resolveArchivedLiasseDownload — isolation N-1 vs workspace N", () => {

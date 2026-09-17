@@ -115,4 +115,28 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
     assert.ok(viewSource.includes("disabled={liasseDownloading || !canDownloadLiasse}"));
     assert.ok(viewSource.includes("if (liasseDownloading || resolved.status !== \"ready\") return"));
   });
+
+  /**
+   * NEXT-5B — l'archive n'est pas un byte figé (voir en-tête de fichier de
+   * resolve-archived-liasse-download.ts) : sa liasse reste régénérée à la
+   * demande, donc soumise au même prédicat de déclarabilité que l'exercice
+   * actif. Les deux téléchargements doivent en dépendre.
+   */
+  it("resolveArchivedLiasseDownload() bloque sur resolveFinalDeclarabilityState(), pas seulement rfs/versionId", () => {
+    assert.ok(resolverSource.includes('from "./final-declarability"'));
+    assert.ok(resolverSource.includes("resolveFinalDeclarabilityState(archivedDraft?.liasseRfs)"));
+    assert.ok(resolverSource.includes('reason: "internal_projection_issue"'));
+  });
+
+  it("le bouton aide 2042-C-PRO archivé est désactivé quand declarability.deliverable est faux", () => {
+    assert.ok(viewSource.includes('from "@/lib/lmnp/services/declaration/final-declarability"'));
+    assert.ok(viewSource.includes("const declarability = resolveFinalDeclarabilityState("));
+    const aideButtonIndex = viewSource.indexOf(AIDE_BUTTON);
+    const aideBlockStart = viewSource.lastIndexOf("<Button", aideButtonIndex);
+    const aideBlock = viewSource.slice(aideBlockStart, aideButtonIndex);
+    assert.ok(
+      aideBlock.includes("!declarability.deliverable"),
+      "le bouton d'aide 2042-C-PRO archivé doit être désactivé par !declarability.deliverable",
+    );
+  });
 });
