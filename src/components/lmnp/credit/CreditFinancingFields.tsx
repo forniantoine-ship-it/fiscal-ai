@@ -15,6 +15,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import {
   formatCurrency,
+  parseNumber,
   type CreditFieldKey,
   type CreditFormValues,
 } from "@/lib/lmnp/services/credit-profile";
@@ -509,6 +510,41 @@ export function CreditFinancingFields({
                   delayMs={600}
                 />
               </div>
+              {parseNumber(loan.loanGuaranteeFees) > 0 || parseNumber(loan.loanApplicationFees) > 0 ? (
+                <div
+                  className="animate-[fiscal-fade-in_450ms_cubic-bezier(0.16,1,0.3,1)_both]"
+                  style={{ animationDelay: "630ms", paddingBlock: spacing.scale[2] }}
+                >
+                  <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+                    {`Ce prêt a-t-il été souscrit au cours de l'exercice ${revenueYear} ?`}
+                  </p>
+                  <div className="mt-3 flex gap-3">
+                    {(["non", "oui"] as const).map((choice) => {
+                      const selected =
+                        choice === "oui" ? loan.souscritCetExercice === true : loan.souscritCetExercice === false;
+                      return (
+                        <button
+                          key={choice}
+                          type="button"
+                          onClick={() => updateLoan(index, { souscritCetExercice: choice === "oui" })}
+                          style={{
+                            ...typography.caption.desktop,
+                            textTransform: "capitalize",
+                            padding: `${spacing.scale[2]} ${spacing.scale[4]}`,
+                            borderRadius: radius.full,
+                            border: `1px solid ${selected ? colors.border.selected : colors.border.subtle}`,
+                            backgroundColor: selected ? colors.surface.selected : colors.surface.primary,
+                            color: selected ? colors.text.primary : colors.text.secondary,
+                            transition: motions.hover.button,
+                          }}
+                        >
+                          {choice}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <div className="grid gap-0 sm:grid-cols-2 sm:gap-x-4">
                 <LightField
                   label={remainingCapitalLabel}

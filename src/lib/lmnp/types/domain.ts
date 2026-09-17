@@ -105,6 +105,17 @@ export interface LoanProfile {
   loanGuaranteeFees?: number;
   /** One-time bank application / dossier fees at loan origination. */
   loanApplicationFees?: number;
+  /**
+   * Fait canonique tri-état, jamais déduit : ce prêt a-t-il été souscrit
+   * pendant l'exercice fiscal courant ? Gate la déductibilité de
+   * `loanApplicationFees`/`loanGuaranteeFees`
+   * (`compute-financement-exercice.ts` : `anneeSouscription === exerciceFiscal`).
+   * `undefined` = non répondu — jamais traité comme "oui" ni "non" (voir
+   * `excludedLoanIdsFromFinancing()`). Même champ que
+   * `F011LoanDraft.souscritCetExercice` (F-011) — un seul concept, jamais
+   * une seconde représentation par canal.
+   */
+  souscritCetExercice?: boolean;
   startDate: string;
   firstPaymentDate: string;
   remainingCapital: number;

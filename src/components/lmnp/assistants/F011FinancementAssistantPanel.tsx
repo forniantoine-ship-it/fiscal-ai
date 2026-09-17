@@ -589,6 +589,18 @@ export function F011FinancementAssistantPanel() {
           monthlyPayment: 0,
           insurance: loan.assuranceAnnuelle ?? 0,
           fees: 0,
+          // F011 fees/guarantee V1 fix — transport pur des mêmes valeurs déjà
+          // résolues et utilisées pour `financementCharges` ci-dessus
+          // (assistant.ts:computeForLoans), vers le `creditFinancing` canonique.
+          // Sans ceci, une reconfirmation ultérieure côté Tunnel A
+          // (`CreditDocumentStep.tsx`, qui recalcule toujours
+          // `financementCharges` depuis `creditFinancing`) écrasait
+          // silencieusement une déduction correcte par 0 — le fait doit
+          // vivre dans un seul champ canonique, jamais recalculé
+          // différemment par canal.
+          loanApplicationFees: loan.fraisDossier,
+          loanGuaranteeFees: loan.typeGarantie === "caution" ? loan.commissionCaution : undefined,
+          souscritCetExercice: loan.souscritCetExercice,
           startDate: loan.datePremiereMensualite,
           firstPaymentDate: loan.datePremiereMensualite,
           remainingCapital: result.charges.prets[index]?.capitalRestantDu31_12 ?? 0,

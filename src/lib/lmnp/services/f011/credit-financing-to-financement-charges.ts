@@ -24,15 +24,22 @@
  *   (`applyLoanInsurance`) traite bancaire et externe de façon identique dès
  *   que le montant est connu — la distinction que ce fichier évitait
  *   autrefois de « fabriquer » n'est pas requise par le moteur ;
- * - garantie/frais de dossier/IRA restent volontairement absents de
- *   `creditFinancing` → `PretInput` : le moteur ne les déduit que l'année de
- *   souscription du prêt (`anneeSouscription === exerciceFiscal`,
- *   `compute-financement-exercice.ts:computePret`), une DÉCISION fiscale que
- *   Tunnel A ne demande jamais (contrairement au nouvel assistant F-011, qui
- *   pose explicitement la question « souscrit cette année ? »). `loan.startDate`
- *   existe dans le type mais n'est alimenté par aucun champ UI ni extraction —
- *   l'utiliser comme année de souscription inventerait une décision fiscale.
- *   Rester exclu ici est le comportement sûr, pas un oubli (voir audit NEXT-3) ;
+ * - F011 fees/guarantee V1 fix — `loan.loanApplicationFees`/
+ *   `loan.loanGuaranteeFees` sont désormais transmis à `PretInput.fraisDossier`/
+ *   `PretInput.garantieDeductible`, gatés par `loan.souscritCetExercice`
+ *   (même champ canonique que `F011LoanDraft.souscritCetExercice`, jamais une
+ *   seconde représentation par canal — voir `LoanProfile.souscritCetExercice`,
+ *   `domain.ts`) : `true` → `anneeSouscription = exerciceFiscal` ; `false`
+ *   ou `undefined` → `anneeSouscription = undefined`, qui échoue déjà
+ *   naturellement `anneeSouscription === exerciceFiscal`
+ *   (`compute-financement-exercice.ts:computePret`) sans qu'aucune année
+ *   fictive ne soit jamais inventée pour "pas cet exercice". La distinction
+ *   `false` (répondu, non déductible) vs `undefined` (pas répondu) reste
+ *   nécessaire uniquement pour la complétude (`excludedLoanIdsFromFinancing`
+ *   ci-dessous), jamais pour ce calcul ;
+ * - `loan.startDate` existe dans le type mais n'est alimenté par aucun champ
+ *   UI ni extraction — l'utiliser comme année de souscription inventerait
+ *   une décision fiscale, jamais fait ici ;
  * - un prêt sans date de première mensualité ne peut pas être daté dans le
  *   temps : il est exclu du calcul plutôt que daté arbitrairement.
  */
@@ -53,6 +60,22 @@ export function loanHasFirstPaymentDate(loan: Pick<CreditFinancingData["loans"][
 }
 
 /**
+ * F011 fees/guarantee V1 fix — un prêt avec des frais de dossier/garantie
+ * saisis (> 0) mais sans réponse à « souscrit cette année ? » ne peut pas
+ * être considéré complet : le moteur produirait silencieusement 0€ de
+ * déduction (comportement sûr, jamais une valeur inventée) mais rien ne le
+ * signalerait au client. `undefined` seul déclenche cette incomplétude —
+ * `false` (répondu, non déductible) est une réponse complète et légitime.
+ */
+export function loanHasKnownSubscriptionYearIfFeesExist(
+  loan: Pick<CreditFinancingData["loans"][number], "loanApplicationFees" | "loanGuaranteeFees" | "souscritCetExercice">,
+): boolean {
+  const feesExist = (loan.loanApplicationFees ?? 0) > 0 || (loan.loanGuaranteeFees ?? 0) > 0;
+  if (!feesExist) return true;
+  return loan.souscritCetExercice !== undefined;
+}
+
+/**
  * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérive, à partir de la donnée
  * source canonique (`CreditFinancingData.loans[].firstPaymentDate`, jamais
  * une seconde représentation de la date), la liste des prêts qui seraient
@@ -60,9 +83,19 @@ export function loanHasFirstPaymentDate(loan: Pick<CreditFinancingData["loans"][
  * gate F-006 pour protéger rétroactivement les dossiers confirmés avant ce
  * correctif UI — `financementCharges.excludedLoanIds` persisté peut être
  * absent pour ces dossiers, mais `creditFinancing.loans` a toujours existé.
+ *
+ * F011 fees/guarantee V1 fix — étend cette même liste (jamais une seconde)
+ * avec `loanHasKnownSubscriptionYearIfFeesExist()` : un prêt avec des frais
+ * non confirmés reste fiscalement calculable pour ses intérêts (il n'est PAS
+ * retiré des `prets` du mapper ci-dessous, seule sa réponse aux frais est
+ * manquante), mais doit tout de même apparaître ici pour bloquer la
+ * complétude/génération tant que le client n'a pas répondu — même sévérité
+ * que `firstPaymentDate` manquant, volontairement.
  */
 export function excludedLoanIdsFromFinancing(financing: CreditFinancingData | undefined): string[] {
-  return (financing?.loans ?? []).filter((loan) => !loanHasFirstPaymentDate(loan)).map((loan) => loan.id);
+  return (financing?.loans ?? [])
+    .filter((loan) => !loanHasFirstPaymentDate(loan) || !loanHasKnownSubscriptionYearIfFeesExist(loan))
+    .map((loan) => loan.id);
 }
 
 function inferTypePretFromFreeText(loanType: string | undefined): TypePret {
@@ -117,8 +150,13 @@ export function mapCreditFinancingToFinancementCharges(
       // transport pur, AUCUNE conversion ici. `undefined` si aucune assurance
       // saisie, jamais 0 fabriqué.
       assuranceAnnuelle: loan.insurance ? loan.insurance : undefined,
-      // fraisDossier, garantieDeductible, iraDeductible, anneeSouscription :
-      // volontairement absents (voir doc-comment ci-dessus).
+      // F011 fees/guarantee V1 fix — voir doc-comment de fichier : transport
+      // pur des montants saisis, gaté par le même souscritCetExercice que
+      // F-011. Jamais 0 fabriqué : `undefined` si non saisi.
+      fraisDossier: loan.loanApplicationFees ? loan.loanApplicationFees : undefined,
+      garantieDeductible: loan.loanGuaranteeFees ? loan.loanGuaranteeFees : undefined,
+      anneeSouscription: loan.souscritCetExercice ? params.exerciceFiscal : undefined,
+      // iraDeductible : volontairement absent (hors périmètre de ce fix).
     }));
 
   const input: ComputeFinancementExerciceInput = {

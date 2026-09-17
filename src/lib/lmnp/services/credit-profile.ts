@@ -11,6 +11,7 @@ export type CreditFieldKey =
   | "deferralType"
   | "loanGuaranteeFees"
   | "loanApplicationFees"
+  | "souscritCetExercice"
   | "firstPaymentDate"
   | "remainingCapital"
   | "isWorksLoan";
@@ -26,6 +27,8 @@ export type CreditLoanFormValues = {
   deferralType: string;
   loanGuaranteeFees: string;
   loanApplicationFees: string;
+  /** Tri-état, jamais collapsé à false — voir LoanProfile.souscritCetExercice. */
+  souscritCetExercice?: boolean;
   startDate: string;
   firstPaymentDate: string;
   remainingCapital: string;
@@ -125,6 +128,9 @@ function loanToFormValues(loan: CreditFinancingData["loans"][0]): CreditLoanForm
     deferralType: loan.deferralType ?? "none",
     loanGuaranteeFees: String(loan.loanGuaranteeFees ?? 0),
     loanApplicationFees: String(loan.loanApplicationFees ?? loan.fees ?? 0),
+    // Transport pur, jamais Boolean(...) : true/false/undefined doivent
+    // rester distincts (undefined ≠ false — voir doc-comment LoanProfile).
+    souscritCetExercice: loan.souscritCetExercice,
     startDate: loan.startDate,
     firstPaymentDate: loan.firstPaymentDate,
     remainingCapital: String(loan.remainingCapital),
@@ -179,6 +185,7 @@ export function emptyLoanFormValues(): CreditLoanFormValues {
     deferralType: "none",
     loanGuaranteeFees: "",
     loanApplicationFees: "",
+    souscritCetExercice: undefined,
     startDate: "",
     firstPaymentDate: "",
     remainingCapital: "",
@@ -186,7 +193,7 @@ export function emptyLoanFormValues(): CreditLoanFormValues {
   };
 }
 
-function parseNumber(value: string): number {
+export function parseNumber(value: string): number {
   const normalized = value.replace(/\s/g, "").replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -209,6 +216,9 @@ export function formValuesToFinancing(values: CreditFormValues, revenueYear: num
     fees: parseNumber(loan.loanApplicationFees),
     loanGuaranteeFees: parseNumber(loan.loanGuaranteeFees),
     loanApplicationFees: parseNumber(loan.loanApplicationFees),
+    // Transport pur, jamais Boolean(...) : true/false/undefined doivent
+    // rester distincts.
+    souscritCetExercice: loan.souscritCetExercice,
     startDate: loan.startDate.trim(),
     firstPaymentDate: loan.firstPaymentDate.trim(),
     remainingCapital: parseNumber(loan.remainingCapital),
@@ -264,6 +274,19 @@ export function normalizeCreditFormValues(values: CreditFormValues): CreditFormV
  * inventée). Réutilise le mécanisme de complétude déjà existant plutôt que
  * d'en créer un second.
  */
+/**
+ * F011 fees/guarantee V1 fix — même philosophie que `firstPaymentDate`
+ * ci-dessus, pour `souscritCetExercice` : si des frais de dossier/garantie
+ * sont saisis, la question « souscrit cette année ? » (visible dans l'UI
+ * uniquement dans ce cas, management by exception) doit être répondue avant
+ * de pouvoir confirmer — jamais déduite. Un prêt sans frais n'a jamais
+ * besoin de cette réponse.
+ */
+function loanFeesNeedSubscriptionAnswer(loan: Pick<CreditLoanFormValues, "loanApplicationFees" | "loanGuaranteeFees" | "souscritCetExercice">): boolean {
+  const feesExist = parseNumber(loan.loanApplicationFees) > 0 || parseNumber(loan.loanGuaranteeFees) > 0;
+  return feesExist && loan.souscritCetExercice === undefined;
+}
+
 export function isCreditProfileIncomplete(values: CreditFormValues): boolean {
   if (!values.summary.annualInterest.trim() || !values.summary.remainingCapital.trim()) return true;
   return values.loans.some(
@@ -271,7 +294,8 @@ export function isCreditProfileIncomplete(values: CreditFormValues): boolean {
       !loan.bank.trim() ||
       !loan.borrowedAmount.trim() ||
       !loan.monthlyPayment.trim() ||
-      !loan.firstPaymentDate.trim(),
+      !loan.firstPaymentDate.trim() ||
+      loanFeesNeedSubscriptionAnswer(loan),
   );
 }
 
