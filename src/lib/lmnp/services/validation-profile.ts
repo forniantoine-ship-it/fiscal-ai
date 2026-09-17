@@ -83,8 +83,21 @@ function isCreditComplete(draft?: DeclarationDraft): boolean {
   return excludedLoanIdsFromFinancing(draft?.creditFinancing).length === 0;
 }
 
+/**
+ * NEXT-4 — un `amortissementConfirmedAt` seul ne prouve plus que F-006
+ * dispose de quoi calculer : il peut être posé par le chemin legacy
+ * (`AmortissementDocumentStep.tsx` / `CONFIRM_AMORTISSEMENT`) sans que
+ * `amortissementAssistant` — le seul champ lu par `produceFiscalResult()`
+ * — ne soit jamais renseigné, exactement le même défaut que P0-2b pour
+ * `isChargesComplete`. `amortissementAssistant.status !== "validated"`
+ * (ex. "contested") est également fatal pour `validateFiscalInputs()` (F-006)
+ * et doit donc garder l'étape incomplète. `amortissementConfirmedAt`
+ * n'est volontairement pas supprimé du modèle (donnée legacy conservée
+ * telle quelle) ; seule cette vérification de complétude change, pour
+ * refléter exactement la même condition que `validateFiscalInputs()`.
+ */
 function isAmortissementComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.amortissementConfirmedAt);
+  return draft?.amortissementAssistant?.status === "validated";
 }
 
 /**

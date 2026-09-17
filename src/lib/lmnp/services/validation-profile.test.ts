@@ -348,6 +348,98 @@ function runTests(): void {
     assertEqual(charges.status, "incomplete", "aucun signal de complétude sans chargesAssistant");
   });
 
+  // ---------------------------------------------------------------------
+  // NEXT-4 — isAmortissementComplete() doit refléter amortissementAssistant
+  // (le seul champ lu par produceFiscalResult()/validateFiscalInputs()),
+  // jamais amortissementConfirmedAt seul (posé aussi par le chemin legacy
+  // AmortissementDocumentStep.tsx / CONFIRM_AMORTISSEMENT, qui n'écrit
+  // jamais amortissementAssistant) — même défaut que P0-2b pour Charges.
+  // ---------------------------------------------------------------------
+  test("NEXT-4 — amortissementConfirmedAt présent, amortissementAssistant absent (legacy) → Amortissement NON complet", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      amortissementConfirmedAt: "2026-08-31T00:00:00.000Z",
+    };
+    const steps = buildDossierSteps(draft);
+    const amortissement = steps.find((s) => s.id === "amortissement");
+    if (!amortissement) throw new Error("step 'amortissement' introuvable dans buildDossierSteps()");
+    assertEqual(amortissement.status, "incomplete", "amortissementConfirmedAt seul ne doit plus suffire");
+  });
+
+  test("NEXT-4 — amortissementAssistant présent avec status:'validated' → Amortissement complet", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      amortissementConfirmedAt: "2026-08-31T00:00:00.000Z",
+      amortissementAssistant: {
+        exerciceFiscal: 2025,
+        totalDotations: 1200,
+        status: "validated",
+        planVersion: "v1",
+        profil: "PROF-001",
+        validatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const amortissement = steps.find((s) => s.id === "amortissement");
+    if (!amortissement) throw new Error("step 'amortissement' introuvable dans buildDossierSteps()");
+    assertEqual(amortissement.status, "complete", "amortissementAssistant.status === 'validated' doit suffire");
+  });
+
+  test("NEXT-4 — amortissementAssistant présent avec status:'contested' → Amortissement NON complet", () => {
+    const draft: DeclarationDraft = {
+      completedSteps: [],
+      amortissementConfirmedAt: "2026-08-31T00:00:00.000Z",
+      amortissementAssistant: {
+        exerciceFiscal: 2025,
+        totalDotations: 1200,
+        status: "contested",
+        planVersion: "v1",
+        profil: "PROF-001",
+        validatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    } as DeclarationDraft;
+    const steps = buildDossierSteps(draft);
+    const amortissement = steps.find((s) => s.id === "amortissement");
+    if (!amortissement) throw new Error("step 'amortissement' introuvable dans buildDossierSteps()");
+    assertEqual(amortissement.status, "incomplete", "status:'contested' est fatal pour F-006, doit rester incomplet");
+  });
+
+  test("NEXT-4 — amortissementAssistant absent (même sans amortissementConfirmedAt) → Amortissement NON complet", () => {
+    const draft: DeclarationDraft = { completedSteps: [] };
+    const steps = buildDossierSteps(draft);
+    const amortissement = steps.find((s) => s.id === "amortissement");
+    if (!amortissement) throw new Error("step 'amortissement' introuvable dans buildDossierSteps()");
+    assertEqual(amortissement.status, "incomplete", "aucun signal de complétude sans amortissementAssistant");
+  });
+
+  test("NEXT-4 — anomalie corrigée (re-validation, status repasse à 'validated') → Amortissement redevient complet", () => {
+    const contested: DeclarationDraft = {
+      completedSteps: [],
+      amortissementAssistant: {
+        exerciceFiscal: 2025,
+        totalDotations: 1200,
+        status: "contested",
+        planVersion: "v1",
+        profil: "PROF-001",
+        validatedAt: "2026-08-31T00:00:00.000Z",
+      },
+    } as DeclarationDraft;
+    const revalidated: DeclarationDraft = {
+      ...contested,
+      amortissementAssistant: { ...contested.amortissementAssistant!, status: "validated" },
+    } as DeclarationDraft;
+    assertEqual(
+      buildDossierSteps(contested).find((s) => s.id === "amortissement")?.status,
+      "incomplete",
+      "étape 1 : contesté → incomplet",
+    );
+    assertEqual(
+      buildDossierSteps(revalidated).find((s) => s.id === "amortissement")?.status,
+      "complete",
+      "étape 2 : re-validé → complet, transition déterministe",
+    );
+  });
+
   // NEXT-1 (REV-P0-03) — isRevenusComplete() ne doit plus se fier au seul
   // timestamp revenusConfirmedAt : une anomalie F-013 error/fatal non résolue
   // doit garder l'étape "revenus" incomplète, exactement comme F-006
