@@ -527,6 +527,186 @@ describe("REMOVE_DOCUMENT — invalidation des confirmations Charges/Crédit/Amo
   });
 });
 
+describe("REMOVE_DOCUMENT — invalidation Logement (V1 Bucket-1 fix, audit readiness globale)", () => {
+  const logementAmortissementFixture = {
+    computedAt: "2026-01-01T00:00:00Z",
+    prixRevient: 250000,
+    valeurTerrain: 50000,
+    valeurBati: 200000,
+    baseAmortissableBati: 200000,
+    montantMobilier: 0,
+    dotationAnnuelle: 6667,
+    dureeMoyenneAnnees: 30,
+    // AmortissementPlan (F-010) — { lignes, totalAnnuelExercice, totalBrut },
+    // pas { composants } (forme F-014).
+    plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+  } as unknown as import("../types").LogementAmortissementOutput;
+
+  const amortissementAssistantFixture = {
+    status: "validated",
+    exerciceFiscal: 2026,
+    totalDotations: 6667,
+  } as unknown as import("../types").AmortissementAssistantOutput;
+
+  function stateWithConfirmedLogement() {
+    return baseState(
+      [doc("doc-logement-1", "logement")],
+      {
+        completedSteps: ["logement", "amortissement"],
+        logementDocumentId: "doc-logement-1",
+        logementConfirmedAt: "2026-01-01T00:00:00Z",
+        logementAmortissement: logementAmortissementFixture,
+        amortissementAssistant: amortissementAssistantFixture,
+      },
+    );
+  }
+
+  it("A — document acte notarié source supprimé → logementConfirmedAt/logementAmortissement/amortissementAssistant invalidés", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = stateWithConfirmedLogement();
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-logement-1" });
+
+    assert.equal(next.declarationDraft?.logementConfirmedAt, undefined);
+    assert.equal(next.declarationDraft?.logementAmortissement, undefined, "le plan périmé ne doit plus être trusté");
+    assert.equal(
+      next.declarationDraft?.amortissementAssistant,
+      undefined,
+      "le vrai verrou fatal de validateFiscalInputs doit être rouvert, pas seulement l'horodatage logement",
+    );
+  });
+
+  it("B — document non contributeur supprimé → confirmation logement conservée intacte", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      [doc("doc-logement-1", "logement"), doc("doc-autre", "autre")],
+      stateWithConfirmedLogement().declarationDraft,
+    );
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-autre" });
+
+    assert.equal(next.declarationDraft?.logementConfirmedAt, "2026-01-01T00:00:00Z");
+    assert.deepEqual(next.declarationDraft?.logementAmortissement, logementAmortissementFixture);
+    assert.deepEqual(next.declarationDraft?.amortissementAssistant, amortissementAssistantFixture);
+  });
+
+  it("C — après suppression, isLogementComplete()/buildDossierSteps signale l'étape logement incomplète", async () => {
+    const { buildDossierSteps } = await import("../services/validation-profile");
+    const lmnpReducer = await loadReducer();
+    const state = stateWithConfirmedLogement();
+
+    const beforeSteps = buildDossierSteps(state.declarationDraft);
+    assert.equal(beforeSteps.find((s) => s.id === "logement")?.status, "complete", "précondition — complet avant suppression");
+
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-logement-1" });
+    const afterSteps = buildDossierSteps(next.declarationDraft);
+
+    assert.equal(afterSteps.find((s) => s.id === "logement")?.status, "incomplete");
+    assert.equal(
+      afterSteps.find((s) => s.id === "amortissement")?.status,
+      "incomplete",
+      "F-014 doit également redevenir incomplet — amortissementAssistant a été invalidé",
+    );
+  });
+
+  it("D — après suppression, validateFiscalInputs (F-006, le vrai verrou de génération) bloque sur le plan périmé", async () => {
+    const { validateFiscalInputs } = await import("../../../runtime/capabilities/f006/validate-fiscal-inputs");
+
+    const baseInputs = {
+      exerciceFiscal: 2026,
+      activite: { dateMiseEnService: "2023-01-01" },
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 10000, anomalies: [] },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 2000, totalPreExploitation: 0 },
+    };
+
+    const beforeDeletion = validateFiscalInputs({
+      ...baseInputs,
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 6667, status: "validated" },
+    } as any);
+    assert.equal(beforeDeletion.ready, true, "précondition — prêt avant suppression, avec le plan encore validé");
+
+    const afterDeletion = validateFiscalInputs({
+      ...baseInputs,
+      // amortissementAssistant absent — exactement l'état produit par REMOVE_DOCUMENT (test A).
+    } as any);
+    assert.equal(
+      afterDeletion.ready,
+      false,
+      "la génération fiscale doit rester bloquée tant que F-014 n'a pas re-validé un plan reconstruit depuis un document réel",
+    );
+    assert.ok(
+      afterDeletion.anomalies.some((a) => a.field === "amortissementAssistant" && a.severity === "fatal"),
+      "l'anomalie fatale doit explicitement pointer vers amortissementAssistant",
+    );
+  });
+
+  it("E — reconfirmation normale via F-010 (CONFIRM_LOGEMENT_PROFILE + patch logementAmortissement) restaure la complétude", async () => {
+    const { buildDossierSteps } = await import("../services/validation-profile");
+    const lmnpReducer = await loadReducer();
+    const state = stateWithConfirmedLogement();
+    const afterDeletion = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-logement-1" });
+
+    // Reconfirmation réelle : nouveau document, nouveau plan (F-010 assistant),
+    // puis F-014 re-validé — même mécanisme que persistCompletion()/F014 confirm,
+    // jamais une réécriture manuelle du seul flag.
+    const reconfirmed = lmnpReducer(afterDeletion, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: {
+        logementDocumentId: "doc-logement-2",
+        logementConfirmedAt: "2026-02-01T00:00:00Z",
+        logementAmortissement: logementAmortissementFixture,
+      },
+    });
+    const reValidated = lmnpReducer(reconfirmed, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { amortissementAssistant: amortissementAssistantFixture },
+    });
+
+    const steps = buildDossierSteps(reValidated.declarationDraft);
+    assert.equal(steps.find((s) => s.id === "logement")?.status, "complete");
+    assert.equal(steps.find((s) => s.id === "amortissement")?.status, "complete");
+  });
+
+  it("F — régression : les branches revenus/charges/crédit/amortissement de REMOVE_DOCUMENT restent inchangées par cet ajout", async () => {
+    const lmnpReducer = await loadReducer();
+    const ventilation = { components: [], summary: { componentCount: 0, travauxTotal: 0, mobilierTotal: 0, averageDurationYears: 0 } };
+    const state = baseState(
+      [
+        doc("doc-logement-1", "logement"),
+        doc("doc-charges-1", "charges"),
+        doc("doc-credit-1", "emprunt"),
+        doc("doc-amort-1", "amortissement"),
+      ],
+      {
+        completedSteps: ["logement", "charges", "credit", "amortissement"],
+        logementDocumentId: "doc-logement-1",
+        logementConfirmedAt: "2026-01-01T00:00:00Z",
+        logementAmortissement: logementAmortissementFixture,
+        chargesDocumentIds: ["doc-charges-1"],
+        chargesConfirmedAt: "2026-01-01T00:00:00Z",
+        chargesExtraction: chargesExtractionFixture,
+        creditDocumentId: "doc-credit-1",
+        creditConfirmedAt: "2026-01-01T00:00:00Z",
+        creditFinancing: creditFinancingFixture,
+        amortissementDocumentIds: ["doc-amort-1"],
+        amortissementConfirmedAt: "2026-01-01T00:00:00Z",
+        amortissementVentilation: ventilation,
+        amortissementAssistant: amortissementAssistantFixture,
+      },
+    );
+
+    // Supprimer uniquement le document logement ne doit affecter QUE le
+    // logement (et amortissementAssistant, invalidé volontairement par ce
+    // fix) — jamais les branches charges/crédit/amortissement-legacy.
+    const next = lmnpReducer(state, { type: "REMOVE_DOCUMENT", documentId: "doc-logement-1" });
+
+    assert.equal(next.declarationDraft?.chargesConfirmedAt, "2026-01-01T00:00:00Z", "charges non touché");
+    assert.equal(next.declarationDraft?.creditConfirmedAt, "2026-01-01T00:00:00Z", "crédit non touché");
+    assert.equal(next.declarationDraft?.amortissementConfirmedAt, "2026-01-01T00:00:00Z", "amortissementConfirmedAt (legacy) non touché");
+    assert.deepEqual(next.declarationDraft?.amortissementVentilation, ventilation, "amortissementVentilation (legacy) conservé");
+  });
+});
+
 describe("#10 Persistance : amortissementDocumentIds survit au round-trip structuredClone (IndexedDB)", () => {
   it("un workspace avec amortissementDocumentIds est conservé intégralement", () => {
     const workspace: PersistedWorkspace = {

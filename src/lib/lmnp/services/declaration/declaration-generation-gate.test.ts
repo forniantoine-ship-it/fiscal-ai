@@ -26,6 +26,25 @@ function completeFlags(overrides: Partial<DeclarationDraft> = {}): DeclarationDr
     completedSteps: [],
     inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
     logementConfirmedAt: "2026-01-01T00:00:00.000Z",
+    // V1 Bucket-1 fix (audit "readiness globale") — isLogementComplete() lit
+    // désormais l'état canonique, pas seulement l'horodatage (même principe
+    // que chargesAssistant/amortissementAssistant déjà fournis ci-dessous
+    // par chaque test) : un fixture "complet" doit donc fournir une valeur,
+    // exactement comme pour ces deux autres champs.
+    logementAmortissement: {
+      computedAt: "2026-01-01T00:00:00.000Z",
+      prixRevient: 200000,
+      valeurTerrain: 40000,
+      valeurBati: 160000,
+      baseAmortissableBati: 160000,
+      montantMobilier: 0,
+      dotationAnnuelle: 5333,
+      dureeMoyenneAnnees: 30,
+      // AmortissementPlan (F-010, @/runtime/capabilities/f010/types.ts) —
+      // pas le PlanAmortissement de F-014 : forme réellement lue par
+      // map-2033a.ts (`immo.lignes.reduce(...)`), jamais { composants }.
+      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+    } as DeclarationDraft["logementAmortissement"],
     creditDeclaredNoneAt: "2026-01-01T00:00:00.000Z",
     revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
     chargesConfirmedAt: "2026-01-01T00:00:00.000Z",

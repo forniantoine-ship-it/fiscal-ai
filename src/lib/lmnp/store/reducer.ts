@@ -767,6 +767,34 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         confirmationInvalidated = true;
       }
 
+      // V1 Bucket-1 fix (audit "readiness globale", défaut proven) — même
+      // principe que crédit/charges/amortissement ci-dessus, manquant jusqu'ici
+      // pour logement : supprimer l'acte notarié source ne doit jamais laisser
+      // `logementAmortissement` (prix de revient, ventilation terrain/bâti,
+      // plan) trustée alors qu'il n'a plus de document derrière lui.
+      // `logementConfirmedAt` seul ne suffit pas à protéger F-006 (jamais lu
+      // par `validateFiscalInputs`) : c'est `amortissementAssistant.status`
+      // qui est le vrai verrou fatal — donc on l'invalide aussi, en réutilisant
+      // exactement le mécanisme déjà existant (F012ChargesAssistantPanel,
+      // "Chantier 2" — invalider `amortissementAssistant` rouvre F-014 ET
+      // `declarationGeneratedAt` via le mécanisme déjà en place, sans dupliquer
+      // cette logique ici). `logementAmortissement` lui-même est également
+      // effacé : le laisser intact permettrait à F-014 de re-valider en
+      // silence depuis le même plan périmé (`composePlan()` ne redemande rien
+      // tant que `planLogement` existe) — sa disparition déclenche le blocage
+      // `redirect_logement` déjà existant dans F014AmortissementsAssistant,
+      // qui renvoie réellement le client vers F-010 plutôt que de le laisser
+      // re-confirmer des données obsolètes.
+      if (declarationDraft?.logementDocumentId === action.documentId) {
+        declarationDraft = {
+          ...declarationDraft,
+          logementConfirmedAt: undefined,
+          logementAmortissement: undefined,
+          amortissementAssistant: undefined,
+        };
+        confirmationInvalidated = true;
+      }
+
       if (declarationDraft?.amortissementDocumentIds?.includes(action.documentId)) {
         declarationDraft = { ...declarationDraft, amortissementConfirmedAt: undefined };
         confirmationInvalidated = true;

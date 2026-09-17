@@ -64,8 +64,18 @@ function isActiviteComplete(draft?: DeclarationDraft): boolean {
   return Boolean(draft?.inpiConfirmedAt || draft?.siren?.trim());
 }
 
+/**
+ * V1 Bucket-1 fix (audit "readiness globale") — même défaut que P0-2b
+ * (`isChargesComplete`)/NEXT-4 (`isAmortissementComplete`) : le chemin legacy
+ * (`LogementDocumentStep.tsx` / `CONFIRM_LOGEMENT_PROFILE`) peut poser
+ * `logementConfirmedAt` sans jamais renseigner `logementAmortissement` — le
+ * seul champ que F-010/F-014 dérivent réellement. `logementConfirmedAt`
+ * n'est volontairement pas supprimé du modèle (donnée legacy conservée
+ * telle quelle) ; seule cette vérification de complétude change, pour
+ * refléter l'état canonique réel plutôt qu'un horodatage qui peut mentir.
+ */
 function isLogementComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.logementConfirmedAt);
+  return Boolean(draft?.logementAmortissement);
 }
 
 /**
