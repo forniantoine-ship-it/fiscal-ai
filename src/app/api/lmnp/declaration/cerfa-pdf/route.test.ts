@@ -25,7 +25,12 @@ import {
 } from "@/lib/lmnp/services/liasse-pdf";
 import { extractDrawnStringsForPage } from "@/lib/lmnp/services/liasse-pdf/tests/extract-rendered-text";
 import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
-import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import type { FiscalRepresentation, ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
+import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
+import type { FiscalResult } from "@/runtime/capabilities/f006/types";
+import type { IdentiteDeclarante } from "@/runtime/capabilities/f007/types";
+import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 
 const ALL_SIX_FORMS = [
   "2031-SD",
@@ -96,6 +101,200 @@ function realRfs(overrides: Partial<DeclarationDraft> = {}): FiscalRepresentatio
   assert.equal(generation.status, "generated", "précondition — le fixture doit être générable");
   if (generation.status !== "generated") throw new Error("unreachable");
   return generation.rfs;
+}
+
+/**
+ * NEXT-5 (server hardening) — fixture réelle déclenchant la garde de
+ * divergence F-010/F-014 (Cycle 37) : `logementAmortissement.plan.totalAnnuelExercice`
+ * (372) diverge de `amortissementAssistant.totalDotations` (1500, hérité de
+ * generationReadyDraft) — même fixture que final-declarability.test.ts.
+ */
+function realRfsAvecDivergenceAmortissement(): FiscalRepresentation {
+  return realRfs({
+    logementAmortissement: {
+      prixRevient: 125136,
+      valeurTerrain: 17960,
+      valeurBati: 107176,
+      baseAmortissableBati: 107176,
+      montantMobilier: 5400,
+      dotationAnnuelle: 1500,
+      dureeMoyenneAnnees: 30,
+      prorataRatio: 1,
+      plan: {
+        lignes: [
+          { label: "Gros œuvre", montant: 37186, dureeAnnees: 75, dotationExercice: 372, amortissementsCumules: 372, vnc: 36814 },
+        ],
+        totalAnnuelExercice: 372,
+        totalBrut: 37186,
+      },
+      fieldSources: {},
+      computedAt: "2026-08-31T00:00:00.000Z",
+    },
+  } as never);
+}
+
+/**
+ * NEXT-5 (server hardening) — dossier avec bilan patrimonial (P1-PDF-02-E),
+ * pour exercer `checkBilanEquilibre()` via une vraie génération. Fixture
+ * identique à celle de final-declarability.test.ts (NEXT-5B).
+ */
+const BILAN_INPUTS: BilanInputs = {
+  tresorerie: { bankMode: "DEDIE", closingCash: 3000 },
+  compteExploitant: { ouverture: 37100, apports: 0, prelevements: 1000 },
+  ran: { situation: "NATIF" },
+  tiers: { creances: { status: "NUL_CONFIRME" }, dettes: { status: "NUL_CONFIRME" } },
+  subventionsInvestissement: { status: "NUL_CONFIRME" },
+};
+
+/**
+ * totalAnnuelExercice (1500) aligné exactement sur amortissementAssistant.totalDotations
+ * (1500, generationReadyDraft) : jamais de divergence 028/030 accidentelle
+ * dans les fixtures bilan ci-dessous, qui exercent l'équilibre (142/180),
+ * pas l'allowlist amortissement (déjà couverte séparément).
+ */
+const IMMOBILISATIONS_NON_DIVERGENTES = {
+  prixRevient: 60000,
+  valeurTerrain: 15000,
+  valeurBati: 45000,
+  baseAmortissableBati: 45000,
+  montantMobilier: 0,
+  dotationAnnuelle: 1500,
+  dureeMoyenneAnnees: 30,
+  prorataRatio: 1,
+  plan: {
+    lignes: [
+      { label: "Composant", montant: 45000, dureeAnnees: 30, dotationExercice: 1500, amortissementsCumules: 1500, vnc: 43500 },
+    ],
+    totalAnnuelExercice: 1500,
+    totalBrut: 45000,
+  },
+  fieldSources: {},
+  computedAt: "2026-08-31T00:00:00.000Z",
+} as const;
+
+function realRfsAvecBilan(bilanInputs: BilanInputs, draftOverrides: Partial<DeclarationDraft> = {}): FiscalRepresentation {
+  const generation = runDeclarationGeneration(
+    generationReadyDraft({ logementAmortissement: IMMOBILISATIONS_NON_DIVERGENTES as never, ...draftOverrides }),
+    2025,
+    undefined,
+    bilanInputs,
+  );
+  assert.equal(generation.status, "generated", "précondition — le fixture doit être générable");
+  if (generation.status !== "generated") throw new Error("unreachable");
+  return generation.rfs;
+}
+
+/**
+ * NEXT-5 (server hardening) — dossier avec un prêt (F-011), pour exercer la
+ * garde de divergence emprunt (case 156, correction P0-3) : F-011 (CRD réel)
+ * vs `BilanInputs.financements.clotureCRD` (déclaré).
+ */
+function realRfsAvecEmpruntEtBilan(bilanInputs: BilanInputs): FiscalRepresentation {
+  return realRfsAvecBilan(bilanInputs, {
+    financementCharges: {
+      exerciceFiscal: 2025,
+      totalInteretsEmprunt: 800,
+      totalInteretsPreExploitation: 0,
+      totalAssurance: 100,
+      totalCapitalRembourse: 2000,
+      totalChargesFinancementExercice: 900,
+      prets: [
+        {
+          pretId: "pret-1",
+          typePret: "amortissable",
+          interetsEmpruntExercice: 800,
+          interetsPreExploitation: 0,
+          assuranceEmpruntExercice: 100,
+          assurancePreExploitation: 0,
+          capitalRembourseExercice: 2000,
+          capitalRestantDu31_12: 20000,
+          fraisDossierDeductibles: 0,
+          garantieDeductible: 0,
+          iraDeductible: 0,
+        },
+      ],
+      fieldSources: {},
+      computedAt: "2026-08-31T00:00:00.000Z",
+    },
+  } as never);
+}
+
+/**
+ * NEXT-5 (server hardening) — EXCEPTION documentée à la convention "aucun
+ * RFS fabriqué à la main" de ce fichier : construire un bilan patrimonial
+ * DESEQUILIBRE_REEL exact (écart réel entre actif net et passif malgré des
+ * données individuellement fiables) exige d'équilibrer plusieurs postes
+ * comptables simultanément — au-delà de ce que `generationReadyDraft()` +
+ * `bilanInputs` peuvent viser de façon fiable à travers tout le pipeline
+ * runDeclarationGeneration(). Fixture copiée à l'identique de
+ * final-declarability.test.ts (NEXT-5B, describe "équilibre bilan"), déjà
+ * prouvée par exécution directe de checkBilanEquilibre()/map2033AFromRfs()
+ * — reconstruite ici uniquement pour prouver que la ROUTE (POST, pas
+ * seulement resolveFinalDeclarabilityState() en isolation) applique
+ * correctement le même verdict à un RFS transmis tel quel par un client.
+ */
+function rfsDesequilibreReel(): FiscalRepresentation {
+  const fiscalResult: FiscalResult = {
+    exercice: 2025,
+    recettes: { total: 12000 },
+    charges: { totalDeductible: 4000, chargesExploitation: 4000, chargesFinancement: 0, chargesPreExploitation: 0, totalNonDeductible: 100 },
+    resultatAvantAmort: 7000,
+    amortCalcule: 1500,
+    amortDeduct: 1500,
+    amortReporte: 0,
+    amortReportesUtilises: 0,
+    resultatFiscal: 5500,
+    deficitNouveau: 0,
+    deficitsImputes: 0,
+    perteExceptionnelle: 0,
+    stocks: { deficits: [], amortissementsReportes: 0, deficitsExpires: [] },
+    trace: { ksArtifacts: ["TRF-0032"], computedAt: "2026-08-31T00:00:00.000Z", journal: [] },
+    status: "computed",
+    anomalies: [],
+  };
+  const immobilisations: ImmobilisationsRfs = {
+    lignes: [{ label: "Composant", montant: 45000, dureeAnnees: 30, dotationExercice: 1500, amortissementsCumules: 1500, vnc: 43500 }],
+    totalAnnuelExercice: 1500,
+    totalBrut: 45000,
+    valeurTerrain: 15000,
+  };
+  const emprunt: PretFinancementExercice = {
+    pretId: "pret-1",
+    typePret: "amortissable",
+    interetsEmpruntExercice: 800,
+    interetsPreExploitation: 0,
+    assuranceEmpruntExercice: 100,
+    assurancePreExploitation: 0,
+    capitalRembourseExercice: 2000,
+    capitalRestantDu31_12: 20000,
+    fraisDossierDeductibles: 0,
+    garantieDeductible: 0,
+    iraDeductible: 0,
+  };
+  const identite: IdentiteDeclarante = { siren: "104545108", siret: "10454510800011", denomination: "Test route DESEQUILIBRE_REEL" };
+  const bilanInputs: BilanInputs = {
+    tresorerie: { bankMode: "DEDIE", closingCash: 3000 },
+    compteExploitant: { ouverture: 37100, apports: 0, prelevements: 1000 },
+    ran: { situation: "NATIF" },
+    tiers: { creances: { status: "NUL_CONFIRME" }, dettes: { status: "NUL_CONFIRME" } },
+    // 137 déclaré sans contrepartie en trésorerie/actif — écart réel prouvé.
+    subventionsInvestissement: { status: "DECLARE", montant: 2500 },
+  };
+  const rfsSansPatrimoine: FiscalRepresentation = {
+    exercice: fiscalResult.exercice,
+    identite,
+    fiscalResult,
+    immobilisations,
+    emprunts: [emprunt],
+    trace: {
+      ksArtifacts: fiscalResult.trace.ksArtifacts,
+      assembledAt: "2026-08-31T00:00:00.000Z",
+      sourceFiscalResultAt: fiscalResult.trace.computedAt,
+      sources: { identite: "IdentiteDeclarante (ENT-013)", fiscalResult: "FiscalResult (F-006)" },
+    },
+  };
+  const patrimoine = assemblePatrimoine(rfsSansPatrimoine, bilanInputs);
+  return { ...rfsSansPatrimoine, patrimoine };
 }
 
 function jsonRequest(body: unknown): Request {
@@ -378,5 +577,111 @@ describe("POST /api/lmnp/declaration/cerfa-pdf", () => {
       const secondPageText = await extractDrawnStringsForPage(secondBytes, page);
       assert.deepEqual(firstPageText, secondPageText, `page ${page} — même contenu fiscal dessiné entre les deux requêtes, aucun recalcul ni aléa`);
     }
+  });
+});
+
+/**
+ * NEXT-5 (server hardening) — cette route reste joignable indépendamment de
+ * l'UI (RFS transmise telle quelle par le client) : elle doit refuser une
+ * projection dont on sait déjà, via resolveFinalDeclarabilityState()
+ * (final-declarability.ts, seule source de vérité, jamais reproduite ici),
+ * qu'elle est fiscalement incomplète pour ce dossier — exactement la même
+ * frontière que DeclarationReadyView/ArchivedDeclarationView, appliquée ici
+ * à la frontière serveur directement joignable par POST.
+ */
+describe("POST /api/lmnp/declaration/cerfa-pdf — frontière de déclarabilité (server hardening)", () => {
+  it("RFS valide sans divergence → 200, succès inchangé (non-régression)", async () => {
+    const rfs = realRfs();
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/pdf");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.ok(isPdf(bytes));
+  });
+
+  it("RFS avec divergence amortissement F-010/F-014 prouvée (028/030/490/492/496/570/576) → 422, aucun PDF, reason internal_projection_issue", async () => {
+    const rfs = realRfsAvecDivergenceAmortissement();
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+
+    assert.equal(response.status, 422);
+    assert.equal(response.headers.get("content-type"), "application/json");
+    const payload = (await response.json()) as { status: string; reason: string };
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.reason, "internal_projection_issue");
+
+    // Aucun octet PDF dans la réponse bloquée — la réponse entière est le
+    // JSON structuré ci-dessus, jamais un mélange PDF+erreur.
+    assert.equal(response.headers.get("content-type") !== "application/pdf", true);
+  });
+
+  it("RFS avec divergence emprunt (case 156, F-011 vs BilanInputs.financements) → 422, reason internal_projection_issue", async () => {
+    const rfs = realRfsAvecEmpruntEtBilan({ ...BILAN_INPUTS, financements: { clotureCRD: 25000 } });
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+
+    assert.equal(response.status, 422);
+    const payload = (await response.json()) as { status: string; reason: string };
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.reason, "internal_projection_issue");
+  });
+
+  it("RFS avec DIVERGENCE_SOURCE (équilibre bilan) → 422, reason internal_projection_issue", async () => {
+    // Même fixture que le cas 156 ci-dessus : la divergence de CRD produit à
+    // la fois 156 (allowlist) ET un équilibre DIVERGENCE_SOURCE (142/180) —
+    // les deux mécanismes NEXT-5/NEXT-5B convergent ici, sans dupliquer la
+    // logique de l'un dans l'autre.
+    const rfs = realRfsAvecEmpruntEtBilan({ ...BILAN_INPUTS, financements: { clotureCRD: 25000 } });
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 422);
+  });
+
+  it("RFS avec DESEQUILIBRE_REEL (subvention 137 sans contrepartie actif) → 422, reason internal_projection_issue", async () => {
+    const rfs = rfsDesequilibreReel();
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+
+    assert.equal(response.status, 422);
+    const payload = (await response.json()) as { status: string; reason: string };
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.reason, "internal_projection_issue");
+  });
+
+  it("RFS avec DONNEE_MANQUANTE (tiers non renseignés, dossier par ailleurs équilibrable) → 200, jamais bloqué", async () => {
+    const inputsSansTiers: BilanInputs = {
+      tresorerie: { bankMode: "DEDIE", closingCash: 3000 },
+      compteExploitant: { ouverture: 37100, apports: 0, prelevements: 1000 },
+      ran: { situation: "NATIF" },
+    };
+    const rfs = realRfsAvecBilan(inputsSansTiers);
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200, "une simple donnée patrimoniale pas encore saisie ne doit jamais bloquer la génération");
+  });
+
+  it("RFS EQUILIBRE (bilan intégralement équilibré) → 200, jamais bloqué", async () => {
+    const rfs = realRfsAvecBilan(BILAN_INPUTS);
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+  });
+
+  it("RFS sans patrimoine (cases légitimement non applicables/hors périmètre) → 200, jamais bloqué", async () => {
+    const rfs = realRfs();
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ALL_SIX_FORMS }));
+    assert.equal(response.status, 200, "un dossier LMNP simple, sans patrimoine renseigné, reste livrable — non-régression P1-6C");
+  });
+
+  it("appel direct POST avec RFS divergente, sans passer par download-liasse-fiscale-pdf.ts/l'UI → toujours bloqué (aucun bypass client)", async () => {
+    // Reproduit exactement ce qu'un client technique (devtools, curl, build
+    // modifié) pourrait envoyer : un payload structurellement valide,
+    // construit à la main comme un vrai appelant HTTP le ferait — jamais
+    // via downloadLiasseFiscalePdf()/le composant React.
+    const rfs = realRfsAvecDivergenceAmortissement();
+    const rawPayload = JSON.parse(JSON.stringify({ rfs, declarationVersionId: "bypass-attempt", forms: ["2033-A-SD", "2033-C-SD"] }));
+    const response = await POST(
+      new Request("http://localhost/api/lmnp/declaration/cerfa-pdf", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(rawPayload),
+      }),
+    );
+    assert.equal(response.status, 422, "la frontière serveur bloque indépendamment de tout état UI");
+    assert.equal(response.headers.get("content-type"), "application/json", "jamais de PDF en réponse à une requête bloquée");
   });
 });

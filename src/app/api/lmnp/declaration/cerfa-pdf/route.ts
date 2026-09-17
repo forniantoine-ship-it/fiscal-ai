@@ -11,6 +11,8 @@ import {
   type GateViolation,
 } from "@/lib/lmnp/services/liasse-pdf";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
+import { resolveFinalDeclarabilityState } from "@/lib/lmnp/services/declaration/final-declarability";
 
 /**
  * P1-1/P1-6C — pont serveur minimal entre le parcours client (RFS déjà
@@ -99,6 +101,18 @@ export async function POST(request: Request) {
   const requestedForms = forms as SupportedForm[];
 
   try {
+    // NEXT-5 (server hardening) — même frontière de déclarabilité que
+    // DeclarationReadyView/ArchivedDeclarationView (final-declarability.ts,
+    // seule source de vérité, jamais reproduite ici) : cette route reste
+    // aujourd'hui joignable indépendamment de l'UI (RFS transmise telle
+    // quelle par le client, jamais recalculée), donc son propre bypass de
+    // l'UI. Bloque AVANT toute génération PDF, jamais après — aucun octet
+    // n'est produit pour une projection dont on sait déjà qu'elle est
+    // fiscalement incomplète pour ce dossier.
+    if (!resolveFinalDeclarabilityState(assembleLiasseFromRfs(typedRfs)).deliverable) {
+      return NextResponse.json({ status: "blocked", reason: "internal_projection_issue" }, { status: 422 });
+    }
+
     const results: FormResult[] = [];
     for (const form of requestedForms) {
       results.push({ form, result: await GENERATE_BY_FORM[form]({ rfs: typedRfs, declarationVersionId }) });
