@@ -11,11 +11,28 @@
  * Mêmes règles de prudence que le pont documentaire (`credit-bridge.ts`) :
  * - jamais de date de mise en service inventée (précondition Cycle 1, appelant
  *   responsable de ne pas appeler cette fonction si elle est absente) ;
- * - assurance jamais classée bancaire/externe (Tunnel A ne demande pas cette
- *   distinction) — le montant confirmé n'est donc pas injecté dans le calcul,
- *   pour ne pas fabriquer une classification inconnue ;
- * - garantie/frais de dossier/IRA jamais déduits depuis `creditFinancing`
- *   (même raison que le pont documentaire — STOP Cycle 4 §7) ;
+ * - NEXT-3 (blocker fix) — `creditFinancing.loans[].insurance` est l'unité
+ *   CANONIQUE ANNUELLE (normalisée aux frontières FORM ↔ DOMAINE dans
+ *   `credit-profile.ts` : `formValuesToFinancing` ×12 à la confirmation,
+ *   `loanToFormValues` ÷12 à la restitution — jamais ici). Ce mapper fiscal
+ *   transmet donc `loan.insurance` tel quel en `assuranceAnnuelle`, SANS
+ *   connaître ni le canal d'origine (Tunnel A vs nouvel assistant F011) ni
+ *   l'unité d'affichage UI. Une conversion faite ici serait une deuxième
+ *   conversion sur une donnée déjà normalisée (audit contradictoire NEXT-3 :
+ *   un ×12 local avait produit une surestimation ×12 pour les prêts confirmés
+ *   par le nouvel assistant, qui écrit déjà en annuel). Le moteur
+ *   (`applyLoanInsurance`) traite bancaire et externe de façon identique dès
+ *   que le montant est connu — la distinction que ce fichier évitait
+ *   autrefois de « fabriquer » n'est pas requise par le moteur ;
+ * - garantie/frais de dossier/IRA restent volontairement absents de
+ *   `creditFinancing` → `PretInput` : le moteur ne les déduit que l'année de
+ *   souscription du prêt (`anneeSouscription === exerciceFiscal`,
+ *   `compute-financement-exercice.ts:computePret`), une DÉCISION fiscale que
+ *   Tunnel A ne demande jamais (contrairement au nouvel assistant F-011, qui
+ *   pose explicitement la question « souscrit cette année ? »). `loan.startDate`
+ *   existe dans le type mais n'est alimenté par aucun champ UI ni extraction —
+ *   l'utiliser comme année de souscription inventerait une décision fiscale.
+ *   Rester exclu ici est le comportement sûr, pas un oubli (voir audit NEXT-3) ;
  * - un prêt sans date de première mensualité ne peut pas être daté dans le
  *   temps : il est exclu du calcul plutôt que daté arbitrairement.
  */
@@ -95,8 +112,13 @@ export function mapCreditFinancingToFinancementCharges(
       tauxNominal: loan.rate / 100,
       dureeMois: loan.durationMonths,
       datePremiereMensualite: loan.firstPaymentDate,
-      // assuranceType, fraisDossier, garantieDeductible, iraDeductible,
-      // anneeSouscription : volontairement absents (voir doc-comment ci-dessus).
+      // NEXT-3 (blocker fix) — `loan.insurance` est déjà l'unité canonique
+      // ANNUELLE (normalisée à l'écriture, voir doc-comment ci-dessus) :
+      // transport pur, AUCUNE conversion ici. `undefined` si aucune assurance
+      // saisie, jamais 0 fabriqué.
+      assuranceAnnuelle: loan.insurance ? loan.insurance : undefined,
+      // fraisDossier, garantieDeductible, iraDeductible, anneeSouscription :
+      // volontairement absents (voir doc-comment ci-dessus).
     }));
 
   const input: ComputeFinancementExerciceInput = {
@@ -115,6 +137,12 @@ export function mapCreditFinancingToFinancementCharges(
       totalInteretsEmprunt: computed.charges.totalInteretsEmprunt,
       totalInteretsPreExploitation: computed.charges.totalInteretsPreExploitation,
       totalAssurance: computed.charges.totalAssurance,
+      // NEXT-3 — transport pur depuis le moteur (déjà calculé via
+      // `isolatePreExploitationInterests`), jamais transmis avant ce
+      // correctif alors que le champ existe sur `FinancementChargesOutput`
+      // depuis NEXT-2. Même origine que `totalAssurance`, pas une seconde
+      // donnée d'assurance.
+      totalAssurancePreExploitation: computed.charges.totalAssurancePreExploitation,
       totalCapitalRembourse: computed.charges.totalCapitalRembourse,
       totalChargesFinancementExercice: computed.charges.totalChargesFinancementExercice,
       prets: computed.charges.prets,

@@ -98,6 +98,19 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
+/**
+ * NEXT-3 (blocker fix) — `creditFinancing.loans[].insurance` est désormais
+ * l'unité CANONIQUE (annuelle), au même titre que ce que produit déjà le
+ * nouvel assistant F011 (`assuranceAnnuelle`). Le champ UI Tunnel A reste
+ * mensuel pour l'ergonomie (placeholder "Assurance mensuelle") : la
+ * conversion se fait strictement aux deux frontières FORM ↔ DOMAINE
+ * (`loanToFormValues`/`formValuesToFinancing`), jamais dans le mapper fiscal
+ * qui doit rester indépendant du canal d'origine.
+ */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function loanToFormValues(loan: CreditFinancingData["loans"][0]): CreditLoanFormValues {
   return {
     bank: loan.bank,
@@ -106,7 +119,9 @@ function loanToFormValues(loan: CreditFinancingData["loans"][0]): CreditLoanForm
     rate: String(loan.rate),
     durationMonths: String(loan.durationMonths),
     monthlyPayment: String(loan.monthlyPayment),
-    insurance: String(loan.insurance),
+    // NEXT-3 — RESTORE : canonique annuel → champ UI mensuel (÷12), symétrique
+    // de la conversion faite à la confirmation (`formValuesToFinancing`).
+    insurance: String(round2(loan.insurance / 12)),
     deferralType: loan.deferralType ?? "none",
     loanGuaranteeFees: String(loan.loanGuaranteeFees ?? 0),
     loanApplicationFees: String(loan.loanApplicationFees ?? loan.fees ?? 0),
@@ -186,7 +201,10 @@ export function formValuesToFinancing(values: CreditFormValues, revenueYear: num
     rate: parseNumber(loan.rate),
     durationMonths: parseNumber(loan.durationMonths),
     monthlyPayment: parseNumber(loan.monthlyPayment),
-    insurance: parseNumber(loan.insurance),
+    // NEXT-3 — CONFIRM : champ UI mensuel → canonique annuel (×12), symétrique
+    // de `loanToFormValues`. Simple conversion d'unité d'une donnée déjà
+    // connue, jamais une invention.
+    insurance: round2(parseNumber(loan.insurance) * 12),
     deferralType: (loan.deferralType || "none") as CreditFinancingData["loans"][0]["deferralType"],
     fees: parseNumber(loan.loanApplicationFees),
     loanGuaranteeFees: parseNumber(loan.loanGuaranteeFees),

@@ -822,3 +822,102 @@ describe("NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — runDeclarationGeneratio
     assert.equal(generation.status, "generated");
   });
 });
+
+/**
+ * NEXT-3 (P2-A) — la fusion `excludedLoanIds` dans `runDeclarationGeneration`
+ * doit refléter INCONDITIONNELLEMENT la dérivation fraîche depuis
+ * `creditFinancing.loans`, y compris `[]` : une ancienne valeur persistée
+ * (stale) ne doit jamais survivre à une correction de date parce que le
+ * tableau frais est vide.
+ */
+describe("NEXT-3 (P2-A) — excludedLoanIds toujours écrasé par la dérivation fraîche, jamais stale", () => {
+  const BASE_LOAN = {
+    id: "loan-1",
+    bank: "Banque",
+    loanType: "amortissable",
+    borrowedAmount: 200000,
+    rate: 3.5,
+    durationMonths: 240,
+    monthlyPayment: 1150,
+    insurance: 0,
+    fees: 0,
+    startDate: "2020-01-01",
+    firstPaymentDate: "2020-02-01",
+    remainingCapital: 195000,
+  };
+
+  function baseDraft(): DeclarationDraft {
+    return {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 1000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 500, status: "validated" },
+    } as unknown as DeclarationDraft;
+  }
+
+  it("creditFinancing a une date valide, mais financementCharges.excludedLoanIds persisté est stale (non vide) → génération PASS, stale ignoré", () => {
+    const draft: DeclarationDraft = {
+      ...baseDraft(),
+      creditFinancing: {
+        loans: [BASE_LOAN],
+        summary: { fiscalYearLabel: "2019", annualInterest: 6900, annualInsurance: 0, remainingCapital: 195000 },
+        installments: [],
+      },
+      financementCharges: {
+        exerciceFiscal: 2025,
+        totalInteretsEmprunt: 5569.75,
+        totalInteretsPreExploitation: 0,
+        totalAssurance: 0,
+        totalCapitalRembourse: 4000,
+        totalChargesFinancementExercice: 5569.75,
+        prets: [],
+        fieldSources: {},
+        computedAt: "2020-01-01T00:00:00.000Z",
+        // Stale : ce prêt a une date valide dans creditFinancing, mais la
+        // valeur persistée n'a jamais été rafraîchie (ex. persistée par un
+        // ancien passage avant correction de la date).
+        excludedLoanIds: ["loan-1"],
+      },
+    } as unknown as DeclarationDraft;
+
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(
+      generation.status,
+      "generated",
+      "la dérivation fraîche ([]) doit écraser le stale ['loan-1'], jamais rester bloquée indéfiniment",
+    );
+  });
+
+  it("rejeu idempotent : deux appels successifs sur le même dossier corrigé donnent le même résultat", () => {
+    const draft: DeclarationDraft = {
+      ...baseDraft(),
+      creditFinancing: {
+        loans: [BASE_LOAN],
+        summary: { fiscalYearLabel: "2019", annualInterest: 6900, annualInsurance: 0, remainingCapital: 195000 },
+        installments: [],
+      },
+      financementCharges: {
+        exerciceFiscal: 2025,
+        totalInteretsEmprunt: 5569.75,
+        totalInteretsPreExploitation: 0,
+        totalAssurance: 0,
+        totalCapitalRembourse: 4000,
+        totalChargesFinancementExercice: 5569.75,
+        prets: [],
+        fieldSources: {},
+        computedAt: "2020-01-01T00:00:00.000Z",
+        excludedLoanIds: ["loan-1"],
+      },
+    } as unknown as DeclarationDraft;
+
+    const r1 = runDeclarationGeneration(draft, 2025);
+    const r2 = runDeclarationGeneration(draft, 2025);
+    assert.equal(r1.status, "generated");
+    assert.equal(r2.status, "generated");
+  });
+});

@@ -150,11 +150,13 @@ export function runDeclarationGeneration(
   // depuis un champ calculé au moment de la confirmation Tunnel A : protège
   // aussi les dossiers confirmés avant le correctif UI, sans exiger une
   // nouvelle confirmation.
+  // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : la dérivation
+  // fraîche reste la seule vérité, jamais une ancienne valeur persistée
+  // (potentiellement stale) qui survivrait parce que le tableau frais est vide.
   const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
-  const financementCharges =
-    draft?.financementCharges && excludedLoanIds.length > 0
-      ? { ...draft.financementCharges, excludedLoanIds }
-      : draft?.financementCharges;
+  const financementCharges = draft?.financementCharges
+    ? { ...draft.financementCharges, excludedLoanIds }
+    : draft?.financementCharges;
 
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,

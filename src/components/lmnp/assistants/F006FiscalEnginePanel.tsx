@@ -83,11 +83,12 @@ export function F006FiscalEnginePanel() {
     // `creditFinancing.loans` (donnée source, toujours persistée), pas depuis
     // un champ calculé au moment de la confirmation Tunnel A : protège aussi
     // les dossiers confirmés avant le correctif UI.
+    // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : voir
+    // commentaire miroir dans run-declaration-generation.ts.
     const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
-    const financementCharges =
-      draft?.financementCharges && excludedLoanIds.length > 0
-        ? { ...draft.financementCharges, excludedLoanIds }
-        : draft?.financementCharges;
+    const financementCharges = draft?.financementCharges
+      ? { ...draft.financementCharges, excludedLoanIds }
+      : draft?.financementCharges;
 
     return {
       exerciceFiscal: fiscalYear,

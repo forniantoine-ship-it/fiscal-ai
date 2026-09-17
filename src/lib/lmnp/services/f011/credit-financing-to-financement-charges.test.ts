@@ -97,16 +97,121 @@ describe("F-011 — Cycle 4 §11 : le trou financementCharges côté Tunnel A", 
     assert.deepEqual(excludedLoanIds, []);
   });
 
-  it("l'assurance confirmée par Tunnel A n'est pas injectée — sa nature bancaire/externe reste inconnue", () => {
+  it("NEXT-3 (blocker fix) — `creditFinancing.loans[].insurance` est déjà l'unité canonique ANNUELLE : transport pur, AUCUNE conversion dans ce mapper", () => {
+    // BASE_LOAN.insurance = 240 (divisible par 12 sans reliquat d'arrondi
+    // mensuel — `applyLoanInsurance` répartit /12 puis resomme) : à ce niveau
+    // (mapper fiscal), c'est déjà une valeur ANNUELLE canonique (normalisée
+    // en amont par credit-profile.ts pour Tunnel A, ou écrite directement en
+    // annuel par le nouvel assistant F011) — jamais une valeur mensuelle. Le
+    // mapper ne doit JAMAIS multiplier par 12 : un audit contradictoire a
+    // démontré qu'un ×12 local ici provoquait une surestimation ×12 pour les
+    // prêts confirmés par le nouvel assistant F011 (qui écrit déjà en annuel).
     const { financementCharges } = mapCreditFinancingToFinancementCharges({
-      financing: financingWith([{ ...BASE_LOAN, insurance: 25 }]),
+      financing: financingWith([{ ...BASE_LOAN, insurance: 240 }]),
       exerciceFiscal: 2022,
       dateMiseEnService: "2021-01-01",
     });
     assert.equal(
       financementCharges.totalAssurance,
+      240,
+      "transport pur : 240 (canonique annuel) → 240 au moteur, jamais 2880",
+    );
+  });
+
+  it("NEXT-3 — sans assurance saisie, aucune valeur n'est inventée", () => {
+    const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([{ ...BASE_LOAN, insurance: 0 }]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(financementCharges.totalAssurance, 0);
+  });
+
+  it("NEXT-3 — totalAssurancePreExploitation (déjà calculé par le moteur) est désormais transmis", () => {
+    const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([BASE_LOAN]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(typeof financementCharges.totalAssurancePreExploitation, "number");
+  });
+
+  it("NEXT-3 — frais de dossier/garantie restent volontairement non déduits (décision « souscrit cette année ? » jamais posée par Tunnel A)", () => {
+    const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([{ ...BASE_LOAN, loanApplicationFees: 800, loanGuaranteeFees: 500 }]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(
+      financementCharges.prets[0]?.fraisDossierDeductibles,
       0,
-      "même règle prudente que le pont documentaire (Cycle 4 §7) : pas de classification inventée",
+      "le moteur n'accorde ce montant que si anneeSouscription === exerciceFiscal — jamais inventé depuis Tunnel A",
+    );
+    assert.equal(financementCharges.prets[0]?.garantieDeductible, 0);
+  });
+
+  it("NEXT-3 — multi-prêts : l'assurance (canonique annuelle) d'un prêt exclu (date manquante) ne contamine jamais le prêt valide", () => {
+    const validLoan = { ...BASE_LOAN, id: "loan-valid", insurance: 300 };
+    const excludedLoan = { ...BASE_LOAN, id: "loan-excluded", insurance: 9999, firstPaymentDate: "" };
+    const { financementCharges, excludedLoanIds } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([validLoan, excludedLoan]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.deepEqual(excludedLoanIds, ["loan-excluded"]);
+    assert.equal(financementCharges.prets.length, 1);
+    assert.equal(
+      financementCharges.totalAssurance,
+      300,
+      "transport pur du prêt valide, jamais l'assurance du prêt exclu (9999) mélangée",
+    );
+  });
+
+  it("NEXT-3 — deux prêts valides avec assurances (canoniques annuelles) différentes : sommées correctement, sans contamination d'ID", () => {
+    const loanA = { ...BASE_LOAN, id: "loan-A", insurance: 240, borrowedAmount: 100000 };
+    const loanB = { ...BASE_LOAN, id: "loan-B", insurance: 480, borrowedAmount: 150000 };
+    const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([loanA, loanB]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(financementCharges.totalAssurance, 720, "240+480, transport pur, jamais ×12 supplémentaire");
+    const byId = Object.fromEntries(financementCharges.prets.map((p) => [p.pretId, p.assuranceEmpruntExercice]));
+    assert.equal(byId["loan-A"], 240);
+    assert.equal(byId["loan-B"], 480);
+  });
+
+  it("NEXT-3 — l'ajout de l'assurance ne modifie pas les intérêts déjà correctement calculés (pas de double comptage)", () => {
+    const before = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([{ ...BASE_LOAN, insurance: 0 }]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    const after = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([{ ...BASE_LOAN, insurance: 240 }]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(
+      before.financementCharges.totalInteretsEmprunt,
+      after.financementCharges.totalInteretsEmprunt,
+      "les intérêts sont indépendants de l'assurance, jamais recalculés/doublés",
+    );
+  });
+
+  it("NEXT-3 (blocker fix) — TEST déterminant : une valeur canonique déjà annuelle (écrite par le nouvel assistant F011) n'est jamais reconvertie ×12", () => {
+    // Reproduit exactement ce que F011FinancementAssistantPanel.tsx écrit :
+    // insurance = loan.assuranceAnnuelle (déjà annuel), jamais mensuel.
+    const loanFromNewAssistant = { ...BASE_LOAN, id: "loan-f011", insurance: 300 };
+    const { financementCharges } = mapCreditFinancingToFinancementCharges({
+      financing: financingWith([loanFromNewAssistant]),
+      exerciceFiscal: 2022,
+      dateMiseEnService: "2021-01-01",
+    });
+    assert.equal(
+      financementCharges.totalAssurance,
+      300,
+      "jamais 3600 (300×12) — c'est exactement le blocker identifié par l'audit contradictoire NEXT-3",
     );
   });
 });
