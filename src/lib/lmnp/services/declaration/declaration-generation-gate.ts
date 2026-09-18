@@ -248,7 +248,13 @@ export function resolveDeclarationGenerationGate(input: {
       // commentaire du paramètre ci-dessus) : jamais `undefined` en dur, qui
       // désynchronisait ce preview de la génération réelle pour un exercice
       // en continuité.
-      const preview = runDeclarationGeneration(input.draft, input.fiscalYear, input.stocksOuverture, input.draft?.bilanPatrimonial);
+      const preview = runDeclarationGeneration(
+        input.draft,
+        input.fiscalYear,
+        input.stocksOuverture,
+        input.draft?.bilanPatrimonial,
+        input.draft?.dispense2033A,
+      );
       if (
         preview.status === "generated" &&
         (stored?.totalRecettes !== preview.fiscalResult.totalRecettes ||
@@ -299,7 +305,13 @@ export function resolveDeclarationGenerationGate(input: {
 
   // G1-P0 — idem : même bilanPatrimonial que la génération réelle.
   // P0-1A — idem : même stocksOuverture que la génération réelle.
-  const preview = runDeclarationGeneration(input.draft, input.fiscalYear, input.stocksOuverture, input.draft?.bilanPatrimonial);
+  const preview = runDeclarationGeneration(
+    input.draft,
+    input.fiscalYear,
+    input.stocksOuverture,
+    input.draft?.bilanPatrimonial,
+    input.draft?.dispense2033A,
+  );
   if (preview.status === "blocked") {
     return {
       snapshot,

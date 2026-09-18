@@ -20,6 +20,7 @@ import {
 } from "./final-declarability";
 import { runDeclarationGeneration } from "./run-declaration-generation";
 import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
+import type { Dispense2033AState } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { LiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import type { CerfaCaseNonAlimentee, Form2033A } from "@/runtime/capabilities/rfs/projection/map-2033a";
 import { map2033AFromRfs } from "@/runtime/capabilities/rfs/projection/map-2033a";
@@ -216,10 +217,12 @@ describe("NEXT-5 — resolveFinalDeclarabilityState() : unité sur casesNonAlime
     form2033ANonAlimentees: CerfaCaseNonAlimentee[],
     form2033CNonAlimentees: CerfaCaseNonAlimentee[],
     equilibreStatus?: Form2033A["equilibreStatus"],
+    dispense2033A?: Dispense2033AState,
   ): LiasseFromRfs {
     return {
       form2033A: { formId: "2033-A-SD", cases: [], casesNonAlimentees: form2033ANonAlimentees, equilibreStatus },
       form2033C: { formId: "2033-C-SD", cases: [], casesNonAlimentees: form2033CNonAlimentees },
+      dispense2033A,
     } as unknown as LiasseFromRfs;
   }
 
@@ -436,5 +439,91 @@ describe("NEXT-5B — resolveFinalDeclarabilityState() : équilibre bilan (cases
     // "Case E" ci-dessus, qui continuent de passer sans modification).
     assert.equal(form.cases.find((c) => c.caseId === "028")?.value, 60000);
     assert.equal(stateForForm2033A(form).deliverable, true);
+  });
+});
+
+/**
+ * Dispense 2033-A (CGI, art. 302 septies A bis, VI) — quand la dispense est
+ * valablement en effet, une divergence interne PROPRE au 2033-A (028/030/156
+ * ou un déséquilibre de bilan) ne doit plus bloquer la livraison du reste de
+ * la liasse (2031/2033-B/C/D), puisque le 2033-A n'est de toute façon pas
+ * livré (voir `download-cerfa-pdf.ts`). FILE_2033A/NOT_ELIGIBLE/UNKNOWN
+ * conservent exactement le comportement historique (Case J/K/L).
+ */
+describe("Dispense 2033-A — resolveFinalDeclarabilityState() ignore les divergences propres au 2033-A quand la dispense est en effet", () => {
+  function nonAlimentee(caseId: string, categorie: CerfaCaseNonAlimentee["categorie"]): CerfaCaseNonAlimentee {
+    return { caseId, label: `Case ${caseId}`, raison: `raison ${caseId}`, categorie };
+  }
+
+  function liasseAvecDivergence156(dispense2033A?: Dispense2033AState): LiasseFromRfs {
+    return {
+      form2033A: { formId: "2033-A-SD", cases: [], casesNonAlimentees: [nonAlimentee("156", "incoherence_modele")] },
+      form2033C: { formId: "2033-C-SD", cases: [], casesNonAlimentees: [] },
+      dispense2033A,
+    } as unknown as LiasseFromRfs;
+  }
+
+  const ELIGIBLE: Dispense2033AState["eligibilite"] = {
+    etat: "ELIGIBLE",
+    seuil: { triennium: "2026-2028", seuilAutresEntreprisesHT: 66_000, source: "test" },
+    caReferenceN1: 0,
+    raison: "test",
+  };
+  const NOT_ELIGIBLE: Dispense2033AState["eligibilite"] = {
+    etat: "NOT_ELIGIBLE",
+    seuil: { triennium: "2026-2028", seuilAutresEntreprisesHT: 66_000, source: "test" },
+    caReferenceN1: 70_000,
+    raison: "test",
+  };
+
+  it("Case E (rappel, sans dispense) — divergence 156 → NOT DELIVERABLE (non-régression)", () => {
+    const state = resolveFinalDeclarabilityState(liasseAvecDivergence156(undefined));
+    assert.equal(state.deliverable, false);
+  });
+
+  it("Case J — ÉLIGIBLE + USE_DISPENSE → divergence 156 ignorée → DELIVERABLE", () => {
+    const state = resolveFinalDeclarabilityState(liasseAvecDivergence156({ eligibilite: ELIGIBLE, decision: "USE_DISPENSE" }));
+    assert.equal(state.deliverable, true);
+    assert.deepEqual(state.internalProjectionIssues, []);
+  });
+
+  it("Case K — ÉLIGIBLE + FILE_2033A → divergence 156 reste bloquante (comportement historique)", () => {
+    const state = resolveFinalDeclarabilityState(liasseAvecDivergence156({ eligibilite: ELIGIBLE, decision: "FILE_2033A" }));
+    assert.equal(state.deliverable, false);
+  });
+
+  it("Case L — NOT_ELIGIBLE (même avec decision USE_DISPENSE, état incohérent) → divergence 156 reste bloquante", () => {
+    const state = resolveFinalDeclarabilityState(liasseAvecDivergence156({ eligibilite: NOT_ELIGIBLE, decision: "USE_DISPENSE" }));
+    assert.equal(state.deliverable, false);
+  });
+
+  it("Case L (UNKNOWN) — jamais traité comme dispensé → divergence 156 reste bloquante", () => {
+    const state = resolveFinalDeclarabilityState(liasseAvecDivergence156({ eligibilite: { etat: "UNKNOWN", raison: "test" } }));
+    assert.equal(state.deliverable, false);
+  });
+
+  it("Case J (équilibre) — ÉLIGIBLE + USE_DISPENSE → DESEQUILIBRE_REEL du 2033-A ignoré → DELIVERABLE", () => {
+    const liasseRfs = {
+      form2033A: {
+        formId: "2033-A-SD",
+        cases: [],
+        casesNonAlimentees: [nonAlimentee("142", "incoherence_modele")],
+        equilibreStatus: "DESEQUILIBRE_REEL",
+      },
+      form2033C: { formId: "2033-C-SD", cases: [], casesNonAlimentees: [] },
+      dispense2033A: { eligibilite: ELIGIBLE, decision: "USE_DISPENSE" },
+    } as unknown as LiasseFromRfs;
+    assert.equal(resolveFinalDeclarabilityState(liasseRfs).deliverable, true);
+  });
+
+  it("2033-C reste inconditionnel — une divergence 2033-C n'est jamais exemptée par la dispense 2033-A", () => {
+    const liasseRfs = {
+      form2033A: { formId: "2033-A-SD", cases: [], casesNonAlimentees: [] },
+      form2033C: { formId: "2033-C-SD", cases: [], casesNonAlimentees: [nonAlimentee("490", "incoherence_modele")] },
+      dispense2033A: { eligibilite: ELIGIBLE, decision: "USE_DISPENSE" },
+    } as unknown as LiasseFromRfs;
+    const state = resolveFinalDeclarabilityState(liasseRfs);
+    assert.equal(state.deliverable, false);
+    assert.deepEqual(state.internalProjectionIssues.map((i) => i.caseId), ["490"]);
   });
 });

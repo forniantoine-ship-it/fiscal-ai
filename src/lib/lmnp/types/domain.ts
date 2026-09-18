@@ -864,6 +864,25 @@ export interface DeclarationDraft {
    */
   bilanPatrimonial?: import("@/runtime/capabilities/bilan/types").BilanInputs;
   /**
+   * Dispense de bilan 2033-A (CGI, art. 302 septies A bis, VI) — saisie
+   * brute uniquement : `caReferenceN1Declaree` (chiffre d'affaires HT de
+   * l'année civile précédente, saisi UNIQUEMENT quand `dateMiseEnService` ne
+   * permet pas de prouver que l'activité n'existait pas en N-1 — voir
+   * `resolveCaReferenceN1Fact()`) et `decision` (choix du client entre
+   * FILE_2033A et USE_DISPENSE, jamais un choix fait par le produit à sa
+   * place). L'éligibilité elle-même n'est jamais persistée ici — toujours
+   * recalculée par `resolveDispense2033AEligibilite()` à partir de ce fait et
+   * de l'exercice courant (`dispense-2033a.ts`), jamais une valeur figée qui
+   * survivrait à un changement de triennium. Transmis tel quel en 5e
+   * argument de `runDeclarationGeneration()` ET de l'aperçu du gate
+   * (`declaration-generation-gate.ts`), même doctrine que `bilanPatrimonial`
+   * ci-dessus.
+   */
+  dispense2033A?: {
+    caReferenceN1Declaree?: number;
+    decision?: import("@/runtime/capabilities/rfs/dispense-2033a").Dispense2033ADecision;
+  };
+  /**
    * P0 — Declaration (thin, stable) : une par FiscalYear aujourd'hui (mono-exercice).
    * Coexiste avec fiscalResult/liasseResult/rfs/liasseRfs ci-dessus, qui restent
    * le miroir de la version courante pour compatibilité — l'historique fait foi.

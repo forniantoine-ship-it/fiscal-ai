@@ -13,6 +13,7 @@ import {
   uploadSequentially,
   workbookToFile,
 } from "@/lib/lmnp/services/pipelines/revenus/spreadsheet-revenue.fixtures";
+import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { DeclarationDraft, RevenueGptSession } from "@/lib/lmnp/types/domain";
 
 function draftFor(session: RevenueGptSession): DeclarationDraft {
@@ -919,5 +920,105 @@ describe("NEXT-3 (P2-A) — excludedLoanIds toujours écrasé par la dérivation
     const r2 = runDeclarationGeneration(draft, 2025);
     assert.equal(r1.status, "generated");
     assert.equal(r2.status, "generated");
+  });
+});
+
+/**
+ * Dispense 2033-A (CGI, art. 302 septies A bis, VI) — `runDeclarationGeneration()`
+ * doit attacher `rfs.dispense2033A` sans jamais persister d'éligibilité
+ * figée (toujours recalculée à partir du fait N-1 + de l'exercice courant,
+ * voir `dispense-2033a.ts`).
+ */
+describe("runDeclarationGeneration — dispense2033A", () => {
+  function baseDraft(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
+    return {
+      completedSteps: [],
+      siret: "12345678901234",
+      siren: "123456789",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2026, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2026, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2026, totalDotations: 0, status: "validated" },
+      ...overrides,
+    } as unknown as DeclarationDraft;
+  }
+
+  it("Correction audit contradictoire — bien mis en service au cours de l'exercice courant, aucune saisie CA N-1 → UNKNOWN, jamais dérivé à ELIGIBLE/0", () => {
+    // Contre-exemple de l'audit : un exploitant ayant déjà une activité LMNP
+    // (autre bien, bien remplacé en cours d'année) aurait `dateMiseEnService`
+    // dans l'exercice courant pour CE bien tout en ayant un chiffre
+    // d'affaires N-1 réel non nul. `dateMiseEnService` ne doit plus jamais
+    // influencer l'éligibilité — ce test le prouve directement.
+    const draft = baseDraft({ dateMiseEnService: "2026-05-01" });
+    const generation = runDeclarationGeneration(draft, 2026);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.equal(generation.rfs.dispense2033A?.eligibilite.etat, "UNKNOWN");
+  });
+
+  it("Régression — dateMiseEnService dans l'exercice courant + USE_DISPENSE prématurément choisi, sans CA N-1 déclaré → dispense NON en effet (fail closed)", () => {
+    const draft = baseDraft({ dateMiseEnService: "2026-05-01", dispense2033A: { decision: "USE_DISPENSE" } });
+    const generation = runDeclarationGeneration(draft, 2026, undefined, undefined, draft.dispense2033A);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.equal(generation.rfs.dispense2033A?.eligibilite.etat, "UNKNOWN");
+    assert.equal(isDispense2033AEnEffet(generation.rfs.dispense2033A), false, "UNKNOWN ne peut jamais devenir une dispense effective, quelle que soit la décision saisie");
+  });
+
+  it("exercice ultérieur, aucune saisie CA N-1 → UNKNOWN, jamais un 0 par défaut", () => {
+    const draft = baseDraft();
+    const generation = runDeclarationGeneration(draft, 2026);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.equal(generation.rfs.dispense2033A?.eligibilite.etat, "UNKNOWN");
+  });
+
+  it("caReferenceN1Declaree transmis via draft.dispense2033A → éligibilité recalculée en conséquence", () => {
+    const draft = baseDraft({ dispense2033A: { caReferenceN1Declaree: 40_000 } });
+    const generation = runDeclarationGeneration(draft, 2026, undefined, undefined, draft.dispense2033A);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.equal(generation.rfs.dispense2033A?.eligibilite.etat, "ELIGIBLE");
+  });
+
+  it("decision client transmise telle quelle, jamais recalculée", () => {
+    const draft = baseDraft({ dispense2033A: { caReferenceN1Declaree: 40_000, decision: "USE_DISPENSE" } });
+    const generation = runDeclarationGeneration(draft, 2026, undefined, undefined, draft.dispense2033A);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.equal(generation.rfs.dispense2033A?.decision, "USE_DISPENSE");
+  });
+
+  it("non-régression — sans dispense2033AIntake, comportement historique inchangé pour le reste de la RFS", () => {
+    const draft = baseDraft();
+    const generation = runDeclarationGeneration(draft, 2026);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+    assert.ok(generation.rfs.fiscalResult, "fiscalResult toujours présent, inchangé");
+    assert.equal(generation.rfs.patrimoine, undefined, "patrimoine toujours absent sans bilanInputs, inchangé");
+  });
+
+  /**
+   * Comblement de la lacune de test relevée par l'audit contradictoire —
+   * chaîne bout-en-bout avec des fonctions de production réelles, aucun
+   * nouveau harnais : CA N-1 explicite → runDeclarationGeneration() réel →
+   * ÉLIGIBLE → USE_DISPENSE → buildCerfaPdfRequestPayload() réel → 2033-A-SD
+   * absent de la sélection. Réutilise `download-cerfa-pdf.ts` tel quel.
+   */
+  it("E2E — CA N-1 déclaré 40 000 € → runDeclarationGeneration → ELIGIBLE → USE_DISPENSE → buildCerfaPdfRequestPayload exclut 2033-A-SD", async () => {
+    const { buildCerfaPdfRequestPayload } = await import("./download-cerfa-pdf");
+    const draft = baseDraft({ dispense2033A: { caReferenceN1Declaree: 40_000, decision: "USE_DISPENSE" } });
+    const generation = runDeclarationGeneration(draft, 2026, undefined, undefined, draft.dispense2033A);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") return;
+
+    assert.equal(generation.rfs.dispense2033A?.eligibilite.etat, "ELIGIBLE", "précondition — CA N-1 sous le seuil 2026-2028");
+    assert.equal(isDispense2033AEnEffet(generation.rfs.dispense2033A), true, "précondition — dispense réellement en effet");
+
+    const payload = buildCerfaPdfRequestPayload(generation.rfs, "version-e2e");
+    assert.ok(!payload.forms.includes("2033-A-SD"), "2033-A-SD doit être absent de la sélection réelle");
+    assert.deepEqual(payload.forms, ["2031-SD", "2031-bis-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"]);
   });
 });

@@ -685,3 +685,66 @@ describe("POST /api/lmnp/declaration/cerfa-pdf — frontière de déclarabilité
     assert.equal(response.headers.get("content-type"), "application/json", "jamais de PDF en réponse à une requête bloquée");
   });
 });
+
+/**
+ * Dispense 2033-A (CGI, art. 302 septies A bis, VI) — Case Q du plan de test.
+ * `isDispense2033AEnEffet(rfs.dispense2033A)` est la SEULE source consultée
+ * ici (voir `dispense-2033a.ts`) : aucune règle dupliquée, aucun recalcul de
+ * l'éligibilité côté route.
+ */
+describe("POST /api/lmnp/declaration/cerfa-pdf — dispense 2033-A (server hardening)", () => {
+  const ELIGIBLE = { etat: "ELIGIBLE" as const, seuil: { triennium: "2026-2028", seuilAutresEntreprisesHT: 66_000, source: "test" }, caReferenceN1: 0, raison: "test" };
+  const NOT_ELIGIBLE = { etat: "NOT_ELIGIBLE" as const, seuil: { triennium: "2026-2028", seuilAutresEntreprisesHT: 66_000, source: "test" }, caReferenceN1: 70_000, raison: "test" };
+
+  it("Case Q — appel direct demandant 2033-A-SD alors que le dossier a enregistré USE_DISPENSE → 422, aucun bypass", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: ELIGIBLE, decision: "USE_DISPENSE" } };
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "bypass-attempt", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 422);
+    const payload = (await response.json()) as { status: string; reason: string };
+    assert.equal(payload.status, "blocked");
+    assert.equal(payload.reason, "2033a_dispensed");
+  });
+
+  it("Case Q — même dossier, 2033-A-SD demandé AVEC d'autres formulaires → toujours 422, aucun octet PDF produit", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: ELIGIBLE, decision: "USE_DISPENSE" } };
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ALL_SIX_FORMS }));
+    assert.equal(response.status, 422);
+    assert.notEqual(response.headers.get("content-type"), "application/pdf");
+  });
+
+  it("USE_DISPENSE mais 2033-A-SD non demandé → 200, les autres formulaires restent générables normalement", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: ELIGIBLE, decision: "USE_DISPENSE" } };
+    const response = await POST(
+      jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2031-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"] }),
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/pdf");
+  });
+
+  it("Case F — ÉLIGIBLE + FILE_2033A → 2033-A-SD généré normalement (le client a choisi de déposer quand même)", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: ELIGIBLE, decision: "FILE_2033A" } };
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/pdf");
+  });
+
+  it("Case G — NOT_ELIGIBLE (même avec decision USE_DISPENSE, état incohérent) → 2033-A-SD généré normalement, jamais bypassé", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: NOT_ELIGIBLE, decision: "USE_DISPENSE" } };
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/pdf");
+  });
+
+  it("Case H — UNKNOWN → jamais traité comme dispensé, 2033-A-SD généré normalement", async () => {
+    const rfs = { ...realRfs(), dispense2033A: { eligibilite: { etat: "UNKNOWN" as const, raison: "test" } } };
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "application/pdf");
+  });
+
+  it("dispense2033A absent (dossier/fixture antérieur à ce champ) → 200, non-régression", async () => {
+    const rfs = realRfs();
+    const response = await POST(jsonRequest({ rfs, declarationVersionId: "v1", forms: ["2033-A-SD"] }));
+    assert.equal(response.status, 200);
+  });
+});

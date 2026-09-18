@@ -18,6 +18,7 @@ import type { AmortissementPlan } from "../f010/types";
 import type { PretFinancementExercice } from "../f011/types";
 import type { ComposantNouveau } from "../f012/types";
 import type { PatrimonialState } from "../bilan/types";
+import type { Dispense2033AState } from "./dispense-2033a";
 
 /**
  * Plan d'amortissement (F-010) enrichi de la valeur du terrain — Cycle 35 —
@@ -132,6 +133,18 @@ export type FiscalRepresentation = {
    * 142/156/176/180/110/112 au-delà des 4 cases déjà produites sans lui.
    */
   patrimoine?: PatrimonialState;
+
+  /**
+   * Dispense de bilan 2033-A (CGI, art. 302 septies A bis, VI) — champ
+   * PUREMENT ADDITIF, jamais lu par les mappers 2031/2031-bis/2033-B/C/D
+   * existants (qui restent inchangés). `undefined` tant qu'aucune
+   * éligibilité n'a été résolue pour ce dossier — jamais une valeur de repli
+   * inventée (ni ELIGIBLE ni NOT_ELIGIBLE par défaut). Consommé uniquement
+   * par la frontière de livraison (`download-cerfa-pdf.ts`, la route
+   * `cerfa-pdf`) et par `final-declarability.ts` — voir `dispense-2033a.ts`,
+   * source unique de la règle.
+   */
+  dispense2033A?: Dispense2033AState;
 
   trace: {
     ksArtifacts: string[];

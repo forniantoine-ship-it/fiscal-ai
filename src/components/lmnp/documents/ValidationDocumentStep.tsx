@@ -17,6 +17,7 @@ import { ValidationIncompleteCard } from "@/components/lmnp/validation-workflow/
 import { ValidationInpiBlock } from "@/components/lmnp/validation-workflow/ValidationInpiBlock";
 import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
 import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
+import { Dispense2033AIntakeCard, type Dispense2033AIntakeValue } from "@/components/lmnp/documents/Dispense2033AIntakeCard";
 import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/ValidationPricingBlock";
 import { ValidationStatusCards } from "@/components/lmnp/validation-workflow/ValidationStatusCards";
 import { ValidationSupportFooter } from "@/components/lmnp/validation-workflow/ValidationSupportFooter";
@@ -180,6 +181,15 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     [dispatch],
   );
 
+  // Dispense 2033-A — même mécanisme générique que bilanPatrimonial ci-dessus,
+  // aucune reconstruction, aucun état parallèle.
+  const handleDispense2033AChange = useCallback(
+    (dispense2033A: Dispense2033AIntakeValue | undefined) => {
+      dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { dispense2033A } });
+    },
+    [dispatch],
+  );
+
   const handleGenerationComplete = useCallback(() => {
     // P1-1 — stocks d'ouverture réels de CET exercice (persistés à sa
     // création par persistFiscalYearClosureAndTransition(), jamais
@@ -193,6 +203,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       fiscalYear.year,
       fiscalYear.stocksOuverture?.stocks,
       draft?.bilanPatrimonial,
+      draft?.dispense2033A,
     );
 
     if (outcome.status === "blocked") {
@@ -418,6 +429,18 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
             value={draft?.bilanPatrimonial}
             onChange={handleBilanPatrimonialChange}
             patrimoineOuverture={fiscalYear.patrimoineOuverture}
+          />
+
+          {/*
+            Dispense 2033-A (CGI, art. 302 septies A bis, VI) — n'affiche
+            rien si le dossier n'est pas éligible ou si aucun seuil n'est
+            publié pour cet exercice (voir Dispense2033AIntakeCard).
+          */}
+          <Dispense2033AIntakeCard
+            cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+            value={draft?.dispense2033A}
+            onChange={handleDispense2033AChange}
+            exercice={fiscalYear.year}
           />
 
           <p

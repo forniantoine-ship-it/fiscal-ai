@@ -946,6 +946,58 @@ describe("P0-1D — investigation properties-only (audit 2026-09-07)", () => {
     assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
   });
 
+  it("Dispense 2033-A — modification du CA N-1 déclaré après génération → invalidation (même mécanisme générique que bilanPatrimonial)", async () => {
+    const lmnpReducer = await loadReducer();
+    const dispense2033A = { caReferenceN1Declaree: 40_000 };
+    const state = baseState(
+      { completedSteps: [], dispense2033A },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dispense2033A: { ...dispense2033A, caReferenceN1Declaree: 70_000 } },
+    });
+
+    assert.equal(
+      next.fiscalYear.declarationGeneratedAt,
+      undefined,
+      "une modification du CA N-1 déclaré après génération doit rouvrir canRetryAfterPayment",
+    );
+  });
+
+  it("Dispense 2033-A — modification de la décision (FILE_2033A/USE_DISPENSE) après génération → invalidation", async () => {
+    const lmnpReducer = await loadReducer();
+    const dispense2033A = { caReferenceN1Declaree: 40_000, decision: "FILE_2033A" as const };
+    const state = baseState(
+      { completedSteps: [], dispense2033A },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dispense2033A: { ...dispense2033A, decision: "USE_DISPENSE" } },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+  });
+
+  it("Dispense 2033-A — patch identique (même valeur) → aucune invalidation, jamais un faux positif", async () => {
+    const lmnpReducer = await loadReducer();
+    const dispense2033A = { caReferenceN1Declaree: 40_000, decision: "USE_DISPENSE" as const };
+    const state = baseState(
+      { completedSteps: [], dispense2033A },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dispense2033A: { ...dispense2033A } },
+    });
+
+    assert.equal(next.fiscalYear.declarationGeneratedAt, GENERATED_AT, "une valeur strictement égale ne doit jamais invalider");
+  });
+
   it("D2 — aucun candidat de perte de propriété par reconstruction démontré : chaque fabrique dispatch l'objet contributif ENTIER, jamais un patch partiel", () => {
     // Vérification structurelle, pas d'exécution UI : les 4 fabriques
     // identifiées (F011FinancementAssistantPanel/CreditDocumentStep,

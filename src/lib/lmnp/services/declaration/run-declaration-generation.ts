@@ -4,6 +4,11 @@ import { produceLiasse } from "@/runtime/capabilities/f007/produce-liasse";
 import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
+import {
+  resolveCaReferenceN1Fact,
+  resolveDispense2033AEligibilite,
+  type Dispense2033ADecision,
+} from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import {
   assembleLiasseFromRfs,
@@ -138,6 +143,14 @@ export function runDeclarationGeneration(
    * ici, jamais remplacée par des zéros.
    */
   bilanInputs?: BilanInputs,
+  /**
+   * Dispense de bilan 2033-A — saisie brute uniquement (`draft.dispense2033A`,
+   * même doctrine que `bilanInputs`/`draft.bilanPatrimonial` ci-dessus).
+   * L'éligibilité elle-même est TOUJOURS recalculée ici via
+   * `resolveDispense2033AEligibilite()` — jamais persistée telle quelle,
+   * jamais dérivée d'un exercice différent.
+   */
+  dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision },
 ): DeclarationGenerationResult {
   // Blocker #3 Lot C — avant tout calcul fiscal : TF legacy unresolved bloque.
   const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
@@ -219,11 +232,29 @@ export function runDeclarationGeneration(
       }
     : undefined;
   const emprunts = draft?.financementCharges?.prets;
+
+  // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — correction audit
+  // contradictoire : AUCUNE dérivation automatique depuis `dateMiseEnService`
+  // (date de mise en service du BIEN, jamais une preuve de l'ancienneté de
+  // l'ACTIVITÉ de l'exploitant — voir `resolveCaReferenceN1Fact()` pour le
+  // détail du contre-exemple). Seule la saisie explicite du client
+  // (`dispense2033AIntake.caReferenceN1Declaree`) fait foi ; son absence
+  // reste TOUJOURS INCONNU, y compris pour un dossier de première année —
+  // jamais une valeur dérivée du chiffre d'affaires de l'exercice en cours.
+  const caReferenceN1Fact = resolveCaReferenceN1Fact({
+    caReferenceN1Declaree: dispense2033AIntake?.caReferenceN1Declaree,
+  });
+  const dispense2033A = {
+    eligibilite: resolveDispense2033AEligibilite({ exercice: fiscalYear, caReferenceN1: caReferenceN1Fact }),
+    decision: dispense2033AIntake?.decision,
+  };
+
   const rfsSansPatrimoine = buildFiscalRepresentation({
     fiscalResult,
     identite,
     immobilisations,
     emprunts,
+    dispense2033A,
   });
   // Transport uniquement : si aucun BilanInputs réel n'est fourni, le
   // patrimoine reste `undefined` — le mapper 2033-A laisse alors 084/120/
@@ -236,6 +267,7 @@ export function runDeclarationGeneration(
           immobilisations,
           emprunts,
           patrimoine: assemblePatrimoine(rfsSansPatrimoine, bilanInputs),
+          dispense2033A,
         })
       : rfsSansPatrimoine;
 

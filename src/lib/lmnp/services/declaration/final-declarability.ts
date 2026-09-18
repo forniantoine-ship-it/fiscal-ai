@@ -1,3 +1,4 @@
+import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { LiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import type { CerfaCaseNonAlimentee, Form2033A } from "@/runtime/capabilities/rfs/projection/map-2033a";
 
@@ -116,14 +117,27 @@ function resolveEquilibreIssue(form2033A: Pick<Form2033A, "formId" | "equilibreS
  * non-déclarabilité : fail-open, aucune migration/invalidation rétroactive
  * d'un document déjà livré (NEXT-5, périmètre — pas de migration d'archive).
  */
+/**
+ * Dispense 2033-A (CGI, art. 302 septies A bis, VI) — quand la dispense est
+ * valablement en effet pour ce dossier (`isDispense2033AEnEffet()`, seule
+ * source de vérité, jamais reproduite ici), le 2033-A n'est plus livré (voir
+ * `download-cerfa-pdf.ts`/la route `cerfa-pdf`) : une divergence interne
+ * PROPRE à ce formulaire (028/030/156, ou un déséquilibre de bilan) ne doit
+ * alors jamais bloquer la livraison du reste de la liasse (2031/2033-B/C/D,
+ * eux inchangés). Seul le sous-ensemble 2033-A (cases + équilibre) est
+ * exempté — `issuesForForm(liasseRfs.form2033C...)` reste inconditionnel.
+ * FILE_2033A et NOT_ELIGIBLE (dispense non en effet) conservent exactement
+ * le comportement historique : le 2033-A doit rester déclarable comme avant.
+ */
 export function resolveFinalDeclarabilityState(
   liasseRfs: LiasseFromRfs | undefined,
 ): FinalDeclarabilityState {
   if (!liasseRfs) return { deliverable: true, internalProjectionIssues: [] };
 
-  const equilibreIssue = resolveEquilibreIssue(liasseRfs.form2033A);
+  const dispenseEnEffet = isDispense2033AEnEffet(liasseRfs.dispense2033A);
+  const equilibreIssue = dispenseEnEffet ? undefined : resolveEquilibreIssue(liasseRfs.form2033A);
   const internalProjectionIssues = [
-    ...issuesForForm(liasseRfs.form2033A.formId, liasseRfs.form2033A.casesNonAlimentees),
+    ...(dispenseEnEffet ? [] : issuesForForm(liasseRfs.form2033A.formId, liasseRfs.form2033A.casesNonAlimentees)),
     ...(equilibreIssue ? [equilibreIssue] : []),
     ...issuesForForm(liasseRfs.form2033C.formId, liasseRfs.form2033C.casesNonAlimentees),
   ];

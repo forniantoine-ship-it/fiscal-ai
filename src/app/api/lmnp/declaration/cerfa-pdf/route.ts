@@ -12,6 +12,7 @@ import {
 } from "@/lib/lmnp/services/liasse-pdf";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
+import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import { resolveFinalDeclarabilityState } from "@/lib/lmnp/services/declaration/final-declarability";
 
 /**
@@ -99,6 +100,18 @@ export async function POST(request: Request) {
 
   const typedRfs = rfs as FiscalRepresentation;
   const requestedForms = forms as SupportedForm[];
+
+  // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — même frontière que
+  // `resolveFinalDeclarabilityState()` juste en dessous : cette route reste
+  // joignable indépendamment de l'UI, donc son propre garde-fou. Un appel
+  // direct ne peut pas obtenir le 2033-A quand le dossier a lui-même
+  // enregistré `USE_DISPENSE` (`isDispense2033AEnEffet`, seule source de
+  // vérité, jamais reproduite ici — voir `dispense-2033a.ts`). UNKNOWN et
+  // NOT_ELIGIBLE ne satisfont jamais cette condition : dans ces deux cas, le
+  // comportement reste inchangé (2033-A généré normalement s'il est demandé).
+  if (requestedForms.includes("2033-A-SD") && isDispense2033AEnEffet(typedRfs.dispense2033A)) {
+    return NextResponse.json({ status: "blocked", reason: "2033a_dispensed" }, { status: 422 });
+  }
 
   try {
     // NEXT-5 (server hardening) — même frontière de déclarabilité que

@@ -3,11 +3,11 @@ id: SAV-029
 title: "Composition de la liasse LMNP réel simplifié"
 type: savoir
 status: approved
-version: "1.0"
+version: "1.1"
 created: 2026-09-02
-updated: 2026-09-04
+updated: 2026-09-18
 owner: product-owner
-source: DGFiP — Notice n° 2033-NOT-SD (Cerfa 50448#26, millésime 2024) ; BOFiP BOI-BIC-DECLA-30-20-10
+source: DGFiP — Notice n° 2033-NOT-SD (Cerfa 50448#26, millésime 2024) ; BOFiP BOI-BIC-DECLA-30-20-10 (19/08/2026) ; BOFiP BOI-BAREME-000044 (19/08/2026)
 tags: [liasse, composition, 2031, 2033, régime-réel-simplifié, bic, ir]
 catégorie: fait
 domaine: fiscal
@@ -43,12 +43,22 @@ Exclut explicitement : LMP, micro-BIC, IS, régime réel normal, SCI, et toute a
 
 ## 2033-A — dispense de bilan
 
-La dispense de production du tableau 2033-A-SD (article 302 septies A bis VI du CGI) s'applique aux exploitants individuels dont le **chiffre d'affaires de l'année civile précédente** n'excède pas :
+La dispense de production du tableau 2033-A-SD (article 302 septies A bis VI du CGI) s'applique aux exploitants individuels dont le **chiffre d'affaires HT de l'année civile précédente** (calculé selon les modalités de l'article 50-0 du CGI) n'excède pas le seuil applicable, révisé tous les trois ans (BOI-BAREME-000044, §IV) :
 
-- 176 000 € HT pour les entreprises d'achat-revente, de fourniture de logement ou de denrées à emporter ou à consommer sur place ;
-- 61 000 € HT pour les autres activités.
+| Triennium | Vente/fourniture de logement (hors locations meublées) | Autres entreprises |
+|---|---|---|
+| 2023–2025 | 176 000 € HT | 61 000 € HT |
+| 2026–2028 | 189 000 € HT | 66 000 € HT |
 
-Ce seuil, portant sur l'année civile précédente, ne concerne que le tableau 2033-A. Il ne dispense d'aucun autre tableau et ne doit pas être confondu avec le seuil et la période de référence de 2033-E (voir ci-dessous).
+**Location meublée (LMNP) : la notice BOFiP (BOI-BIC-DECLA-30-20-10, §100) exclut explicitement les locations meublées de la catégorie « fourniture de logement ».** Un LMNP relève donc TOUJOURS du seuil « autres entreprises », quel que soit son chiffre d'affaires — jamais le seuil supérieur, même si son activité s'apparente à de l'hébergement.
+
+Pour un exercice 2026, 2027 ou 2028, le seuil applicable au LMNP est donc **66 000 € HT** (et non 61 000 €, seuil du triennium 2023–2025, précédemment documenté ici par erreur).
+
+Ce seuil, portant sur l'année civile précédente, ne concerne que le tableau 2033-A. Il ne dispense d'aucun autre tableau (2031, 2033-B/C/D) et ne doit pas être confondu avec le seuil et la période de référence de 2033-E (voir ci-dessous).
+
+**La dispense est une faculté, jamais une obligation d'omettre le document** (BOI-BIC-DECLA-30-20-10, §90 et §100 : « les entreprises visées au VI de l'article 302 septies A bis du CGI [...] peuvent s'abstenir de produire ce document » ; « la dispense de bilan reste une simple faculté pour l'entreprise qui peut toujours déposer le tableau du bilan simplifié »). Un exploitant éligible peut donc toujours choisir de déposer un 2033-A complet.
+
+**Même quand le 2033-A est omis, les apports personnels et prélèvements de l'exploitant restent à déclarer** — non plus sur le 2033-A (case 120), mais sur le cadre H de l'annexe 2031-bis-SD (BOI-BIC-DECLA-30-20-10, §70 : « les entreprises dispensées de bilan [...] doivent indiquer le montant des prélèvements personnels de l'exploitant ainsi que les apports en capital ou les versements en compte courant »). La collecte de ce fait ne doit donc jamais être supprimée du produit au motif d'une dispense.
 
 ## 2033-D — formulaire obligatoire, contenu partiellement non servi
 

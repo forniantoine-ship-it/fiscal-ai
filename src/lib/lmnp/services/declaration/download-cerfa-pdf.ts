@@ -1,3 +1,4 @@
+import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 
 /**
@@ -31,21 +32,34 @@ export const CERFA_PDF_FORMS = [
   "2033-D-SD",
 ] as const;
 
+export type CerfaFormId = (typeof CERFA_PDF_FORMS)[number];
+
 export type CerfaPdfRequestPayload = {
   rfs: FiscalRepresentation;
   declarationVersionId: string;
-  forms: typeof CERFA_PDF_FORMS;
+  forms: CerfaFormId[];
 };
 
 /**
  * Payload exact envoyé à la route P1-1 — fonction pure, testable sans fetch
  * ni DOM.
+ *
+ * Dispense 2033-A (CGI, art. 302 septies A bis, VI) — quand
+ * `isDispense2033AEnEffet(rfs.dispense2033A)` est vrai (ÉLIGIBLE + décision
+ * client `USE_DISPENSE`, seule source de vérité, voir `dispense-2033a.ts`),
+ * "2033-A-SD" est retiré de la sélection : le 2033-A n'est alors JAMAIS
+ * demandé à la route, jamais généré en blanc ni en partiel. FILE_2033A et
+ * NOT_ELIGIBLE (dispense non en effet) conservent exactement la sélection
+ * historique (les 6 formulaires).
  */
 export function buildCerfaPdfRequestPayload(
   rfs: FiscalRepresentation,
   declarationVersionId: string,
 ): CerfaPdfRequestPayload {
-  return { rfs, declarationVersionId, forms: CERFA_PDF_FORMS };
+  const forms = isDispense2033AEnEffet(rfs.dispense2033A)
+    ? CERFA_PDF_FORMS.filter((form) => form !== "2033-A-SD")
+    : [...CERFA_PDF_FORMS];
+  return { rfs, declarationVersionId, forms };
 }
 
 /**

@@ -1116,6 +1116,13 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           // génération doit rouvrir canRetryAfterPayment, exactement comme
           // les sept autres clés ci-dessus.
           "bilanPatrimonial",
+          // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — correction
+          // audit contradictoire : lue telle quelle par runDeclarationGeneration()
+          // (5e argument). Une modification du chiffre d'affaires N-1 déclaré
+          // ou de la décision (FILE_2033A/USE_DISPENSE) après génération doit
+          // rouvrir canRetryAfterPayment, même mécanisme générique que
+          // bilanPatrimonial ci-dessus — jamais un sous-système dédié.
+          "dispense2033A",
         ] as const
       ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
 

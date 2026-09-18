@@ -2,6 +2,7 @@ import type { PatrimonialState } from "../bilan/types";
 import type { FiscalResult } from "../f006/types";
 import type { IdentiteDeclarante } from "../f007/types";
 import type { PretFinancementExercice } from "../f011/types";
+import type { Dispense2033AState } from "./dispense-2033a";
 import type { FiscalRepresentation, ImmobilisationsRfs } from "./types";
 
 export type BuildFiscalRepresentationInput = {
@@ -21,6 +22,13 @@ export type BuildFiscalRepresentationInput = {
    * `undefined` = aucune donnée de bilan fournie (comportement historique).
    */
   patrimoine?: PatrimonialState;
+  /**
+   * Éligibilité + décision client déjà résolues par
+   * `resolveDispense2033AEligibilite()` — jamais recalculées ici, jamais
+   * une valeur de repli inventée. `undefined` = aucune résolution encore
+   * disponible pour ce dossier.
+   */
+  dispense2033A?: Dispense2033AState;
 };
 
 /**
@@ -44,6 +52,7 @@ export function buildFiscalRepresentation(
     immobilisations: input.immobilisations,
     emprunts: input.emprunts,
     patrimoine: input.patrimoine,
+    dispense2033A: input.dispense2033A,
     trace: {
       // Pas de code KS propre à la RFS elle-même à ce stade (à formaliser
       // dans le KS avant que la RFS ne devienne un artefact officiel) — on

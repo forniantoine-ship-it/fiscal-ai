@@ -1,5 +1,6 @@
 import { LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE } from "../../f007/types";
 import type { Form2031SD } from "../../f007/types";
+import type { Dispense2033AState } from "../dispense-2033a";
 import type { FiscalRepresentation } from "../types";
 import { map2031FromRfs } from "./map-2031-from-rfs";
 import { map2031BisFromRfs, type Form2031Bis } from "./map-2031-bis";
@@ -44,6 +45,16 @@ export type LiasseFromRfs = {
   formulairesAttendus: readonly string[];
   formulairesGeneres: string[];
   formulairesManquants: string[];
+  /**
+   * Transport pur de `rfs.dispense2033A` — champ additif, jamais recalculé
+   * ici. Consommé uniquement par `final-declarability.ts` pour ne pas
+   * bloquer la déclarabilité sur une divergence interne propre au 2033-A
+   * quand la dispense est valablement en effet (voir `dispense-2033a.ts`).
+   * N'affecte ni `form2033A` (toujours assemblé, y compris quand dispensé —
+   * la frontière de livraison reste `download-cerfa-pdf.ts`/la route
+   * `cerfa-pdf`, jamais ce module) ni `formulairesAttendus/Generes`.
+   */
+  dispense2033A?: Dispense2033AState;
   trace: {
     ksArtifacts: string[];
     assembledAt: string;
@@ -81,6 +92,7 @@ export function assembleLiasseFromRfs(rfs: FiscalRepresentation): LiasseFromRfs 
     formulairesAttendus: LIASSE_LMNP_REEL_SIMPLIFIE_ATTENDUE,
     formulairesGeneres,
     formulairesManquants,
+    dispense2033A: rfs.dispense2033A,
     trace: {
       ksArtifacts: [...rfs.trace.ksArtifacts],
       assembledAt: new Date().toISOString(),
