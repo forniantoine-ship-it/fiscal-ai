@@ -87,7 +87,14 @@ describe("migration paiements — l'entitlement n'est jamais écrivable par un c
     assert.doesNotMatch(pay, /for (insert|update|delete|all)/);
   });
 
-  it("révoque insert/update/delete pour anon et authenticated", () => {
-    assert.match(pay, /revoke insert, update, delete on public\.lmnp_declaration_payments from anon, authenticated/);
+  it("révoque insert/update/delete/truncate pour anon et authenticated (TRUNCATE échappe à la RLS)", () => {
+    assert.match(
+      pay,
+      /revoke insert, update, delete, truncate on public\.lmnp_declaration_payments from anon, authenticated/,
+    );
+  });
+
+  it("aucun grant ne réaccorde de privilège d'écriture aux rôles clients", () => {
+    assert.doesNotMatch(pay, /grant\s+[^;]*\bon public\.lmnp_declaration_payments\b/);
   });
 });

@@ -50,4 +50,6 @@ begin
 end
 $$;
 
-revoke insert, update, delete on public.lmnp_declaration_payments from anon, authenticated;
+-- TRUNCATE is not subject to RLS: it must be revoked explicitly, otherwise the
+-- default grants let a client role wipe every entitlement.
+revoke insert, update, delete, truncate on public.lmnp_declaration_payments from anon, authenticated;
