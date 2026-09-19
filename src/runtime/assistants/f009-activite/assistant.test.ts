@@ -202,3 +202,58 @@ test("38. changer la date de début d'activité pour une valeur identique ne ré
   const unchanged = await handle({ ...s, step: "activity_date" }, { type: "answer", values: { date: "2024-01-01" } });
   assert.equal(unchanged.dateMiseEnService, "2024-02-01");
 });
+
+// --- Régression E2E Payment 2025 : identité INPI confirmée (formulaire manuel) SANS dates ---
+// Avant le correctif, restoreF009 concluait « complete » dès que inpiConfirmedAt était posé :
+// le Logement réclamait ensuite la date de mise en service sans que l'Activité ne la demande.
+const identityOnlyDraft = (): DeclarationDraft => ({
+  completedSteps: [], inpiConfirmedAt: "2025-09-19T19:51:54.652Z", activityType: "LMNP",
+  exploitantLastName: "TESTEUR", exploitantFirstName: "Alice", exploitantEmail: "alice@example.test",
+  personalAddress: "12 rue de l'Exemple", personalCity: "Paris", personalPostalCode: "75001",
+});
+test("39. identité INPI confirmée + aucune date : restauration vers la première date manquante, jamais complete", () => {
+  const s = restoreF009(identityOnlyDraft());
+  assert.notEqual(s.step, "complete");
+  assert.equal(s.step, "activity_date");
+  assert.equal(nextMissingQuestion(s), "activity_date");
+  assert.equal(s.deferred, true, "sans SIRET : reporté, la question SIRET n'est pas reposée");
+  assert.equal(s.lastName, "TESTEUR", "l'identité déjà confirmée est conservée");
+});
+test("40. identité confirmée + date de début présente, mise en service absente : restauration vers dateMiseEnService", () => {
+  const s = restoreF009({ ...identityOnlyDraft(), activityStartDate: "2025-02-01" });
+  assert.notEqual(s.step, "complete");
+  assert.equal(s.step, "service_date");
+  assert.equal(s.dateDebutActivite, "2025-02-01");
+});
+test("41. identité confirmée + les deux dates présentes : complete (comportement inchangé)", () => {
+  const s = restoreF009({ ...identityOnlyDraft(), activityStartDate: "2025-02-01", dateMiseEnService: "2025-02-01" });
+  assert.equal(s.step, "complete");
+  assert.equal(s.deferred, true);
+  assert.equal(nextMissingQuestion(s), undefined);
+});
+test("42. parcours normal inchangé : SIRET connu, dates présentes, inpiConfirmedAt → complete sans SIRET reposé", () => {
+  const s = restoreF009({ ...baseDraft, inpiConfirmedAt: "old" });
+  assert.equal(s.step, "complete");
+  assert.notEqual(s.deferred, true);
+  assert.equal(s.siret, baseDraft.siret);
+});
+test("43. parcours complet après reprise : les deux dates sont demandées, jamais le SIRET, puis complete avec dates persistées", async () => {
+  let s = restoreF009(identityOnlyDraft());
+  assert.equal(s.step, "activity_date");
+  s = await handle(s, { type: "answer", values: { date: "2025-02-01" } });
+  assert.equal(s.step, "service_date", "après la date de début, la disponibilité est demandée — pas le SIRET");
+  s = await handle(s, { type: "answer", values: { date: "2025-02-01" } });
+  assert.equal(s.step, "review");
+  const turnResult = await assistant.handle(s, { type: "review_all" });
+  assert.equal(turnResult.completed, true);
+  assert.equal(turnResult.state.step, "complete");
+  const patch = f009DraftPatch(turnResult.state, "2025-09-19T20:00:00.000Z", true);
+  assert.equal(patch.activityStartDate, "2025-02-01");
+  assert.equal(patch.dateMiseEnService, "2025-02-01", "la date que le Logement exige est bien écrite dans le dossier");
+  assert.equal(patch.inpiConfirmedAt, "2025-09-19T20:00:00.000Z");
+});
+test("44. reprise après reload d'une session interrompue à la question de date : la question est conservée", async () => {
+  const s = restoreF009(identityOnlyDraft());
+  const reloaded = reload(s, identityOnlyDraft());
+  assert.equal(reloaded.step, "activity_date");
+});

@@ -126,7 +126,13 @@ export function restoreF009(draft?: DeclarationDraft, status?: InpiStatus): F009
   state.step = LEGACY_STEPS[state.step] ?? state.step;
   state.history = (saved?.history ?? []).map((step) => LEGACY_STEPS[step] ?? step).filter((step) => step !== "analyzing");
   state.registration ??= status === "registered" ? "yes" : status === "not_started" ? "no" : undefined;
-  if (!saved && draft?.inpiConfirmedAt) state.step = "complete";
+  if (!saved && draft?.inpiConfirmedAt) {
+    // Identity confirmed elsewhere (manual INPI form) never proves the dates: resume at the
+    // first missing question and only conclude when none is missing. Without a SIRET the
+    // dossier is deferred, so the SIRET question is not asked again on the way.
+    if (!state.siret) state.deferred = true;
+    state.step = nextMissingQuestion(state) ?? "complete";
+  }
   if (!saved && !draft?.inpiConfirmedAt && hasIdentifier(state)) { state.registration ??= "yes"; state.step = "review"; }
   if (state.step === "complete" && !state.siret) state.deferred = true;
   // The companion writes the obtained SIRET to the draft, independently of F009.

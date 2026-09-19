@@ -39,3 +39,32 @@ test("IndexedDB : état validé, correction structurée, reprise et identité co
   assert.equal(resumed.step, "complete"); assert.equal(resumed.siret, "10458947800015"); assert.equal(resumed.lastName, "Durand"); assert.equal(resumed.resolutions?.[0].selected, "Durand");
   assert.equal(loaded!.declarationDraft?.siren, "104589478"); assert.equal(loaded!.declarationDraft?.exploitantEmail, "preserved@example.test"); assert.equal("messages" in resumed, false);
 });
+
+test("IndexedDB : identité INPI confirmée sans dates — reload demande les dates manquantes, puis persiste (bug E2E 2025)", async () => {
+  const { saveWorkspace, loadWorkspace } = await loadPersistence();
+  const ws = workspace();
+  // État exact laissé par CONFIRM_INPI_PROFILE via le formulaire manuel : identité + inpiConfirmedAt, ni SIRET ni dates, aucun état d'assistant.
+  ws.declarationDraft = {
+    completedSteps: [], inpiConfirmedAt: "2025-09-19T19:51:54.652Z", activityType: "LMNP",
+    exploitantLastName: "TESTEUR", exploitantFirstName: "Alice", personalAddress: "12 rue de l'Exemple", personalCity: "Paris", personalPostalCode: "75001",
+  };
+  await saveWorkspace("f009-idb-bug-e2e", ws);
+  const reloaded = await loadWorkspace("f009-idb-bug-e2e");
+  let state = restoreF009(reloaded!.declarationDraft);
+  assert.notEqual(state.step, "complete", "le reload ne doit jamais conclure sans dates");
+  assert.equal(state.step, "activity_date");
+
+  state = (await assistant.handle(state, { type: "answer", values: { date: "2025-02-01" } })).state;
+  assert.equal(state.step, "service_date");
+  state = (await assistant.handle(state, { type: "answer", values: { date: "2025-02-01" } })).state;
+  const done = await assistant.handle(state, { type: "review_all" });
+  assert.equal(done.completed, true);
+
+  const withDates = { ...reloaded!, declarationDraft: { ...reloaded!.declarationDraft!, ...f009DraftPatch(done.state, "2025-09-19T20:00:00.000Z", true) } };
+  await saveWorkspace("f009-idb-bug-e2e", withDates);
+  const again = await loadWorkspace("f009-idb-bug-e2e");
+  assert.equal(again!.declarationDraft?.activityStartDate, "2025-02-01");
+  assert.equal(again!.declarationDraft?.dateMiseEnService, "2025-02-01");
+  assert.equal(restoreF009(again!.declarationDraft).step, "complete");
+  assert.equal(again!.declarationDraft?.exploitantLastName, "TESTEUR", "l'identité déjà confirmée n'est jamais effacée");
+});
