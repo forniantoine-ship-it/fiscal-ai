@@ -221,6 +221,10 @@ export function createStripeGateway(stripe: StripeLike, webhookSecret: string): 
         {
           mode: "payment",
           locale: "fr",
+          // V1 : Stripe n'est qu'un prestataire de paiement (Hosted Checkout), pas le marchand de
+          // référence. Explicite pour ne pas dépendre du réglage Managed Payments du compte, qui
+          // exigerait sinon un `tax_code` produit (aucune décision TVA/fiscale n'est prise ici).
+          managed_payments: { enabled: false },
           client_reference_id: p.paymentId,
           line_items: [
             {

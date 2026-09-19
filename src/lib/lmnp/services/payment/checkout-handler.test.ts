@@ -270,6 +270,15 @@ describe("checkout — prix et devise : autorité serveur", () => {
     });
     assert.equal(captured!.client_reference_id, "pay-1");
     assert.equal(capturedOptions!.idempotencyKey, "k1");
+
+    // Stripe = prestataire de paiement (Hosted Checkout), jamais marchand de référence :
+    // Managed Payments est explicitement désactivé, indépendamment du réglage du compte.
+    const managedPayments = captured!.managed_payments as { enabled?: unknown } | undefined;
+    assert.ok(managedPayments, "managed_payments doit être envoyé à stripe.checkout.sessions.create");
+    assert.equal(managedPayments.enabled, false);
+    // Aucune décision TVA/fiscale dans ce correctif : pas de tax_code produit.
+    const productData = (captured!.line_items as Array<{ price_data: { product_data: Record<string, unknown> } }>)[0].price_data.product_data;
+    assert.equal("tax_code" in productData, false);
   });
 });
 
