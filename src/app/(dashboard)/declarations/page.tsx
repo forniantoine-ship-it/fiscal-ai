@@ -8,12 +8,17 @@ import { colors } from "@/design-system/theme/colors";
 import { typography } from "@/design-system/theme/typography";
 import { DeclarationReadyView } from "@/components/lmnp/declaration/DeclarationReadyView";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { useLmnp } from "@/lib/lmnp/store";
 
 export default function DeclarationsPage() {
   const router = useRouter();
   const { workspace, isReady } = useLmnp();
   const paid = Boolean(workspace.fiscalYear.paidAt);
+  // P0 launch safety — même résolveur que l'écran de validation : un exercice
+  // dont l'antériorité LMNP n'est pas établie ne donne jamais accès aux
+  // livrables (y compris si la réponse a changé après génération).
+  const priorHistoryEligible = resolvePriorHistoryEligibility(workspace.fiscalYear).eligible;
 
   // P1 — Découplage paiement / génération (SIREN/SIRET manquant, cf.
   // payment-readiness.ts) : `generated` n'est plus une condition d'accès à
@@ -22,12 +27,12 @@ export default function DeclarationsPage() {
   // tant que fiscalResult/liasseResult sont absents, cf. audit READ-ONLY).
   useEffect(() => {
     if (!isReady) return;
-    if (!paid) {
+    if (!paid || !priorHistoryEligible) {
       router.replace(LMNP_ROUTES.validation);
     }
-  }, [isReady, paid, router]);
+  }, [isReady, paid, priorHistoryEligible, router]);
 
-  if (!isReady || !paid) {
+  if (!isReady || !paid || !priorHistoryEligible) {
     return <p className="text-center text-stone-500">Chargement…</p>;
   }
 

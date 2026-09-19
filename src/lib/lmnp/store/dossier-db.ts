@@ -36,6 +36,7 @@ import type {
 } from "../types/domain";
 import type { Dossier, InpiStatus, InpiStatusSource } from "../types/dossier";
 import {
+  applyStocksOuvertureResult,
   closeFiscalYear,
   createNextDeclarationDraft,
   createNextFiscalYear,
@@ -357,16 +358,10 @@ export async function persistFiscalYearClosureAndTransition(params: {
   // FiscalYear N+1 lui-même, jamais dans `declarationDraft.fiscalResult`
   // (réservé au miroir de la dernière génération du MÊME exercice).
   const stocksOuvertureResult = resolveStocksOuverture(nextFiscalYearBase, closedFiscalYear);
-  const nextFiscalYearWithStocks: FiscalYear =
-    stocksOuvertureResult.status === "available"
-      ? {
-          ...nextFiscalYearBase,
-          stocksOuverture: {
-            sourceClosureId: stocksOuvertureResult.sourceClosureId,
-            stocks: stocksOuvertureResult.stocks,
-          },
-        }
-      : nextFiscalYearBase;
+  const nextFiscalYearWithStocks: FiscalYear = applyStocksOuvertureResult(
+    nextFiscalYearBase,
+    stocksOuvertureResult,
+  );
   // G1-P1 — même patron exact que les stocks ci-dessus : `nextFiscalYearBase`
   // porte déjà `previousFiscalYearId` (createNextFiscalYear()) et
   // `closedFiscalYear` porte déjà sa nouvelle closure (closeFiscalYear() vient

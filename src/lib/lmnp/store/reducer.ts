@@ -17,6 +17,7 @@ import type {
   LmnpDocument,
   PropertyBackgroundExtraction,
   PropertyType,
+  PriorHistoryDeclarationStatus,
   ValidationItem,
   CreditFinancingData,
   AmortissementVentilationData,
@@ -96,6 +97,7 @@ export type LmnpAction =
   | { type: "VALIDATION_REJECT"; validationItemId: string; note?: string }
   | { type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" }
   | { type: "CONFIRM_REGIME"; regime: "micro-bic" | "reel" }
+  | { type: "DECLARE_PRIOR_HISTORY"; status: PriorHistoryDeclarationStatus }
   | { type: "UPDATE_PROPERTY"; propertyId: string; patch: Partial<PersistedWorkspace["properties"][0]> }
   | {
       type: "LEDGER_UPDATE_VALUE";
@@ -1006,6 +1008,20 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           regimeConfirmedAt: nowIso(),
         },
         ledgerEntries: [...voidedRegime, regimeEntry],
+      });
+    }
+
+    case "DECLARE_PRIOR_HISTORY": {
+      // P0 launch safety — réponse explicite du client, persistée avec
+      // l'exercice (workspace). N'invalide ni paidAt ni declarationGeneratedAt :
+      // l'éligibilité est recalculée à chaque lecture par
+      // resolvePriorHistoryEligibility() et bloque elle-même la suite.
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear),
+          priorHistoryDeclaration: { status: action.status, declaredAt: nowIso() },
+        },
       });
     }
 

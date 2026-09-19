@@ -29,6 +29,7 @@ function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
     propertyIds: ["prop-1"],
     dossierId: "dossier-1",
     declarationGeneratedAt: "2026-09-01T00:00:00.000Z",
+    priorHistoryDeclaration: { status: "FIRST_REAL_YEAR", declaredAt: "2026-09-01T00:00:00.000Z" },
     closures: [],
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",

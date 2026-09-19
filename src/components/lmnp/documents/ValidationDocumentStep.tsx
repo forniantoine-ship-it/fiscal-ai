@@ -19,6 +19,7 @@ import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workf
 import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
 import { Dispense2033AIntakeCard, type Dispense2033AIntakeValue } from "@/components/lmnp/documents/Dispense2033AIntakeCard";
 import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/ValidationPricingBlock";
+import { ValidationPriorHistoryCard } from "@/components/lmnp/validation-workflow/ValidationPriorHistoryCard";
 import { ValidationStatusCards } from "@/components/lmnp/validation-workflow/ValidationStatusCards";
 import { ValidationSupportFooter } from "@/components/lmnp/validation-workflow/ValidationSupportFooter";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
@@ -31,6 +32,8 @@ import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { appendDeclarationVersion } from "@/lib/lmnp/services/declaration/append-declaration-version";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
+import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
+import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
 import {
   formatLiasseCoverageMessage,
   resolveLiasseCoverageState,
@@ -83,6 +86,16 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     [updateInpiStatus],
   );
 
+  // P0 launch safety — antériorité LMNP au réel non reprise. Recalculée à
+  // chaque changement de l'exercice (jamais mise en cache dans le draft) et
+  // transmise à la porte : aucun paiement ni génération sans éligibilité.
+  const priorHistory = useMemo(() => resolvePriorHistoryEligibility(fiscalYear), [fiscalYear]);
+  const priorHistoryBlocked = !priorHistory.eligible;
+  const handleDeclarePriorHistory = useCallback(
+    (status: PriorHistoryDeclarationStatus) => dispatch({ type: "DECLARE_PRIOR_HISTORY", status }),
+    [dispatch],
+  );
+
   const gate = useMemo(
     () =>
       resolveDeclarationGenerationGate({
@@ -100,8 +113,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         // régénération. Valeur déjà résolue et persistée sur `fiscalYear`,
         // jamais recalculée ici.
         stocksOuverture: fiscalYear.stocksOuverture?.stocks,
+        priorHistory,
       }),
-    [draft, fiscalYear.stocksOuverture, fiscalYear.year, generated, paid, workspace.properties],
+    [draft, fiscalYear.stocksOuverture, fiscalYear.year, generated, paid, priorHistory, workspace.properties],
   );
   const snapshot = gate.snapshot;
 
@@ -114,7 +128,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const [checkoutMode, setCheckoutMode] = useState<"generate" | "pay-only">("generate");
 
   const canGenerate = gate.canGenerate && phase === "idle";
-  const showMainContent = phase === "idle" && (!generated || gate.canGenerate);
+  // P0 — bloqué : le contenu principal reste affiché (question + blocage
+  // visibles, CTA désactivés), y compris pour un exercice déjà généré.
+  const showMainContent = phase === "idle" && (priorHistoryBlocked || !generated || gate.canGenerate);
   const blockingAnomalies = gate.blockingAnomalies;
   const missingItems = gate.recoveryItems.length > 0 ? gate.recoveryItems : snapshot.missing;
 
@@ -156,6 +172,11 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
 
   const handlePaymentConfirmed = useCallback(() => {
     setCheckoutOpen(false);
+    // P0 — défense en profondeur : même résolveur, relu sur l'exercice courant.
+    if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+      setPhase("idle");
+      return;
+    }
     if (checkoutMode === "pay-only") {
       // P1 — paidAt enregistré ici directement. Contrairement au chemin
       // "generate" (handleGenerationComplete), declarationGeneratedAt/
@@ -169,7 +190,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
     setPhase("generating");
-  }, [checkoutMode, dispatch, router]);
+  }, [checkoutMode, dispatch, fiscalYear, router]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
@@ -191,6 +212,12 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   );
 
   const handleGenerationComplete = useCallback(() => {
+    // P0 — jamais de F-006 avec des stocks d'ouverture par défaut ([] / 0) pour
+    // un exercice dont l'antériorité n'est pas établie.
+    if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+      setPhase("idle");
+      return;
+    }
     // P1-1 — stocks d'ouverture réels de CET exercice (persistés à sa
     // création par persistFiscalYearClosureAndTransition(), jamais
     // recalculés ici) : absent pour un premier exercice ou une continuité
@@ -257,9 +284,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear.id, fiscalYear.stocksOuverture, fiscalYear.year, paid, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear, paid, router, showSuccess]);
 
-  if (generated && paid && !gate.canGenerate) {
+  if (generated && paid && !gate.canGenerate && !priorHistoryBlocked) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
     // au sens officiel (Cerfa/EDI) : `formulairesGeneres` (RFS) atteste
     // seulement qu'un formulaire a été assemblé sans erreur, jamais que ses
@@ -390,6 +417,13 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           <ValidationStatusCards steps={snapshot.steps} cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
 
           <ValidationIncompleteCard missing={missingItems} cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
+
+          <ValidationPriorHistoryCard
+            cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE}
+            eligibility={priorHistory}
+            declared={fiscalYear.priorHistoryDeclaration?.status}
+            onDeclare={handleDeclarePriorHistory}
+          />
 
           <ValidationFiscalSummary
             summary={snapshot.fiscalSummary}

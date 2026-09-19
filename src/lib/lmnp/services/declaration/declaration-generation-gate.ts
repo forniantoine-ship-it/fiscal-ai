@@ -3,6 +3,7 @@ import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } from "./run-declaration-generation";
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
+import type { PriorHistoryEligibility } from "./prior-history-eligibility";
 import type { PatrimonialState } from "@/runtime/capabilities/bilan/types";
 import {
   buildValidationDossierSnapshot,
@@ -25,6 +26,12 @@ export type DeclarationGenerationGate = {
    * même approximatif.
    */
   fiscalResult?: FiscalEngineOutput;
+  /**
+   * P0 launch safety — présent uniquement si l'appelant a fourni
+   * `input.priorHistory`. `eligible: false` ⇒ toutes les capacités ci-dessus
+   * sont à `false` : ni paiement, ni régénération, ni génération.
+   */
+  priorHistory?: PriorHistoryEligibility;
 };
 
 const RECOVERY_BY_FIELD: Record<string, MissingDossierItem> = {
@@ -235,8 +242,30 @@ export function resolveDeclarationGenerationGate(input: {
    * traite déjà ce paramètre comme optionnel).
    */
   stocksOuverture?: FiscalEngineOutput["stocks"];
+  /**
+   * P0 launch safety — éligibilité d'antériorité LMNP
+   * (`resolvePriorHistoryEligibility()`). Tout appelant qui décide d'un
+   * paiement ou d'une génération DOIT la fournir : un exercice qui n'est pas
+   * une première année réelle et sans source d'ouverture valide ne doit
+   * jamais atteindre F-006 avec des stocks `[]`/`0` par défaut. Absente =
+   * comportement historique (appelants de simple détection de dérive :
+   * `canCloseFiscalYear`, `resolveDeclarationOutOfDate`).
+   */
+  priorHistory?: PriorHistoryEligibility;
 }): DeclarationGenerationGate {
   const snapshot = buildValidationDossierSnapshot(input.draft, input.properties, input.fiscalYear);
+
+  if (input.priorHistory && !input.priorHistory.eligible) {
+    return {
+      snapshot,
+      canCheckout: false,
+      canRetryAfterPayment: false,
+      canGenerate: false,
+      blockingAnomalies: [],
+      recoveryItems: [],
+      priorHistory: input.priorHistory,
+    };
+  }
 
   if (input.generated) {
     const stored = input.draft?.fiscalResult;

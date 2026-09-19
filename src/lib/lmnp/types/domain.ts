@@ -557,7 +557,36 @@ export interface FiscalYear {
     ouvertureCompteExploitant: number;
     ran: { situation: import("@/runtime/capabilities/bilan/types").RanSituation; valeur?: number };
   };
+  /**
+   * P0 launch safety — raison exacte (`resolveStocksOuverture()`) pour
+   * laquelle `stocksOuverture` n'a pas pu être résolu à la création de CET
+   * exercice. Jusqu'ici jetée : F-006 traitait alors l'absence comme « aucun
+   * déficit, aucun amortissement reporté ». Jamais une valeur fiscale ;
+   * lue uniquement par `resolvePriorHistoryEligibility()`.
+   */
+  stocksOuvertureUnavailableReason?: string;
+  /**
+   * P0 launch safety — réponse explicite du client sur l'antériorité LMNP au
+   * réel POUR CET exercice, persistée avec l'exercice (jamais un état React
+   * seul). Jamais une preuve de continuité native : voir
+   * `resolvePriorHistoryEligibility()`.
+   */
+  priorHistoryDeclaration?: {
+    status: PriorHistoryDeclarationStatus;
+    declaredAt: string;
+  };
 }
+
+/**
+ * P0 launch safety — situation déclarée par le client :
+ *  - FIRST_REAL_YEAR   : première déclaration LMNP au régime réel ;
+ *  - FISCAL_AI_PREVIOUS: exercice précédent déjà réalisé avec Fiscal AI ;
+ *  - EXTERNAL_HISTORY  : comptabilité réelle antérieure hors Fiscal AI.
+ */
+export type PriorHistoryDeclarationStatus =
+  | "FIRST_REAL_YEAR"
+  | "FISCAL_AI_PREVIOUS"
+  | "EXTERNAL_HISTORY";
 
 export interface CoOwner {
   id: string;

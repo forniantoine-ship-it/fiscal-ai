@@ -36,6 +36,7 @@ import {
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
+import { resolvePriorHistoryEligibility } from "../declaration/prior-history-eligibility";
 
 /** Champs d'identité — Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) — jamais remis à zéro au passage N → N+1. */
 const IDENTITY_FIELDS = [
@@ -320,6 +321,18 @@ export function canCloseFiscalYear(input: {
     return { ok: false, reason: "La déclaration n'a pas encore été générée pour cet exercice." };
   }
 
+  // P0 launch safety — clôturer figerait des stocks issus d'un exercice dont
+  // l'antériorité n'est pas établie et les présenterait ensuite comme une
+  // continuité native valide pour N+1. Même résolveur que la porte de
+  // génération : jamais une seconde règle.
+  if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+    return {
+      ok: false,
+      reason:
+        "L'antériorité de votre activité LMNP n'est pas établie pour cet exercice — impossible de le clôturer pour l'instant.",
+    };
+  }
+
   const gate = resolveDeclarationGenerationGate({
     draft: declarationDraft,
     properties,
@@ -415,6 +428,18 @@ export function resolveStocksOuverture(
     return { status: "unavailable", reason: "Aucune closure exploitable sur l'exercice précédent." };
   }
   return { status: "available", sourceClosureId: closure.id, stocks: closure.stocks };
+}
+
+/**
+ * P0 launch safety — applique le résultat de `resolveStocksOuverture()` au
+ * FiscalYear N+1. `available` ⇒ `stocksOuverture` (comportement inchangé).
+ * `unavailable` ⇒ la raison est CONSERVÉE (`stocksOuvertureUnavailableReason`)
+ * au lieu d'être jetée : aucune valeur de stock n'est jamais fabriquée.
+ */
+export function applyStocksOuvertureResult(fiscalYear: FiscalYear, result: StocksOuvertureResult): FiscalYear {
+  return result.status === "available"
+    ? { ...fiscalYear, stocksOuverture: { sourceClosureId: result.sourceClosureId, stocks: result.stocks } }
+    : { ...fiscalYear, stocksOuvertureUnavailableReason: result.reason };
 }
 
 /**

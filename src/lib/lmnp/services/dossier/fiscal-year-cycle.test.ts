@@ -598,6 +598,10 @@ describe("canCreateNextFiscalYear — préconditions 3/4", () => {
 // Design Gate "Clôture N → N+1", Décision 1 — précondition du geste
 // utilisateur unique "Clôturer et continuer".
 // ---------------------------------------------------------------------------
+// P0 launch safety — un exercice ne se clôture que si son antériorité LMNP est
+// établie (voir prior-history-eligibility.ts). Fixture : première année déclarée.
+const FIRST_YEAR_DECLARED = { status: "FIRST_REAL_YEAR" as const, declaredAt: NOW };
+
 describe("canCloseFiscalYear — précondition du geste de clôture", () => {
   it("refuse si status !== ready_to_close", () => {
     const result = canCloseFiscalYear({
@@ -619,7 +623,7 @@ describe("canCloseFiscalYear — précondition du geste de clôture", () => {
 
   it("autorise quand status === ready_to_close ET declarationGeneratedAt existe (dossier minimal, aucune dérive détectable)", () => {
     const result = canCloseFiscalYear({
-      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW }),
+      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW, priorHistoryDeclaration: FIRST_YEAR_DECLARED }),
       declarationDraft: undefined,
       properties: [],
     });
@@ -628,7 +632,12 @@ describe("canCloseFiscalYear — précondition du geste de clôture", () => {
 
   it("ne dépend jamais de transmittedAt — la clôture reste indépendante de l'EDI", () => {
     const withoutTransmission = canCloseFiscalYear({
-      fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW, transmittedAt: undefined }),
+      fiscalYear: baseFiscalYear({
+        status: "ready_to_close",
+        declarationGeneratedAt: NOW,
+        transmittedAt: undefined,
+        priorHistoryDeclaration: FIRST_YEAR_DECLARED,
+      }),
       declarationDraft: undefined,
       properties: [],
     });
@@ -687,6 +696,7 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
     return baseFiscalYear({
       status: "ready_to_close",
       declarationGeneratedAt: NOW,
+      priorHistoryDeclaration: FIRST_YEAR_DECLARED,
       ...overrides,
     });
   }

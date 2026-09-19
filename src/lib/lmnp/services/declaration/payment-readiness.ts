@@ -23,7 +23,8 @@ import type { DeclarationGenerationGate } from "./declaration-generation-gate";
  */
 const PAYMENT_IGNORABLE_ANOMALY_FIELDS: ReadonlySet<string> = new Set(["identite.siret"]);
 
-type GateForReadiness = Pick<DeclarationGenerationGate, "snapshot" | "blockingAnomalies">;
+type GateForReadiness = Pick<DeclarationGenerationGate, "snapshot" | "blockingAnomalies"> &
+  Partial<Pick<DeclarationGenerationGate, "priorHistory">>;
 
 /**
  * true si le dossier fiscal est prêt hors identité INPI : toutes les étapes
@@ -34,6 +35,9 @@ type GateForReadiness = Pick<DeclarationGenerationGate, "snapshot" | "blockingAn
  */
 export function resolveDossierReadyForPaymentWithoutCerfa(gate: GateForReadiness): boolean {
   if (!gate.snapshot.isComplete || gate.snapshot.isMultiProperty) return false;
+  // P0 launch safety — antériorité LMNP non reprise : jamais de paiement,
+  // même « sans génération » (le paiement seul finaliserait le dossier).
+  if (gate.priorHistory && !gate.priorHistory.eligible) return false;
 
   const nonInpiBlockingAnomalies = gate.blockingAnomalies.filter(
     (anomaly) => !PAYMENT_IGNORABLE_ANOMALY_FIELDS.has(anomaly.field ?? ""),
