@@ -6,15 +6,22 @@
  *
  *   1. authentification            → 401
  *   2. propriété du dossier        → 403
- *   3. éligibilité d'antériorité   → 403 `prior_history_not_eligible` (AVANT tout argent)
- *   4. entitlement déjà payé       → 200 `already_paid` (aucun second paiement)
- *   5. ligne pending créée/réutilisée
- *   6. session Stripe Checkout     → 200 `checkout` + URL hébergée
+ *   3. exercice terminé            → 409 `fiscal_year_not_closed` (ni ligne, ni session)
+ *   4. éligibilité d'antériorité   → 403 `prior_history_not_eligible` (AVANT tout argent)
+ *   5. entitlement déjà payé       → 200 `already_paid` (aucun second paiement)
+ *   6. ligne pending créée/réutilisée
+ *   7. session Stripe Checkout     → 200 `checkout` + URL hébergée
  *
  * Le prix, la devise et l'identité viennent du serveur ; le client ne fournit
  * que `dossierId`, `fiscalYear` et ses faits de continuité (non fiables).
  */
-import { isNonEmptyString, jsonResponse, mapPaymentError, parseFiscalYear } from "./payment-http";
+import {
+  isNonEmptyString,
+  jsonResponse,
+  mapPaymentError,
+  parseFiscalYear,
+  rejectUnclosedFiscalYear,
+} from "./payment-http";
 import {
   createDefaultPaymentDeps,
   type PaymentDeps,
@@ -86,6 +93,9 @@ export async function handleCheckoutRequest(
     }
 
     await deps.assertOwnership(dossierId, userId);
+
+    const notClosed = rejectUnclosedFiscalYear(deps, fiscalYear);
+    if (notClosed) return notClosed;
 
     const existing = await deps.store.getByDossierYear(dossierId, fiscalYear);
     const previous = await deps.store.getByDossierYear(dossierId, fiscalYear - 1);

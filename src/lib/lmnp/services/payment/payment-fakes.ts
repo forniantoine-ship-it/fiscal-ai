@@ -100,6 +100,8 @@ export function createFakePaymentEnv() {
     },
   };
 
+  const clock = { now: new Date("2030-01-15T12:00:00Z") };
+
   const deps: PaymentDeps = {
     async authenticate(authToken) {
       const userId = authToken ? tokens.get(authToken) : undefined;
@@ -111,6 +113,9 @@ export function createFakePaymentEnv() {
     },
     store,
     stripe,
+    // Horloge fixe très postérieure : tous les exercices des tests sont « clos ».
+    // Les tests du verrou de clôture la remplacent via `setNow`.
+    now: () => clock.now,
   };
 
   return {
@@ -118,6 +123,9 @@ export function createFakePaymentEnv() {
     store,
     stripe,
     deps,
+    setNow(now: Date) {
+      clock.now = now;
+    },
     created,
     expired,
     markPaidCalls,

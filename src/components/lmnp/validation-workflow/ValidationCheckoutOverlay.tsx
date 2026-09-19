@@ -9,6 +9,7 @@ import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import { fiscalYearNotClosedMessage, isFiscalYearClosed } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import { GENERATION_PRICE_TTC } from "@/lib/lmnp/services/validation-profile";
 
 type ValidationCheckoutOverlayProps = {
@@ -68,6 +69,8 @@ function CheckoutDialog({ fiscalYear, onClose, onPay, mode = "generate" }: Valid
   const [error, setError] = useState<string | undefined>(undefined);
 
   const copy = CHECKOUT_COPY[mode];
+  // Aide à l'affichage seulement : l'autorité est le serveur (409 fiscal_year_not_closed).
+  const yearNotClosed = !isFiscalYearClosed(fiscalYear);
 
   async function handlePay() {
     setProcessing(true);
@@ -157,6 +160,12 @@ function CheckoutDialog({ fiscalYear, onClose, onPay, mode = "generate" }: Valid
           <p style={{ color: colors.text.secondary }}>{CHECKOUT_NOTES.dataLoss}</p>
         </div>
 
+        {yearNotClosed ? (
+          <p role="status" className="mt-4 text-center" style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+            {fiscalYearNotClosedMessage(fiscalYear)}
+          </p>
+        ) : null}
+
         {error ? (
           <p role="alert" className="mt-4 text-center" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
             {error}
@@ -164,7 +173,7 @@ function CheckoutDialog({ fiscalYear, onClose, onPay, mode = "generate" }: Valid
         ) : null}
 
         <div className="mt-6 flex flex-col items-center gap-3">
-          <Button onClick={() => void handlePay()} disabled={processing}>
+          <Button onClick={() => void handlePay()} disabled={processing || yearNotClosed}>
             {processing ? "Redirection vers le paiement…" : `Payer ${GENERATION_PRICE_TTC} € TTC`}
           </Button>
           <button

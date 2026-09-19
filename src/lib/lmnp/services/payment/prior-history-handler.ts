@@ -6,7 +6,13 @@
  * l'éligibilité serveur lit avant de créer une session Stripe.
  */
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
-import { isNonEmptyString, jsonResponse, mapPaymentError, parseFiscalYear } from "./payment-http";
+import {
+  isNonEmptyString,
+  jsonResponse,
+  mapPaymentError,
+  parseFiscalYear,
+  rejectUnclosedFiscalYear,
+} from "./payment-http";
 import { createDefaultPaymentDeps, type PaymentDeps } from "./payment-server";
 
 const STATUSES: readonly PriorHistoryDeclarationStatus[] = [
@@ -41,6 +47,11 @@ export async function handlePriorHistoryRequest(
     }
 
     await deps.assertOwnership(dossierId, userId);
+
+    // Même verrou que le checkout : aucune ligne de paiement pour un exercice non terminé.
+    const notClosed = rejectUnclosedFiscalYear(deps, fiscalYear);
+    if (notClosed) return notClosed;
+
     const row = await deps.store.ensureRow(dossierId, fiscalYear);
     const changed = row.prior_history_status !== status;
     await deps.store.setPriorHistory(row.id, status);

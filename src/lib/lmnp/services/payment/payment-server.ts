@@ -289,6 +289,8 @@ export type PaymentDeps = {
   assertOwnership(dossierId: string, userId: string): Promise<void>;
   store: PaymentStore;
   stripe: StripeGateway;
+  /** Horloge injectable (tests) pour le verrou de clôture d'exercice ; absente ⇒ `new Date()`. */
+  now?: () => Date;
 };
 
 /** Dépendances réelles. Lève `PaymentConfigError` si la configuration Stripe/Supabase manque. */
