@@ -113,14 +113,14 @@ export const DECLARATION_FLOW: DeclarationStepDef[] = [
   },
   {
     id: "signature",
-    title: "Signature électronique",
-    subtitle: "Signez votre liasse en toute sécurité.",
+    title: "Vérification finale",
+    subtitle: "Relisez votre liasse avant de la déposer.",
     path: "/etape/signature",
   },
   {
     id: "teletransmission",
-    title: "Télétransmission",
-    subtitle: "Envoi à l’administration.",
+    title: "Dépôt de votre déclaration",
+    subtitle: "À effectuer par vos soins auprès de l’administration.",
     path: "/teletransmission",
   },
 ];

@@ -15,7 +15,12 @@ type ValidationCheckoutOverlayProps = {
   open: boolean;
   fiscalYear: number;
   onClose: () => void;
-  onConfirmPayment: () => void;
+  /**
+   * Payment V1 — démarre le VRAI paiement (Stripe Checkout hébergé) : redirige
+   * le navigateur, ou lève un message clair. Ce composant ne marque jamais un
+   * paiement comme réussi : seul le serveur (webhook Stripe) accorde le droit.
+   */
+  onPay: () => Promise<void>;
   /**
    * P1 — reflète le `checkoutMode` de ValidationDocumentStep.tsx (logique
    * inchangée). "generate" (défaut) : paiement suivi d'une génération
@@ -30,7 +35,7 @@ type ValidationCheckoutOverlayProps = {
 export const CHECKOUT_COPY = {
   generate: {
     title: "Finaliser la génération",
-    subtitle: (fiscalYear: number) => `LMNP ${fiscalYear} — génération et télétransmission EDI`,
+    subtitle: (fiscalYear: number) => `LMNP ${fiscalYear} — génération de votre liasse fiscale et aide 2042-C-PRO`,
     explanation: undefined as string | undefined,
   },
   "pay-only": {
@@ -41,25 +46,43 @@ export const CHECKOUT_COPY = {
   },
 } as const;
 
-export function ValidationCheckoutOverlay({
-  open,
-  fiscalYear,
-  onClose,
-  onConfirmPayment,
-  mode = "generate",
-}: ValidationCheckoutOverlayProps) {
-  const [processing, setProcessing] = useState(false);
+/** Notes affichées avant tout paiement, dans les deux modes. */
+export const CHECKOUT_NOTES = {
+  secure: "Paiement sécurisé par Stripe : vous serez redirigé vers sa page de paiement.",
+  entitlement:
+    "Ce paiement couvre cet exercice fiscal : régénérations et téléchargements illimités, sans nouveau paiement.",
+  responsibility: "Fiscal AI prépare vos documents ; vous déposez vous-même votre déclaration.",
+  // V1 : le dossier est enregistré dans le navigateur (pas de synchronisation cloud).
+  dataLoss:
+    "Votre dossier est actuellement enregistré sur cet appareil. Utilisez le même navigateur jusqu'à la finalisation de votre déclaration.",
+} as const;
 
-  if (!open) return null;
+export function ValidationCheckoutOverlay(props: ValidationCheckoutOverlayProps) {
+  // L'état (traitement / erreur) vit dans le composant interne : fermer l'overlay le démonte, donc le réinitialise.
+  if (!props.open) return null;
+  return <CheckoutDialog {...props} />;
+}
+
+function CheckoutDialog({ fiscalYear, onClose, onPay, mode = "generate" }: ValidationCheckoutOverlayProps) {
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
 
   const copy = CHECKOUT_COPY[mode];
 
-  function handlePay() {
+  async function handlePay() {
     setProcessing(true);
-    window.setTimeout(() => {
+    setError(undefined);
+    try {
+      // Redirige vers Stripe : la page se décharge, l'état « traitement » reste jusqu'au départ.
+      await onPay();
+    } catch (err) {
+      setError(
+        err && typeof err === "object" && "message" in err && typeof err.message === "string"
+          ? err.message
+          : "Le paiement n'a pas pu être démarré. Réessayez dans quelques instants.",
+      );
       setProcessing(false);
-      onConfirmPayment();
-    }, 900);
+    }
   }
 
   return (
@@ -127,9 +150,22 @@ export function ValidationCheckoutOverlay({
           </p>
         </div>
 
+        <div className="mt-4 space-y-2 text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
+          <p>{CHECKOUT_NOTES.entitlement}</p>
+          <p>{CHECKOUT_NOTES.responsibility}</p>
+          <p>{CHECKOUT_NOTES.secure}</p>
+          <p style={{ color: colors.text.secondary }}>{CHECKOUT_NOTES.dataLoss}</p>
+        </div>
+
+        {error ? (
+          <p role="alert" className="mt-4 text-center" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-6 flex flex-col items-center gap-3">
-          <Button onClick={handlePay} disabled={processing}>
-            {processing ? "Traitement…" : "Confirmer"}
+          <Button onClick={() => void handlePay()} disabled={processing}>
+            {processing ? "Redirection vers le paiement…" : `Payer ${GENERATION_PRICE_TTC} € TTC`}
           </Button>
           <button
             type="button"

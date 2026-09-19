@@ -30,9 +30,11 @@ const FORBIDDEN_PHRASES_PAY_ONLY = [
 ];
 
 describe("P1 — wording du checkout (ValidationCheckoutOverlay)", () => {
-  it("Scénario A — mode normal (paiement + génération immédiate) : wording existant inchangé", () => {
+  it("Scénario A — mode normal (paiement + génération immédiate) : titre inchangé, sous-titre véridique (pas d'EDI)", () => {
     assert.equal(CHECKOUT_COPY.generate.title, "Finaliser la génération");
-    assert.equal(CHECKOUT_COPY.generate.subtitle(2025), "LMNP 2025 — génération et télétransmission EDI");
+    // Payment V1 — l'EDI n'existe pas encore : le sous-titre ne promet plus de télétransmission.
+    assert.equal(CHECKOUT_COPY.generate.subtitle(2025), "LMNP 2025 — génération de votre liasse fiscale et aide 2042-C-PRO");
+    assert.doesNotMatch(CHECKOUT_COPY.generate.subtitle(2025), /télétransmission|EDI/i);
     assert.equal(CHECKOUT_COPY.generate.explanation, undefined);
   });
 

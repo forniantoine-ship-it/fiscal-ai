@@ -1,5 +1,6 @@
 import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import type { DeliveryAccessContext } from "@/lib/lmnp/services/payment/entitlement-client";
 
 /**
  * P1-2 — pont client vers la route serveur P1-1 (`/api/lmnp/declaration/cerfa-pdf`).
@@ -86,13 +87,17 @@ export type CerfaPdfDownloadError = { message: string };
  * aucun recalcul : le serveur reste l'unique producteur des Cerfa.
  * Copie défensive du buffer (pdf-lib peut réécrire un ArrayBuffer partagé).
  */
-export async function fetchOfficialCerfaPdfBytes(payload: CerfaPdfRequestPayload): Promise<Uint8Array> {
+export async function fetchOfficialCerfaPdfBytes(
+  payload: CerfaPdfRequestPayload,
+  /** Payment V1 — contexte d'accès (authToken, dossierId, fiscalYear) : sans lui, le serveur répond 401. */
+  access?: DeliveryAccessContext,
+): Promise<Uint8Array> {
   let response: Response;
   try {
     response = await fetch(CERFA_PDF_ROUTE, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(access ? { ...payload, ...access } : payload),
     });
   } catch {
     throw { message: "Le PDF officiel n'a pas pu être généré (connexion impossible)." } satisfies CerfaPdfDownloadError;

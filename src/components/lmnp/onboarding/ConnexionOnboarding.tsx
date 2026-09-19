@@ -21,8 +21,8 @@ const STEPS = [
     body: "L'IA lit vos pièces et prépare automatiquement votre liasse.",
   },
   {
-    title: "Validez et transmettez",
-    body: "Vous confirmez l'essentiel avant génération et télétransmission.",
+    title: "Validez et générez",
+    body: "Vous confirmez l'essentiel avant de générer votre liasse fiscale.",
   },
 ];
 

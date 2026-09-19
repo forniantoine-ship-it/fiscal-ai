@@ -5,7 +5,7 @@ const STEPS = [
   "Déposez vos documents",
   "L'IA pré-remplit les données",
   "Vous vérifiez et confirmez",
-  "La déclaration est télétransmise",
+  "Vous récupérez votre liasse et déposez votre déclaration",
 ];
 
 export function DeclarationHowItWorks() {

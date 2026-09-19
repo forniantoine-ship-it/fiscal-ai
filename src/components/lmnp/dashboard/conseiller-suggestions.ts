@@ -45,7 +45,7 @@ export function buildConseillerComplements(
         id: "mandatory",
         question: "Cette étape est-elle obligatoire ?",
         answer:
-          "Oui, chaque information confirmée alimente directement votre déclaration. Rien n'est transmis sans votre validation.",
+          "Oui, chaque information confirmée alimente directement votre déclaration. Rien n'est finalisé sans votre validation.",
       },
     ];
   }
@@ -79,7 +79,7 @@ export function buildConseillerComplements(
         id: "what-next",
         question: "Que se passe-t-il ensuite ?",
         answer:
-          "Vous passez à la préparation de votre déclaration. Vous pourrez la relire avant toute transmission.",
+          "Vous passez à la préparation de votre déclaration. Vous pourrez la relire avant de la finaliser.",
       },
       {
         id: "still-edit",
@@ -91,7 +91,7 @@ export function buildConseillerComplements(
         id: "mandatory",
         question: "Cette étape est-elle obligatoire ?",
         answer:
-          "La préparation finale est la dernière étape avant transmission. Vous pouvez la lancer quand vous vous sentez prêt.",
+          "La préparation finale est la dernière étape avant la finalisation de l'exercice. Vous pouvez la lancer quand vous vous sentez prêt.",
       },
     ];
   }

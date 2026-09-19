@@ -20,7 +20,7 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "Fiscal AI — Votre déclaration LMNP, enfin simple",
   description:
-    "Déposez vos documents. L'IA prépare automatiquement votre déclaration LMNP. Vérifiez simplement avant génération et télétransmission.",
+    "Déposez vos documents. L'IA prépare automatiquement votre déclaration LMNP. Vérifiez simplement avant de générer votre liasse fiscale.",
 };
 
 export default function RootLayout({

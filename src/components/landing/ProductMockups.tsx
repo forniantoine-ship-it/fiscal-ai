@@ -497,7 +497,7 @@ export function DeclarationReadyMockup() {
   const items = [
     { label: "Liasse fiscale PDF", status: "Disponible" },
     { label: "Formulaires CERFA", status: "Disponible" },
-    { label: "Accusé télétransmission EDI", status: "Disponible" },
+    { label: "Aide 2042-C-PRO PDF", status: "Disponible" },
   ];
 
   return (

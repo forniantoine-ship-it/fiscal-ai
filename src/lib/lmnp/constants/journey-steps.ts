@@ -53,10 +53,10 @@ export const JOURNEY_STEPS: JourneyStepDefinition[] = [
   },
   {
     id: "transmission",
-    title: "Transmission",
+    title: "Dépôt de la déclaration",
     description: "",
     href: "/teletransmission",
-    cta: "Transmettre",
+    cta: "Récupérer ma liasse",
   },
 ];
 

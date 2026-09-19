@@ -110,7 +110,7 @@ function buildSuggestions(
         id: "what-next",
         question: "Que se passe-t-il ensuite ?",
         answer:
-          "Vous passez à la préparation de votre déclaration. Vous pourrez la relire avant toute transmission.",
+          "Vous passez à la préparation de votre déclaration. Vous pourrez la relire avant de la finaliser.",
       },
       {
         id: "still-edit",

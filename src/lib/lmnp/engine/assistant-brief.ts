@@ -89,7 +89,7 @@ function buildHeadline(
 ): string {
   const pending = ctx.validationItems.filter((v) => v.status === "pending").length;
 
-  if (journey.isComplete) return "Déclaration transmise";
+  if (journey.isComplete) return "Dossier finalisé";
 
   if (flags.generateDone && !flags.paymentDone) return "Liasse prête";
 

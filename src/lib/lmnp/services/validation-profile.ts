@@ -6,7 +6,8 @@ import { revenusFromDraft } from "./revenus-profile";
 import { sessionToExtractionData } from "./revenue-gpt-ui-prefill";
 import { excludedLoanIdsFromFinancing } from "./f011/credit-financing-to-financement-charges";
 
-export const GENERATION_PRICE_TTC = 149;
+// Source unique du prix (aussi lue par le serveur pour le montant Stripe).
+export { GENERATION_PRICE_TTC } from "./payment/price";
 
 export type DossierStepId =
   | "activite"

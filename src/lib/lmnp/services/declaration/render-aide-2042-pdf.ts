@@ -435,9 +435,3 @@ export function renderAide2042Pdf(document: ClientSummaryDocument): jsPDF {
 
   return doc;
 }
-
-/** Déclenche le téléchargement navigateur du PDF d'aide 2042-C-PRO. */
-export function downloadAide2042Pdf(document: ClientSummaryDocument): void {
-  const doc = renderAide2042Pdf(document);
-  doc.save(`aide-declaration-2042-c-pro-${document.meta.exercice}.pdf`);
-}

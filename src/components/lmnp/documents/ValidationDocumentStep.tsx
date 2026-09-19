@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/design-system/components/Button";
@@ -33,6 +33,12 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { appendDeclarationVersion } from "@/lib/lmnp/services/declaration/append-declaration-version";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
+import {
+  declarePriorHistoryOnServer,
+  pollUntil,
+  requestCheckout,
+} from "@/lib/lmnp/services/payment/entitlement-client";
+import { useServerPaymentSync } from "@/components/lmnp/payment/useServerPaymentSync";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
 import {
   formatLiasseCoverageMessage,
@@ -92,8 +98,14 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const priorHistory = useMemo(() => resolvePriorHistoryEligibility(fiscalYear), [fiscalYear]);
   const priorHistoryBlocked = !priorHistory.eligible;
   const handleDeclarePriorHistory = useCallback(
-    (status: PriorHistoryDeclarationStatus) => dispatch({ type: "DECLARE_PRIOR_HISTORY", status }),
-    [dispatch],
+    (status: PriorHistoryDeclarationStatus) => {
+      dispatch({ type: "DECLARE_PRIOR_HISTORY", status });
+      // Payment V1 — la réponse est aussi enregistrée côté serveur (c'est elle que
+      // lit l'éligibilité avant Stripe). Échec silencieux ici : le checkout la
+      // renvoie systématiquement avant de payer.
+      void declarePriorHistoryOnServer(fiscalYear.year, status).catch(() => undefined);
+    },
+    [dispatch, fiscalYear.year],
   );
 
   const gate = useMemo(
@@ -170,27 +182,75 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     setPhase("idle");
   }, []);
 
-  const handlePaymentConfirmed = useCallback(() => {
-    setCheckoutOpen(false);
-    // P0 — défense en profondeur : même résolveur, relu sur l'exercice courant.
+  // Payment V1 — l'entitlement serveur (webhook Stripe) est l'autorité ; `paid`
+  // ci-dessus n'en est que le miroir local.
+  const serverPayment = useServerPaymentSync(fiscalYear.year);
+  const [verification, setVerification] = useState<"idle" | "verifying" | "timeout">("idle");
+  const [continueAfterPayment, setContinueAfterPayment] = useState(false);
+  const returnHandled = useRef(false);
+
+  // Vérifie l'entitlement serveur (borné) après le retour de Stripe : le retour
+  // sur l'URL de succès n'est JAMAIS une preuve de paiement.
+  const verifyPayment = useCallback(async () => {
+    setVerification("verifying");
+    const confirmed = await pollUntil(async () => (await serverPayment.refetch()) === "paid");
+    if (confirmed) {
+      setVerification("idle");
+      setContinueAfterPayment(true);
+    } else {
+      setVerification("timeout");
+    }
+  }, [serverPayment]);
+
+  useEffect(() => {
+    if (returnHandled.current || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("checkout");
+    if (!outcome) return;
+    returnHandled.current = true;
+    const year = Number(params.get("fy"));
+    params.delete("checkout");
+    params.delete("fy");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    // Annulation : retour propre au tunnel, aucun droit, le client peut réessayer.
+    // Volontairement asynchrone : aucun setState synchrone dans le corps de l'effet.
+    if (outcome === "success" && year === fiscalYear.year) queueMicrotask(() => void verifyPayment());
+  }, [fiscalYear.year, verifyPayment]);
+
+  // Une fois le paiement CONFIRMÉ par le serveur : on poursuit comme avant le
+  // paiement (génération si le dossier est générable, sinon suite du parcours).
+  useEffect(() => {
+    if (!continueAfterPayment || !paid) return;
+    queueMicrotask(() => {
+      setContinueAfterPayment(false);
+      if (generated) return;
+      if (gate.canGenerate) setPhase("generating");
+      else router.push(LMNP_ROUTES.declarations);
+    });
+  }, [continueAfterPayment, gate.canGenerate, generated, paid, router]);
+
+  const handleStartCheckout = useCallback(async () => {
+    // Défense en profondeur : même résolveur que la porte ; le serveur refait le contrôle avant Stripe.
     if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
-      setPhase("idle");
+      throw new Error("Votre situation doit être confirmée avant le paiement.");
+    }
+    const declared = fiscalYear.priorHistoryDeclaration?.status;
+    if (declared) await declarePriorHistoryOnServer(fiscalYear.year, declared);
+    const outcome = await requestCheckout(fiscalYear.year, {
+      previousFiscalYearId: fiscalYear.previousFiscalYearId ?? undefined,
+      stocksOuverture: fiscalYear.stocksOuverture,
+      stocksOuvertureUnavailableReason: fiscalYear.stocksOuvertureUnavailableReason,
+    });
+    if (outcome.status === "checkout") {
+      window.location.assign(outcome.url);
       return;
     }
-    if (checkoutMode === "pay-only") {
-      // P1 — paidAt enregistré ici directement. Contrairement au chemin
-      // "generate" (handleGenerationComplete), declarationGeneratedAt/
-      // fiscalResult/liasseResult/declarationVersions ne sont JAMAIS écrits
-      // ici : runDeclarationGeneration() n'est pas appelée. L'état
-      // paidAt != null / declarationGeneratedAt == null est donc atteint
-      // sans qu'aucune génération n'ait été tentée ni réussie.
-      dispatch({ type: "JOURNEY_MARK_PAID" });
-      setPhase("idle");
-      router.push(LMNP_ROUTES.declarations);
-      return;
-    }
-    setPhase("generating");
-  }, [checkoutMode, dispatch, fiscalYear, router]);
+    // Déjà payé ou paiement en cours de confirmation : jamais un second paiement.
+    setCheckoutOpen(false);
+    setPhase("idle");
+    await verifyPayment();
+  }, [fiscalYear, verifyPayment]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
@@ -274,9 +334,6 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         declarationVersions,
       },
     });
-    if (!paid) {
-      dispatch({ type: "JOURNEY_MARK_PAID" });
-    }
     dispatch({ type: "JOURNEY_MARK_DECLARATION_GENERATED" });
     showSuccess(
       "Déclaration générée",
@@ -284,7 +341,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear, paid, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear, router, showSuccess]);
 
   if (generated && paid && !gate.canGenerate && !priorHistoryBlocked) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
@@ -334,6 +391,37 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
       <WorkflowPageBackLink />
+
+      {verification !== "idle" ? (
+        <div
+          role="status"
+          className="w-full text-center"
+          style={{
+            borderRadius: radius.lg,
+            border: `1px solid ${colors.warning.border}`,
+            backgroundColor: colors.warning.surface,
+            padding: spacing.card.md,
+          }}
+        >
+          {verification === "verifying" ? (
+            <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+              Paiement reçu, finalisation en cours… Ne fermez pas cette page.
+            </p>
+          ) : (
+            <>
+              <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+                Nous n&apos;avons pas encore reçu la confirmation de votre paiement. Cela peut prendre quelques
+                instants. Vous ne serez pas débité une seconde fois.
+              </p>
+              <div className="mt-3 flex justify-center">
+                <Button variant="secondary" onClick={() => void verifyPayment()}>
+                  Vérifier à nouveau
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {phase === "generating" ? (
         <ActiviteAiProcessing
@@ -511,7 +599,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         open={checkoutOpen}
         fiscalYear={fiscalYear.year}
         onClose={handleCheckoutClose}
-        onConfirmPayment={handlePaymentConfirmed}
+        onPay={handleStartCheckout}
         mode={checkoutMode}
       />
     </div>

@@ -15,7 +15,7 @@ export function ValidationPricingBlock({ cardStyle }: ValidationPricingBlockProp
       style={{ ...cardStyle, textAlign: "center" }}
     >
       <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-        Génération et télétransmission EDI
+        Liasse fiscale et aide 2042-C-PRO
       </p>
       <p
         className="mt-2 tabular-nums"
@@ -28,7 +28,8 @@ export function ValidationPricingBlock({ cardStyle }: ValidationPricingBlockProp
         {GENERATION_PRICE_TTC} € TTC
       </p>
       <p className="mx-auto mt-3 max-w-sm" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-        Un paiement annuel — simple et transparent.
+        Un paiement par exercice fiscal, régénérations et téléchargements illimités. Vous déposez vous-même votre
+        déclaration.
       </p>
     </section>
   );

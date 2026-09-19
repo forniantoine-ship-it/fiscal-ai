@@ -95,7 +95,8 @@ describe("garde de câblage — chaque point d'entrée qui décide d'un paiement
     assert.match(source, /resolveDeclarationGenerationGate\(\{[\s\S]*?priorHistory,[\s\S]*?\}\)/, "la porte reçoit l'éligibilité");
     const generation = source.slice(source.indexOf("const handleGenerationComplete"));
     assert.match(generation.slice(0, 500), /resolvePriorHistoryEligibility\(fiscalYear\)\.eligible/, "génération : relecture défensive");
-    const payment = source.slice(source.indexOf("const handlePaymentConfirmed"));
+    // Payment V1 — le paiement passe désormais par le checkout serveur ; la relecture défensive précède tout appel.
+    const payment = source.slice(source.indexOf("const handleStartCheckout"));
     assert.match(payment.slice(0, 500), /resolvePriorHistoryEligibility\(fiscalYear\)\.eligible/, "paiement : relecture défensive");
   });
 

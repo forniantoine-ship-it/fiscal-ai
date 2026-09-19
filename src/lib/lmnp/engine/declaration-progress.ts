@@ -132,8 +132,8 @@ function buildHeadline(currentId: DeclarationStepId, ws: PersistedWorkspace): st
   if (pending > 0) {
     return `${pending} élément${pending > 1 ? "s" : ""} à confirmer`;
   }
-  if (ws.fiscalYear.transmittedAt) return "Déclaration transmise";
-  if (ws.fiscalYear.paidAt) return "Signez et transmettez";
+  if (ws.fiscalYear.transmittedAt) return "Dossier finalisé";
+  if (ws.fiscalYear.paidAt) return "Récupérez votre liasse et déposez votre déclaration";
   return step.title;
 }
 
@@ -182,7 +182,7 @@ export function resolveDeclarationProgress(ws: PersistedWorkspace): DeclarationP
     label = "Confirmer";
     href = LMNP_ROUTES.validation;
   } else if (currentStepId === "paiement") label = "Payer";
-  else if (currentStepId === "teletransmission") label = "Transmettre";
+  else if (currentStepId === "teletransmission") label = "Récupérer ma liasse";
 
   const recentDocuments = [...ws.documents]
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))

@@ -12,6 +12,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { PrimaryButton, SecondaryButton } from "@/components/landing/LandingButtons";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { GENERATION_PRICE_TTC } from "@/lib/lmnp/services/payment/price";
 import {
   DEMO_FLOW,
   HeroDashboardMockup,
@@ -92,7 +93,7 @@ function HeroSection() {
             <br />
             L&apos;IA prépare automatiquement votre déclaration LMNP.
             <br />
-            Vérifiez simplement avant génération et télétransmission.
+            Vérifiez simplement avant de générer votre liasse fiscale.
           </p>
         </div>
 
@@ -122,7 +123,7 @@ function HeroSection() {
             </span>
           </p>
           <p style={{ ...typography.caption.desktop, color: colors.text.tertiary }}>
-            Télétransmission EDI incluse.
+            Par exercice fiscal · liasse fiscale et aide 2042-C-PRO incluses.
           </p>
         </div>
 
@@ -135,7 +136,7 @@ function HeroSection() {
           className="flex flex-wrap items-center"
           style={{ gap: spacing.scale[4], rowGap: spacing.scale[2] }}
         >
-          <TrustPoint>Télétransmission EDI incluse</TrustPoint>
+          <TrustPoint>Liasse fiscale et aide 2042-C-PRO incluses</TrustPoint>
           <span aria-hidden style={{ color: colors.border.default }}>
             ·
           </span>
@@ -179,8 +180,9 @@ const HOW_IT_WORKS = [
   },
   {
     step: "04",
-    title: "Génération et télétransmission",
-    description: "Votre déclaration est générée et télétransmise automatiquement.",
+    title: "Génération de votre liasse",
+    description:
+      "Votre liasse fiscale et l'aide 2042-C-PRO sont générées. Vous déposez ensuite votre déclaration.",
   },
 ] as const;
 
@@ -341,7 +343,7 @@ const DIFFERENTIATORS = [
   },
   {
     title: "Transparent",
-    description: "149 € TTC, télétransmission incluse.",
+    description: `${GENERATION_PRICE_TTC} € TTC par exercice fiscal, sans surprise.`,
   },
 ] as const;
 
@@ -494,10 +496,10 @@ function SecuritySection() {
 }
 
 const PRICING_FEATURES = [
-  "Génération déclaration",
+  "Génération de la liasse fiscale",
   "Amortissements automatiques",
-  "Télétransmission EDI",
-  "Sauvegarde dossier",
+  "Aide 2042-C-PRO",
+  "Régénérations illimitées sur l'exercice",
   "Génération PDF",
 ] as const;
 
@@ -590,9 +592,8 @@ const FAQ_ITEMS = [
       "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les informations détectées, et nous nous occupons du reste.",
   },
   {
-    question: "La télétransmission est-elle incluse ?",
-    answer:
-      "Oui. Les 149 € TTC comprennent la génération de votre déclaration et la télétransmission EDI aux impôts.",
+    question: "Fiscal AI dépose-t-il ma déclaration à ma place ?",
+    answer: `Non, pas pour le moment. Les ${GENERATION_PRICE_TTC} € TTC couvrent, pour un exercice fiscal, la préparation de votre liasse fiscale (formulaires Cerfa), la génération des documents et l'aide pour reporter vos montants dans la déclaration 2042-C-PRO. Vous restez responsable du dépôt de votre déclaration auprès de l'administration fiscale.`,
   },
   {
     question: "Quels documents dois-je fournir ?",

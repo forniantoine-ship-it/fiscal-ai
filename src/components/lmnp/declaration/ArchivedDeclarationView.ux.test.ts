@@ -58,10 +58,12 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
 
   it("expose l'aide 2042-C-PRO branchée sur le RFS et activityStartDate archivés", () => {
     assert.ok(viewSource.includes(AIDE_BUTTON));
-    assert.ok(viewSource.includes('from "@/lib/lmnp/services/declaration/render-aide-2042-pdf"'));
+    // Payment V1 — PDF produit par le serveur pour l'exercice archivé payé.
+    assert.ok(viewSource.includes('from "@/lib/lmnp/services/declaration/download-aide-2042-pdf"'));
     assert.ok(
-      viewSource.includes("downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }))"),
+      viewSource.includes("downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: record.year })"),
     );
+    assert.equal(viewSource.includes("render-aide-2042-pdf"), false);
     assert.ok(viewSource.includes("const archivedDraft = record.declarationDraft"));
     assert.ok(viewSource.includes("const rfs = archivedDraft?.rfs"));
     assert.ok(viewSource.includes("const activityStartDate = archivedDraft?.activityStartDate"));

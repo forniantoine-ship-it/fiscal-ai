@@ -37,7 +37,7 @@ export function CTABanner() {
               style={{ ...typography.body.desktop, color: colors.text.secondary }}
             >
               Déposez vos documents, laissez l&apos;IA préparer votre liasse et validez
-              simplement avant télétransmission.
+              simplement avant de la générer.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Button href="/dashboard">Commencer maintenant</Button>

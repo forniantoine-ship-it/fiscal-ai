@@ -113,7 +113,8 @@ export type LmnpAction =
       label?: string;
     }
   | { type: "JOURNEY_MARK_DECLARATION_GENERATED" }
-  | { type: "JOURNEY_MARK_PAID" }
+  /** Payment V1 — miroir LOCAL de l'entitlement serveur (jamais une autorité). `paidAt` absent = non payé. */
+  | { type: "JOURNEY_SYNC_PAID_FROM_SERVER"; paidAt?: string }
   | { type: "JOURNEY_MARK_TRANSMITTED" }
   | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
   | {
@@ -1077,14 +1078,20 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         },
       });
 
-    case "JOURNEY_MARK_PAID":
+    case "JOURNEY_SYNC_PAID_FROM_SERVER": {
+      // Payment V1 — l'entitlement payé est établi par le webhook Stripe côté
+      // serveur ; ceci ne fait que refléter cet état dans le workspace local
+      // (affichage/parcours). Aucun accès à la livraison n'en dépend : les
+      // routes de livraison relisent la ligne serveur. Idempotent.
+      if (state.fiscalYear.paidAt === action.paidAt) return state;
       return finalizeState({
         ...state,
         fiscalYear: {
           ...touchFiscalYear(state.fiscalYear),
-          paidAt: nowIso(),
+          paidAt: action.paidAt,
         },
       });
+    }
 
     case "JOURNEY_MARK_TRANSMITTED": {
       // P3-SOCLE-CYCLE-FISCAL — P0-1 — la transmission est le moment où

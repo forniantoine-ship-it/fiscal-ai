@@ -13,7 +13,7 @@ const faqs = [
   {
     question: "Ai-je besoin de connaissances comptables ?",
     answer:
-      "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les montants extraits, et nous nous occupons de la génération et de la télétransmission.",
+      "Non. Fiscal AI est conçu pour les propriétaires LMNP sans formation comptable. Vous déposez vos documents, vérifiez les montants extraits, et nous nous occupons de la génération de votre liasse fiscale et de l'aide 2042-C-PRO.",
   },
   {
     question: "Quels documents dois-je fournir ?",
@@ -21,9 +21,9 @@ const faqs = [
       "Typiquement : votre bail meublé, vos relevés de loyers, votre tableau d'amortissement, vos justificatifs de charges et d'emprunt. La liste s'adapte à votre situation.",
   },
   {
-    question: "La télétransmission est-elle vraiment incluse ?",
+    question: "Fiscal AI dépose-t-il ma déclaration à ma place ?",
     answer:
-      "Oui. Les 149 € TTC comprennent la préparation du dossier, la génération de la liasse et la télétransmission EDI aux impôts.",
+      "Non, pas pour le moment. Les 149 € TTC couvrent, pour un exercice fiscal, la préparation du dossier, la génération de la liasse fiscale et l'aide 2042-C-PRO. Vous restez responsable du dépôt de votre déclaration auprès de l'administration fiscale.",
   },
   {
     question: "Puis-je modifier les montants proposés ?",

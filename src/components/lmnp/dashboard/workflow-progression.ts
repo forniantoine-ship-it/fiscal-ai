@@ -243,7 +243,7 @@ export function resolveDashboardHeroState(workspace: DashboardWorkspace): Dashbo
       explanation:
         "Votre déclaration est désormais prête pour la génération finale.",
       conseillerObservation:
-        "Les sept étapes de collecte sont bouclées. La préparation de la liasse n'engage encore rien : vous gardez la main jusqu'à la transmission.",
+        "Les sept étapes de collecte sont bouclées. La préparation de la liasse n'engage encore rien : vous gardez la main jusqu'à la finalisation.",
       primaryLabel: "Préparer la déclaration",
       primaryHref: documentJourneyRoute("validation"),
       highlightStepId: "validation",

@@ -10,9 +10,8 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
-import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/render-aide-2042-pdf";
+import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-aide-2042-pdf";
 import {
   resolveArchivedLiasseDownload,
   type ArchivedLiasseDownloadRecord,
@@ -51,6 +50,7 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
 
   const [liasseDownloading, setLiasseDownloading] = useState(false);
   const [liasseDownloadError, setLiasseDownloadError] = useState<string | undefined>(undefined);
+  const [aideDownloadError, setAideDownloadError] = useState<string | undefined>(undefined);
 
   const handleDownloadLiasseFiscale = async () => {
     const resolved = resolveArchivedLiasseDownload(record);
@@ -175,7 +175,15 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
               disabled={!rfs || !declarability.deliverable}
               onClick={() => {
                 if (!rfs) return;
-                downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }));
+                setAideDownloadError(undefined);
+                // Payment V1 — PDF produit par le serveur (exercice payé requis).
+                downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: record.year }).catch((err) =>
+                  setAideDownloadError(
+                    err && typeof err === "object" && "message" in err && typeof err.message === "string"
+                        ? err.message
+                        : "L'aide n'a pas pu être générée. Réessayez dans quelques instants.",
+                  ),
+                );
               }}
             >
               Télécharger mon aide pour la déclaration 2042-C-PRO
@@ -183,6 +191,11 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
             {rfs && !declarability.deliverable ? (
               <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
                 {FINAL_DECLARABILITY_BLOCKED_MESSAGE}
+              </p>
+            ) : null}
+            {aideDownloadError ? (
+              <p role="alert" className="mt-2" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
+                {aideDownloadError}
               </p>
             ) : null}
           </div>

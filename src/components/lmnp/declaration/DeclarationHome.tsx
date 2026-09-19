@@ -56,10 +56,11 @@ export function DeclarationHome() {
             className="mt-8 text-[1.75rem] font-normal leading-[1.25] text-stone-800 sm:text-[2rem]"
             style={{ fontFamily: "var(--font-display), Georgia, serif" }}
           >
-            Votre déclaration est transmise
+            Votre dossier est finalisé
           </h1>
           <p className="mx-auto mt-5 max-w-md text-[15px] text-stone-500">
-            Merci — votre liasse a bien été envoyée.
+            Merci. Fiscal AI n&apos;a pas déposé votre déclaration à votre place : pensez à la déposer auprès de
+            l&apos;administration fiscale.
           </p>
         </header>
         <DeclarationCompletedActions
@@ -220,8 +221,8 @@ export function DeclarationHome() {
                 Confirmez vos montants pour finaliser
               </p>
               <p className="mt-1.5 max-w-md text-[13px] leading-relaxed text-stone-500">
-                Quelques secondes par ligne — ensuite, la déclaration pourra être générée et
-                transmise.
+                Quelques secondes par ligne — ensuite, votre liasse fiscale pourra être
+                générée.
               </p>
             </div>
             <PrimaryButton href={`${base}/validation`} className="shrink-0 sm:!px-8">
@@ -248,7 +249,7 @@ export function DeclarationHome() {
           </h1>
           <p className="mx-auto mt-6 max-w-md text-[15px] leading-relaxed text-stone-500">
             Déposez simplement les documents demandés. L’IA extrait les informations, prépare
-            votre déclaration et vous guide jusqu’à la transmission.
+            votre déclaration et vous guide jusqu’à la génération de votre liasse fiscale.
           </p>
         </header>
 

@@ -12,8 +12,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
-import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/render-aide-2042-pdf";
+import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-aide-2042-pdf";
 import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
@@ -108,6 +107,7 @@ export function DeclarationReadyView() {
   // — jamais reconstruite. Les Cerfa restent produits par la route existante.
   const [liasseDownloading, setLiasseDownloading] = useState(false);
   const [liasseDownloadError, setLiasseDownloadError] = useState<string | undefined>(undefined);
+  const [aideDownloadError, setAideDownloadError] = useState<string | undefined>(undefined);
   const declarationVersionId = declaration?.currentVersionId;
   // NEXT-5 — même prédicat pour les deux téléchargements (aide 2042-C-PRO et
   // liasse fiscale) : jamais l'un bloqué et l'autre livré depuis la même
@@ -281,7 +281,15 @@ export function DeclarationReadyView() {
               disabled={!rfs || !declarability.deliverable}
               onClick={() => {
                 if (!rfs) return;
-                downloadAide2042Pdf(buildClientSummaryDocument(rfs, { activityStartDate }));
+                setAideDownloadError(undefined);
+                // Payment V1 — PDF produit par le serveur (exercice payé requis).
+                downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: fiscalYear.year }).catch((err) =>
+                  setAideDownloadError(
+                    err && typeof err === "object" && "message" in err && typeof err.message === "string"
+                        ? err.message
+                        : "L'aide n'a pas pu être générée. Réessayez dans quelques instants.",
+                  ),
+                );
               }}
             >
               Télécharger mon aide pour la déclaration 2042-C-PRO
@@ -289,6 +297,11 @@ export function DeclarationReadyView() {
             {rfs && !declarability.deliverable ? (
               <p className="mt-2" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
                 {FINAL_DECLARABILITY_BLOCKED_MESSAGE}
+              </p>
+            ) : null}
+            {aideDownloadError ? (
+              <p role="alert" className="mt-2" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
+                {aideDownloadError}
               </p>
             ) : null}
           </div>
@@ -403,8 +416,8 @@ export function DeclarationReadyView() {
               modifiable. L&apos;exercice {fiscalYear.year + 1} s&apos;ouvre immédiatement,
               avec les informations utiles de votre dossier (identité, bien, financement)
               déjà reprises. Fiscal AI ne transmet pas votre déclaration à votre place :
-              cette action est une transition entre exercices, indépendante de la
-              télétransmission.
+              cette action est une transition entre exercices, indépendante du dépôt
+              de votre déclaration.
             </p>
             <div className="mt-6 flex flex-col items-center gap-3">
               <Button onClick={handleConfirmCloseFiscalYear} disabled={closingFiscalYear}>
@@ -424,9 +437,8 @@ export function DeclarationReadyView() {
       ) : null}
 
       <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
-        {fiscalYear.transmittedAt
-          ? "Télétransmission EDI effectuée."
-          : "Télétransmission EDI : en attente de l'activation de notre partenaire. Votre dossier est prêt à être transmis dès sa mise en service."}
+        Fiscal AI ne dépose pas votre déclaration à votre place : vous la déposez vous-même auprès de l&apos;administration
+        fiscale, avec votre liasse fiscale et l&apos;aide 2042-C-PRO. Conservez vos justificatifs.
       </p>
 
       <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>

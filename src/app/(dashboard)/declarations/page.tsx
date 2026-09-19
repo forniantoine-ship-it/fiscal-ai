@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { colors } from "@/design-system/theme/colors";
 import { typography } from "@/design-system/theme/typography";
 import { DeclarationReadyView } from "@/components/lmnp/declaration/DeclarationReadyView";
+import { useServerPaymentSync } from "@/components/lmnp/payment/useServerPaymentSync";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -14,7 +15,11 @@ import { useLmnp } from "@/lib/lmnp/store";
 export default function DeclarationsPage() {
   const router = useRouter();
   const { workspace, isReady } = useLmnp();
-  const paid = Boolean(workspace.fiscalYear.paidAt);
+  // Payment V1 — l'accès repose sur l'entitlement SERVEUR (webhook Stripe), pas
+  // sur `fiscalYear.paidAt` local (simple miroir, falsifiable). La livraison
+  // (PDF) est de toute façon refusée côté serveur sans paiement.
+  const serverPayment = useServerPaymentSync(workspace.fiscalYear.year);
+  const paid = serverPayment.state === "paid";
   // P0 launch safety — même résolveur que l'écran de validation : un exercice
   // dont l'antériorité LMNP n'est pas établie ne donne jamais accès aux
   // livrables (y compris si la réponse a changé après génération).
@@ -26,11 +31,27 @@ export default function DeclarationsPage() {
   // déjà correctement `paid && !generated` par construction (early return
   // tant que fiscalResult/liasseResult sont absents, cf. audit READ-ONLY).
   useEffect(() => {
-    if (!isReady) return;
+    if (!isReady || serverPayment.state === "loading" || serverPayment.state === "error") return;
     if (!paid || !priorHistoryEligible) {
       router.replace(LMNP_ROUTES.validation);
     }
-  }, [isReady, paid, priorHistoryEligible, router]);
+  }, [isReady, paid, priorHistoryEligible, router, serverPayment.state]);
+
+  if (isReady && serverPayment.state === "error") {
+    return (
+      <div className="text-center">
+        <p className="text-stone-500">Nous n&apos;avons pas pu vérifier votre paiement. Vérifiez votre connexion.</p>
+        <button
+          type="button"
+          className="mt-3 underline"
+          style={{ ...typography.caption.desktop, color: colors.text.accent }}
+          onClick={() => void serverPayment.refetch()}
+        >
+          Réessayer
+        </button>
+      </div>
+    );
+  }
 
   if (!isReady || !paid || !priorHistoryEligible) {
     return <p className="text-center text-stone-500">Chargement…</p>;
