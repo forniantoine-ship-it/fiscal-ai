@@ -26,6 +26,15 @@ export function isFiscalYearClosed(fiscalYear: number, now: Date = new Date()): 
   return fiscalYear < parisCalendarYear(now);
 }
 
+/**
+ * Dernier exercice civil clos à la date donnée (Paris) : l'exercice qu'un nouveau
+ * dossier doit déclarer. L'année civile en cours n'est jamais close, donc N-1.
+ * Cohérent avec `isFiscalYearClosed` : `isFiscalYearClosed(lastClosedFiscalYear(d), d)` est toujours vrai.
+ */
+export function lastClosedFiscalYear(now: Date = new Date()): number {
+  return parisCalendarYear(now) - 1;
+}
+
 /** Message pédagogique (affiché tel quel au client) : ce qui se passe, quand, et que rien n'est facturé. */
 export function fiscalYearNotClosedMessage(fiscalYear: number): string {
   return `Votre exercice ${fiscalYear} n'est pas encore terminé : il pourra être finalisé à partir du 1er janvier ${fiscalYear + 1}. En attendant, vous pouvez continuer à préparer votre dossier — rien n'est facturé.`;

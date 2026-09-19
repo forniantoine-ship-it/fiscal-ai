@@ -10,6 +10,7 @@ import type {
 import type { AiActivityEvent } from "../types/ai-activity";
 import type { FileRegistry } from "./reducer";
 import { getBoundAuthUserId } from "@/lib/lmnp/auth/auth-boundary";
+import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import {
   msSinceCreditRenderUnblockAnchor,
   traceCreditRenderUnblock,
@@ -492,15 +493,21 @@ export async function ensureDocumentFilesLoaded(
   return next;
 }
 
-export function createDefaultWorkspace(): PersistedWorkspace {
-  const now = new Date().toISOString();
+/**
+ * Nouvel espace fiscal : démarre sur le dernier EXERCICE civil clos (N-1), jamais
+ * sur l'année en cours — un exercice non terminé ne peut pas être finalisé.
+ * `fiscalYear.year` est l'exercice (2025 = revenus/charges 2025, déclaré en 2026).
+ * Horloge injectable pour des tests déterministes.
+ */
+export function createDefaultWorkspace(clock: Date = new Date()): PersistedWorkspace {
+  const now = clock.toISOString();
   const propertyId = crypto.randomUUID();
   const fiscalYearId = crypto.randomUUID();
 
   return {
     fiscalYear: {
       id: fiscalYearId,
-      year: new Date().getFullYear(),
+      year: lastClosedFiscalYear(clock),
       status: "draft",
       regime: "reel",
       propertyIds: [propertyId],

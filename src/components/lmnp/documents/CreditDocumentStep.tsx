@@ -30,7 +30,7 @@ import {
   formValuesToFinancing,
   isCreditDocument,
   isCreditProfileIncomplete,
-  revenueYearFromDeclaration,
+  revenueYearForExercice,
   suggestsMultipleLoans,
   type CreditFieldKey,
   type CreditFormValues,
@@ -214,7 +214,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
   const [analysisIdleTick, setAnalysisIdleTick] = useState(0);
 
   const draft = workspace.declarationDraft;
-  const revenueYear = revenueYearFromDeclaration(workspace.fiscalYear.year);
+  const revenueYear = revenueYearForExercice(workspace.fiscalYear.year);
 
   /** Defer clearing hydration trigger only while another upload is queued (not during active analysis). */
   const clearExecutionIfIdle = useCallback(() => {

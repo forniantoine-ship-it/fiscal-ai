@@ -18,9 +18,10 @@ import type { LmnpDocument } from "@/lib/lmnp/types";
 
 import {
   classifyCreditDocument,
-  revenueYearFromDeclaration,
+  revenueYearForExercice,
   type CreditDocumentKind,
 } from "./credit-profile";
+import { lastClosedFiscalYear } from "./payment/fiscal-year-closure";
 import {
   logPipelineEntry,
   logPipelineEntryCatch,
@@ -75,7 +76,7 @@ export type RunCreditGptPipelineParams = {
 export async function runCreditGptPipeline(
   params: RunCreditGptPipelineParams,
 ): Promise<CreditGptPipelineResult> {
-  const { document, getFile, fiscalYear = new Date().getFullYear() } = params;
+  const { document, getFile, fiscalYear = lastClosedFiscalYear() } = params;
 
   logPipelineEntry({
     functionName: "runCreditGptPipeline",
@@ -87,7 +88,7 @@ export async function runCreditGptPipeline(
   const documentKind = measureCreditPipelineSync("classify_credit_document", () =>
     classifyCreditDocument(document),
   );
-  const revenueYear = revenueYearFromDeclaration(fiscalYear);
+  const revenueYear = revenueYearForExercice(fiscalYear);
 
   logPipelineEntry({
     functionName: "runCreditGptPipeline.documentKindDetected",
@@ -188,7 +189,7 @@ export async function runCreditGptPipeline(
           rawText,
           fileName: document.fileName,
           documentKind,
-          declarationYear: fiscalYear,
+          declarationYear: fiscalYear + 1, // déclaration réalisée l'année suivant l'exercice
           revenueYear,
         }),
         { documentKind: "loan_offer", textLength: rawText.length },
@@ -545,7 +546,7 @@ export async function runCreditGptPipeline(
       requestCreditDocumentaryMetadataExtraction({
         rawText,
         fileName: document.fileName,
-        declarationYear: fiscalYear,
+        declarationYear: fiscalYear + 1, // déclaration réalisée l'année suivant l'exercice
         revenueYear,
       }),
       { textLength: rawText.length, pageCount: ocrResult.pageCount },

@@ -89,8 +89,14 @@ export function countCreditDocuments(documents: LmnpDocument[], linkedDocumentId
   return documents.filter((doc) => isCreditDocument(doc, linkedDocumentId)).length;
 }
 
-export function revenueYearFromDeclaration(declarationYear: number): number {
-  return declarationYear - 1;
+/**
+ * Année des revenus/charges/financement lus par le tunnel crédit = l'EXERCICE
+ * (`fiscalYear.year`), jamais l'année précédente : F-011 calcule l'assurance et les
+ * charges de financement sur `fiscalYear.year`, le préremplissage doit lire la même année.
+ * Exemple : exercice 2025 (déclaré en 2026) → échéances 2025.
+ */
+export function revenueYearForExercice(fiscalYear: number): number {
+  return fiscalYear;
 }
 
 export function formatCurrency(value: number): string {

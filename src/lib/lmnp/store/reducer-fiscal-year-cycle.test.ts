@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { lmnpReducer, type LmnpState } from "./reducer";
 import type { FiscalEngineOutput, FiscalYear, Property } from "../types";
 import type { PersistedWorkspace } from "./persistence";
+import { lastClosedFiscalYear } from "../services/payment/fiscal-year-closure";
 
 function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
   return {
@@ -342,7 +343,7 @@ describe("CREATE_NEW_DECLARATION — RÉGRESSION : sémantique historique prése
     assert.equal(next.fiscalYear.dossierId, undefined, "CREATE_NEW_DECLARATION ne doit jamais produire un FiscalYear rattaché au dossier courant");
     assert.equal(next.fiscalYear.previousFiscalYearId, undefined, "CREATE_NEW_DECLARATION ne doit jamais chaîner à N");
     assert.deepEqual(next.fiscalYear.closures ?? [], [], "aucune closure de N ne doit être héritée par un flux qui n'est pas un chaînage N+1");
-    assert.equal(next.fiscalYear.year, new Date().getFullYear(), "l'année reflète l'année civile courante (createDefaultWorkspace), jamais un calcul N+1");
+    assert.equal(next.fiscalYear.year, lastClosedFiscalYear(), "l'année est le dernier exercice clos (createDefaultWorkspace), jamais un calcul N+1");
 
     // Property régénérée (nouvel id) — comportement historique, pas conservé.
     assert.notEqual(next.properties[0]?.id, "prop-1", "CREATE_NEW_DECLARATION régénère une nouvelle Property, contrairement à CREATE_NEXT_FISCAL_YEAR");

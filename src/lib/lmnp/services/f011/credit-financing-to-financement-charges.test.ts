@@ -39,16 +39,14 @@ describe("F-011 — Cycle 4 §11 : le trou financementCharges côté Tunnel A", 
     assert.ok(financementCharges.totalChargesFinancementExercice > 0, "n'est plus 0 € comme avant ce correctif");
   });
 
-  it("l'exercice fiscal écrit est celui du dossier (workspace.fiscalYear.year), jamais `revenueYear` (année-1)", () => {
-    // Piège identifié en amont de ce cycle : CreditDocumentStep calcule un
-    // `revenueYear` = année de déclaration - 1 pour son propre usage interne,
-    // mais F-006/aggregateFiscalInputs attendent `exerciceFiscal` = l'année du
-    // dossier telle quelle. Utiliser `revenueYear` ici aurait produit un
-    // `financementCharges.exerciceFiscal` désynchronisé de `workspace.fiscalYear.year`
-    // et déclenché l'anomalie de cohérence d'exercice dans aggregateFiscalInputs.
+  it("l'exercice fiscal écrit est celui du dossier (workspace.fiscalYear.year)", () => {
+    // F-006/aggregateFiscalInputs attendent `exerciceFiscal` = `workspace.fiscalYear.year`
+    // tel quel. Depuis l'alignement du modèle d'années, `revenueYear` du tunnel crédit
+    // vaut aussi l'exercice (voir f011-revenue-year-model.test.ts) : les deux années
+    // ne peuvent plus diverger.
     const { financementCharges } = mapCreditFinancingToFinancementCharges({
       financing: financingWith([BASE_LOAN]),
-      exerciceFiscal: 2023, // = workspace.fiscalYear.year, PAS revenueYearFromDeclaration(2023) = 2022
+      exerciceFiscal: 2023, // = workspace.fiscalYear.year
       dateMiseEnService: "2021-01-01",
     });
     assert.equal(financementCharges.exerciceFiscal, 2023);

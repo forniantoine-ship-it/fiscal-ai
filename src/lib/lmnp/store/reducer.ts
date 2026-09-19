@@ -39,6 +39,7 @@ import { removeDocumentFromRevenueSession } from "../services/revenue-gpt-ui-pre
 import type { FiscalTunnel } from "@/lib/documents/tunnel-field-ownership";
 import type { GovernedFieldExtractedBy } from "@/lib/documents/types/governed-field";
 import { recalculateVentilationSummary } from "../services/amortissement-profile";
+import { revenueYearForExercice } from "../services/credit-profile";
 import type { NormalizedValue } from "../types/values";
 import { valuesEqual } from "../types/values";
 import { FIELD_REGISTRY, getRequiredFieldKeys, type FieldKey } from "../types/field-keys";
@@ -1172,7 +1173,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         sourceDocument: action.sourceDocument,
         extractedBy: action.extractedBy,
         payload: action.payload,
-        revenueYear: state.fiscalYear.year - 1,
+        revenueYear: revenueYearForExercice(state.fiscalYear.year),
       });
 
       console.log("[execution-event]", {
