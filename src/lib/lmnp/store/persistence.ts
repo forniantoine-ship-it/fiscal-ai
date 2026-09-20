@@ -24,6 +24,7 @@ import {
   getWorkspaceRecord,
   putDocumentBlob,
   putWorkspaceRecord,
+  stampLocalWorkspaceSyncedRevision,
   type DocumentBlobRecord,
 } from "./db";
 import {
@@ -37,6 +38,17 @@ import {
   runSerializedWorkspaceWrite,
 } from "./workspace-save-serializer";
 import type { AutosaveStatus } from "./workspace-autosave-display";
+import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
+import {
+  __resetWorkspaceSnapshotSyncForTests,
+  saveWorkspaceSnapshotToServer,
+} from "./workspace-snapshot-client";
+import {
+  normalizeLastSyncedServerRevision,
+  resolveWorkspaceHydration,
+  type WorkspaceHydrationDecision,
+  type WorkspaceSnapshotRecord,
+} from "./workspace-snapshot-resolve";
 export type { AutosaveDisplay, AutosaveStatus } from "./workspace-autosave-display";
 export { resolveAutosaveDisplay } from "./workspace-autosave-display";
 
@@ -58,7 +70,13 @@ export interface PersistedWorkspace {
 export interface HydratedLmnpStore {
   workspace: PersistedWorkspace | null;
   fileRegistry: FileRegistry;
+  lastSyncedServerRevision?: number;
 }
+
+type LocalWorkspaceCache = {
+  workspace: PersistedWorkspace | null;
+  lastSyncedServerRevision?: number;
+};
 
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingWorkspace: { userId: string; data: PersistedWorkspace } | null = null;
@@ -88,6 +106,7 @@ export function resetAutosaveStatus() {
 /** Resets in-memory save queue state (tests only). */
 export function __testResetWorkspaceSaveChain(): void {
   __testResetSerializedWorkspaceWrites();
+  __resetWorkspaceSnapshotSyncForTests();
   if (saveWorkspaceTimer) {
     clearTimeout(saveWorkspaceTimer);
     saveWorkspaceTimer = null;
@@ -129,30 +148,35 @@ function clearLegacyWorkspace(): void {
   }
 }
 
-async function loadWorkspaceFromIndexedDb(userId: string): Promise<PersistedWorkspace | null> {
+async function loadWorkspaceFromIndexedDb(userId: string): Promise<LocalWorkspaceCache> {
   const record = await getWorkspaceRecord(userId);
-  if (!record?.data || !isValidWorkspace(record.data)) return null;
-  return record.data;
+  if (!record?.data || !isValidWorkspace(record.data)) {
+    return { workspace: null };
+  }
+  return {
+    workspace: record.data,
+    lastSyncedServerRevision: normalizeLastSyncedServerRevision(record.lastSyncedServerRevision),
+  };
 }
 
-async function migrateLegacyWorkspaceIfNeeded(userId: string): Promise<PersistedWorkspace | null> {
+async function migrateLegacyWorkspaceIfNeeded(userId: string): Promise<LocalWorkspaceCache> {
   const fromIdb = await loadWorkspaceFromIndexedDb(userId);
-  if (fromIdb) return fromIdb;
+  if (fromIdb.workspace) return fromIdb;
 
   const legacyRecord = await getLegacyWorkspaceRecord();
   if (legacyRecord?.data && isValidWorkspace(legacyRecord.data)) {
     await putWorkspaceRecord(userId, legacyRecord.data);
     await deleteWorkspaceRecord("active");
     clearLegacyWorkspace();
-    return legacyRecord.data;
+    return { workspace: legacyRecord.data };
   }
 
   const legacy = loadLegacyWorkspace();
-  if (!legacy) return null;
+  if (!legacy) return { workspace: null };
 
   await putWorkspaceRecord(userId, legacy);
   clearLegacyWorkspace();
-  return legacy;
+  return { workspace: legacy };
 }
 
 function resolveDocumentMimeType(fileName: string, mimeType?: string): string {
@@ -242,11 +266,48 @@ export async function loadDocumentFile(documentId: string): Promise<File | null>
 export async function loadWorkspace(userId: string): Promise<PersistedWorkspace | null> {
   if (typeof window === "undefined") return null;
   try {
-    return await migrateLegacyWorkspaceIfNeeded(userId);
+    const cache = await migrateLegacyWorkspaceIfNeeded(userId);
+    return cache.workspace;
   } catch (error) {
     console.error("[lmnp] loadWorkspace failed", { userId, error });
     return loadLegacyWorkspace();
   }
+}
+
+async function loadLocalWorkspaceCache(userId: string): Promise<LocalWorkspaceCache> {
+  if (typeof window === "undefined") return { workspace: null };
+  try {
+    return await migrateLegacyWorkspaceIfNeeded(userId);
+  } catch (error) {
+    console.error("[lmnp] loadLocalWorkspaceCache failed", { userId, error });
+    const legacy = loadLegacyWorkspace();
+    return { workspace: legacy };
+  }
+}
+
+/**
+ * Same hydrate path as LmnpProvider after IndexedDB load + snapshot list:
+ * resolve, then persist server-winning state with lastSyncedServerRevision.
+ */
+export async function reconcileLocalWorkspaceWithSnapshots(input: {
+  userId: string;
+  local: PersistedWorkspace | null;
+  lastSyncedServerRevision?: number | null;
+  snapshots: WorkspaceSnapshotRecord[];
+  fallbackYear: number;
+}): Promise<WorkspaceHydrationDecision> {
+  const decision = resolveWorkspaceHydration({
+    local: input.local,
+    lastSyncedServerRevision: input.lastSyncedServerRevision,
+    snapshots: input.snapshots,
+    fallbackYear: input.fallbackYear,
+  });
+  if (decision.source === "server") {
+    await putWorkspaceRecord(input.userId, decision.workspace, {
+      lastSyncedServerRevision: decision.lastSyncedServerRevision,
+    });
+  }
+  return decision;
 }
 
 /** Offline-first hydration: workspace metadata + document blobs for one auth user. */
@@ -260,12 +321,16 @@ export async function hydrateLmnpStore(userId: string | null): Promise<HydratedL
   }
 
   try {
-    const workspace = await loadWorkspace(userId);
-    if (!workspace) return { workspace: null, fileRegistry: new Map() };
+    const cache = await loadLocalWorkspaceCache(userId);
+    if (!cache.workspace) return { workspace: null, fileRegistry: new Map() };
 
-    const loaded = await loadFileRegistry(workspace.documents, userId, workspace.fiscalYear.id);
-    const fileRegistry = await ensureDocumentFilesLoaded(workspace.documents, loaded);
-    return { workspace, fileRegistry };
+    const loaded = await loadFileRegistry(cache.workspace.documents, userId, cache.workspace.fiscalYear.id);
+    const fileRegistry = await ensureDocumentFilesLoaded(cache.workspace.documents, loaded);
+    return {
+      workspace: cache.workspace,
+      fileRegistry,
+      lastSyncedServerRevision: cache.lastSyncedServerRevision,
+    };
   } catch (error) {
     console.error("[lmnp] IndexedDB hydration failed, using defaults", { userId, error });
     return { workspace: null, fileRegistry: new Map() };
@@ -304,6 +369,18 @@ async function writeWorkspaceToDisk(
       feedSize: data.aiActivityFeed?.length ?? 0,
       eventIds: data.aiActivityFeed?.map((e) => e.id) ?? [],
     });
+    const serverSave = await saveWorkspaceSnapshotToServer({
+      dossierId: data.fiscalYear.dossierId ?? getCurrentDossierId(userId),
+      workspace: data,
+    });
+    if (serverSave.status === "ok") {
+      await stampLocalWorkspaceSyncedRevision(userId, serverSave.revision);
+    }
+    if (isStaleWorkspaceWrite(generation)) return;
+    if (serverSave.status === "error") {
+      notifyAutosaveStatus("error");
+      return;
+    }
     notifyAutosaveStatus("saved");
   } catch (error) {
     if (isStaleWorkspaceWrite(generation)) return;

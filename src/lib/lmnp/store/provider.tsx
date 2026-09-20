@@ -18,6 +18,7 @@ import {
   hydrateLmnpStore,
   loadDocumentFile,
   markAutosaveSaved,
+  reconcileLocalWorkspaceWithSnapshots,
   removePersistedDocument,
   resetAutosaveStatus,
   scheduleSaveWorkspace,
@@ -25,6 +26,12 @@ import {
   syncDocumentBlobs,
   type AutosaveStatus,
 } from "./persistence";
+import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
+import { toPersistedWorkspace } from "./workspace-snapshot";
+import {
+  listWorkspaceSnapshots,
+  setWorkspaceSnapshotSyncGate,
+} from "./workspace-snapshot-client";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
@@ -43,6 +50,7 @@ import {
   ensureActiveDossier,
   fetchDocumentsForDossier,
   getCurrentDossierId,
+  setCurrentDossierId,
   reconcileWorkspaceDocuments,
   resolveDocumentDeletionPlan,
   runCreateNewDeclaration,
@@ -98,17 +106,7 @@ interface LmnpContextValue {
 const LmnpContext = createContext<LmnpContextValue | null>(null);
 
 function toPersisted(state: LmnpState) {
-  return {
-    fiscalYear: state.fiscalYear,
-    properties: state.properties,
-    documents: state.documents,
-    extractions: state.extractions,
-    validationItems: state.validationItems,
-    ledgerEntries: state.ledgerEntries,
-    declarationDraft: state.declarationDraft ?? { completedSteps: [] },
-    // AI Activity Feed is the persistent business narrative — must survive refresh/remount.
-    aiActivityFeed: state.aiActivityFeed,
-  };
+  return toPersistedWorkspace(state);
 }
 
 export function LmnpProvider({ children }: { children: ReactNode }) {
@@ -161,13 +159,49 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         if (!userId) {
           dispatch({ type: "AUTH_SESSION_RESET" });
           resetAutosaveStatus();
+          setWorkspaceSnapshotSyncGate("unknown");
           return;
         }
 
-        const { workspace, fileRegistry } = await hydrateLmnpStore(userId);
-        const baseWorkspace = workspace ?? createDefaultWorkspace();
-
+        const { workspace, fileRegistry, lastSyncedServerRevision } = await hydrateLmnpStore(userId);
         const dossier = await ensureActiveDossier(userId);
+        if (dossier) setCurrentDossierId(dossier.id, userId);
+
+        let baseWorkspace = workspace;
+        if (dossier) {
+          const listed = await listWorkspaceSnapshots(dossier.id);
+          if (listed.status === "error") {
+            setWorkspaceSnapshotSyncGate("unknown");
+            baseWorkspace = workspace ?? createDefaultWorkspace();
+          } else {
+            const decision = await reconcileLocalWorkspaceWithSnapshots({
+              userId,
+              local: workspace,
+              lastSyncedServerRevision,
+              snapshots: listed.snapshots,
+              fallbackYear: lastClosedFiscalYear(),
+            });
+            setWorkspaceSnapshotSyncGate(decision.blockWrites ? "blocked" : "ready");
+            baseWorkspace = decision.workspace ?? createDefaultWorkspace();
+            if (decision.source === "blocked") {
+              console.warn("[workspace] snapshot schema unsupported — server writes blocked", {
+                userId,
+                schemaVersion: decision.schemaVersion,
+              });
+            }
+          }
+        } else {
+          setWorkspaceSnapshotSyncGate("unknown");
+          baseWorkspace = workspace ?? createDefaultWorkspace();
+        }
+
+        if (dossier && !baseWorkspace.fiscalYear.dossierId) {
+          baseWorkspace = {
+            ...baseWorkspace,
+            fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
+          };
+        }
+
         const supabaseDocuments = dossier ? await fetchDocumentsForDossier(dossier.id) : [];
         const reconciliation = reconcileWorkspaceDocuments({
           localDocuments: baseWorkspace.documents,

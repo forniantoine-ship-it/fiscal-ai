@@ -191,15 +191,48 @@ export interface WorkspaceRecord {
   id: string;
   data: unknown;
   updatedAt: string;
+  /**
+   * Last server `revision` this local cache was hydrated from or saved as.
+   * Absent on legacy IndexedDB rows. Local mutations must preserve this field;
+   * only a successful server save (or a server-winning hydrate) updates it.
+   */
+  lastSyncedServerRevision?: number;
 }
 
-export function putWorkspaceRecord(userId: string, data: unknown): Promise<void> {
-  const record: WorkspaceRecord = {
-    id: workspaceKeyForUser(userId),
-    data,
-    updatedAt: new Date().toISOString(),
+export function putWorkspaceRecord(
+  userId: string,
+  data: unknown,
+  options?: { lastSyncedServerRevision?: number },
+): Promise<void> {
+  const write = (lastSyncedServerRevision: number | undefined) => {
+    const record: WorkspaceRecord = {
+      id: workspaceKeyForUser(userId),
+      data,
+      updatedAt: new Date().toISOString(),
+      ...(lastSyncedServerRevision != null ? { lastSyncedServerRevision } : {}),
+    };
+    return idbPut(STORE_WORKSPACE, record).then(() => undefined);
   };
-  return idbPut(STORE_WORKSPACE, record).then(() => undefined);
+  if (options && "lastSyncedServerRevision" in options) {
+    return write(options.lastSyncedServerRevision);
+  }
+  return getWorkspaceRecord(userId).then((existing) => write(existing?.lastSyncedServerRevision));
+}
+
+/** Stamp sync metadata without rewriting workspace payload. */
+export function stampLocalWorkspaceSyncedRevision(
+  userId: string,
+  revision: number,
+): Promise<void> {
+  return getWorkspaceRecord(userId).then((existing) => {
+    if (!existing) return;
+    const record: WorkspaceRecord = {
+      ...existing,
+      lastSyncedServerRevision: revision,
+      updatedAt: new Date().toISOString(),
+    };
+    return idbPut(STORE_WORKSPACE, record).then(() => undefined);
+  });
 }
 
 export function getWorkspaceRecord(userId: string): Promise<WorkspaceRecord | undefined> {
