@@ -49,7 +49,13 @@ function lockedStore(field: "acquisitionPrice", value: unknown): GovernedFieldSt
 describe("f010-document-prefill — buildF010SyntheticDocument (acte valide)", () => {
   it("construit un LmnpDocument minimal, identique au schéma produit par le reducer UPLOAD_DOCUMENTS", () => {
     const file = new File(["contenu"], "acte-notarie.pdf", { type: "application/pdf" });
-    const doc = buildF010SyntheticDocument({ id: "doc-1", fiscalYearId: "fy-1", file });
+    const doc = buildF010SyntheticDocument({
+      id: "doc-1",
+      fiscalYearId: "fy-1",
+      file,
+      storagePath: "user-1/1-acte-notarie.pdf",
+      hasSupabaseArtifacts: true,
+    });
 
     assert.equal(doc.id, "doc-1");
     assert.equal(doc.fiscalYearId, "fy-1");
@@ -58,6 +64,8 @@ describe("f010-document-prefill — buildF010SyntheticDocument (acte valide)", (
     assert.equal(doc.category, "autre");
     assert.equal(doc.documentType, "unknown");
     assert.equal(doc.status, "uploaded");
+    assert.equal(doc.storagePath, "user-1/1-acte-notarie.pdf");
+    assert.equal(doc.hasSupabaseArtifacts, true);
   });
 });
 

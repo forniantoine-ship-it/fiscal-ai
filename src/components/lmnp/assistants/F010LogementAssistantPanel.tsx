@@ -1332,11 +1332,40 @@ export function F010LogementAssistantPanel() {
       setBusy(true);
       analyzingRef.current = true;
       try {
-        const documentId = crypto.randomUUID();
+        const { supabase } = await import("@/lib/supabase");
+        const { uploadFilesForUser } = await import("@/lib/uploadDocument");
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setExtractionOutcome({
+            state: "failed",
+            hasAnyPrefillField: false,
+            missingCoreFields: ["prixAcquisition", "dateAcquisition"],
+          });
+          return;
+        }
+
+        // Même pipeline Storage + documents que F009/F011/F012 — identité durable
+        // unique (documents.id) + storagePath immédiat pour restore cross-device.
+        const uploadResult = await uploadFilesForUser([file], user.id);
+        const documentId = uploadResult.documentIds[0];
+        const storagePath = uploadResult.filePaths[0];
+        if (!documentId || !storagePath) {
+          setExtractionOutcome({
+            state: "failed",
+            hasAnyPrefillField: false,
+            missingCoreFields: ["prixAcquisition", "dateAcquisition"],
+          });
+          return;
+        }
+
         const document = buildF010SyntheticDocument({
           id: documentId,
           fiscalYearId: workspace.fiscalYear.id,
           file,
+          storagePath,
+          hasSupabaseArtifacts: true,
         });
 
         // Persistance du document pour l'historique/reprise future (Cycle 2) —
@@ -1344,7 +1373,15 @@ export function F010LogementAssistantPanel() {
         // directement (ci-dessous) pour éviter toute course avec ce dispatch.
         dispatch({
           type: "UPLOAD_DOCUMENTS",
-          files: [{ file, category: document.category, documentId }],
+          files: [
+            {
+              file,
+              category: document.category,
+              documentId,
+              isSupabaseDocumentId: true,
+              storagePath,
+            },
+          ],
         });
 
         const result = await runF010UploadFlow({
@@ -1352,6 +1389,8 @@ export function F010LogementAssistantPanel() {
           documentId,
           fiscalYearId: workspace.fiscalYear.id,
           fiscalYear,
+          storagePath,
+          hasSupabaseArtifacts: true,
           onAnalysisStarting: (id) => {
             // Règle Cycle 2 #1 : persister analyzingDocumentId AVANT tout appel
             // OCR/GPT — appelé de façon SYNCHRONE par runF010UploadFlow, avant

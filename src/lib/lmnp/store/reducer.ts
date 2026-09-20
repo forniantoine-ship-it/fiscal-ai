@@ -76,6 +76,12 @@ export type LmnpAction =
          * with no Supabase artifact behind it at all.
          */
         isSupabaseDocumentId?: boolean;
+        /**
+         * Storage object path from a successful upload (`uploadDocument.filePath`).
+         * Must be set immediately so snapshots / cross-device restore do not wait
+         * for documents-table reconcile.
+         */
+        storagePath?: string;
       }[];
     }
   | { type: "REMOVE_DOCUMENT"; documentId: string }
@@ -623,7 +629,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "UPLOAD_DOCUMENTS": {
       const now = nowIso();
       const newDocs: LmnpDocument[] = action.files.map(
-        ({ file, category, documentId, isSupabaseDocumentId }) => ({
+        ({ file, category, documentId, isSupabaseDocumentId, storagePath }) => ({
           id: documentId ?? crypto.randomUUID(),
           fiscalYearId: state.fiscalYear.id,
           propertyId: state.fiscalYear.propertyIds[0],
@@ -635,6 +641,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           status: "uploaded",
           uploadedAt: now,
           hasSupabaseArtifacts: Boolean(isSupabaseDocumentId),
+          ...(storagePath ? { storagePath } : {}),
         }),
       );
       // TEMPORARY AUDIT LOG — remove after root-cause is confirmed

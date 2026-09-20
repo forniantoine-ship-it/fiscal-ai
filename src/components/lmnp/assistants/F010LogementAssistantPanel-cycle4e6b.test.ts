@@ -165,6 +165,12 @@ describe("Cycle 4E6A-B — M/N. non-régression upload et review", () => {
     assert.match(panelSource, /runF010UploadFlow/);
     assert.match(panelSource, /handleUpload/);
     assert.match(panelSource, /applyAnalysisResult/);
+    assert.match(panelSource, /uploadFilesForUser/);
+    assert.match(panelSource, /storagePath/);
+    assert.doesNotMatch(
+      panelSource.slice(panelSource.indexOf("const handleUpload"), panelSource.indexOf("Cycle 2 — reprend")),
+      /crypto\.randomUUID\(\)/,
+    );
   });
 
   it("la review et Tout confirmer restent fonctionnels côté runtime", async () => {

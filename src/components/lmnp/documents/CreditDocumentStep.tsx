@@ -1516,7 +1516,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
     if (uploadedFiles.length === 0) return;
 
     // The Supabase-assigned ID — must match what goes into UPLOAD_DOCUMENTS so local
@@ -1595,6 +1595,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         category: CREDIT_UPLOAD_CATEGORY,
         documentId: documentIds[i],
         isSupabaseDocumentId: true,
+        storagePath: filePaths[i],
       })),
     });
 

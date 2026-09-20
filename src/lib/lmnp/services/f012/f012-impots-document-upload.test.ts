@@ -32,12 +32,13 @@ describe("analyzeImpotsDocument — F012 V2 Phase 2, boundary UI réel (mock ré
     const analyzeImpotsDocument = await loadAnalyzeImpotsDocument();
     const result = await analyzeImpotsDocument(fakeFile(), 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files) => ({ files, documentIds: ["real-supabase-id-777"] }),
+      uploadFiles: async (files) => ({ files, documentIds: ["real-supabase-id-777"], filePaths: ["user/real-supabase-id-777.pdf"] }),
       extractText: async () => AVIS_1100,
     });
     assert.equal(result.status, "success");
     if (result.status !== "success") return;
     assert.equal(result.documentId, "real-supabase-id-777");
+    assert.equal(result.storagePath, "user/real-supabase-id-777.pdf");
     assert.equal(result.expenses[0]?.documentId, "real-supabase-id-777", "le vrai documentId traverse jusqu'à l'Expense");
     assert.equal(result.expenses[0]?.montantExtrait, 1100);
     assert.equal(result.expenses[0]?.decision, "pending", "jamais confirmée automatiquement à l'extraction");
@@ -50,7 +51,7 @@ describe("analyzeImpotsDocument — F012 V2 Phase 2, boundary UI réel (mock ré
       getAuthenticatedUserId: async () => null,
       uploadFiles: async (files) => {
         uploadCalled = true;
-        return { files, documentIds: ["should-not-happen"] };
+        return { files, documentIds: ["should-not-happen"], filePaths: ["user/should-not-happen.pdf"] };
       },
       extractText: async () => AVIS_1100,
     });
@@ -62,7 +63,7 @@ describe("analyzeImpotsDocument — F012 V2 Phase 2, boundary UI réel (mock ré
     const analyzeImpotsDocument = await loadAnalyzeImpotsDocument();
     const result = await analyzeImpotsDocument(fakeFile(), 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async () => ({ files: [], documentIds: [] }),
+      uploadFiles: async () => ({ files: [], documentIds: [], filePaths: [] }),
       extractText: async () => AVIS_1100,
     });
     assert.equal(result.status, "upload_failed");
@@ -73,7 +74,7 @@ describe("analyzeImpotsDocument — F012 V2 Phase 2, boundary UI réel (mock ré
     const analyzeImpotsDocument = await loadAnalyzeImpotsDocument();
     const result = await analyzeImpotsDocument(fakeFile(), 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files) => ({ files, documentIds: ["real-id-after-upload"] }),
+      uploadFiles: async (files) => ({ files, documentIds: ["real-id-after-upload"], filePaths: ["user/real-id-after-upload.pdf"] }),
       extractText: async () => {
         throw new Error("extraction crash");
       },
@@ -82,13 +83,14 @@ describe("analyzeImpotsDocument — F012 V2 Phase 2, boundary UI réel (mock ré
     if (result.status !== "extraction_failed") return;
     // Le document réel doit rester traçable même si aucune Expense n'existe.
     assert.equal(result.documentId, "real-id-after-upload");
+    assert.equal(result.storagePath, "user/real-id-after-upload.pdf");
   });
 
   it("C — extraction réussit mais ne trouve aucun montant → Expense pending/review, jamais confirmed à 0", async () => {
     const analyzeImpotsDocument = await loadAnalyzeImpotsDocument();
     const result = await analyzeImpotsDocument(fakeFile(), 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files) => ({ files, documentIds: ["real-id-no-amount"] }),
+      uploadFiles: async (files) => ({ files, documentIds: ["real-id-no-amount"], filePaths: ["user/real-id-no-amount.pdf"] }),
       extractText: async () => "Avis de taxe foncière — Année 2024\nCommune : Lyon\n",
     });
     assert.equal(result.status, "success");

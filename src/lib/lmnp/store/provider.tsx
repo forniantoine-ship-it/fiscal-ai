@@ -16,7 +16,6 @@ import {
   createDefaultWorkspace,
   flushWorkspaceSave,
   hydrateLmnpStore,
-  loadDocumentFile,
   markAutosaveSaved,
   reconcileLocalWorkspaceWithSnapshots,
   removePersistedDocument,
@@ -37,6 +36,7 @@ import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from ".
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
 import { loadDossierInpiStatus, saveDossierInpiStatus, type DossierInpiStatusMirror } from "./dossier-db";
+import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
 import type { DeclarationDraft } from "../types";
 import type { InpiStatus, InpiStatusSource } from "../types/dossier";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
@@ -412,11 +412,20 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       const doc = state.documents.find((d) => d.id === documentId);
       if (!doc) return undefined;
 
+      // Lazy restore: IndexedDB first, then Storage via storagePath (Lot 3).
+      // Never mass-download at hydrate — only when a consumer asks for the blob.
       pendingFileLoadsRef.current.add(documentId);
-      void loadDocumentFile(documentId).then((file) => {
-        pendingFileLoadsRef.current.delete(documentId);
-        if (file) dispatch({ type: "REGISTER_FILE", documentId, file });
-      });
+      void resolveDocumentFile(doc, () => undefined, {
+        onCached: (id, file) => {
+          dispatch({ type: "REGISTER_FILE", documentId: id, file });
+        },
+      })
+        .catch(() => {
+          // Keep metadata; consumer sees undefined until re-import / retry.
+        })
+        .finally(() => {
+          pendingFileLoadsRef.current.delete(documentId);
+        });
 
       return undefined;
     },

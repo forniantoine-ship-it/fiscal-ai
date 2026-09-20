@@ -13,6 +13,8 @@ export type UploadDocumentResult = {
 export type UploadFilesForUserResult = {
   files: File[];
   documentIds: string[];
+  /** Parallel to `documentIds` — Storage object paths (`file_path` / workspace `storagePath`). */
+  filePaths: string[];
 };
 
 /** Uploads each file via the shared Supabase pipeline (storage + documents row). */
@@ -22,16 +24,18 @@ export async function uploadFilesForUser(
 ): Promise<UploadFilesForUserResult> {
   const uploadedFiles: File[] = [];
   const documentIds: string[] = [];
+  const filePaths: string[] = [];
 
   for (const file of files) {
     const result = await uploadDocument(file, userId);
     if (result) {
       uploadedFiles.push(file);
       documentIds.push(result.documentId);
+      filePaths.push(result.filePath);
     }
   }
 
-  return { files: uploadedFiles, documentIds };
+  return { files: uploadedFiles, documentIds, filePaths };
 }
 
 export async function uploadDocument(

@@ -85,10 +85,9 @@ describe("UPLOAD_DOCUMENTS — hasSupabaseArtifacts dérivé de isSupabaseDocume
     assert.equal(next.documents[0].hasSupabaseArtifacts, true);
   });
 
-  it("F010 — documentId local (crypto.randomUUID) SANS isSupabaseDocumentId → hasSupabaseArtifacts:false", async () => {
-    // F010 ne fait aucun upload Supabase ; son documentId reste un id local
-    // nécessaire à REGISTER_FILE/assistant.handle, mais ne doit plus déclencher
-    // à tort le chemin de suppression serveur.
+  it("upload local sans isSupabaseDocumentId → hasSupabaseArtifacts:false (cache-only legacy)", async () => {
+    // Un producteur peut encore passer un id local synchrone sans artefact
+    // serveur — le flag ne doit jamais être déduit d'un documentId non nul.
     const lmnpReducer = await loadReducer();
     const state = baseWorkspaceState() as unknown as Parameters<Awaited<ReturnType<typeof loadReducer>>>[0];
 
@@ -99,8 +98,32 @@ describe("UPLOAD_DOCUMENTS — hasSupabaseArtifacts dérivé de isSupabaseDocume
       files: [{ file, category: "autre", documentId: localId }],
     });
 
-    assert.equal(next.documents[0].id, localId, "l'id local nécessaire au câblage synchrone F010 est conservé tel quel");
+    assert.equal(next.documents[0].id, localId, "l'id local nécessaire au câblage synchrone est conservé tel quel");
     assert.equal(next.documents[0].hasSupabaseArtifacts, false, "aucun artefact Supabase — false, pas déduit d'un documentId non nul");
+    assert.equal(next.documents[0].storagePath, undefined);
+  });
+
+  it("F010 durable — id Supabase + storagePath immédiat → hasSupabaseArtifacts:true", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseWorkspaceState() as unknown as Parameters<Awaited<ReturnType<typeof loadReducer>>>[0];
+
+    const file = new File(["contenu"], "acte-notarie.pdf", { type: "application/pdf" });
+    const next = lmnpReducer(state, {
+      type: "UPLOAD_DOCUMENTS",
+      files: [
+        {
+          file,
+          category: "autre",
+          documentId: "supabase-doc-f010",
+          isSupabaseDocumentId: true,
+          storagePath: "user-1/123-acte-notarie.pdf",
+        },
+      ],
+    });
+
+    assert.equal(next.documents[0].id, "supabase-doc-f010");
+    assert.equal(next.documents[0].hasSupabaseArtifacts, true);
+    assert.equal(next.documents[0].storagePath, "user-1/123-acte-notarie.pdf");
   });
 
   it("aucun documentId fourni → fallback crypto.randomUUID(), hasSupabaseArtifacts:false", async () => {

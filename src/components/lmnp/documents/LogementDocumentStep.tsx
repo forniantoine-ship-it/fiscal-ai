@@ -1032,7 +1032,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
 
     if (uploadedFiles.length === 0) {
       console.error("[LogementDocumentStep] upload failed: no files stored in Supabase");
@@ -1051,6 +1051,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           category: LOGEMENT_UPLOAD_CATEGORY,
           documentId: documentIds[index],
           isSupabaseDocumentId: true,
+          storagePath: filePaths[index],
         })),
       });
       showInfo(
@@ -1072,6 +1073,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         category: LOGEMENT_UPLOAD_CATEGORY,
         documentId: documentIds[index],
         isSupabaseDocumentId: true,
+        storagePath: filePaths[index],
       })),
     });
 

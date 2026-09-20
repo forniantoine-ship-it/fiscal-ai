@@ -109,9 +109,10 @@ export function F009ActiviteAssistantPanel() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Connectez-vous pour ajouter un document.");
       const result = await uploadFilesForUser([file], user.id);
-      if (!result.documentIds[0]) throw new Error("L’import a échoué. Réessayez ou renseignez les informations manuellement.");
+      if (!result.documentIds[0] || !result.filePaths[0]) throw new Error("L’import a échoué. Réessayez ou renseignez les informations manuellement.");
       const documentId = result.documentIds[0];
-      servicesRef.current.dispatch({ type: "UPLOAD_DOCUMENTS", files: [{ file, category: "autre", documentId, isSupabaseDocumentId: true }] });
+      const storagePath = result.filePaths[0];
+      servicesRef.current.dispatch({ type: "UPLOAD_DOCUMENTS", files: [{ file, category: "autre", documentId, isSupabaseDocumentId: true, storagePath }] });
       servicesRef.current.dispatch({ type: "REGISTER_FILE", documentId, file });
       await run({ type: "upload_document", documentId });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "L’import du document a échoué."); }

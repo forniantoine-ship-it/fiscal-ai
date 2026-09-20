@@ -38,8 +38,10 @@ export function buildF010SyntheticDocument(params: {
   id: string;
   fiscalYearId: string;
   file: File;
+  storagePath?: string;
+  hasSupabaseArtifacts?: boolean;
 }): LmnpDocument {
-  const { id, fiscalYearId, file } = params;
+  const { id, fiscalYearId, file, storagePath, hasSupabaseArtifacts } = params;
   return {
     id,
     fiscalYearId,
@@ -50,6 +52,8 @@ export function buildF010SyntheticDocument(params: {
     documentType: "unknown",
     status: "uploaded",
     uploadedAt: new Date().toISOString(),
+    ...(storagePath ? { storagePath } : {}),
+    ...(hasSupabaseArtifacts ? { hasSupabaseArtifacts: true } : {}),
   };
 }
 
@@ -299,6 +303,8 @@ export type RunF010UploadFlowParams = {
   documentId: string;
   fiscalYearId: string;
   fiscalYear?: number;
+  storagePath?: string;
+  hasSupabaseArtifacts?: boolean;
   /**
    * Appelé de façon SYNCHRONE, avant tout appel OCR/GPT (règle Cycle 2 #1) —
    * c'est le point où l'appelant doit persister `analyzingDocumentId`.
@@ -317,9 +323,23 @@ export type RunF010UploadFlowParams = {
 export async function runF010UploadFlow(
   params: RunF010UploadFlowParams,
 ): Promise<RunF010UploadFlowResult> {
-  const { file, documentId, fiscalYearId, fiscalYear, onAnalysisStarting } = params;
+  const {
+    file,
+    documentId,
+    fiscalYearId,
+    fiscalYear,
+    storagePath,
+    hasSupabaseArtifacts,
+    onAnalysisStarting,
+  } = params;
   const analyze = params.analyze ?? runF010DocumentAnalysis;
-  const document = buildF010SyntheticDocument({ id: documentId, fiscalYearId, file });
+  const document = buildF010SyntheticDocument({
+    id: documentId,
+    fiscalYearId,
+    file,
+    storagePath,
+    hasSupabaseArtifacts,
+  });
 
   onAnalysisStarting(documentId);
 

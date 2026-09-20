@@ -33,12 +33,13 @@ describe("analyzeDocumentaryReview — F012 V2 Phase 3, boundary UI réel (mock 
     const analyzeDocumentaryReview = await loadAnalyzeDocumentaryReview();
     const result = await analyzeDocumentaryReview(fakeFile(), "assurances", 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files) => ({ files, documentIds: ["real-supabase-id-999"] }),
+      uploadFiles: async (files) => ({ files, documentIds: ["real-supabase-id-999"], filePaths: ["user/real-supabase-id-999.pdf"] }),
       extractText: async () => CONTRAT_ASSURANCE,
     });
     assert.equal(result.status, "success");
     if (result.status !== "success") return;
     assert.equal(result.documentId, "real-supabase-id-999");
+    assert.equal(result.storagePath, "user/real-supabase-id-999.pdf");
     assert.ok(result.proposals.length > 0);
     assert.ok(
       result.proposals.every((proposal) => proposal.documentId === "real-supabase-id-999"),
@@ -53,7 +54,7 @@ describe("analyzeDocumentaryReview — F012 V2 Phase 3, boundary UI réel (mock 
       getAuthenticatedUserId: async () => null,
       uploadFiles: async (files) => {
         uploadCalled = true;
-        return { files, documentIds: ["should-not-happen"] };
+        return { files, documentIds: ["should-not-happen"], filePaths: ["user/should-not-happen.pdf"] };
       },
       extractText: async () => CONTRAT_ASSURANCE,
     });
@@ -65,7 +66,7 @@ describe("analyzeDocumentaryReview — F012 V2 Phase 3, boundary UI réel (mock 
     const analyzeDocumentaryReview = await loadAnalyzeDocumentaryReview();
     const result = await analyzeDocumentaryReview(fakeFile(), "syndic", 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async () => ({ files: [], documentIds: [] }),
+      uploadFiles: async () => ({ files: [], documentIds: [], filePaths: [] }),
       extractText: async () => CONTRAT_ASSURANCE,
     });
     assert.equal(result.status, "upload_failed");
@@ -75,7 +76,7 @@ describe("analyzeDocumentaryReview — F012 V2 Phase 3, boundary UI réel (mock 
     const analyzeDocumentaryReview = await loadAnalyzeDocumentaryReview();
     const result = await analyzeDocumentaryReview(fakeFile(), "assurances", 2024, {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files) => ({ files, documentIds: ["real-id-after-upload"] }),
+      uploadFiles: async (files) => ({ files, documentIds: ["real-id-after-upload"], filePaths: ["user/real-id-after-upload.pdf"] }),
       extractText: async () => {
         throw new Error("extraction crash");
       },
@@ -89,7 +90,7 @@ describe("analyzeDocumentaryReview — F012 V2 Phase 3, boundary UI réel (mock 
     const analyzeDocumentaryReview = await loadAnalyzeDocumentaryReview();
     const deps = {
       getAuthenticatedUserId: async () => "user-1",
-      uploadFiles: async (files: File[]) => ({ files, documentIds: ["doc-family-test"] }),
+      uploadFiles: async (files: File[]) => ({ files, documentIds: ["doc-family-test"], filePaths: ["user/doc-family-test.pdf"] }),
     };
     const gestion = await analyzeDocumentaryReview(fakeFile(), "gestion", 2024, {
       ...deps,

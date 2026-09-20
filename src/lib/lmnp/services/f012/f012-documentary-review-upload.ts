@@ -29,14 +29,14 @@ export const DOCUMENTARY_REVIEW_UPLOAD_CATEGORY = "charges" as const;
 export type AnalyzeDocumentaryReviewResult =
   | { status: "not_authenticated" }
   | { status: "upload_failed" }
-  | { status: "extraction_failed"; documentId: string; uploadedFile: File }
-  | { status: "success"; documentId: string; uploadedFile: File; proposals: ChargeProposal[] };
+  | { status: "extraction_failed"; documentId: string; uploadedFile: File; storagePath: string }
+  | { status: "success"; documentId: string; uploadedFile: File; storagePath: string; proposals: ChargeProposal[] };
 
 export type AnalyzeDocumentaryReviewDeps = {
   /** Défaut : `supabase.auth.getUser()` — remplaçable en test, jamais un second client. */
   getAuthenticatedUserId?: () => Promise<string | null>;
   /** Défaut : `uploadFilesForUser` — même pipeline Storage + table `documents` que tous les autres écrans. */
-  uploadFiles?: (files: File[], userId: string) => Promise<{ files: File[]; documentIds: string[] }>;
+  uploadFiles?: (files: File[], userId: string) => Promise<{ files: File[]; documentIds: string[]; filePaths: string[] }>;
   /** Défaut : même extraction texte que `analyzePaperFile`/`analyzeImpotsDocument` — aucune nouvelle extraction. */
   extractText?: (file: File) => Promise<string>;
 };
@@ -101,20 +101,21 @@ export async function analyzeDocumentaryReview(
   const userId = await getAuthenticatedUserId();
   if (!userId) return { status: "not_authenticated" };
 
-  const { files: uploadedFiles, documentIds } = await uploadFiles([file], userId);
-  if (uploadedFiles.length === 0 || documentIds.length === 0) {
+  const { files: uploadedFiles, documentIds, filePaths } = await uploadFiles([file], userId);
+  if (uploadedFiles.length === 0 || documentIds.length === 0 || filePaths.length === 0) {
     return { status: "upload_failed" };
   }
   const documentId = documentIds[0]!;
   const uploadedFile = uploadedFiles[0]!;
+  const storagePath = filePaths[0]!;
 
   let text: string;
   try {
     text = await extractText(uploadedFile);
   } catch {
-    return { status: "extraction_failed", documentId, uploadedFile };
+    return { status: "extraction_failed", documentId, uploadedFile, storagePath };
   }
 
   const proposals = proposalsForFamily(familyId, text, documentId, fiscalYear);
-  return { status: "success", documentId, uploadedFile, proposals };
+  return { status: "success", documentId, uploadedFile, storagePath, proposals };
 }

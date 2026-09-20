@@ -30,14 +30,14 @@ export type AnalyzeImpotsDocumentResult =
   // seule l'extraction locale échoue. `documentId`/`uploadedFile` restent
   // portés ici pour que l'appelant puisse enregistrer le document réel
   // (UPLOAD_DOCUMENTS) même sans Expense (§3.B de la mission).
-  | { status: "extraction_failed"; documentId: string; uploadedFile: File }
-  | { status: "success"; documentId: string; uploadedFile: File; expenses: Expense[] };
+  | { status: "extraction_failed"; documentId: string; uploadedFile: File; storagePath: string }
+  | { status: "success"; documentId: string; uploadedFile: File; storagePath: string; expenses: Expense[] };
 
 export type AnalyzeImpotsDocumentDeps = {
   /** Défaut : `supabase.auth.getUser()` — remplaçable en test, jamais un second client. */
   getAuthenticatedUserId?: () => Promise<string | null>;
   /** Défaut : `uploadFilesForUser` (`src/lib/uploadDocument.ts`) — même pipeline Storage + table `documents` que tous les autres écrans. */
-  uploadFiles?: (files: File[], userId: string) => Promise<{ files: File[]; documentIds: string[] }>;
+  uploadFiles?: (files: File[], userId: string) => Promise<{ files: File[]; documentIds: string[]; filePaths: string[] }>;
   /** Défaut : même extraction texte que `analyzePaperFile` (`.txt` direct, sinon `extractPdfTextClient`) — aucune nouvelle extraction. */
   extractText?: (file: File) => Promise<string>;
 };
@@ -87,20 +87,21 @@ export async function analyzeImpotsDocument(
   const userId = await getAuthenticatedUserId();
   if (!userId) return { status: "not_authenticated" };
 
-  const { files: uploadedFiles, documentIds } = await uploadFiles([file], userId);
-  if (uploadedFiles.length === 0 || documentIds.length === 0) {
+  const { files: uploadedFiles, documentIds, filePaths } = await uploadFiles([file], userId);
+  if (uploadedFiles.length === 0 || documentIds.length === 0 || filePaths.length === 0) {
     return { status: "upload_failed" };
   }
   const documentId = documentIds[0]!;
   const uploadedFile = uploadedFiles[0]!;
+  const storagePath = filePaths[0]!;
 
   let text: string;
   try {
     text = await extractText(uploadedFile);
   } catch {
-    return { status: "extraction_failed", documentId, uploadedFile };
+    return { status: "extraction_failed", documentId, uploadedFile, storagePath };
   }
 
   const expenses = expensesFromTaxeFonciereCorpus({ corpus: text, documentId, fiscalYear });
-  return { status: "success", documentId, uploadedFile, expenses };
+  return { status: "success", documentId, uploadedFile, storagePath, expenses };
 }
