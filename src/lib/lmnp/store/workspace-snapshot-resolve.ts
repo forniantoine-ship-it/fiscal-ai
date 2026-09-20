@@ -38,8 +38,8 @@ export type WorkspaceHydrationDecision =
       source: "blocked";
       workspace: PersistedWorkspace | null;
       blockWrites: true;
-      reason: "unsupported_schema_version";
-      schemaVersion: number;
+      reason: "unsupported_schema_version" | "invalid_snapshot";
+      schemaVersion?: number;
     };
 
 export function normalizeLastSyncedServerRevision(value: unknown): number | undefined {
@@ -110,10 +110,13 @@ export function resolveWorkspaceHydration(input: {
       }
       return serverDecision;
     }
-    if (local) {
-      return { source: "local", workspace: local, blockWrites: false, uploadLocal: false };
-    }
-    return { source: "none", workspace: null, blockWrites: false };
+    return {
+      source: "blocked",
+      workspace: local,
+      blockWrites: true,
+      reason: "invalid_snapshot",
+      schemaVersion: parsed.schemaVersion ?? snapshot.schemaVersion,
+    };
   }
 
   if (local) {

@@ -29,8 +29,9 @@ import {
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import { toPersistedWorkspace } from "./workspace-snapshot";
 import {
+  beginWorkspaceSnapshotHydration,
+  completeWorkspaceSnapshotHydration,
   listWorkspaceSnapshots,
-  setWorkspaceSnapshotSyncGate,
 } from "./workspace-snapshot-client";
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
@@ -149,6 +150,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
         }
 
+        beginWorkspaceSnapshotHydration();
         authUserIdRef.current = userId;
         setPersistenceUserId(userId);
         setIsReady(false);
@@ -159,7 +161,6 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         if (!userId) {
           dispatch({ type: "AUTH_SESSION_RESET" });
           resetAutosaveStatus();
-          setWorkspaceSnapshotSyncGate("unknown");
           return;
         }
 
@@ -171,7 +172,6 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         if (dossier) {
           const listed = await listWorkspaceSnapshots(dossier.id);
           if (listed.status === "error") {
-            setWorkspaceSnapshotSyncGate("unknown");
             baseWorkspace = workspace ?? createDefaultWorkspace();
           } else {
             const decision = await reconcileLocalWorkspaceWithSnapshots({
@@ -181,17 +181,27 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
               snapshots: listed.snapshots,
               fallbackYear: lastClosedFiscalYear(),
             });
-            setWorkspaceSnapshotSyncGate(decision.blockWrites ? "blocked" : "ready");
             baseWorkspace = decision.workspace ?? createDefaultWorkspace();
+            if (!baseWorkspace.fiscalYear.dossierId) {
+              baseWorkspace = {
+                ...baseWorkspace,
+                fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
+              };
+            }
+            completeWorkspaceSnapshotHydration({
+              blockWrites: decision.blockWrites,
+              dossierId: dossier.id,
+              fiscalYear: baseWorkspace.fiscalYear.year,
+            });
             if (decision.source === "blocked") {
-              console.warn("[workspace] snapshot schema unsupported — server writes blocked", {
+              console.warn("[workspace] snapshot hydration blocked — server writes disabled", {
                 userId,
+                reason: decision.reason,
                 schemaVersion: decision.schemaVersion,
               });
             }
           }
         } else {
-          setWorkspaceSnapshotSyncGate("unknown");
           baseWorkspace = workspace ?? createDefaultWorkspace();
         }
 

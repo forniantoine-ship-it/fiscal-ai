@@ -40,7 +40,7 @@
     "test:f010-assistant-cycle4c1": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4c1.test.ts",
     "test:f010-assistant-cycle4e2": "npx tsx --test src/runtime/assistants/f010-logement/assistant-cycle4e2.test.ts",
     "test:f010-panel": "npx tsx --test \"src/components/lmnp/assistants/F010LogementAssistantPanel-cycle*.test.ts\" \"src/components/lmnp/assistants/F010LogementAssistantPanel-review-back-fix.test.ts\"",
-    "test:workspace-snapshot": "npx tsx --test src/lib/lmnp/store/workspace-snapshot.test.ts src/lib/lmnp/store/workspace-snapshot-rls-migration.test.ts src/lib/lmnp/store/workspace-snapshot-persistence.test.ts",
+    "test:workspace-snapshot": "npx tsx --test src/lib/lmnp/store/workspace-snapshot.test.ts src/lib/lmnp/store/workspace-snapshot-rls-migration.test.ts src/lib/lmnp/store/workspace-snapshot-persistence.test.ts src/lib/lmnp/store/workspace-snapshot-anti-wipe.test.ts",
     "test:workspace-save-serializer": "npx tsx --test src/lib/lmnp/store/workspace-save-serializer.test.ts",
     "test:workspace-flush-guard": "npx tsx --test src/lib/lmnp/store/workspace-flush-guard.test.ts",
     "test:workspace-autosave-b1": "npx tsx --test src/lib/lmnp/store/workspace-autosave-b1.test.ts",

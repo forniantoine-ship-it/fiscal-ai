@@ -266,6 +266,24 @@ describe("E — schema_version future fail closed", () => {
     if (parsed.ok) return;
     assert.equal(parsed.reason, "unsupported_schema_version");
   });
+
+  it("snapshot existant mais invalide → fail closed, pas de default ready", () => {
+    const decision = resolveWorkspaceHydration({
+      local: null,
+      snapshots: [
+        record({
+          fiscalYear: 2025,
+          payload: { schemaVersion: 1, workspace: { not: "a-workspace" } },
+        }),
+      ],
+      fallbackYear: 2025,
+    });
+    assert.equal(decision.source, "blocked");
+    if (decision.source !== "blocked") return;
+    assert.equal(decision.blockWrites, true);
+    assert.equal(decision.reason, "invalid_snapshot");
+    assert.equal(decision.workspace, null);
+  });
 });
 
 describe("F — isolation exercice", () => {
@@ -550,7 +568,7 @@ describe("save gate — unknown ne wipe pas, blocked n'écrit pas, ready upsert"
   });
 
   it("gate ready : upsert puis list isole l'exercice, revision incrémente", async () => {
-    setWorkspaceSnapshotSyncGate("ready");
+    setWorkspaceSnapshotSyncGate("ready", { dossierId: "dossier-A", fiscalYear: 2025 });
     const first = await saveWorkspaceSnapshotToServer({
       dossierId: "dossier-A",
       workspace: workspace(),
@@ -586,6 +604,7 @@ describe("I — payment inchangé", () => {
       "src/lib/lmnp/store/workspace-snapshot.ts",
       "src/lib/lmnp/store/workspace-snapshot-resolve.ts",
       "src/lib/lmnp/store/workspace-snapshot-client.ts",
+      "src/lib/lmnp/store/workspace-snapshot-anti-wipe.test.ts",
       "supabase/migrations/20260920120000_lmnp_workspace_snapshots.sql",
     ];
     for (const rel of files) {

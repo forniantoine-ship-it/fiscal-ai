@@ -1,8 +1,10 @@
 /**
  * P0 Lot 1 — Supabase client for lmnp_workspace_snapshots.
  *
- * Writes are gated: a failed listing must not upsert a default workspace over
- * an unseen server row (anti-default-wipe). Future schema_version blocks writes.
+ * Writes are gated: UNKNOWN/BLOCKED never upsert. READY is scoped to the
+ * hydrated (dossier_id, fiscal_year) pair. A first-upload of another year
+ * of the same dossier may insert; after that upsert is confirmed (revision >= 1)
+ * the gate adopts the new year so later saves are not skipped.
  */
 import type { PersistedWorkspace } from "./persistence";
 import {
@@ -12,6 +14,16 @@ import {
 import type { WorkspaceSnapshotRecord } from "./workspace-snapshot-resolve";
 
 export type WorkspaceSnapshotSyncGate = "unknown" | "ready" | "blocked";
+
+export type WorkspaceSnapshotReadyScope = {
+  dossierId: string;
+  fiscalYear: number;
+};
+
+type GateState =
+  | { status: "unknown" }
+  | { status: "blocked" }
+  | { status: "ready"; dossierId: string; fiscalYear: number };
 
 const SNAPSHOT_COLUMNS =
   "dossier_id, fiscal_year, schema_version, revision, payload, updated_at";
@@ -26,15 +38,52 @@ export type WorkspaceSnapshotStore = {
   }): Promise<{ revision: number }>;
 };
 
-let gate: WorkspaceSnapshotSyncGate = "unknown";
+let gate: GateState = { status: "unknown" };
 let storeOverride: WorkspaceSnapshotStore | null = null;
 
 export function getWorkspaceSnapshotSyncGate(): WorkspaceSnapshotSyncGate {
-  return gate;
+  return gate.status;
 }
 
-export function setWorkspaceSnapshotSyncGate(next: WorkspaceSnapshotSyncGate): void {
-  gate = next;
+export function getWorkspaceSnapshotReadyScope(): WorkspaceSnapshotReadyScope | null {
+  if (gate.status !== "ready") return null;
+  return { dossierId: gate.dossierId, fiscalYear: gate.fiscalYear };
+}
+
+/**
+ * READY without a (dossier, year) scope is refused: the client cannot prove it
+ * finished hydration for that pair, so writes stay UNKNOWN.
+ */
+export function setWorkspaceSnapshotSyncGate(
+  next: WorkspaceSnapshotSyncGate,
+  scope?: WorkspaceSnapshotReadyScope,
+): void {
+  if (next === "ready") {
+    if (!scope?.dossierId || !Number.isInteger(scope.fiscalYear) || scope.fiscalYear < 2000) {
+      gate = { status: "unknown" };
+      return;
+    }
+    gate = { status: "ready", dossierId: scope.dossierId, fiscalYear: scope.fiscalYear };
+    return;
+  }
+  gate = { status: next };
+}
+
+/** Call before listing snapshots so debounce/autosave cannot upsert during load. */
+export function beginWorkspaceSnapshotHydration(): void {
+  setWorkspaceSnapshotSyncGate("unknown");
+}
+
+export function completeWorkspaceSnapshotHydration(input: {
+  blockWrites: boolean;
+  dossierId: string;
+  fiscalYear: number;
+}): void {
+  if (input.blockWrites) {
+    setWorkspaceSnapshotSyncGate("blocked");
+    return;
+  }
+  setWorkspaceSnapshotSyncGate("ready", { dossierId: input.dossierId, fiscalYear: input.fiscalYear });
 }
 
 export function __setWorkspaceSnapshotStoreForTests(store: WorkspaceSnapshotStore | null): void {
@@ -42,7 +91,7 @@ export function __setWorkspaceSnapshotStoreForTests(store: WorkspaceSnapshotStor
 }
 
 export function __resetWorkspaceSnapshotSyncForTests(): void {
-  gate = "unknown";
+  gate = { status: "unknown" };
   storeOverride = null;
 }
 
@@ -147,27 +196,61 @@ export type SaveWorkspaceSnapshotResult =
   | { status: "skipped" }
   | { status: "error" };
 
+function isConfirmedServerRevision(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1;
+}
+
+function adoptReadyScopeAfterConfirmedFirstUpload(dossierId: string, fiscalYear: number): void {
+  if (gate.status !== "ready" || gate.dossierId !== dossierId) return;
+  if (gate.fiscalYear === fiscalYear) return;
+  setWorkspaceSnapshotSyncGate("ready", { dossierId, fiscalYear });
+}
+
 export async function saveWorkspaceSnapshotToServer(input: {
   dossierId: string | null | undefined;
   workspace: PersistedWorkspace;
 }): Promise<SaveWorkspaceSnapshotResult> {
-  if (gate === "blocked" || gate === "unknown") return { status: "skipped" };
+  if (gate.status !== "ready") return { status: "skipped" };
   const dossierId = input.dossierId;
-  if (!dossierId) return { status: "skipped" };
+  if (!dossierId || dossierId !== gate.dossierId) return { status: "skipped" };
   const serialized = serializeWorkspaceSnapshot(input.workspace);
   if (!serialized.ok) {
     console.error("[lmnp] workspace snapshot serialize refused", serialized);
     return { status: "error" };
   }
+  const fiscalYear = serialized.envelope.workspace.fiscalYear.year;
   const current = activeStore();
   if (!current) return { status: "skipped" };
+  const isOtherYearFirstUpload = fiscalYear !== gate.fiscalYear;
+  if (isOtherYearFirstUpload) {
+    try {
+      const rows = await current.listByDossier(dossierId);
+      if (rows.some((row) => row.fiscalYear === fiscalYear)) {
+        return { status: "skipped" };
+      }
+    } catch (error) {
+      console.error("[lmnp] workspace snapshot year-scope list failed", { dossierId, fiscalYear, error });
+      return { status: "skipped" };
+    }
+  }
   try {
     const saved = await current.upsert({
       dossierId,
-      fiscalYear: serialized.envelope.workspace.fiscalYear.year,
+      fiscalYear,
       schemaVersion: serialized.envelope.schemaVersion,
       payload: serialized.envelope,
     });
+    if (!isConfirmedServerRevision(saved.revision)) {
+      console.error("[lmnp] workspace snapshot upsert returned invalid revision", {
+        dossierId,
+        fiscalYear,
+        revision: saved.revision,
+      });
+      return { status: "error" };
+    }
+    if (isOtherYearFirstUpload) {
+      adoptReadyScopeAfterConfirmedFirstUpload(dossierId, fiscalYear);
+    }
     return { status: "ok", revision: saved.revision };
   } catch (error) {
     console.error("[lmnp] workspace snapshot upsert failed", { dossierId, error });

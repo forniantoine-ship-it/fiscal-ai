@@ -114,7 +114,7 @@ describe("persistence/provider — local newer than server after failed save", (
         return { revision: next.revision };
       },
     });
-    modules.setWorkspaceSnapshotSyncGate("ready");
+    modules.setWorkspaceSnapshotSyncGate("ready", { dossierId: "dossier-A", fiscalYear: 2025 });
   });
 
   it("BLOCKER + 10. mutation → IDB ok → server fail → reload hydrate conserve le local", async () => {
@@ -212,5 +212,45 @@ describe("persistence/provider — local newer than server after failed save", (
     assert.equal((record?.data as PersistedWorkspace).properties[0]?.city, "Lyon-NEWER-EDIT");
     assert.equal(record?.lastSyncedServerRevision, 1);
     assert.equal(memory.get("dossier-A:2025")?.revision, 1);
+  });
+
+  it("UNKNOWN gate : IndexedDB écrit, zéro upsert serveur", async () => {
+    const userId = uid("user");
+    modules.beginWorkspaceSnapshotHydration();
+    await modules.saveWorkspace(
+      userId,
+      workspace({
+        properties: [
+          { id: "prop-1", label: "Studio Lot1", address: "1 rue des Tests", city: "Local-only", postalCode: "69002" },
+        ],
+      }),
+    );
+    const record = await getWorkspaceRecord(userId);
+    assert.equal((record?.data as PersistedWorkspace).properties[0]?.city, "Local-only");
+    assert.equal(record?.lastSyncedServerRevision, undefined);
+    assert.equal(memory.size, 0);
+  });
+
+  it("first-upload N+1 confirmé → stamp local + saves suivants autorisés", async () => {
+    const userId = uid("user");
+    const ws2026 = (city: string) =>
+      workspace({
+        fiscalYear: { ...workspace().fiscalYear, year: 2026, id: "fy-2026" },
+        properties: [
+          { id: "prop-1", label: "Studio Lot1", address: "1 rue des Tests", city, postalCode: "69002" },
+        ],
+      });
+    await modules.saveWorkspace(userId, ws2026("state-1"));
+    assert.deepEqual(modules.getWorkspaceSnapshotReadyScope(), { dossierId: "dossier-A", fiscalYear: 2026 });
+    const afterFirst = await getWorkspaceRecord(userId);
+    assert.equal(afterFirst?.lastSyncedServerRevision, 1);
+
+    await modules.saveWorkspace(userId, ws2026("state-2"));
+    await modules.saveWorkspace(userId, ws2026("state-3"));
+    const afterThird = await getWorkspaceRecord(userId);
+    assert.equal((afterThird?.data as PersistedWorkspace).properties[0]?.city, "state-3");
+    assert.equal(afterThird?.lastSyncedServerRevision, 3);
+    assert.equal(memory.get("dossier-A:2026")?.revision, 3);
+    assert.deepEqual(modules.getWorkspaceSnapshotReadyScope(), { dossierId: "dossier-A", fiscalYear: 2026 });
   });
 });
