@@ -4,6 +4,7 @@ import { computeCoproDeductible, type CoproLigneInput } from "./compute-copro-de
 import { createComposantTravaux } from "./create-composant-travaux";
 import { computeTaxeFonciereDeductible } from "./compute-taxe-fonciere-deductible";
 import { isolatePreExploitationCharge } from "./isolate-pre-exploitation-charge";
+import { allocateAssuranceRecouvrement, allocateFraisDossierRecouvrement, type EnvelopeF011Reference } from "./assurance-recouvrement";
 import { qualifyTravail, splitMixteTravaux } from "./qualify-travail";
 import type {
   ChargeCategorie,
@@ -14,6 +15,9 @@ import type {
   ProfilCharges,
 } from "./types";
 import { round2 } from "./types";
+
+export type FinancementOverlapKind = "assurance_emprunteur" | "frais_dossier";
+
 
 /**
  * Composition explicite F-012 (TRF-0017, TRF-0018, TRF-0020, TRF-0026, TRF-0028) — ADR-003.
@@ -41,9 +45,20 @@ export type ComputeChargesExerciceInput = {
   fraisEtatDesLieux?: number;
   honorairesComptable?: number;
   fraisBancaires?: number;
-  divers?: { id: string; description: string; montant: number; financementOverlap?: "assurance_emprunteur" }[];
+  divers?: { id: string; description: string; montant: number; financementOverlap?: FinancementOverlapKind }[];
   travaux?: TravauxInput[];
   fieldSources?: Partial<Record<string, FieldSource>>;
+  /**
+   * Assurance emprunteur de l'année établie par F-011 (exercice + pré-exploitation), transport pur. Sans elle (ou avec
+   * un exercice différent), une ligne « candidate » (libellé évoquant l'assurance d'un prêt) n'est PAS neutralisée :
+   * aucune charge n'est exclue sur un simple libellé.
+   */
+  assuranceEmprunteurF011?: EnvelopeF011Reference;
+  /**
+   * Frais de dossier bancaires de l'exercice établis par F-011 (Σ prêts), transport pur — enveloppe séparée de
+   * l'assurance : un montant F-011 d'assurance ne peut jamais neutraliser des frais de dossier F-012, et inversement.
+   */
+  fraisDossierF011?: EnvelopeF011Reference;
 };
 
 export type ComputeChargesExerciceOutput = {
@@ -283,20 +298,92 @@ export function computeChargesExercice(
     );
   }
 
-  for (const item of input.divers ?? []) {
-    if (item.financementOverlap === "assurance_emprunteur") {
-      // Cycle 3 (RAI-000, AX-009) — déjà comptée par F-011 : reste visible
-      // (jamais supprimée), mais jamais recomptée dans le total déductible.
+  // Recouvrement F-011 / F-012 : enveloppes séparées (assurance ≠ frais de dossier).
+  // Un libellé identifie une candidature ; seule la contrepartie F-011 de LA MÊME nature neutralise.
+  const assuranceCandidates = (input.divers ?? []).filter((item) => item.financementOverlap === "assurance_emprunteur");
+  const fraisDossierCandidates = (input.divers ?? []).filter((item) => item.financementOverlap === "frais_dossier");
+  const recouvrementAssurance =
+    assuranceCandidates.length > 0
+      ? allocateAssuranceRecouvrement({
+          exerciceFiscal: input.exerciceFiscal,
+          lignes: assuranceCandidates.map((item) => ({ id: item.id, montant: item.montant })),
+          f011: input.assuranceEmprunteurF011,
+        })
+      : undefined;
+  const recouvrementFraisDossier =
+    fraisDossierCandidates.length > 0
+      ? allocateFraisDossierRecouvrement({
+          exerciceFiscal: input.exerciceFiscal,
+          lignes: fraisDossierCandidates.map((item) => ({ id: item.id, montant: item.montant })),
+          f011: input.fraisDossierF011,
+        })
+      : undefined;
+
+  const pushRecouvrementLignes = (
+    item: { id: string; description: string; montant: number },
+    allocation: { recouvert: number; reliquat: number } | undefined,
+    recouvrement: { reference: number } | undefined,
+    natureLabel: string,
+  ) => {
+    if (!allocation || !recouvrement) {
+      lignes.push(
+        simpleDeductibleCharge(
+          item.id,
+          item.description,
+          item.montant,
+          "divers",
+          input.exerciceFiscal,
+          input.dateMiseEnService,
+          src(item.id),
+        ),
+      );
+      return;
+    }
+    if (allocation.recouvert > 0) {
       lignes.push(
         ligne({
           id: item.id,
           description: item.description,
-          montant: item.montant,
+          montant: allocation.recouvert,
           categorie: "divers",
           deductibilite: "non_deductible",
+          exclusionReason: "f011_overlap",
           source: src(item.id),
-          regleAppliquee: "F-012 — déjà comptée par l'Assistant Financement (F-011), non recomptée ici",
+          regleAppliquee: `F-012 — ${allocation.recouvert} € déjà comptés par l'Assistant Financement (F-011, ${recouvrement.reference} € de ${natureLabel}), non recomptés ici`,
         }),
+      );
+    }
+    if (allocation.reliquat > 0) {
+      lignes.push(
+        simpleDeductibleCharge(
+          allocation.recouvert > 0 ? `${item.id}#reliquat` : item.id,
+          allocation.recouvert > 0 ? `${item.description} (part non couverte par F-011)` : item.description,
+          allocation.reliquat,
+          "divers",
+          input.exerciceFiscal,
+          input.dateMiseEnService,
+          src(item.id),
+        ),
+      );
+    }
+  };
+
+  for (const item of input.divers ?? []) {
+    if (item.financementOverlap === "assurance_emprunteur") {
+      pushRecouvrementLignes(
+        item,
+        recouvrementAssurance?.parLigne.find((l) => l.id === item.id),
+        recouvrementAssurance,
+        "assurance emprunteur",
+      );
+      continue;
+    }
+    if (item.financementOverlap === "frais_dossier") {
+      pushRecouvrementLignes(
+        item,
+        recouvrementFraisDossier?.parLigne.find((l) => l.id === item.id),
+        recouvrementFraisDossier,
+        "frais de dossier",
       );
       continue;
     }
@@ -450,17 +537,34 @@ export function computeChargesExercice(
   let totalNonDeductible = 0;
   let totalAmortissable = 0;
   let totalPreExploitation = 0;
+  let totalDejaComptabiliseF011 = 0;
+  // A1 — mêmes lignes, mêmes montants que les totaux ci-dessous, simplement ventilés par
+  // catégorie : jamais un second calcul (Σ parCategoriePreExploitation = totalPreExploitation,
+  // Σ parCategorieNonDeductible = totalNonDeductible).
+  const parCategoriePreExploitation: Partial<Record<ChargeCategorie, number>> = {};
+  const parCategorieNonDeductible: Partial<Record<ChargeCategorie, number>> = {};
 
   for (const row of lignes) {
     if (row.deductibilite === "deductible") {
       totalDeductible = round2(totalDeductible + row.montantDeductible);
       parCategorie[row.categorie] = round2((parCategorie[row.categorie] ?? 0) + row.montantDeductible);
+    } else if (row.deductibilite === "non_deductible" && row.exclusionReason === "f011_overlap") {
+      // Même dépense que celle déjà comptée dans `chargesFinancement` (F-011) : l'ajouter à `totalNonDeductible`
+      // la ferait entrer une seconde fois dans 264/310/136 (résultat comptable = résultat avant amortissement, qui
+      // contient déjà F-011, − amortissement − totalNonDeductible). Visible, jamais recomptée.
+      totalDejaComptabiliseF011 = round2(totalDejaComptabiliseF011 + row.montant);
     } else if (row.deductibilite === "non_deductible") {
       totalNonDeductible = round2(totalNonDeductible + row.montant);
+      parCategorieNonDeductible[row.categorie] = round2((parCategorieNonDeductible[row.categorie] ?? 0) + row.montant);
     } else if (row.deductibilite === "amortissement") {
       totalAmortissable = round2(totalAmortissable + row.montantAmortissable);
     }
     totalPreExploitation = round2(totalPreExploitation + row.montantPreExploitation);
+    if (row.montantPreExploitation !== 0) {
+      parCategoriePreExploitation[row.categorie] = round2(
+        (parCategoriePreExploitation[row.categorie] ?? 0) + row.montantPreExploitation,
+      );
+    }
   }
 
   return {
@@ -472,6 +576,29 @@ export function computeChargesExercice(
       totalNonDeductible,
       totalAmortissable,
       totalPreExploitation,
+      totalDejaComptabiliseF011,
+      ...(recouvrementAssurance
+        ? {
+            recouvrementAssuranceF011: {
+              reference: recouvrementAssurance.reference,
+              periodeCompatible: recouvrementAssurance.periodeCompatible,
+              recouvert: recouvrementAssurance.totalRecouvert,
+              reliquat: recouvrementAssurance.totalReliquat,
+            },
+          }
+        : {}),
+      ...(recouvrementFraisDossier
+        ? {
+            recouvrementFraisDossierF011: {
+              reference: recouvrementFraisDossier.reference,
+              periodeCompatible: recouvrementFraisDossier.periodeCompatible,
+              recouvert: recouvrementFraisDossier.totalRecouvert,
+              reliquat: recouvrementFraisDossier.totalReliquat,
+            },
+          }
+        : {}),
+      parCategoriePreExploitation,
+      parCategorieNonDeductible,
       composantsNouveaux,
     },
     anomalies,

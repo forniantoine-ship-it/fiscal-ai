@@ -36,6 +36,7 @@ import {
   deriveCase370372Boxes,
   deriveCase2033CTotalRowBoxes,
   deriveResultatFiscalColumnBoxes,
+  deriveRightValueColumnBorderX,
   derive2033ACaseBoxes,
   derive2033AColumnFamilies,
   xInBox,
@@ -242,9 +243,9 @@ describe("Oracle de position indépendant — 2033-B-SD, ligne 300 (MICRO-JALON 
     const mapping370 = resolveVisualMapping("2033-B-SD", 2026, "370");
     const mapping372 = resolveVisualMapping("2033-B-SD", 2026, "372");
     assert.deepEqual(mapping312?.position, { space: "top-left", x: 426.0, y: 424.8 });
-    assert.deepEqual(mapping314?.position, { space: "top-left", x: 507.0, y: 424.8 });
+    assert.deepEqual(mapping314?.position, { space: "top-left", x: 504.57, y: 424.8 }); // A4 : colonne droite recalée (507.0 → 504.57)
     assert.deepEqual(mapping370?.position, { space: "top-left", x: 426.0, y: 787.8 });
-    assert.deepEqual(mapping372?.position, { space: "top-left", x: 507.0, y: 787.8 });
+    assert.deepEqual(mapping372?.position, { space: "top-left", x: 504.57, y: 787.8 }); // A4 : colonne droite recalée (507.0 → 504.57)
 
     // 294/310/330/350 : exercées par le dossier témoin réel, vérifiées de
     // bout en bout (génération + extraction), pas seulement en statique.
@@ -654,7 +655,20 @@ function buildSyntheticTaxeFonciereRfs(taxeFonciere: number): FiscalRepresentati
     identite: DOSSIER_TEMOIN_IDENTITE,
     fiscalResult: {
       ...DOSSIER_TEMOIN_FISCAL_RESULT,
-      charges: { ...DOSSIER_TEMOIN_FISCAL_RESULT.charges, detailParCategorie: { taxe_fonciere: taxeFonciere } },
+      // A1 — 244 n'est publiée que si le détail par catégorie explique EXACTEMENT les charges d'exploitation :
+      // fixture cohérente par construction (taxe foncière = seule charge d'exploitation, sans pré-exploitation
+      // ni charge non déductible ni frais d'acquisition). Le financement du dossier témoin reste intact (294).
+      charges: {
+        ...DOSSIER_TEMOIN_FISCAL_RESULT.charges,
+        totalDeductible: taxeFonciere + DOSSIER_TEMOIN_FISCAL_RESULT.charges.chargesFinancement,
+        chargesExploitation: taxeFonciere,
+        chargesExploitationPreExploitation: 0,
+        totalNonDeductible: 0,
+        fraisAcquisitionEnCharges: 0,
+        detailParCategorie: { taxe_fonciere: taxeFonciere },
+        detailPreExploitationParCategorie: {},
+        detailNonDeductibleParCategorie: {},
+      },
     },
     trace: {
       ksArtifacts: DOSSIER_TEMOIN_FISCAL_RESULT.trace.ksArtifacts,
@@ -722,6 +736,81 @@ describe("Vérification PDF réelle — 2033-B-SD, case 244 (MICRO-JALON implém
       return;
     }
     assert.ok(!result.manifest.some((e) => e.caseId === "244"), "244 ne doit jamais apparaître dans le manifeste sans donnée disponible");
+  });
+});
+
+// =====================================================================
+// A4 — Colonne de valeurs de droite de la 2033-B : aucune valeur ne doit
+// mordre ni franchir le filet droit du tableau.
+// =====================================================================
+
+describe("Oracle de position indépendant — 2033-B-SD, colonne de valeurs de droite (A4)", () => {
+  const RIGHT_COLUMN_CASES = ["218", "232", "242", "244", "254", "264", "270", "294", "300", "310", "314", "350", "372"] as const;
+  // Trait de grille le plus épais du Cerfa officiel (voir GRID_LINE_TOLERANCE_PT
+  // ci-dessus) : la face INTÉRIEURE du filet est à axe − 0.38.
+  const STROKE_HALF_WIDTH_PT = 0.38;
+  // Inset de sécurité prévu par le registre (même convention que 2033-A/2033-C :
+  // bord droit de la boîte, mesuré à l'axe du filet, − 1.5pt).
+  const REGISTRY_INSET_PT = 1.5;
+  const LEFT_BORDER_X = 440.307; // filet gauche de la boîte de valeur (mesuré, voir case 244 ci-dessus)
+
+  it("A — l'oracle lit un filet droit unique à x≈506.066 sur l'asset officiel (et non 507.3, ancien ancrage du registre)", async () => {
+    const border = await deriveRightValueColumnBorderX(readAssetBytes(2026, "2033-sd.pdf"));
+    assert.ok(Math.abs(border - 506.066) < 0.01, `axe du filet droit attendu ≈506.066, lu ${border}`);
+  });
+
+  it("B — les 13 ancrages du registre valent exactement (axe du filet − 1.5pt), jamais au-delà du filet", async () => {
+    const border = await deriveRightValueColumnBorderX(readAssetBytes(2026, "2033-sd.pdf"));
+    for (const caseId of RIGHT_COLUMN_CASES) {
+      const mapping = resolveVisualMapping("2033-B-SD", 2026, caseId);
+      assert.ok(mapping, `${caseId} doit avoir une entrée de registre`);
+      assert.equal(mapping!.align, "right", `${caseId} : alignement à droite attendu`);
+      assert.ok(
+        Math.abs(mapping!.position.x - (border - REGISTRY_INSET_PT)) <= 0.01,
+        `${caseId} : ancrage x=${mapping!.position.x}, attendu ${(border - REGISTRY_INSET_PT).toFixed(3)} (axe ${border} − ${REGISTRY_INSET_PT})`,
+      );
+    }
+  });
+
+  it("C — PDF réellement généré : le bord droit de chaque valeur (positive et négative) reste à l'intérieur du filet avec une marge de sécurité, sans franchir le filet gauche", async () => {
+    const border = await deriveRightValueColumnBorderX(readAssetBytes(2026, "2033-sd.pdf"));
+    const innerFace = border - STROKE_HALF_WIDTH_PT;
+
+    for (const sign of [1, -1] as const) {
+      // Valeur distincte par case (extraction non ambiguë) et large (9 chiffres) :
+      // cas le plus défavorable d'un montant usuel pour le débordement à gauche.
+      const cases: CerfaCase[] = RIGHT_COLUMN_CASES.map((caseId) => ({
+        caseId,
+        label: caseId,
+        value: sign * (100000000 + Number(caseId)),
+        trace: { source: "FiscalResult", path: "test", ksArtifacts: [] },
+      }));
+      const result = await generateCerfaLiassePdf({ millesime: 2026, forms: [{ form: "2033-B-SD", cases }] });
+      if (result.status === "blocked") {
+        assert.fail(`Génération bloquée : ${JSON.stringify(result.violations, null, 2)}`);
+        return;
+      }
+      const drawn = await extractDrawnTextPositionsForPage(result.pdfBytes, 1);
+
+      for (const caseId of RIGHT_COLUMN_CASES) {
+        const entry = result.manifest.find((e) => e.caseId === caseId);
+        assert.ok(entry, `${caseId} doit être dans le manifeste`);
+        const inPdf = drawn.find((d) => d.text === entry!.text);
+        assert.ok(inPdf, `${caseId} : '${entry!.text}' doit être réellement dessiné dans le PDF`);
+        assert.ok(Math.abs(inPdf!.pdfLibX - entry!.pdfLibX) < 0.01, `${caseId} : position PDF réelle ≠ manifeste`);
+
+        const rightEdge = inPdf!.pdfLibX + entry!.measuredWidth;
+        assert.ok(
+          rightEdge <= innerFace - 1.0,
+          `${caseId} (${sign > 0 ? "+" : "−"}) : bord droit du texte ${rightEdge.toFixed(2)} doit rester ≥1.0pt en deçà de la face intérieure du filet (${innerFace.toFixed(2)})`,
+        );
+        assert.ok(
+          rightEdge >= innerFace - 2.0,
+          `${caseId} : bord droit du texte ${rightEdge.toFixed(2)} ne doit pas dériver à plus de 2.0pt à gauche du filet (${innerFace.toFixed(2)})`,
+        );
+        assert.ok(inPdf!.pdfLibX > LEFT_BORDER_X + 1.0, `${caseId} : le texte (x=${inPdf!.pdfLibX.toFixed(2)}) ne doit pas franchir le filet gauche de la boîte (${LEFT_BORDER_X})`);
+      }
+    }
   });
 });
 

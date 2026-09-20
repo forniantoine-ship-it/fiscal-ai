@@ -53,7 +53,7 @@ export type Charge = {
   grosTravauxDeductible?: boolean;
   /** P0-A — date propre au composant copro (gros travaux), jamais celle du bien. */
   dateDebut?: string;
-  financingOverlap?: "assurance_emprunteur";
+  financingOverlap?: "assurance_emprunteur" | "frais_dossier";
   exclusionReason?: ChargeExclusionReason;
   documentIds?: string[];
   conflict?: string;

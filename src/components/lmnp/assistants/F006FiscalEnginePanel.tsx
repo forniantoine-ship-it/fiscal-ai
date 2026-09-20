@@ -12,6 +12,7 @@ import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import { excludedLoanIdsFromFinancing } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
+import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
 import {
   F006FiscalEngineAssistant,
   type F006Action,
@@ -86,9 +87,9 @@ export function F006FiscalEnginePanel() {
     // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : voir
     // commentaire miroir dans run-declaration-generation.ts.
     const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
-    const financementCharges = draft?.financementCharges
-      ? { ...draft.financementCharges, excludedLoanIds }
-      : draft?.financementCharges;
+    // Latence « prêt saisi puis aucun crédit » — miroir de run-declaration-generation.ts.
+    const financementBrut = effectiveFinancementCharges(draft);
+    const financementCharges = financementBrut ? { ...financementBrut, excludedLoanIds } : financementBrut;
 
     return {
       exerciceFiscal: fiscalYear,

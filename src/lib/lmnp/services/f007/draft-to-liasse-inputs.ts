@@ -1,6 +1,7 @@
 import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
 import type { FiscalResult } from "@/runtime/capabilities/f006/types";
 import type { IdentiteDeclarante } from "@/runtime/capabilities/f007/types";
+import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
 
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -101,7 +102,7 @@ export function fiscalResultFromDraft(
     charges: {
       totalDeductible: stored.totalCharges,
       chargesExploitation: draft?.chargesAssistant?.totalDeductible ?? stored.totalCharges,
-      chargesFinancement: draft?.financementCharges?.totalChargesFinancementExercice ?? 0,
+      chargesFinancement: effectiveFinancementCharges(draft)?.totalChargesFinancementExercice ?? 0,
       chargesPreExploitation: draft?.chargesAssistant?.totalPreExploitation ?? 0,
       totalNonDeductible: draft?.chargesAssistant?.totalNonDeductible ?? 0,
       detailParCategorie: draft?.chargesAssistant?.parCategorie,

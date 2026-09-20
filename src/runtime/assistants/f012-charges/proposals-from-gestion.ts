@@ -128,9 +128,8 @@ function exclusionFor(kind: GestionProposalKind): string | undefined {
   if (kind === "loyer") {
     return "Ces montants sont des loyers encaissés. Ce n'est pas une dépense.";
   }
-  if (kind === "financement") {
-    return "Cette dépense concerne votre prêt. Elle est déjà prise en compte dans Financement.";
-  }
+  // Frais de financement : plus jamais exclus sur le seul libellé — candidature
+  // F-011, neutralisée uniquement à hauteur du montant F-011 (compute).
   return undefined;
 }
 

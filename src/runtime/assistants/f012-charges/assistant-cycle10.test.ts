@@ -182,7 +182,7 @@ async function receiveAndConfirm(
     proposals: input.proposals,
   });
   for (const proposal of turn.state.documentReview?.proposals ?? []) {
-    if (proposal.exclusionReason || proposal.gestionKind === "loyer" || proposal.gestionKind === "financement") {
+    if (proposal.exclusionReason || proposal.gestionKind === "loyer") {
       turn = await assistant.handle(turn.state, { type: "ignore_proposal", proposalId: proposal.id });
     } else if (proposal.amount !== undefined) {
       turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposal.id });
@@ -706,17 +706,18 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
     assert.equal(aggregated.data?.chargesExploitation, 480);
   });
 
-  it("Z — F-011 : pas d'absorption crédit / intérêts / capital", async () => {
+  it("Z — F-011 : frais de crédit candidat, pas d'exclusion sur libellé ; capital toujours refusé", async () => {
     const proposals = proposalsFromGestionCorpus({
       corpus: FRAIS_CREDIT,
       documentId: "ges-z",
       fiscalYear: YEAR,
     });
     assert.ok(proposals.every((item) => item.gestionKind === "financement"));
-    assert.ok(proposals[0]?.exclusionReason);
+    assert.equal(proposals[0]?.exclusionReason, undefined, "plus jamais exclu sur le seul libellé");
     const { assistant, turn: start } = await startGestion(DEPS_F011);
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ges-z", proposals });
     assert.equal(turn.state.collected.honorairesGestion, undefined);
+    assert.ok(turn.state.collected.documentExpenses?.some((e) => e.financingOverlap === "frais_dossier"));
 
     const { assistant: a2, turn: s2 } = await startGestion(DEPS_F011);
     let credit = await a2.handle(s2.state, { type: "open_family_manual" });
@@ -725,8 +726,8 @@ describe("F-012 Cycle 10 — documentaire agence / comptable / logiciel", () => 
       honorairesGestion: 200,
       description: "frais liés au crédit",
     });
-    assert.equal(credit.state.collected.honorairesGestion, undefined);
-    assert.ok(credit.messages.some((message) => /prêt/.test(message.content) && /Financement/.test(message.content)));
+    assert.ok(credit.state.collected.divers.some((d) => d.financementOverlap === "frais_dossier" && d.montant === 200));
+    assert.ok(credit.messages.some((message) => /prêt|Financement|dossier/i.test(message.content)));
   });
 
   it("AA — pont existant + mensualités + publicité + UX + pas de document ≠ none", async () => {

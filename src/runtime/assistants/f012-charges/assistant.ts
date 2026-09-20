@@ -3,7 +3,7 @@ import {
   computeChargesExercice,
 } from "../../capabilities/f012/compute-charges-exercice";
 import type { CoproLigneInput } from "../../capabilities/f012/compute-copro-deductible";
-import { detectFinancementOverlap } from "../../capabilities/f012/detect-financement-overlap";
+import { assuranceAnnuelleF011, detectFinancementOverlap, fraisDossierF011 } from "../../capabilities/f012/detect-financement-overlap";
 import { mapChoixToNature, splitMixteTravaux } from "../../capabilities/f012/qualify-travail";
 import type { NatureIntervention } from "../../capabilities/f012/types";
 import type { Expense } from "../../capabilities/f012/expense";
@@ -1645,17 +1645,36 @@ export class F012ChargesAssistant {
             montant: action.honorairesGestion ?? action.honorairesComptable ?? 0,
             financementCharges: this.deps.financementCharges,
           });
-          const creditFee = /frais.{0,40}(cr[eé]dit|pr[eê]t|emprunt|financement)/i.test(description);
-          if (overlap.kind !== "none" || creditFee) {
+          if (overlap.kind === "capital_pret") {
             messages.push({
               role: "user",
               content: `${description} : ${(action.honorairesGestion ?? action.honorairesComptable ?? 0).toLocaleString("fr-FR")} €`,
             });
-            messages.push({
-              role: "assistant",
-              content: "Cette dépense concerne votre prêt. Elle est déjà prise en compte dans Financement.",
-            });
+            messages.push({ role: "assistant", content: overlap.message });
             return { state, messages, completed: false };
+          }
+          if (overlap.kind === "assurance_emprunteur" || overlap.kind === "frais_dossier") {
+            // Candidature F-011 : enregistrée en divers, neutralisée seulement à hauteur F-011.
+            const montant = action.honorairesGestion ?? action.honorairesComptable ?? 0;
+            messages.push({
+              role: "user",
+              content: `${description} : ${montant.toLocaleString("fr-FR")} €`,
+            });
+            const nextCollected = {
+              ...state.collected,
+              divers: [
+                ...state.collected.divers,
+                {
+                  id: `divers-${state.collected.divers.length + 1}`,
+                  description,
+                  montant,
+                  financementOverlap: overlap.kind,
+                },
+              ],
+            };
+            messages.push({ role: "assistant", content: overlap.message });
+            const nextState = { ...state, collected: nextCollected };
+            return { state: nextState, messages, completed: false };
           }
         }
         const parsed = structuredGestionExpenses(action);
@@ -3233,6 +3252,19 @@ export class F012ChargesAssistant {
       chargeRegistryToComputeInput(registry, {
         dateMiseEnService: this.deps.dateMiseEnService ?? `${this.ctx.fiscalYear}-06-01`,
         fieldSources: state.fieldSources,
+        // Recouvrement F-011 / F-012 : l'assurance de l'année établie par F-011, jamais un libellé seul.
+        ...(this.deps.financementCharges
+          ? {
+              assuranceEmprunteurF011: {
+                exerciceFiscal: this.deps.financementCharges.exerciceFiscal,
+                montantAnnuel: assuranceAnnuelleF011(this.deps.financementCharges),
+              },
+              fraisDossierF011: {
+                exerciceFiscal: this.deps.financementCharges.exerciceFiscal,
+                montantAnnuel: fraisDossierF011(this.deps.financementCharges),
+              },
+            }
+          : {}),
       }),
     );
   }

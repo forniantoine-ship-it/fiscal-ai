@@ -67,7 +67,7 @@ export interface F012DiversItem {
    * silencieusement) mais est exclue du total déductible par
    * `computeChargesExercice` — voir `detect-financement-overlap.ts`.
    */
-  financementOverlap?: "assurance_emprunteur";
+  financementOverlap?: "assurance_emprunteur" | "frais_dossier";
 }
 
 /**
@@ -82,7 +82,7 @@ export interface F012FamilyLine {
   description: string;
   montant: number;
   paidAt?: string;
-  financementOverlap?: "assurance_emprunteur";
+  financementOverlap?: "assurance_emprunteur" | "frais_dossier";
 }
 
 export interface F012CollectedData {

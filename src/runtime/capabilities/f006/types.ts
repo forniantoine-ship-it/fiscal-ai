@@ -34,10 +34,39 @@ export type ChargesFiscalInput = {
    */
   totalNonDeductible?: number;
   parCategorie?: Partial<Record<string, number>>;
+  /**
+   * A1 — ventilations par catégorie de `totalPreExploitation` / `totalNonDeductible`
+   * (F-012, transport pur, jamais recalculées ici). Optionnelles : absentes des
+   * dossiers persistés avant A1.
+   */
+  parCategoriePreExploitation?: Partial<Record<string, number>>;
+  parCategorieNonDeductible?: Partial<Record<string, number>>;
+  /**
+   * Recouvrement F-011 / F-012 de l'assurance emprunteur (F-012, voir assurance-recouvrement.ts) : `reference` = assurance
+   * de l'année établie par F-011 AU MOMENT du calcul ; `recouvert` neutralisé dans F-012 ; `reliquat` traité normalement.
+   * Persisté pour DÉTECTER une péremption (F-011 modifié depuis) — jamais pour recalculer.
+   */
+  recouvrementAssuranceF011?: {
+    reference: number;
+    periodeCompatible: boolean;
+    recouvert: number;
+    reliquat: number;
+  };
+  /**
+   * Recouvrement F-011 / F-012 des frais de dossier (enveloppe séparée) — même contrat de péremption.
+   */
+  recouvrementFraisDossierF011?: {
+    reference: number;
+    periodeCompatible: boolean;
+    recouvert: number;
+    reliquat: number;
+  };
 };
 
 export type FinancementFiscalInput = {
   exerciceFiscal: number;
+  /** Assurance emprunteur de l'exercice après mise en service (F-011) — lue par la garde de péremption du recouvrement. */
+  totalAssurance?: number;
   totalChargesFinancementExercice: number;
   totalInteretsPreExploitation: number;
   /**
@@ -46,8 +75,15 @@ export type FinancementFiscalInput = {
    * produit cette donnée (voir aggregate-inputs.ts).
    */
   totalAssurancePreExploitation?: number;
+  /**
+   * Σ `prets[].fraisDossierDeductibles` (F-011) — lu par la garde de péremption du recouvrement frais de dossier.
+   * Absent des deps historiques = 0.
+   */
+  totalFraisDossierDeductibles?: number;
   /** NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — prêts exclus faute de date, lus par `validateFiscalInputs`. */
   excludedLoanIds?: string[];
+  /** Prêts F-011 (détail) — source de `totalFraisDossierDeductibles` si le total n'est pas encore exposé. */
+  prets?: Array<{ fraisDossierDeductibles?: number }>;
 };
 
 export type AmortissementFiscalInput = {
@@ -165,6 +201,25 @@ export type FiscalResult = {
      */
     totalNonDeductible: number;
     detailParCategorie?: Partial<Record<string, number>>;
+    /**
+     * A1 — ventilation par catégorie de `chargesExploitationPreExploitation` (composante A,
+     * F-012 `parCategoriePreExploitation`). Transport pur : n'entre dans aucune formule
+     * F-006. Absent ⇒ ventilation inconnue (dossier antérieur à A1), jamais « aucune ».
+     */
+    detailPreExploitationParCategorie?: Partial<Record<string, number>>;
+    /**
+     * A1 — ventilation par catégorie de `totalNonDeductible` (F-012 `parCategorieNonDeductible`).
+     * Transport pur. Absent ⇒ ventilation inconnue.
+     */
+    detailNonDeductibleParCategorie?: Partial<Record<string, number>>;
+    /**
+     * A1 — frais d'acquisition (F-010, JUG-001) déduits immédiatement : composante de
+     * `chargesExploitation` (= `totalDeductible` F-012 + ce montant) qui n'appartient à
+     * aucune catégorie F-012. Transport pur (`logementAmortissement.fraisEnCharges`),
+     * exposé pour que la projection 2033-B puisse expliquer `chargesExploitation` sans
+     * résiduel silencieux.
+     */
+    fraisAcquisitionEnCharges?: number;
   };
   resultatAvantAmort: number;
   amortCalcule: number;

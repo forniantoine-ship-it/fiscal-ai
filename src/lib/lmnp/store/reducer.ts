@@ -50,6 +50,7 @@ import {
   closeFiscalYear,
   createNextDeclarationDraft,
 } from "../services/dossier/fiscal-year-cycle";
+import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
 
 export type FileRegistry = Map<string, File>;
 
@@ -1378,6 +1379,10 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         ...state,
         declarationDraft: {
           ...draft,
+          // Latence « prêt saisi puis aucun crédit » — la déclaration explicite remplace d'anciennes données de
+          // prêt CONFIRMÉES : leurs copies dérivées (financementCharges, creditFinancing) sont purgées, sauf si
+          // une donnée de prêt en attente subsiste (document déposé, extraction en cours) — voir credit-state.ts.
+          ...noCreditSupersessionPatch(draft),
           creditDeclaredNoneAt: nowIso(),
           creditConfirmedAt: undefined,
         },

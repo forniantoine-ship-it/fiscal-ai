@@ -23,7 +23,10 @@
  * `get_drawings()` et parsing direct des opérateurs `m`/`l`/`S` du flux de
  * contenu pdf-lib) :
  *  - Colonne "valeur" principale (produits/charges/résultat comptable) :
- *    bord DROIT constant à x≈507.3.
+ *    boîte de valeur [440.307, 506.066] ; filet droit (trait 0.76pt, face
+ *    intérieure ≈505.69) centré à x=506.066 sur toute la hauteur de page.
+ *    (A4 — l'ancien commentaire « bord droit ≈507.3 » était faux : 507.3
+ *    est 1.2pt AU-DELÀ du filet, l'encre du dernier chiffre le franchissait.)
  *  - Bloc "RÉINTÉGRATIONS/RÉSULTAT FISCAL" (cases 312/314, 318, 370/372) :
  *    séparateurs à x=347.5 (fin colonne label) / 361.89 / 425.955 / 440.307 /
  *    506.45 (bord droit page). Découpage réel : [347.5,361.89] = numéro de
@@ -37,13 +40,29 @@ import { topLeft } from "../../types";
 const FORM = "2033-B-SD" as const;
 const MILLESIME = 2026;
 
+/**
+ * A4 — ancrage unique de la colonne de valeurs de droite (218, 232, 242, 244,
+ * 254, 264, 270, 294, 300, 310, 314, 350, 372) : bord droit de la boîte de
+ * valeur − inset de sécurité de 1.5pt (même convention que 2033-A/2033-C).
+ *
+ * Bord droit = filet vertical centré à x=506.066 (mesuré sur le Cerfa officiel
+ * vierge `assets/2026/2033-sd.pdf`, page 2, par PyMuPDF `get_drawings()`),
+ * soit 506.066 − 1.5 = 504.566 ≈ 504.57. L'encre du dernier chiffre (bearing
+ * droit de Helvetica 9pt ≈0.33pt) s'arrête alors à ≈504.24, soit ≈1.45pt
+ * avant la face intérieure du filet (505.69).
+ *
+ * Avant A4 : 507.3 (et 507.0 / 506.5 / 506.45 selon les cases) — l'encre
+ * atteignait 506.88, au-delà de la face extérieure du filet (506.45).
+ */
+const RIGHT_COLUMN_X = 504.57;
+
 export const registry2033B2026: readonly CerfaVisualMapping[] = [
   {
     form: FORM,
     millesime: MILLESIME,
     caseId: "218",
     page: 1,
-    position: topLeft(507.3, 105.5),
+    position: topLeft(RIGHT_COLUMN_X, 105.5),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -57,7 +76,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "232",
     page: 1,
-    position: topLeft(507.3, 164.2),
+    position: topLeft(RIGHT_COLUMN_X, 164.2),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -71,7 +90,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "242",
     page: 1,
-    position: topLeft(507.3, 222.9),
+    position: topLeft(RIGHT_COLUMN_X, 222.9),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -86,7 +105,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "244",
     page: 1,
-    position: topLeft(506.5, 234.6),
+    position: topLeft(RIGHT_COLUMN_X, 234.6),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -101,7 +120,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "254",
     page: 1,
-    position: topLeft(507.3, 269.8),
+    position: topLeft(RIGHT_COLUMN_X, 269.8),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -115,7 +134,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "264",
     page: 1,
-    position: topLeft(507.3, 317.6),
+    position: topLeft(RIGHT_COLUMN_X, 317.6),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -129,7 +148,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "270",
     page: 1,
-    position: topLeft(507.3, 330.6),
+    position: topLeft(RIGHT_COLUMN_X, 330.6),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -144,7 +163,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "294",
     page: 1,
-    position: topLeft(507.3, 342.6),
+    position: topLeft(RIGHT_COLUMN_X, 342.6),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -172,7 +191,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "310",
     page: 1,
-    position: topLeft(507.3, 411.0),
+    position: topLeft(RIGHT_COLUMN_X, 411.0),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -184,7 +203,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
   // Cases 312/314 (résultat comptable après report) — boîtes confirmées sur
   // le Cerfa officiel vierge : séparateurs verticaux à x=347.5/361.9/426.0/
   // 440.3 découpent la ligne en label | boîte 312 [361.9,426.0] | (marge) |
-  // boîte 314 [440.3, ~507]. Bord droit de la boîte 312 = 426.0.
+  // boîte 314 [440.3, 506.07]. Bord droit de la boîte 312 = 426.0.
   {
     form: FORM,
     millesime: MILLESIME,
@@ -205,7 +224,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "314",
     page: 1,
-    position: topLeft(507.0, 424.8),
+    position: topLeft(RIGHT_COLUMN_X, 424.8),
     width: 85,
     height: 9,
     fontSize: 9,
@@ -237,7 +256,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "372",
     page: 1,
-    position: topLeft(507.0, 787.8),
+    position: topLeft(RIGHT_COLUMN_X, 787.8),
     width: 66,
     height: 9,
     fontSize: 9,
@@ -245,7 +264,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     format: "eur-arrondi",
     calibration: "mesure-empirique",
     note:
-      "CORRECTION P0 (audit indépendant Cursor/Grok, confirmé) : x=426.9 (valeur des missions précédentes) tombait dans la boîte du NUMÉRO DE CASE '372' lui-même [425.955, 440.307], pas dans sa boîte de VALEUR — le mapper aurait écrit 9862 dans la colonne bénéfice (370) et sur l'étiquette '372'. Reconfirmé indépendamment sur le Cerfa officiel vierge (deux méthodes : PyMuPDF get_drawings() et parsing direct des opérateurs vectoriels m/l/S du flux de contenu pdf-lib) : séparateurs verticaux à x=361.890/425.955/440.307/506.446 sur cette ligne — bord droit réel de la boîte de VALEUR de 372 = 506.446, même famille de colonnes que 314 (voir 314 ci-dessus, boîte identique). Position alignée sur 314 (x=507.0). " +
+      "CORRECTION P0 (audit indépendant Cursor/Grok, confirmé) : x=426.9 (valeur des missions précédentes) tombait dans la boîte du NUMÉRO DE CASE '372' lui-même [425.955, 440.307], pas dans sa boîte de VALEUR — le mapper aurait écrit 9862 dans la colonne bénéfice (370) et sur l'étiquette '372'. Reconfirmé indépendamment sur le Cerfa officiel vierge (deux méthodes : PyMuPDF get_drawings() et parsing direct des opérateurs vectoriels m/l/S du flux de contenu pdf-lib) : séparateurs verticaux à x=361.890/425.955/440.307/506.446 sur cette ligne — bord droit réel de la boîte de VALEUR de 372 = 506.446, même famille de colonnes que 314 (voir 314 ci-dessus, boîte identique). Position alignée sur 314 (colonne droite, RIGHT_COLUMN_X). " +
       "MISE À JOUR (correction fiscale aa765cb) : 372 ne reçoit plus jamais `fiscalResult.deficitNouveau` — elle lit désormais `resultatFiscal` (si <0), voir map-2033b.ts. Cette condition n'est jamais vraie avec le F-006 actuel (`resultatFiscal` toujours ≥0, TRF-0031) : 372 reste géométriquement calibrée et testée (tests/position-oracle.test.ts, fixture synthétique) mais n'est exercée par aucun scénario réel aujourd'hui. Le déficit LMNP non professionnel du dossier témoin (9862) est désormais réintégré en case 330 (calibrée et rendue, voir l'entrée 330 ci-dessous) — plus une absence du mapper.",
   },
   // Case 330 (bloc RÉINTÉGRATIONS, ligne "Divers*") — MICRO-JALON calibration
@@ -319,7 +338,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
   // le Cerfa marque lui-même cette zone comme inutilisée ici, quand
   // [440.26,506.45] ne l'est pas.
   //
-  // x=507.0 : bord droit de cette boîte, même convention que 314/372 (même
+  // x=RIGHT_COLUMN_X (A4) : bord droit de cette boîte − inset, même convention que 314/372 (même
   // colonne). y=655.5 : calibré par génération réelle sur un PDF externe au
   // dépôt (`/tmp`, jamais commité) + re-mesure indépendante (PyMuPDF) +
   // inspection visuelle raster — PAS recopié de 330/372 (dont le y
@@ -334,7 +353,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "350",
     page: 1,
-    position: topLeft(507.0, 655.5),
+    position: topLeft(RIGHT_COLUMN_X, 655.5),
     width: 66,
     height: 9,
     fontSize: 9,
@@ -370,7 +389,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
   // seul rectangle gris trouvé à proximité couvre la ligne du memo "348",
   // strictement en dessous (y=[383.402,400.192]), jamais celle de 300.
   //
-  // x=506.45 : bord droit mesuré, même convention que 314/372/350 (même
+  // x=RIGHT_COLUMN_X (A4) : bord droit mesuré − inset, même convention que 314/372/350 (même
   // colonne). y=369.0 : calibré par génération réelle sur un PDF externe au
   // dépôt (`/tmp`, jamais commité) avec cinq valeurs candidates de y et
   // re-mesure indépendante (PyMuPDF) — pas recopié d'une autre case. Marge
@@ -383,7 +402,7 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     millesime: MILLESIME,
     caseId: "300",
     page: 1,
-    position: topLeft(506.45, 369.0),
+    position: topLeft(RIGHT_COLUMN_X, 369.0),
     width: 66,
     height: 9,
     fontSize: 9,

@@ -191,176 +191,233 @@ describe("Audit fiscal ciblé (case 300) — perte exceptionnelle", () => {
   });
 });
 
-describe("MICRO-JALON implémentation 244 — impôts, taxes et versements assimilés (taxe foncière)", () => {
-  it("R1 — taxe_fonciere non nulle (1200) → 244 = 1200, sans recalcul de totalDeductible ni resultatFiscal", () => {
-    const fr = fiscalResult({
-      charges: {
-        totalDeductible: 2000,
-        chargesExploitation: 2000,
-        chargesFinancement: 0,
-        chargesPreExploitation: 0,
-        totalNonDeductible: 0,
-        detailParCategorie: { taxe_fonciere: 1200 },
-      },
-      resultatFiscal: 5500,
-    });
+/**
+ * A1 — 242/244 : détail des charges d'exploitation par catégorie F-012, publié UNIQUEMENT s'il
+ * explique exactement 264 − 254 (voir `detail-charges-2033b.ts`). Fixtures cohérentes par
+ * construction (`chargesExploitation` = Σ détail déductible) : un détail partiel n'est jamais
+ * publié. Remplace le micro-jalon 244 (simple passe-plat de la taxe foncière).
+ */
+function chargesA1(opts: {
+  deductible?: Partial<Record<string, number>>;
+  preExploitation?: Partial<Record<string, number>>;
+  nonDeductible?: Partial<Record<string, number>>;
+  fraisAcquisition?: number;
+  chargesFinancement?: number;
+}): FiscalResult["charges"] {
+  const sum = (m?: Partial<Record<string, number>>) => round2(Object.values(m ?? {}).reduce((a, b) => (a ?? 0) + (b ?? 0), 0) as number);
+  const frais = opts.fraisAcquisition ?? 0;
+  const ded = sum(opts.deductible);
+  return {
+    totalDeductible: round2(ded + (opts.chargesFinancement ?? 0)),
+    chargesExploitation: round2(ded + frais),
+    chargesFinancement: opts.chargesFinancement ?? 0,
+    chargesPreExploitation: sum(opts.preExploitation),
+    chargesExploitationPreExploitation: sum(opts.preExploitation),
+    totalNonDeductible: sum(opts.nonDeductible),
+    detailParCategorie: opts.deductible,
+    detailPreExploitationParCategorie: opts.preExploitation,
+    detailNonDeductibleParCategorie: opts.nonDeductible,
+    fraisAcquisitionEnCharges: frais,
+  };
+}
+
+describe("A1 — 242/244 : détail des charges d'exploitation conservé (242 + 244 + 254 = 264)", () => {
+  it("R1 — taxe foncière seule (1200) → 244 = 1200, 242 absente (aucune charge externe), conservation établie", () => {
+    const fr = fiscalResult({ charges: chargesA1({ deductible: { taxe_fonciere: 1200 } }), resultatFiscal: 5500 });
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "244")?.value, 1200);
-    // Non-recalcul : totalDeductible et resultatFiscal du FiscalResult source
-    // ne sont jamais lus/modifiés par cette projection (le mapper n'importe
-    // aucune fonction de calcul, garde d'architecture déjà vérifiée par
-    // ailleurs — ici on vérifie seulement que 244 n'entre dans aucune autre
-    // formule du mapper lui-même).
-    assert.equal(fr.charges.totalDeductible, 2000, "totalDeductible du FiscalResult source reste inchangé");
-    assert.equal(fr.resultatFiscal, 5500, "resultatFiscal du FiscalResult source reste inchangé");
+    assert.equal(findCase(form, "242"), undefined, "aucune ligne de charge externe : 242 non alimentée, jamais un 0 inventé");
+    assert.equal(form.conservationDetail.status, "CONSERVE");
+    assert.equal(form.conservationDetail.ecart, 0);
+    assert.equal(fr.charges.totalDeductible, 1200, "le FiscalResult source n'est jamais modifié");
+    assert.equal(fr.resultatFiscal, 5500);
   });
 
-  it("R2 — taxe_fonciere absente (detailParCategorie undefined, fixture par défaut) → 244 absente, jamais un montant inventé", () => {
-    const fr = fiscalResult();
-    const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "244"), undefined, "244 ne doit pas apparaître sans donnée disponible — jamais 0 inventé");
+  it("R2 — aucune ventilation disponible (detailParCategorie absent, charges d'exploitation > 0) → 242/244 NON publiées, avec raison et écart", () => {
+    const form = map2033BFromRfs(rfs(fiscalResult()));
+    assert.equal(findCase(form, "244"), undefined);
+    assert.equal(findCase(form, "242"), undefined);
+    assert.equal(form.conservationDetail.status, "ECART");
+    assert.equal(form.conservationDetail.ecart, 2000, "rien n'est attribuable : tout le total 2000 reste inexpliqué");
+    for (const id of ["242", "244"]) {
+      const blocked = findBlocked(form, id);
+      assert.ok(blocked, `${id} doit être tracée dans casesNonAlimentees`);
+      assert.equal(blocked?.categorie, "incoherence_modele");
+      assert.ok(blocked?.raison.includes("détail ne peut pas expliquer"));
+    }
   });
 
-  it("R2bis — detailParCategorie présent mais sans la clé taxe_fonciere (autres catégories saisies) → 244 absente", () => {
-    const fr = fiscalResult({
-      charges: {
-        totalDeductible: 2000,
-        chargesExploitation: 2000,
-        chargesFinancement: 0,
-        chargesPreExploitation: 0,
-        totalNonDeductible: 0,
-        detailParCategorie: { assurance_pno: 300, copropriete: 800 },
-      },
-    });
+  it("R2bis — catégories autres que la taxe foncière (PNO 300 + copropriété 800) → 242 = 1100, 244 absente", () => {
+    const fr = fiscalResult({ charges: chargesA1({ deductible: { assurance_pno: 300, copropriete: 800 } }) });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "244"), undefined, "l'absence de la clé taxe_fonciere précisément (pas de detailParCategorie en général) doit aussi laisser 244 absente");
+    assert.equal(findCase(form, "242")?.value, 1100);
+    assert.equal(findCase(form, "244"), undefined, "l'absence de la clé taxe_fonciere laisse 244 absente");
+    assert.equal(form.conservationDetail.status, "CONSERVE");
   });
 
-  it("R3 — taxe_fonciere = 0 explicite (clé présente) → 244 = 0, distincte de l'absence de la clé", () => {
-    const fr = fiscalResult({
-      charges: {
-        totalDeductible: 2000,
-        chargesExploitation: 2000,
-        chargesFinancement: 0,
-        chargesPreExploitation: 0,
-        totalNonDeductible: 0,
-        detailParCategorie: { taxe_fonciere: 0 },
-      },
-    });
-    const form = map2033BFromRfs(rfs(fr));
+  it("R3 — taxe_fonciere = 0 explicite (clé présente, aucun autre montant) → 244 = 0, distincte de l'absence de la clé", () => {
+    const form = map2033BFromRfs(rfs(fiscalResult({ charges: chargesA1({ deductible: { taxe_fonciere: 0 } }) })));
     const case244 = findCase(form, "244");
-    assert.notEqual(case244, undefined, "une clé taxe_fonciere PRÉSENTE à 0 doit produire une case 244 réelle (=0), pas une absence");
+    assert.notEqual(case244, undefined, "une clé PRÉSENTE à 0 produit une case réelle (=0), pas une absence");
     assert.equal(case244?.value, 0);
   });
 
-  it("R4 — non-double-comptage : 244 ne contient jamais totalDeductible, seulement la composante taxe_fonciere", () => {
-    const fr = fiscalResult({
-      charges: {
-        totalDeductible: 8000,
-        chargesExploitation: 8000,
-        chargesFinancement: 0,
-        chargesPreExploitation: 0,
-        totalNonDeductible: 0,
-        detailParCategorie: { taxe_fonciere: 1200 },
-      },
-    });
+  it("R4 — un détail PARTIEL n'est jamais publié : taxe_fonciere 1200 dans 8000 de charges → ni 244 ni 242, écart 6800", () => {
+    const base = chargesA1({ deductible: { taxe_fonciere: 1200 } });
+    const fr = fiscalResult({ charges: { ...base, totalDeductible: 8000, chargesExploitation: 8000 } });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "244")?.value, 1200);
-    assert.notEqual(findCase(form, "244")?.value, 8000, "244 ne doit jamais recevoir totalDeductible");
-    // 264 (Total des charges d'exploitation) doit rester la formule composite
-    // habituelle, sans jamais soustraire ni dupliquer la part taxe_fonciere.
-    assert.equal(findCase(form, "264")?.value, round2(8000 + fr.amortCalcule + 0));
+    assert.equal(findCase(form, "244"), undefined, "244 = 1200 expliquerait 15 % du total : non publiée");
+    assert.equal(form.conservationDetail.status, "ECART");
+    assert.equal(form.conservationDetail.ecart, 6800);
+    assert.equal(findCase(form, "264")?.value, round2(8000 + fr.amortCalcule), "264 reste la formule composite habituelle");
   });
 
-  it("R5 — non-régression : 242/294/300/310/312/314/318/330/350/370/372 identiques avec ou sans 244", () => {
-    const base = {
-      recettes: { total: 9000 },
-      chargesFinancement: 500,
-      amortCalcule: 1500,
-    };
-    const sans244 = map2033BFromRfs(
-      rfs(
-        fiscalResult({
-          recettes: base.recettes,
-          charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: base.chargesFinancement, chargesPreExploitation: 0, totalNonDeductible: 0 },
-          amortCalcule: base.amortCalcule,
-        }),
-      ),
+  it("R5 — non-régression : 254/264/270/294/300/310/312/314/318/330/350/370/372 identiques avec ou sans détail", () => {
+    const sans = map2033BFromRfs(rfs(fiscalResult({ charges: { totalDeductible: 1700, chargesExploitation: 1200, chargesFinancement: 500, chargesPreExploitation: 0, totalNonDeductible: 0 } })));
+    const avec = map2033BFromRfs(
+      rfs(fiscalResult({ charges: chargesA1({ deductible: { taxe_fonciere: 1200 }, chargesFinancement: 500 }) })),
     );
-    const avec244 = map2033BFromRfs(
-      rfs(
-        fiscalResult({
-          recettes: base.recettes,
-          charges: {
-            totalDeductible: 2000,
-            chargesExploitation: 2000,
-            chargesFinancement: base.chargesFinancement,
-            chargesPreExploitation: 0,
-            totalNonDeductible: 0,
-            detailParCategorie: { taxe_fonciere: 1200 },
-          },
-          amortCalcule: base.amortCalcule,
-        }),
-      ),
-    );
-    for (const caseId of ["242", "294", "300", "310", "312", "314", "318", "330", "350", "370", "372"]) {
-      assert.equal(
-        findCase(avec244, caseId)?.value,
-        findCase(sans244, caseId)?.value,
-        `${caseId} ne doit pas varier selon la présence de detailParCategorie.taxe_fonciere — seule 244 le doit`,
-      );
+    for (const caseId of ["254", "264", "270", "294", "300", "310", "312", "314", "318", "330", "350", "370", "372"]) {
+      assert.equal(findCase(avec, caseId)?.value, findCase(sans, caseId)?.value, `${caseId} ne doit pas dépendre de la ventilation par catégorie`);
     }
-    assert.equal(findCase(sans244, "244"), undefined);
-    assert.equal(findCase(avec244, "244")?.value, 1200);
+    assert.equal(findCase(sans, "244"), undefined);
+    assert.equal(findCase(avec, "244")?.value, 1200);
+  });
+
+  it("R6 — PNO + taxe foncière AVEC pré-exploitation : chaque nature reçoit sa quote-part, 242 + 244 + 254 = 264 (montants dérivés, non codés en dur)", () => {
+    const deductible = { taxe_fonciere: 550, assurance_pno: 110 };
+    const preExploitation = { taxe_fonciere: 50, assurance_pno: 10 };
+    const fr = fiscalResult({ amortCalcule: 2979.54, charges: chargesA1({ deductible, preExploitation }) });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "244")?.value, round2(deductible.taxe_fonciere + preExploitation.taxe_fonciere));
+    assert.equal(findCase(form, "242")?.value, round2(deductible.assurance_pno + preExploitation.assurance_pno));
+    const somme = round2((findCase(form, "242")?.value as number) + (findCase(form, "244")?.value as number) + (findCase(form, "254")?.value as number));
+    assert.equal(somme, findCase(form, "264")?.value, "242 + 244 + 254 = 264");
+  });
+
+  it("R7 — charges non déductibles externes (fonds de travaux, copropriété) → 242 ; « divers » non déductible (déjà compté par F-011, financier) → jamais attribué, conservation en écart", () => {
+    const ok = map2033BFromRfs(rfs(fiscalResult({ charges: chargesA1({ deductible: { assurance_pno: 300 }, nonDeductible: { copropriete: 400 } }) })));
+    assert.equal(findCase(ok, "242")?.value, 700, "300 (PNO) + 400 (fonds de travaux, comptabilisé mais non déductible)");
+    assert.equal(findCase(ok, "264")?.value, round2(300 + 400 + 1500));
+    const financier = map2033BFromRfs(rfs(fiscalResult({ charges: chargesA1({ deductible: { assurance_pno: 300 }, nonDeductible: { divers: 120 } }) })));
+    assert.equal(financier.conservationDetail.status, "ECART");
+    assert.equal(financier.conservationDetail.ecart, 120);
+    assert.equal(findCase(financier, "242"), undefined, "une charge financière ne rejoint jamais une ligne d'exploitation pour faire tenir l'invariant");
+    assert.ok(findBlocked(financier, "242")?.raison.includes("charge financière"));
+  });
+
+  it("R8 — frais d'acquisition déduits immédiatement : nature non ventilée (droits de mutation / honoraires) → jamais devinée, 242/244 non publiées", () => {
+    const fr = fiscalResult({ charges: chargesA1({ deductible: { taxe_fonciere: 1200, assurance_pno: 200 }, fraisAcquisition: 15000 }) });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(form.conservationDetail.status, "ECART");
+    assert.equal(form.conservationDetail.ecart, 15000);
+    assert.equal(findCase(form, "242"), undefined);
+    assert.equal(findCase(form, "244"), undefined);
+    assert.ok(findBlocked(form, "244")?.raison.includes("frais d'acquisition"));
+    assert.equal(findCase(form, "264")?.value, round2(1200 + 200 + 15000 + fr.amortCalcule), "264 inclut bien les frais d'acquisition");
+  });
+
+  it("R9 — dossier persisté avant A1 (pré-exploitation > 0 mais ventilation absente) → 242/244 non publiées, raison explicite (jamais reconstituées)", () => {
+    const base = chargesA1({ deductible: { taxe_fonciere: 550, assurance_pno: 110 }, preExploitation: { taxe_fonciere: 50, assurance_pno: 10 } });
+    const legacy = { ...base, detailPreExploitationParCategorie: undefined };
+    const form = map2033BFromRfs(rfs(fiscalResult({ charges: legacy })));
+    assert.equal(form.conservationDetail.status, "ECART");
+    assert.equal(form.conservationDetail.ecart, 60);
+    assert.ok(form.conservationDetail.raisons.some((r) => r.includes("non persistée")));
+    assert.equal(findCase(form, "244"), undefined);
+    assert.equal(findCase(form, "242"), undefined);
+  });
+
+  it("R10 — transport incohérent (Σ ventilation ≠ chargesExploitation) → écart détecté même sans cause identifiée", () => {
+    const base = chargesA1({ deductible: { taxe_fonciere: 1200 } });
+    const form = map2033BFromRfs(rfs(fiscalResult({ charges: { ...base, chargesExploitation: 1250 } })));
+    assert.equal(form.conservationDetail.status, "ECART");
+    assert.equal(form.conservationDetail.ecart, 50);
+    assert.ok(form.conservationDetail.raisons[0].includes("incohérence de transport"));
+  });
+
+  it("R11 — invariant général sur un jeu de scénarios : quand 242/244 sont publiées, 242 + 244 + 254 = 264 exactement", () => {
+    const scenarios: FiscalResult["charges"][] = [
+      chargesA1({ deductible: { taxe_fonciere: 600 } }),
+      chargesA1({ deductible: { assurance_pno: 120 } }),
+      chargesA1({ deductible: { taxe_fonciere: 550, assurance_pno: 110 }, preExploitation: { taxe_fonciere: 50, assurance_pno: 10 } }),
+      chargesA1({ deductible: { taxe_fonciere: 1200.35, copropriete: 800.12, honoraires_gestion: 300.99 }, nonDeductible: { copropriete: 210.5 } }),
+      chargesA1({ deductible: {}, preExploitation: {}, nonDeductible: {} }),
+    ];
+    for (const charges of scenarios) {
+      const form = map2033BFromRfs(rfs(fiscalResult({ amortCalcule: 1234.56, charges })));
+      assert.equal(form.conservationDetail.status, "CONSERVE");
+      const v = (id: string) => (findCase(form, id)?.value as number | undefined) ?? 0;
+      assert.equal(round2(v("242") + v("244") + v("254")), v("264"), JSON.stringify(charges.detailParCategorie));
+    }
   });
 });
 
-describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
-  it("1. intérêts seuls → 294, 242 présente à 0 (détail disponible)", () => {
+/**
+ * P1 → A1 — ventilation du financement depuis rfs.emprunts.
+ * Classification 2033-B : intérêts / IRA / assurance / garantie(PROVISOIRE) → 294 ;
+ * frais de dossier → 242 ∈ 264 (notice 2033-NOT-SD) ; 310 inchangé.
+ */
+describe("P1/A1 — 294 = financement (hors frais dossier) ; frais dossier → 242", () => {
+  it("1. intérêts seuls → 294 ; 242 non alimentée (aucun détail F-012)", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000 })]));
     assert.equal(findCase(form, "294")?.value, 1000);
-    assert.equal(findCase(form, "242")?.value, 0);
+    assert.equal(findCase(form, "242"), undefined);
   });
 
-  it("2. assurance d'exercice seule → 242", () => {
+  it("2. assurance d'exercice seule → 294 (charge financière), jamais 242", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 500, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ assuranceEmpruntExercice: 500 })]));
-    assert.equal(findCase(form, "242")?.value, 500);
-    assert.equal(findCase(form, "294")?.value, 0);
+    assert.equal(findCase(form, "294")?.value, 500);
+    assert.equal(findCase(form, "242"), undefined);
   });
 
-  it("3. frais de dossier seuls → 242", () => {
-    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 300, chargesPreExploitation: 0 } });
+  it("3. frais de dossier seuls → 242 ∈ 264, hors 294", () => {
+    const fr = fiscalResult({
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 300,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+      },
+    });
     const form = map2033BFromRfs(rfs(fr, [pret({ fraisDossierDeductibles: 300 })]));
-    assert.equal(findCase(form, "242")?.value, 300);
     assert.equal(findCase(form, "294")?.value, 0);
+    assert.equal(
+      findCase(form, "264")?.value,
+      round2(2000 + 1500 + 300),
+      "264 = exploitation + amort + frais dossier F-011",
+    );
+    const sansFd = map2033BFromRfs(rfs(fr, [pret({ fraisDossierDeductibles: 0 })]));
+    assert.equal(
+      round2((findCase(form, "264")?.value as number) - (findCase(sansFd, "264")?.value as number)),
+      300,
+    );
   });
 
   it("4. IRA seul → 294", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 400, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ iraDeductible: 400 })]));
     assert.equal(findCase(form, "294")?.value, 400);
-    assert.equal(findCase(form, "242")?.value, 0);
   });
 
-  it("5. intérêts + assurance — chacun sur sa case", () => {
+  it("5. intérêts + assurance → 294 = 1500", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
-    assert.equal(findCase(form, "294")?.value, 1000);
-    assert.equal(findCase(form, "242")?.value, 500);
+    assert.equal(findCase(form, "294")?.value, 1500);
   });
 
-  it("6. intérêts + frais de dossier + IRA", () => {
+  it("6. intérêts + frais de dossier + IRA → 294 = 1400 (hors frais dossier)", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1700, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(
       rfs(fr, [pret({ interetsEmpruntExercice: 1000, fraisDossierDeductibles: 300, iraDeductible: 400 })]),
     );
-    assert.equal(findCase(form, "294")?.value, 1400, "1000 (intérêts) + 400 (IRA)");
-    assert.equal(findCase(form, "242")?.value, 300, "300 (frais de dossier)");
+    assert.equal(findCase(form, "294")?.value, 1400, "1000 (intérêts) + 400 (IRA) — frais dossier hors 294");
   });
 
-  it("7. plusieurs prêts, natures différentes → agrégation correcte 242/294 sur l'ensemble de rfs.emprunts", () => {
+  it("7. plusieurs prêts, natures différentes → agrégation ; frais dossier hors 294", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 2400, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(
       rfs(fr, [
@@ -368,51 +425,44 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
         pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 400, garantieDeductible: 200 }),
       ]),
     );
-    assert.equal(findCase(form, "242")?.value, 1000, "500 (assurance A) + 300 (dossier B) + 200 (garantie B)");
-    assert.equal(findCase(form, "294")?.value, 1400, "1000 (intérêts A) + 400 (IRA B)");
+    assert.equal(findCase(form, "294")?.value, 2100, "1000 + 500 (prêt A) + 400 + 200 (prêt B) — hors 300 frais dossier");
   });
 
-  it("8. commission de caution → 242 (garantieDeductible, jamais hypothèque/IPPD)", () => {
+  it("8. commission de caution → 294 (garantieDeductible PROVISOIRE, jamais hypothèque/IPPD)", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 250, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ garantieDeductible: 250 })]));
-    assert.equal(findCase(form, "242")?.value, 250);
-    assert.equal(findCase(form, "294")?.value, 0);
+    assert.equal(findCase(form, "294")?.value, 250);
   });
 
-  it("9a. zéro financement, rfs.emprunts vide ([]) — détail disponible, 242 et 294 à 0", () => {
+  it("9a. zéro financement, rfs.emprunts vide ([]) — détail disponible : 294 = 0 ; 242 n'est PAS alimentée à 0 (elle dépend des charges F-012, pas des prêts)", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, []));
-    assert.equal(findCase(form, "242")?.value, 0, "détail disponible (tableau vide) — 242 alimentée à 0, pas absente");
     assert.equal(findCase(form, "294")?.value, 0);
+    assert.equal(findCase(form, "242"), undefined, "l'absence de crédit n'est plus une raison de publier 242 = 0");
   });
 
-  it("9b. rfs.emprunts absent (undefined) — repli explicite : 294 = chargesFinancement en totalité, 242 absente", () => {
+  it("9b. rfs.emprunts absent (undefined) — repli explicite : 294 = chargesFinancement en totalité", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "294")?.value, 4602, "ancien comportement conservé — jamais une ventilation arbitraire faute de détail");
-    assert.equal(findCase(form, "242"), undefined, "242 ne doit jamais être inventée sans rfs.emprunts");
   });
 
-  it("10. P0-3a.2 — intérêts pré-exploitation rejoignent 294, assurance pré-exploitation rejoint 242", () => {
+  it("10. P0-3a.2/A1 — intérêts ET assurance pré-exploitation rejoignent 294 (financement), pas 242", () => {
     const fr = fiscalResult({
       charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1000, chargesPreExploitation: 500 },
     });
     const form = map2033BFromRfs(
       rfs(fr, [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 350, assurancePreExploitation: 150 })]),
     );
-    assert.equal(findCase(form, "294")?.value, 1350, "1000 (exercice) + 350 (pré-exploitation) — 294 doit désormais inclure interetsPreExploitation");
-    assert.equal(findCase(form, "242")?.value, 150, "assurancePreExploitation rejoint 242 (autres charges externes)");
-    // 264/270/310 restent des lectures de fiscalResult.charges.chargesPreExploitation
-    // (TRF-0030, hors périmètre P0-3a.2) — strictement inchangées par la
-    // ventilation 242/294 : le résultat fiscal ne change pas, seule la
-    // restitution Cerfa des composantes déjà déduites devient visible.
+    assert.equal(findCase(form, "294")?.value, 1500, "1000 (exercice) + 350 (intérêts pré-exploitation) + 150 (assurance pré-exploitation)");
+    assert.equal(findCase(form, "242"), undefined);
     const sansEmprunts = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "264")?.value, findCase(sansEmprunts, "264")?.value, "264 n'est jamais alimentée directement par le bloc pré-exploitation");
+    assert.equal(findCase(form, "264")?.value, findCase(sansEmprunts, "264")?.value, "264 n'est jamais alimentée par le bloc pré-exploitation financier");
     assert.equal(findCase(form, "270")?.value, findCase(sansEmprunts, "270")?.value);
     assert.equal(findCase(form, "310")?.value, findCase(sansEmprunts, "310")?.value);
   });
 
-  it("10b. plusieurs emprunts — agrégation des composantes pré-exploitation sur 294/242", () => {
+  it("10b. plusieurs emprunts — agrégation des composantes pré-exploitation sur 294", () => {
     const fr = fiscalResult({
       charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 475 },
     });
@@ -422,18 +472,16 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
         pret({ pretId: "pret-B", interetsPreExploitation: 250, assurancePreExploitation: 75 }),
       ]),
     );
-    assert.equal(findCase(form, "294")?.value, 350, "100 + 250 (intérêts pré-exploitation, deux emprunts)");
-    assert.equal(findCase(form, "242")?.value, 125, "50 + 75 (assurance pré-exploitation, deux emprunts)");
+    assert.equal(findCase(form, "294")?.value, 475, "100 + 50 + 250 + 75");
   });
 
-  it("10c. aucun montant pré-exploitation — 242/294 inchangées (zéro/absence, comportement existant préservé)", () => {
+  it("10c. aucun montant pré-exploitation — 294 inchangée", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
-    assert.equal(findCase(form, "294")?.value, 1000, "interetsPreExploitation=0 par défaut sur pret() — aucun effet");
-    assert.equal(findCase(form, "242")?.value, 500, "assurancePreExploitation=0 par défaut sur pret() — aucun effet");
+    assert.equal(findCase(form, "294")?.value, 1500);
   });
 
-  it("11. invariant de conservation (charges de l'exercice seules, sans pré-exploitation) — Σ(242+294 par nature) === fiscalResult.charges.chargesFinancement", () => {
+  it("11. invariant — 294 === chargesFinancement − frais dossier (sans pré-exploitation)", () => {
     const emprunts = [
       pret({ pretId: "pret-A", interetsEmpruntExercice: 1234.56, assuranceEmpruntExercice: 210.44 }),
       pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 175.5, garantieDeductible: 80 }),
@@ -441,29 +489,17 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
     const chargesFinancement = round2(
       emprunts.reduce(
         (acc, p) =>
-          acc +
-          p.interetsEmpruntExercice +
-          p.iraDeductible +
-          p.assuranceEmpruntExercice +
-          p.fraisDossierDeductibles +
-          p.garantieDeductible,
+          acc + p.interetsEmpruntExercice + p.iraDeductible + p.assuranceEmpruntExercice + p.fraisDossierDeductibles + p.garantieDeductible,
         0,
       ),
     );
-    const fr = fiscalResult({
-      charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement, chargesPreExploitation: 0 },
-    });
+    const fraisDossier = round2(emprunts.reduce((acc, p) => acc + p.fraisDossierDeductibles, 0));
+    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr, emprunts));
-    const case242 = findCase(form, "242")?.value as number;
-    const case294 = findCase(form, "294")?.value as number;
-    assert.equal(
-      round2(case242 + case294),
-      chargesFinancement,
-      "242 + 294 doit reconstituer exactement fiscalResult.charges.chargesFinancement — le total de contrôle",
-    );
+    assert.equal(findCase(form, "294")?.value, round2(chargesFinancement - fraisDossier));
   });
 
-  it("11b. P0-3a.2 — avec pré-exploitation, 242+294 dépasse chargesFinancement exactement de la somme pré-exploitation (nouvel invariant)", () => {
+  it("11b. avec pré-exploitation financière, 294 = (chargesFinancement − frais dossier) + Σ(intérêts + assurance pré-exploitation)", () => {
     const emprunts = [
       pret({ pretId: "pret-A", interetsEmpruntExercice: 1234.56, assuranceEmpruntExercice: 210.44, interetsPreExploitation: 100, assurancePreExploitation: 40 }),
       pret({ pretId: "pret-B", fraisDossierDeductibles: 300, iraDeductible: 175.5, garantieDeductible: 80, interetsPreExploitation: 250, assurancePreExploitation: 60 }),
@@ -475,37 +511,55 @@ describe("P1 — ventilation financement (242/294) depuis rfs.emprunts", () => {
         0,
       ),
     );
-    const totalPreExploitationEmprunts = round2(
-      emprunts.reduce((acc, p) => acc + p.interetsPreExploitation + p.assurancePreExploitation, 0),
-    );
+    const fraisDossier = round2(emprunts.reduce((acc, p) => acc + p.fraisDossierDeductibles, 0));
+    const totalPreExploitationEmprunts = round2(emprunts.reduce((acc, p) => acc + p.interetsPreExploitation + p.assurancePreExploitation, 0));
     const fr = fiscalResult({
       charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement, chargesPreExploitation: totalPreExploitationEmprunts },
     });
     const form = map2033BFromRfs(rfs(fr, emprunts));
-    const case242 = findCase(form, "242")?.value as number;
-    const case294 = findCase(form, "294")?.value as number;
-    assert.equal(
-      round2(case242 + case294),
-      round2(chargesFinancement + totalPreExploitationEmprunts),
-      "242 + 294 reconstitue chargesFinancement UNIQUEMENT augmenté des montants pré-exploitation — chargesFinancement seul (charges de l'exercice) n'est plus reconstitué à l'identique, ce qui est attendu",
-    );
-    assert.notEqual(round2(case242 + case294), chargesFinancement, "l'ancien invariant (sans pré-exploitation) ne doit plus être vérifié tel quel dès que du pré-exploitation existe");
+    assert.equal(findCase(form, "294")?.value, round2(chargesFinancement - fraisDossier + totalPreExploitationEmprunts));
   });
 
-  it("242/294 sont tracées avec source=Emprunts et un pretId reconstituable quand le détail est disponible", () => {
-    const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 1500, chargesPreExploitation: 0 } });
-    const form = map2033BFromRfs(rfs(fr, [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 500 })]));
-    assert.equal(findCase(form, "242")?.trace.source, "Emprunts");
+  it("11c. frais dossier F-011 augmentent 242 ; intérêts/assurance/garantie restent en 294", () => {
+    const charges = chargesA1({ deductible: { assurance_pno: 110 }, preExploitation: { assurance_pno: 10 }, chargesFinancement: 1470 });
+    const avec = map2033BFromRfs(
+      rfs(fiscalResult({ charges }), [pret({ interetsEmpruntExercice: 1000, assuranceEmpruntExercice: 200, fraisDossierDeductibles: 100, garantieDeductible: 50, interetsPreExploitation: 100, assurancePreExploitation: 20 })]),
+    );
+    const sans = map2033BFromRfs(rfs(fiscalResult({ charges }), []));
+    assert.equal(findCase(sans, "242")?.value, 120);
+    assert.equal(findCase(avec, "242")?.value, 220, "120 F-012 + 100 frais dossier F-011");
+    assert.equal(findCase(avec, "294")?.value, 1370, "1470 − 100 frais dossier");
+  });
+
+  it("11d. réconciliation Cerfa avec crédit : 270 − 294 − 300 = 310 ; 242+244+254=264", () => {
+    const emprunts = [pret({ interetsEmpruntExercice: 1000, interetsPreExploitation: 100, assuranceEmpruntExercice: 200, assurancePreExploitation: 20, fraisDossierDeductibles: 100, garantieDeductible: 50 })];
+    const charges = chargesA1({ deductible: { taxe_fonciere: 550, assurance_pno: 110 }, preExploitation: { taxe_fonciere: 50, assurance_pno: 10 }, chargesFinancement: 1350 });
+    const fr = fiscalResult({
+      recettes: { total: 7150 },
+      amortCalcule: 2979.54,
+      charges: { ...charges, chargesPreExploitation: 60 + 120 },
+      resultatAvantAmort: round2(7150 - (660 + 1350) - 180),
+    });
+    const form = map2033BFromRfs(rfs(fr, emprunts));
+    const v = (id: string) => (findCase(form, id)?.value as number | undefined) ?? 0;
+    assert.equal(round2(v("270") - v("294") - v("300")), v("310"));
+    assert.equal(round2(v("242") + v("244") + v("254")), v("264"));
+  });
+
+  it("294 est tracée source=Emprunts (détail disponible) ; 242 est tracée source=FiscalResult (ventilation F-012)", () => {
+    const charges = chargesA1({ deductible: { assurance_pno: 500 }, chargesFinancement: 1000 });
+    const form = map2033BFromRfs(rfs(fiscalResult({ charges }), [pret({ interetsEmpruntExercice: 1000 })]));
     assert.equal(findCase(form, "294")?.trace.source, "Emprunts");
-    assert.ok(findCase(form, "242")?.trace.path.includes("rfs.emprunts"));
-    assert.ok(findCase(form, "294")?.trace.path.includes("rfs.emprunts"));
+    assert.ok(findCase(form, "294")?.trace.path.includes("rfs.emprunts") || findCase(form, "294")?.trace.path.includes("intérêts"));
+    assert.equal(findCase(form, "242")?.trace.source, "FiscalResult");
+    assert.ok(findCase(form, "242")?.trace.path.includes("detailParCategorie"));
   });
 
   it("294 reste tracée source=FiscalResult en repli (rfs.emprunts absent), comme avant P1", () => {
     const fr = fiscalResult({ charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 } });
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "294")?.trace.source, "FiscalResult");
-    assert.equal(findCase(form, "294")?.trace.path, "fiscalResult.charges.chargesFinancement");
+    assert.ok(String(findCase(form, "294")?.trace.path).includes("chargesFinancement"));
   });
 });
 
@@ -560,20 +614,18 @@ describe("P0-3a.4 — composante A (F-012) projetée en case 264, jamais mélang
       500,
       "264 ne reçoit que A (500), jamais B ni C",
     );
-    assert.equal(findCase(form, "294")?.value, 350, "294 ne reçoit que B (350)");
-    assert.equal(findCase(form, "242")?.value, 150, "242 ne reçoit que C (150)");
+    assert.equal(findCase(form, "294")?.value, 500, "294 ne reçoit que B (350) et C (150), les deux financiers (A1)");
+    assert.equal(findCase(form, "242"), undefined, "242 ne reçoit jamais de financement (A1)");
 
-    // Aucun des trois n'est compté deux fois : la somme des deltas sur les
-    // trois cases (264+294+242 vs un dossier sans aucun montant pré-exploitation)
-    // vaut exactement A+B+C, ni plus ni moins.
+    // Aucun des trois n'est compté deux fois : la somme des deltas sur 264 et 294 (vs un dossier
+    // sans aucun montant pré-exploitation) vaut exactement A+B+C, ni plus ni moins.
     const sansRien = sansPreExploitation;
     const delta264 = (findCase(form, "264")?.value as number) - (findCase(sansRien, "264")?.value as number);
     const delta294 = (findCase(form, "294")?.value as number) - (findCase(sansRien, "294")?.value as number);
-    const delta242 = (findCase(form, "242")?.value as number) - (findCase(sansRien, "242")?.value as number);
-    assert.equal(round2(delta264 + delta294 + delta242), 1000, "500 (A, 264) + 350 (B, 294) + 150 (C, 242) = 1000, jamais plus");
+    assert.equal(round2(delta264 + delta294), 1000, "500 (A, 264) + 500 (B+C, 294) = 1000, jamais plus");
   });
 
-  it("3. réconciliation : 270 − (242+294) === résultat comptable (310/312/314) — aucun double comptage architectural", () => {
+  it("3. réconciliation : 270 − 294 − 300 === résultat comptable (310/312/314) — aucun double comptage architectural", () => {
     const fr = fiscalResult({
       exercice: 2025,
       recettes: { total: 9000 },
@@ -593,14 +645,14 @@ describe("P0-3a.4 — composante A (F-012) projetée en case 264, jamais mélang
     );
 
     const case270 = findCase(form, "270")?.value as number;
-    const case242 = (findCase(form, "242")?.value as number) ?? 0;
     const case294 = findCase(form, "294")?.value as number;
+    const case300 = (findCase(form, "300")?.value as number) ?? 0;
     const resultatFinal = fr.resultatAvantAmort - fr.amortCalcule - fr.charges.totalNonDeductible;
 
     assert.equal(
-      round2(case270 - (case242 + case294)),
+      round2(case270 - case294 - case300),
       round2(resultatFinal),
-      "résultat d'exploitation (270) moins les charges financières (242+294, B/C inclus) reconstitue exactement le résultat final (310/312/314) — preuve qu'aucun euro n'est compté deux fois entre les deux sections",
+      "résultat d'exploitation (270) moins les charges financières (294, B/C inclus) et exceptionnelles (300) reconstitue exactement le résultat final (310/312/314) — preuve qu'aucun euro n'est compté deux fois entre les deux sections",
     );
   });
 
@@ -631,8 +683,8 @@ describe("P0-3a.4 — composante A (F-012) projetée en case 264, jamais mélang
         pret({ pretId: "pret-B", interetsPreExploitation: 250, assurancePreExploitation: 75 }),
       ]),
     );
-    assert.equal(findCase(form, "294")?.value, 350, "294 : ventilation multi-emprunts P0-3a.2 inchangée (100+250)");
-    assert.equal(findCase(form, "242")?.value, 125, "242 : ventilation multi-emprunts P0-3a.2 inchangée (50+75)");
+    assert.equal(findCase(form, "294")?.value, 475, "294 : multi-emprunts, intérêts + assurance pré-exploitation (100+250+50+75)");
+    assert.equal(findCase(form, "242"), undefined, "242 : jamais de financement (A1)");
 
     const sansA = map2033BFromRfs(
       rfs(
@@ -817,7 +869,9 @@ describe("Cycle 30/32 — TEST 8 : cases bloquées — jamais une valeur invent�
       assert.equal(findCase(form, id), undefined, `${id} ne doit jamais recevoir de valeur`);
       assert.ok(findBlocked(form, id), `${id} doit être tracé dans casesNonAlimentees`);
     }
-    assert.equal(form.casesNonAlimentees.length, 4, "352/354/356/360 restent bloquées (audit fiscal ciblé : 360 rejoint 356, IS uniquement)");
+    // A1 : 242/244 peuvent s'ajouter (conservation non établie, avec raison) — la fixture par défaut n'a
+    // aucune ventilation par catégorie. Les quatre cases structurelles restent exactement 352/354/356/360.
+    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 4, "352/354/356/360 restent bloquées (audit fiscal ciblé : 360 rejoint 356, IS uniquement)");
   });
 
   it("chaque case bloquée porte une raison non vide et une catégorie explicite, y compris la nouvelle catégorie non_applicable", () => {
@@ -978,9 +1032,9 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     assert.equal(findCase(form, "370")?.value, 5400);
   });
 
-  it("352/354/356/360 restent bloquées, casesNonAlimentees.length toujours 4", () => {
+  it("352/354/356/360 restent bloquées, casesNonAlimentees structurelles toujours 4 (hors 242/244, A1)", () => {
     const form = map2033BFromRfs(rfs(fiscalResult()));
-    assert.equal(form.casesNonAlimentees.length, 4, "218/254 sont dans cases, pas casesNonAlimentees — 360 rejoint 352/354/356 (audit fiscal ciblé, IS uniquement)");
+    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 4, "218/254 sont dans cases, pas casesNonAlimentees — 360 rejoint 352/354/356 (audit fiscal ciblé, IS uniquement) ; 242/244 (A1) exclues du décompte structurel");
     assert.ok(findBlocked(form, "352"));
     assert.ok(findBlocked(form, "354"));
     assert.ok(findBlocked(form, "356"));

@@ -204,10 +204,16 @@ export function everydayProposalNote(proposal: ChargeProposal): string | undefin
       "Ces montants sont des loyers encaissés. Ce n'est pas une dépense."
     );
   }
-  if (proposal.gestionKind === "financement" || (proposal.familyId === "gestion" && proposal.exclusionReason?.includes("prêt"))) {
+  if (proposal.gestionKind === "financement") {
     return (
-      proposal.exclusionReason ??
-      "Cette dépense concerne votre prêt. Elle est déjà prise en compte dans Financement."
+      "Cette dépense semble liée à votre prêt. Si elle est déjà saisie dans l'Assistant Financement, " +
+      "seul le montant déjà compté là-bas sera neutralisé ici — le reste reste une charge."
+    );
+  }
+  if (proposal.insuranceKind === "emprunteur") {
+    return (
+      "Cette assurance semble liée à votre prêt. Si elle est déjà saisie dans l'Assistant Financement, " +
+      "seul le montant déjà compté là-bas sera neutralisé ici — le reste reste une charge."
     );
   }
   if (proposal.familyId === "gestion" && proposal.amount !== undefined && proposal.paymentProven === false) {
@@ -240,10 +246,11 @@ export function everydayProposalNote(proposal: ChargeProposal): string | undefin
       ? `J'ai trouvé ${noun} de ${proposal.amount.toLocaleString("fr-FR")} €, payés en ${year}.`
       : undefined;
   }
-  if (proposal.insuranceKind === "emprunteur" || proposal.exclusionReason?.includes("prêt")) {
+  if (proposal.exclusionReason?.includes("prêt")) {
     return (
       proposal.exclusionReason ??
-      "Cette assurance concerne votre prêt. Elle est déjà prise en compte dans Financement."
+      "Cette assurance semble liée à votre prêt. Si elle est déjà saisie dans l'Assistant Financement, " +
+        "seul le montant déjà compté là-bas sera neutralisé ici — le reste reste une charge."
     );
   }
   if (proposal.familyId === "assurances" && proposal.amount !== undefined && proposal.paymentProven === false) {

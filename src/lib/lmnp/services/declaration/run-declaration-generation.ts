@@ -16,6 +16,8 @@ import {
 } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
 import { excludedLoanIdsFromFinancing } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
+import { resolveEmpruntsForRfs } from "./resolve-emprunts-for-rfs";
+import { effectiveFinancementCharges } from "./credit-state";
 import {
   TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
   detectTaxeFonciereLegacyRisk,
@@ -167,9 +169,10 @@ export function runDeclarationGeneration(
   // fraîche reste la seule vérité, jamais une ancienne valeur persistée
   // (potentiellement stale) qui survivrait parce que le tableau frais est vide.
   const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
-  const financementCharges = draft?.financementCharges
-    ? { ...draft.financementCharges, excludedLoanIds }
-    : draft?.financementCharges;
+  // Latence « prêt saisi puis aucun crédit » — `effectiveFinancementCharges` écarte d'anciennes charges de
+  // financement dès que « aucun crédit » est établi (voir credit-state.ts) ; sinon `draft.financementCharges`.
+  const financementBrut = effectiveFinancementCharges(draft);
+  const financementCharges = financementBrut ? { ...financementBrut, excludedLoanIds } : financementBrut;
 
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
@@ -231,7 +234,10 @@ export function runDeclarationGeneration(
         composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
       }
     : undefined;
-  const emprunts = draft?.financementCharges?.prets;
+  // A5(1) — voir `resolveEmpruntsForRfs` : `[]` uniquement si le client a
+  // explicitement déclaré ne pas avoir de crédit (`creditDeclaredNoneAt`) ; une
+  // absence de réponse reste `undefined` (jamais transformée en « aucun crédit »).
+  const emprunts = resolveEmpruntsForRfs(draft);
 
   // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — correction audit
   // contradictoire : AUCUNE dérivation automatique depuis `dateMiseEnService`

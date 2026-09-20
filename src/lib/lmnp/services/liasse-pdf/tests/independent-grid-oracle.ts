@@ -167,6 +167,37 @@ function nextIntervalRight(xs: readonly number[], box: ColumnBox): ColumnBox | u
 
 // --- Oracles publics -------------------------------------------------------
 
+/**
+ * A4 — filet vertical DROIT de la colonne de valeurs de la 2033-B (page 2 de
+ * l'asset), lu directement dans les opérateurs de tracé du Cerfa officiel
+ * vierge, sans jamais importer `registry/2033-b`.
+ *
+ * Toutes les arêtes verticales situées à droite de x=500 doivent former UN
+ * SEUL filet (le bord droit du tableau, tracé en tronçons de largeurs de trait
+ * différentes mais au même x) : l'oracle échoue explicitement si ce n'est pas
+ * le cas plutôt que de choisir arbitrairement une valeur. Précision au
+ * millième de point (contrairement à `verticalSeparatorsSpanningBand`, arrondi
+ * au dixième) : l'inset de sécurité du registre se mesure à ce niveau.
+ *
+ * Retourne l'abscisse de l'AXE du filet ; le trait le plus épais du Cerfa
+ * (0.76pt) s'étend donc de `centreX - 0.38` à `centreX + 0.38`.
+ */
+export async function deriveRightValueColumnBorderX(officialAssetBytes: Uint8Array): Promise<number> {
+  const PAGE_NUMBER = 2; // 2033-B-SD = page 2 de l'asset partagé (fait fixe du fichier, voir deriveCase370372Boxes)
+  const contentText = await officialPageContentText(officialAssetBytes, PAGE_NUMBER - 1);
+  const xs = new Set<number>();
+  for (const s of parseStrokedLineSegments(contentText)) {
+    if (Math.abs(s.x0 - s.x1) < 0.05 && s.x0 > 500) xs.add(Math.round(s.x0 * 1000) / 1000);
+  }
+  const distinct = [...xs].sort((a, b) => a - b);
+  if (distinct.length === 0 || distinct[distinct.length - 1] - distinct[0] > 0.02) {
+    throw new Error(
+      `Oracle bord droit 2033-B : les arêtes verticales à droite de x=500 ne forment pas un filet unique (xs=${distinct.join(",")}) — l'asset officiel a peut-être changé de structure.`,
+    );
+  }
+  return distinct[distinct.length - 1];
+}
+
 export type Case370372Boxes = {
   /** Boîte VALEUR de la case "370" (bénéfice) — PAS la zone de son numéro imprimé. */
   beneficeBox: ColumnBox;

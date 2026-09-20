@@ -656,6 +656,34 @@ export interface ChargesAssistantOutput {
   totalAmortissable: number;
   totalPreExploitation: number;
   parCategorie: Partial<Record<string, number>>;
+  /**
+   * A1 — ventilations par catégorie de `totalPreExploitation` / `totalNonDeductible`
+   * (F-012, transport pur jusqu'à F-006 puis la RFS). Optionnelles : absentes des
+   * dossiers persistés avant A1 — jamais reconstituées, les cases 242/244 de la
+   * 2033-B restent alors non alimentées tant que F-012 n'a pas été reconfirmé.
+   */
+  parCategoriePreExploitation?: Partial<Record<string, number>>;
+  parCategorieNonDeductible?: Partial<Record<string, number>>;
+  /**
+   * Recouvrement F-011 / F-012 de l'assurance emprunteur (F-012, voir assurance-recouvrement.ts) : `reference` = assurance
+   * de l'année établie par F-011 AU MOMENT du calcul ; `recouvert` neutralisé dans F-012 ; `reliquat` traité normalement.
+   * Persisté pour DÉTECTER une péremption (F-011 modifié depuis) — jamais pour recalculer.
+   */
+  recouvrementAssuranceF011?: {
+    reference: number;
+    periodeCompatible: boolean;
+    recouvert: number;
+    reliquat: number;
+  };
+  /**
+   * Recouvrement F-011 / F-012 des frais de dossier (enveloppe séparée) — même contrat de péremption.
+   */
+  recouvrementFraisDossierF011?: {
+    reference: number;
+    periodeCompatible: boolean;
+    recouvert: number;
+    reliquat: number;
+  };
   composantsNouveaux: import("@/runtime").ComposantNouveau[];
   fieldSources: Partial<Record<string, import("@/runtime").FieldSource>>;
   computedAt: string;

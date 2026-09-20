@@ -2,6 +2,8 @@ import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
+import { resolveConservationDetail2033B, type ConservationDetail2033B } from "./detail-charges-2033b";
+import { splitFinancementFor2033B } from "./split-financement-2033b";
 
 /**
  * Projection Cerfa 2033-B-SD — consomme UNIQUEMENT la RFS (`rfs.fiscalResult`).
@@ -147,12 +149,30 @@ import { resultatComptable as resultatComptableCentral } from "../../bilan/resul
  * (taxe foncière, TRF-0020 : "Totalisation des charges déductibles", sortie
  * détail_par_catégorie) est déjà transportée sans recalcul jusque dans
  * `FiscalResult.charges.detailParCategorie` — un pur MAPPER GAP. Pass-through
- * conditionnel (voir `taxeFonciere244` ci-dessous), même principe que 242 :
+ * conditionnel (remplacé par A1, voir `detail-charges-2033b.ts`), même principe que 242 :
  * absente si aucune ligne "taxe_fonciere" n'a été saisie, jamais un 0
  * inventé. Couvre uniquement la composante taxe foncière — CFE et CVAE,
  * mentionnées dans le libellé officiel de cette case, ne sont pas des
  * catégories du moteur actuel (voir `family-ux.ts`) et restent hors
  * périmètre de cette implémentation.
+ *
+ * A1 (cohérence du détail 2033-B) — les lignes détaillées publiées doivent
+ * expliquer EXACTEMENT 264 hors 254 : 242 + 244 + 254 = 264.
+ *
+ * Classification 2033-B des composantes F-011 (présentation Cerfa — 310 inchangé) :
+ *   - intérêts d'emprunt + IRA → 294 : ÉTABLI ;
+ *   - assurance emprunteur bancaire liée au prêt → 294 : ÉTABLI (BOFiP
+ *     BOI-BIC-CHG-40-20-20 — primes imposées pour garantir le remboursement =
+ *     charges financières au même titre que l'intérêt) ;
+ *   - frais de dossier bancaire → 242 ∈ 264 : ÉTABLI (notice 2033-NOT-SD 2026
+ *     ligne 242 « services bancaires » / annexe 627) — retirés de 294 ;
+ *   - garantie / caution → 294 : PROVISOIRE / UNRESOLVED (notice « services
+ *     bancaires » vs SAV-001 « charges financières ») — aucun déplacement.
+ *
+ * 242/244 restent alimentés par la ventilation F-012 (+ frais de dossier F-011
+ * ajoutés explicitement à 242/264). Si la conservation F-012 échoue, 242/244
+ * ne sont PAS publiées (écart tracé) ; les frais de dossier F-011 restent
+ * néanmoins dans 264 et hors 294 pour préserver 270 − 294 − 300 = 310.
  */
 
 /** Pourquoi une case Cerfa n'est volontairement pas alimentée. */
@@ -179,111 +199,38 @@ export type Form2033B = {
   cases: CerfaCase[];
   /** Jamais une valeur inventée : chaque case listée ici reste explicitement sans valeur, avec sa raison tracée. */
   casesNonAlimentees: CerfaCaseNonAlimentee[];
+  /** A1 — invariant de conservation : 242 + 244 + 254 = 264 (ou lignes non publiées, avec raison). */
+  conservationDetail: ConservationDetail2033B;
 };
 
 export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   const fr = rfs.fiscalResult;
   const baseTrace: Omit<CaseTrace, "path"> = { source: "FiscalResult", ksArtifacts: ["TRF-0032"] };
 
-  // Cases 242/294 — P1 : ventilation du financement par nature, depuis
-  // `rfs.emprunts` (F-011, PretFinancementExercice[]), jamais recalculée.
-  // `rfs.emprunts` et `fiscalResult.charges.chargesFinancement` proviennent,
-  // dans le pipeline réel, du même appel à computeFinancementExercice()
-  // (run-declaration-generation.ts) — descendre au détail n'introduit donc
-  // aucune seconde source de vérité, seulement un niveau de granularité plus
-  // fin d'une donnée déjà calculée. `chargesFinancement` reste le total de
-  // contrôle DES SEULES CHARGES DE L'EXERCICE (invariant de conservation,
-  // vérifié par les tests, jamais par ce code — voir rfs-2033b.test.ts) :
-  // depuis P0-3a.2, 242/294 incluent aussi les montants pré-exploitation
-  // (interetsPreExploitation/assurancePreExploitation), absents par
-  // construction de `chargesFinancement` — 242+294 dépasse alors
-  // `chargesFinancement` de la somme des deux, ce qui est attendu.
-  //
-  // `garantieDeductible` ne représente aujourd'hui QUE la commission de
-  // caution (F-011 ne capture aucun montant pour hypothèque/IPPD/autre) —
-  // elle rejoint 242 à ce titre précis, jamais comme "toute garantie".
-  //
-  // `rfs.emprunts === undefined` (jamais fourni) → repli explicite sur
-  // l'ancien comportement : 294 = chargesFinancement en totalité, 242 reste
-  // absente. Jamais une ventilation arbitraire faute de détail disponible.
-  // `rfs.emprunts` vide (`[]`, financement nul) est distinct : le détail est
-  // disponible, la somme vaut simplement 0 des deux côtés.
+  // Case 294 / frais de dossier → 242 — ventilation explicite (voir split-financement-2033b.ts).
+  // Les montants restent déduits une seule fois du résultat via F-006 (`chargesFinancement` /
+  // pré-exploitation) ; ce mapping ne les réinjecte dans aucun calcul fiscal.
   const emprunts = rfs.emprunts;
-  // P0-3a.2 — intérêts/assurance pré-exploitation (F-011, TRF-0023/P2) rejoignent
-  // 294/242 par nature, au même titre que leurs homologues de l'exercice :
-  // restitution pure d'une donnée déjà transportée sur rfs.emprunts[], jamais
-  // recalculée. Elles sont déjà déduites une seule fois du résultat fiscal via
-  // fiscalResult.charges.chargesPreExploitation (TRF-0030) — ce mapping ne fait
-  // que les rendre visibles sur la case Cerfa correspondant à leur nature
-  // financière, il ne les réinjecte dans aucun calcul.
-  const financement242 =
-    emprunts !== undefined
-      ? round2(
-          emprunts.reduce(
-            (acc, p) =>
-              acc + p.assuranceEmpruntExercice + p.assurancePreExploitation + p.fraisDossierDeductibles + p.garantieDeductible,
-            0,
-          ),
-        )
-      : undefined;
-  const financement294 =
-    emprunts !== undefined
-      ? round2(emprunts.reduce((acc, p) => acc + p.interetsEmpruntExercice + p.interetsPreExploitation + p.iraDeductible, 0))
-      : round2(fr.charges.chargesFinancement);
+  const split = splitFinancementFor2033B({
+    emprunts,
+    chargesFinancementFallback: fr.charges.chargesFinancement,
+  });
+  const financement294 = split.case294;
+  const fraisDossier242 = split.fraisDossier242;
   const empruntsTrace: Omit<CaseTrace, "path"> = { source: "Emprunts", ksArtifacts: ["TRF-0016", "TRF-0032"] };
 
-  // Case 244 — MICRO-JALON implémentation 244 : « Impôts, taxes et
-  // versements assimilés ». Pass-through pur de
-  // fiscalResult.charges.detailParCategorie.taxe_fonciere (F-012, TRF-0020 :
-  // "Totalisation des charges déductibles", sortie détail_par_catégorie —
-  // déjà transportée telle quelle par F-006 dans FiscalResult, jamais
-  // recalculée ici). `taxe_fonciere` est un SOUS-ENSEMBLE des lignes qui
-  // alimentent déjà `totalDeductible`/`chargesExploitation` (donc déjà compté
-  // dans 264/270) — cette case ne fait que le rendre visible séparément,
-  // jamais une seconde fois dans un total.
-  //
-  // `detailParCategorie` est un `Partial<Record<...>>` : une clé ABSENTE
-  // (`undefined`, aucune ligne de cette catégorie saisie) est distincte d'une
-  // clé PRÉSENTE à 0 (une ligne de charge existe, montant nul) — le type le
-  // permet nativement, aucune distinction inventée. Seule l'absence donne
-  // `undefined` ci-dessous ; en pratique, un enregistrement à 0 franc n'a
-  // aucune raison métier d'exister mais serait néanmoins projeté fidèlement.
-  //
-  // RÉSERVE (audit dédié) : seule la taxe foncière est une catégorie du
-  // moteur (F-012, `ChargeCategorie`). CFE et CVAE — mentionnées dans le
-  // libellé officiel de cette case — ne sont PAS distinguées comme
-  // catégories autonomes dans le modèle actuel (confirmé par
-  // `family-ux.ts` : "CFE n'est pas une catégorie moteur"). Cette
-  // implémentation ne couvre donc que la composante taxe foncière, jamais
-  // une prétention de couverture complète de la case 244.
-  const taxeFonciere244 = fr.charges.detailParCategorie?.taxe_fonciere;
+  // Cases 242/244 — A1 : détail F-012 (+ frais de dossier F-011 ajoutés ci-dessous à 242/264).
+  const detail = resolveConservationDetail2033B(fr);
 
-  // Case 264 — Total des charges d'exploitation (II). Formule établie et
-  // vérifiée par l'audit FEC (grand livre comptable réel du dossier de
-  // référence, reconciliation au centime près) : les charges d'exploitation
-  // comptables complètes = la part déductible fiscalement (agrégée par F-006
-  // dans `chargesExploitation` — F-012, et depuis TRF-0001/JUG-001 les frais
-  // d'acquisition F-010 choisis en déduction immédiate) + les dotations aux
-  // amortissements comptables (compte PCG 681, confirmé dans le FEC) + les
-  // charges comptabilisées mais fiscalement non déductibles (F-012, ex.
-  // fonds de roulement de copropriété). Projection de trois valeurs déjà
-  // calculées — aucune règle fiscale nouvelle.
-  //
-  // P0-3a.4 — `chargesExploitationPreExploitation` (composante A, P0-3a.3)
-  // rejoint ce total : ce sont des charges d'exploitation F-012 (taxe
-  // foncière, assurances, honoraires, frais bancaires, divers) engagées avant
-  // mise en service, jamais des charges financières. B (intérêts) et C
-  // (assurance d'emprunt) pré-exploitation restent exclusivement en 294/242
-  // (P0-3a.2) — jamais ici. `chargesPreExploitation` (= A+B+C, TRF-0030)
-  // n'est JAMAIS lue par ce mapper : seule la composante A l'est,
-  // explicitement, pour éviter tout double comptage de B/C. Optionnelle
-  // (P0-3a.3) → repli `?? 0`, comportement strictement inchangé en son
-  // absence.
+  // Case 264 — charges d'exploitation F-012/F-010 + amortissements + non déductibles
+  // + frais de dossier F-011 reclassés en exploitation (présentation ; 310 inchangé car
+  // 294 baisse du même montant). B/C pré-exploitation restent en 294, jamais ici.
   const charges264 = round2(
     fr.charges.chargesExploitation +
       (fr.charges.chargesExploitationPreExploitation ?? 0) +
       fr.amortCalcule +
-      fr.charges.totalNonDeductible,
+      fr.charges.totalNonDeductible +
+      fraisDossier242,
   );
   // Case 270 — Résultat d'exploitation (I − II). Différence entre deux cases
   // déjà projetées (232 et 264) — présentation Cerfa, pas un calcul fiscal.
@@ -320,8 +267,8 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: charges264,
       trace: {
         ...baseTrace,
-        path: "fiscalResult.charges.chargesExploitation + fiscalResult.charges.chargesExploitationPreExploitation + fiscalResult.amortCalcule + fiscalResult.charges.totalNonDeductible",
-        ksArtifacts: ["TRF-0020", "TRF-0025", "TRF-0012", "TRF-0032"],
+        path: "fiscalResult.charges.chargesExploitation + chargesExploitationPreExploitation + amortCalcule + totalNonDeductible + fraisDossierF011(→242)",
+        ksArtifacts: ["TRF-0020", "TRF-0025", "TRF-0012", "TRF-0016", "TRF-0032"],
       },
     },
     {
@@ -346,8 +293,11 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       value: financement294,
       trace:
         emprunts !== undefined
-          ? { ...empruntsTrace, path: "Σ rfs.emprunts[].(interetsEmpruntExercice + interetsPreExploitation + iraDeductible)" }
-          : { ...baseTrace, path: "fiscalResult.charges.chargesFinancement" },
+          ? {
+              ...empruntsTrace,
+              path: "Σ rfs.emprunts[].(intérêts + IRA + assurance emprunteur + garantie PROVISOIRE) — hors frais de dossier (→242)",
+            }
+          : { ...baseTrace, path: "fiscalResult.charges.chargesFinancement (repli sans détail emprunts)" },
     },
     {
       // Audit fiscal ciblé (case 300) — fiscalResult.perteExceptionnelle est
@@ -393,39 +343,39 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     },
   ];
 
-  // Case 242 — P1 : uniquement quand le détail par prêt est disponible
-  // (financement242 !== undefined, voir plus haut). Jamais une valeur à 0
-  // inventée en son absence : contrairement à 218/254/300/350 (scalaires
-  // propres de FiscalResult, toujours définis), 242 est une somme qui exige
-  // le détail — sans lui, il n'existe aucune base non arbitraire pour
-  // affirmer "242 = 0" pendant que 294 porte la totalité de chargesFinancement.
-  if (financement242 !== undefined) {
+  // Cases 242/244 — A1 : alimentées uniquement si la conservation F-012 est établie.
+  // Les frais de dossier F-011 (notice 242) s'ajoutent alors à 242 pour coller à 264.
+  const detailTrace = {
+    ...baseTrace,
+    path:
+      "fiscalResult.charges.detailParCategorie + detailPreExploitationParCategorie + detailNonDeductibleParCategorie (F-012, par catégorie)",
+    ksArtifacts: ["TRF-0020", "TRF-0025", "SAV-011", "TRF-0032"],
+  };
+  const ligne242Publiee =
+    detail.status === "CONSERVE" && (detail.ligne242 !== undefined || fraisDossier242 > 0)
+      ? round2((detail.ligne242 ?? 0) + fraisDossier242)
+      : undefined;
+  if (ligne242Publiee !== undefined) {
     cases.push({
       caseId: "242",
-      label: "Autres charges externes",
-      value: financement242,
+      label: "Autres achats et charges externes",
+      value: ligne242Publiee,
       trace: {
-        ...empruntsTrace,
-        path: "Σ rfs.emprunts[].(assuranceEmpruntExercice + assurancePreExploitation + fraisDossierDeductibles + garantieDeductible)",
+        ...detailTrace,
+        path:
+          fraisDossier242 > 0
+            ? `Σ catégories F-012 hors taxe_fonciere + frais de dossier F-011 (${fraisDossier242} €) — ${detailTrace.path}`
+            : `Σ catégories F-012 hors taxe_fonciere — ${detailTrace.path}`,
+        ksArtifacts: [...(detailTrace.ksArtifacts ?? []), "TRF-0016"],
       },
     });
   }
-
-  // Case 244 — MICRO-JALON implémentation 244 : uniquement quand la
-  // catégorie "taxe_fonciere" est présente dans le détail par catégorie
-  // (voir commentaire de `taxeFonciere244` ci-dessus). Même principe que 242 :
-  // jamais une valeur à 0 inventée en son absence — une clé absente signifie
-  // "aucune ligne de cette catégorie saisie", pas "montant nul confirmé".
-  if (taxeFonciere244 !== undefined) {
+  if (detail.ligne244 !== undefined) {
     cases.push({
       caseId: "244",
       label: "Impôts, taxes et versements assimilés",
-      value: round2(taxeFonciere244),
-      trace: {
-        ...baseTrace,
-        path: "fiscalResult.charges.detailParCategorie.taxe_fonciere",
-        ksArtifacts: ["TRF-0020", "TRF-0032"],
-      },
+      value: round2(detail.ligne244),
+      trace: { ...detailTrace, path: `taxe_fonciere (exercice + pré-exploitation) — ${detailTrace.path}` },
     });
   }
 
@@ -535,10 +485,34 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     },
   ];
 
+  // A1 — conservation F-012 non établie : 242/244 F-012 restent sans valeur (écart tracé).
+  // Les frais de dossier F-011 restent dans 264 / hors 294 même dans ce cas (310 cohérent).
+  if (detail.status === "ECART") {
+    const raison =
+      `Le détail ne peut pas expliquer exactement 264 − 254 (attendu ${detail.attendu} €, ventilable ${detail.attribue} €, écart ${detail.ecart} €) : ` +
+      detail.raisons.join(" ; ") +
+      ". Aucun montant n'est publié plutôt qu'un détail qui n'explique pas le total.";
+    casesNonAlimentees.push(
+      { caseId: "242", label: "Autres achats et charges externes", raison, categorie: "incoherence_modele" },
+      { caseId: "244", label: "Impôts, taxes et versements assimilés", raison, categorie: "incoherence_modele" },
+    );
+  }
+
+  const conservationDetail: ConservationDetail2033B =
+    detail.status === "CONSERVE"
+      ? {
+          ...detail,
+          attendu: round2(detail.attendu + fraisDossier242),
+          attribue: round2(detail.attribue + fraisDossier242),
+          ...(ligne242Publiee !== undefined ? { ligne242: ligne242Publiee } : {}),
+        }
+      : detail;
+
   return {
     formId: "2033-B-SD",
     millésime: rfs.exercice,
     cases,
     casesNonAlimentees,
+    conservationDetail,
   };
 }

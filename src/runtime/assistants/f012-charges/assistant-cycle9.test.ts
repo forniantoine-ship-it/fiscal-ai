@@ -183,7 +183,7 @@ async function receiveAndConfirm(
     proposals: input.proposals,
   });
   for (const proposal of turn.state.documentReview?.proposals ?? []) {
-    if (proposal.exclusionReason || proposal.insuranceKind === "emprunteur") {
+    if (proposal.exclusionReason) {
       turn = await assistant.handle(turn.state, { type: "ignore_proposal", proposalId: proposal.id });
     } else if (proposal.amount !== undefined) {
       turn = await assistant.handle(turn.state, { type: "confirm_proposal", proposalId: proposal.id });
@@ -465,18 +465,19 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     );
   });
 
-  it("M — assurance emprunteur seule : jamais une Charge F-012", async () => {
+  it("M — assurance emprunteur seule : candidate F-011, pas d'exclusion sur libellé", async () => {
     const proposals = proposalsFromAssuranceCorpus({
       corpus: EMPRUNTEUR_SEUL,
       documentId: "ass-m",
       fiscalYear: YEAR,
     });
     assert.ok(proposals.every((item) => item.insuranceKind === "emprunteur"));
-    assert.ok(proposals[0]?.exclusionReason);
+    assert.equal(proposals[0]?.exclusionReason, undefined, "plus jamais exclu sur le seul libellé");
     const { assistant, turn: start } = await startAssurances();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ass-m", proposals });
     assert.equal(turn.state.collected.assurancePno, undefined);
-    assert.equal(coverageOf(turn.state)?.status, "reviewed_empty");
+    const expenses = turn.state.collected.documentExpenses ?? [];
+    assert.ok(expenses.some((e) => e.category === "divers" && e.financingOverlap === "assurance_emprunteur"));
   });
 
   it("N — logement + emprunteur dans le même document", async () => {
@@ -489,13 +490,12 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     const pret = proposals.find((item) => item.insuranceKind === "emprunteur");
     assert.equal(logement?.amount, 300);
     assert.equal(pret?.amount, 661);
-    assert.ok(pret?.exclusionReason);
+    assert.equal(pret?.exclusionReason, undefined);
     const { assistant, turn: start } = await startAssurances();
     const turn = await receiveAndConfirm(assistant, start.state, { documentId: "ass-n", proposals });
-    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
-    assert.equal(turn.state.collected.documentExpenses?.[0]?.category, "assurance_pno");
+    assert.ok(turn.state.collected.documentExpenses?.some((e) => e.category === "assurance_pno" && e.montant === 300));
+    assert.ok(turn.state.collected.documentExpenses?.some((e) => e.financingOverlap === "assurance_emprunteur" && e.montant === 661));
     assert.equal(turn.state.collected.assuranceGli, undefined);
-    assert.equal(registryOf(turn.state).charges.filter((item) => item.familyId === "assurances").length, 1);
   });
 
   it("O — formulation crédit variante", () => {
@@ -639,11 +639,15 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       fieldSources: turn.state.fieldSources,
       exercise: YEAR,
     });
-    const computeInput = chargeRegistryToComputeInput(registry, { dateMiseEnService: "2023-01-01" });
+    const computeInput = chargeRegistryToComputeInput(registry, {
+      dateMiseEnService: "2023-01-01",
+      assuranceEmprunteurF011: { exerciceFiscal: YEAR, montantAnnuel: 661 },
+    });
     const fromRegistry = computeChargesExercice(computeInput);
     assert.equal(fromRegistry.charges.totalDeductible, manual.charges.totalDeductible);
     assert.equal(fromRegistry.charges.totalDeductible, 300);
-    assert.equal(turn.state.collected.documentExpenses?.[0]?.montant, 300);
+    assert.ok(turn.state.collected.documentExpenses?.some((e) => e.category === "assurance_pno" && e.montant === 300));
+    assert.ok(turn.state.collected.documentExpenses?.some((e) => e.financingOverlap === "assurance_emprunteur" && e.montant === 661));
   });
 
   it("U — F-006 consomme le même total", async () => {
@@ -672,7 +676,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
     assert.equal(aggregated.data?.chargesExploitation, 300);
   });
 
-  it("V — F-011 : séparation, alerte manuelle, pas d'import", async () => {
+  it("V — F-011 : séparation, alerte manuelle, candidat sans F011 conservé", async () => {
     const { assistant, turn: start } = await startAssurances(DEPS_F011);
     const mixte = await receiveAndConfirm(assistant, start.state, {
       documentId: "ass-v",
@@ -682,7 +686,8 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
         fiscalYear: YEAR,
       }),
     });
-    assert.equal(mixte.state.collected.documentExpenses?.[0]?.montant, 300);
+    assert.ok(mixte.state.collected.documentExpenses?.some((e) => e.category === "assurance_pno" && e.montant === 300));
+    assert.ok(mixte.state.collected.documentExpenses?.some((e) => e.financingOverlap === "assurance_emprunteur" && e.montant === 661));
 
     const { assistant: a2, turn: s2 } = await startAssurances(DEPS_F011);
     let credit = await a2.handle(s2.state, { type: "open_family_manual" });
@@ -692,6 +697,7 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       description: "assurance crédit 661",
     });
     assert.equal(credit.state.collected.assurancePno, undefined);
+    assert.ok(credit.state.collected.divers.some((d) => d.financementOverlap === "assurance_emprunteur" && d.montant === 661));
     assert.ok(credit.messages.some((message) => /prêt/.test(message.content) && /Financement/.test(message.content)));
 
     const { assistant: a3, turn: s3 } = await startAssurances();
@@ -713,6 +719,12 @@ describe("F-012 Cycle 9 — documentaire assurance du logement", () => {
       }),
     });
     assert.equal(sansF011.state.collected.assurancePno, undefined);
+    assert.ok(
+      sansF011.state.collected.documentExpenses?.some(
+        (e) => e.financingOverlap === "assurance_emprunteur" && e.montant === 661,
+      ),
+      "sans montant F011, le libellé ne doit jamais faire disparaître la dépense",
+    );
   });
 
   it("W — pont existant + GLI + période à cheval + UX", () => {

@@ -152,10 +152,48 @@ function applyOne(
     return { collected, wrote: false, blocked: { kind: "capital_pret", message: overlap.message } };
   }
   if (overlap.kind === "assurance_emprunteur" && familyId === "assurances") {
+    // Le libellé identifie une correspondance POTENTIELLE avec F-011, jamais un motif d'exclusion : la ligne est
+    // enregistrée comme candidate (même traitement que la saisie en « Charges diverses ») et n'est neutralisée, dans
+    // le compute, qu'à hauteur de l'assurance réellement établie par F-011 (`allocateAssuranceRecouvrement`).
+    if (alreadyHasDivers(collected, expense.description, expense.amount)) {
+      return { collected, wrote: false, overlapMessage: overlap.message };
+    }
     return {
-      collected,
-      wrote: false,
-      blocked: { kind: "assurance_emprunteur", message: overlap.message },
+      collected: {
+        ...collected,
+        divers: [
+          ...collected.divers,
+          {
+            id: nextDiversId(collected),
+            description: expense.description,
+            montant: expense.amount,
+            financementOverlap: "assurance_emprunteur",
+          },
+        ],
+      },
+      wrote: true,
+      overlapMessage: overlap.message,
+    };
+  }
+  if (overlap.kind === "frais_dossier") {
+    if (alreadyHasDivers(collected, expense.description, expense.amount)) {
+      return { collected, wrote: false, overlapMessage: overlap.message };
+    }
+    return {
+      collected: {
+        ...collected,
+        divers: [
+          ...collected.divers,
+          {
+            id: nextDiversId(collected),
+            description: expense.description,
+            montant: expense.amount,
+            financementOverlap: "frais_dossier",
+          },
+        ],
+      },
+      wrote: true,
+      overlapMessage: overlap.message,
     };
   }
 
@@ -222,6 +260,8 @@ function applyOne(
         id: nextDiversId(collected),
         description: expense.description,
         montant: expense.amount,
+        // frais_dossier déjà traité en amont (toutes familles) ; ici seul le
+        // cas assurance_emprunteur hors famille assurances peut arriver.
         financementOverlap: overlap.kind === "assurance_emprunteur" ? "assurance_emprunteur" : undefined,
       };
       return {

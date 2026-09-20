@@ -124,6 +124,11 @@ export interface Expense {
    */
   fieldSources: Partial<Record<"montant", FieldSource>>;
   category: ChargeCategorie;
+  /**
+   * Candidature de recouvrement F-011 (libellé) — enveloppes séparées assurance / frais de dossier.
+   * Neutralisation économique uniquement dans `compute-charges-exercice`.
+   */
+  financingOverlap?: "assurance_emprunteur" | "frais_dossier";
   /** Nature d'intervention (travaux) — mêmes valeurs que `Charge.travaux.natureIntervention`. Absente hors catégorie "travaux". Peut être périmée (proposée puis contredite par `qualificationRetenue`) : voir `resolveNatureIntervention()`, seule autorité de résolution. */
   natureIntervention?: NatureIntervention;
   /** Qualification retenue après arbitrage utilisateur — absente = à arbitrer, jamais une valeur par défaut inventée. AUTORITÉ UNIQUE consommée par `expenseToCharge()` ET `expenseToComposantNouveau()` — les deux ne peuvent donc jamais interpréter différemment la même Expense (correctif post-audit, §1). */
@@ -324,6 +329,7 @@ export function expenseToCharge(expense: Expense): ExpenseToChargeOutput {
     // "à revoir" pour autant — seule `familyId === "travaux"` applique ce repli.
     reviewNeeded:
       familyId === "travaux" && expense.qualificationRetenue === undefined ? true : expense.reviewNeeded,
+    financingOverlap: expense.financingOverlap,
   });
 
   return { charge, anomalies };

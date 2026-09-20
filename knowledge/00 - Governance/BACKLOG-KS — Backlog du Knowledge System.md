@@ -5,7 +5,7 @@ type: backlog
 status: living-document
 version: "1.1"
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-09-20
 owner: product-owner
 tags: [backlog, gouvernance, knowledge-system, maintenance]
 ---
@@ -55,6 +55,7 @@ Une entrée n'est traitée que lorsqu'une Feature future en dépend réellement.
 | FC-010 | Feature Cycle F-010 — Assistant Logement |
 | FC-011 | Feature Cycle F-011 — Assistant Financement |
 | FC-012 | Feature Cycle F-012 — Assistant Charges |
+| AL-2609 | Audit liasse 2033 (septembre 2026) — correctifs 2033-B / frontière F-011↔F-012 |
 
 ## Moments de traitement
 
@@ -70,15 +71,38 @@ Une entrée n'est traitée que lorsqu'une Feature future en dépend réellement.
 
 | ID | Titre | Document | Origine | Priorité | État | Traitement |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | — |
-
-*Aucune entrée à ce jour. Les premières entrées seront ajoutées à partir des rapports d'implémentation FC-011 et FC-012.*
+| BKS-001 | Ventilation droits/taxes vs autres frais d'acquisition (déduction immédiate) | SAV-001, TRF-0001, SAV-011 | AL-2609 | P2 | À traiter | À la demande |
+| BKS-002 | Classement 2033-B des composantes du financement (garantie/caution encore PROVISOIRE) | SAV-001, SAV-011, TRF-0016, RAI-011 | AL-2609 | P2 | En cours | Avant toute évolution de garantie 242/294 |
+| BKS-003 | Identité du prêt dans F-012 et péremption du recouvrement F-011↔F-012 | RAI-000, AX-009, F-011, F-012 | AL-2609 | P3 | À traiter | À la demande |
 
 ---
 
 # Entrées actives
 
-*Aucune.*
+## BKS-001 — Ventilation droits/taxes vs autres frais d'acquisition
+
+**Dette produit (décision PO du 2026-09-20) :** « ventilation droits/taxes vs autres frais d'acquisition à collecter si l'option de déduction immédiate doit être supportée complètement ».
+
+- **Situation :** avec l'option B de JUG-001 (déduction immédiate), les frais d'acquisition entrent dans 264 mais 242 (autres charges externes) et 244 (impôts et taxes) ne peuvent pas être ventilées : SAV-001 fixe la composition (droits de mutation, émoluments, débours, frais d'agence acquéreur) mais F-010 ne persiste que des scalaires (`fraisNotaire`, `fraisEnCharges`) ; l'extraction d'acte agrège émoluments/débours/frais d'acte dans `notaryFees` et ignore les droits ; `fraisAgence` n'est jamais collectée.
+- **Comportement actuel (conservé) :** 242 et 244 non alimentées, avec la raison `KS / DATA INSUFFICIENT` ; aucune convention arbitraire. 264 reste correct.
+- **Champ minimal manquant :** la part de droits et taxes incluse dans les frais d'acquisition (sous-ensemble de `fraisNotaire`, transporté avec `fraisEnCharges`).
+- **Décision KS associée :** classement 2033-B de chaque composante (le dossier témoin comptable place les droits de mutation en 244 ; le KS est muet).
+- **Non traité tant que :** l'option B doit être supportée complètement. L'option A (défaut recommandé par JUG-001) n'est pas concernée.
+
+## BKS-002 — Classement 2033-B des composantes du financement
+
+- **Contradiction relevée (historique) :** la notice officielle 2033-NOT-SD (2026, p.8) range en ligne 242 « primes d'assurance » et « services bancaires » ; le PCG (secondaire) place l'assurance emprunteur en 616, frais de dossier et commission de caution en 627/6272 ; SAV-001 (approuvé) classe les frais de garantie en « charges financières » ; RAI-011 dit que l'assurance emprunteur « suit les intérêts » (déductibilité, pas classement).
+- **Établi (implémentation 2026-09-20) :**
+  - intérêts d'emprunt → 294 ;
+  - assurance emprunteur bancaire liée au prêt → 294 (BOFiP BOI-BIC-CHG-40-20-20) ;
+  - frais de dossier bancaire → 242 ∈ 264 (notice 2033-NOT-SD 2026 « services bancaires ») — presentation Cerfa uniquement, 310 inchangé.
+- **Toujours PROVISOIRE / UNRESOLVED :** garantie / caution → reste en 294 (aucune nouvelle convention).
+- **Dette produit F010/F011 :** les frais de dossier bancaire doivent être renseignés en F-011 et ne doivent **pas** être intégrés manuellement dans `fraisNotaire` F-010 (SAV-001 les liste conceptuellement dans les frais d'acquisition, mais F-010 n'a pas de champ dédié et le double comptage automatique n'existe pas — risque manuel seulement).
+
+## BKS-003 — Identité du prêt dans F-012 et péremption du recouvrement
+
+- **Non couvert historiquement :** exclusions par libellé hors « Charges diverses ». **Corrigé (2026-09-20) :** document gestion/assurance et saisie famille gestion suivent le même principe montant F-011 (enveloppes assurance + frais de dossier séparées) ; capital de prêt (AX-009) reste refusé.
+- **Péremption :** F-011 peut changer après la confirmation de F-012 ; F-006 bloque alors la génération (`chargesAssistant.recouvrementAssuranceF011` et `recouvrementFraisDossierF011`) jusqu'à reconfirmation de F-012.
 
 ---
 

@@ -73,6 +73,17 @@ const RECOVERY_BY_FIELD: Record<string, MissingDossierItem> = {
     label: "Charges non calculées",
     href: LMNP_ROUTES.chargesAssistant,
   },
+  // Recouvrement F-011 / F-012 périmé : F-011 a changé depuis la confirmation de F-012 → reconfirmer les charges.
+  "chargesAssistant.recouvrementAssuranceF011": {
+    id: "charges-recouvrement-f011",
+    label: "Confirmez à nouveau vos charges : l'assurance de votre prêt a changé",
+    href: LMNP_ROUTES.chargesAssistant,
+  },
+  "chargesAssistant.recouvrementFraisDossierF011": {
+    id: "charges-recouvrement-frais-dossier-f011",
+    label: "Confirmez à nouveau vos charges : les frais de dossier de votre prêt ont changé",
+    href: LMNP_ROUTES.chargesAssistant,
+  },
   amortissementAssistant: {
     id: "amortissement-assistant",
     label: "Amortissements non validés",

@@ -35,6 +35,7 @@ import {
   type F011Result,
   type F011State,
 } from "@/runtime";
+import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -474,6 +475,12 @@ export function F011FinancementAssistantPanel() {
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+  // Dossier courant lu au moment de la persistance finale (purge « aucun crédit ») sans entrer dans les
+  // dépendances de `persistCompletion` : son identité alimente `applyTurn`, donc l'effet d'analyse documentaire.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const [announcement, setAnnouncement] = useState("");
 
   const [capital, setCapital] = useState(() =>
@@ -571,8 +578,15 @@ export function F011FinancementAssistantPanel() {
       if (result.skipped) {
         dispatch({ type: "DECLARE_NO_CREDIT" });
         dispatch({ type: "DECLARATION_COMPLETE_STEP", stepId: "financement-assistant" });
+        // Latence « prêt saisi puis aucun crédit » — `flushWorkspace` fusionne ce patch sur l'état PRÉCÉDENT
+        // (`stateRef`, pas encore mis à jour par le reducer) : la purge doit donc figurer explicitement ici
+        // (clés à `undefined`), sinon la version persistée garderait l'ancien prêt. Même règle que le reducer.
         void flushWorkspace({
-          declarationDraft: { financementAssistantState, creditDeclaredNoneAt: now },
+          declarationDraft: {
+            ...noCreditSupersessionPatch(draftRef.current),
+            financementAssistantState,
+            creditDeclaredNoneAt: now,
+          },
         });
         return;
       }

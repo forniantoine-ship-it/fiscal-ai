@@ -359,7 +359,16 @@ function buildGoldenDraft(): DeclarationDraft {
       totalNonDeductible: 0,
       totalAmortissable: 0,
       totalPreExploitation: 0,
-      parCategorie: { taxe_fonciere: TAXE_FONCIERE },
+      // A1 — ventilation fidèle à ce qu'un F-012 réel persisterait : Σ = totalDeductible (3 200 €).
+      parCategorie: {
+        taxe_fonciere: TAXE_FONCIERE,
+        assurance_pno: ASSURANCE_PNO,
+        copropriete: CHARGES_COPRO_NON_RECUPERABLES,
+        honoraires_comptable: HONORAIRES_COMPTABLES,
+        divers: ENTRETIEN_COURANT,
+      },
+      parCategoriePreExploitation: {},
+      parCategorieNonDeductible: {},
       composantsNouveaux: [],
       fieldSources: {},
       computedAt: "2026-01-01T00:00:00.000Z",
@@ -552,10 +561,10 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
     const attendus: Record<string, number> = {
       "218": RECETTES_2026,
       "232": RECETTES_2026,
-      "242": round2(ASSURANCE_EMPRUNTEUR_ANNUELLE + FRAIS_DOSSIER + GARANTIE),
-      "244": TAXE_FONCIERE,
       "254": AMORT_CALCULE,
-      "294": INTERETS_2026,
+      // Frais de dossier → 242 ∈ 264 (notice 2033-NOT-SD) ; 294 = financement hors frais dossier.
+      // 310 inchangé : 264 ↑ et 294 ↓ du même montant FRAIS_DOSSIER.
+      "294": round2(TOTAL_CHARGES_FINANCEMENT - FRAIS_DOSSIER),
       "300": 0,
       "310": RESULTAT_COMPTABLE,
       "312": RESULTAT_COMPTABLE,
@@ -570,11 +579,25 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
         assert.equal(found?.value, expected);
       });
     }
-    it("264 (total charges exploitation) et 270 (résultat exploitation) — formule officielle, distincte de resultatAvantAmort", () => {
-      const charges264 = round2(CHARGES_EXPLOITATION + AMORT_CALCULE); // + chargesExploitationPreExploitation(0) + totalNonDeductible(0)
+    it("242/244 : frais de dossier F-011 publiés en 242 si conservation F-012 ; sinon ECART frais notaire inchangé hors FD", () => {
+      // Sans ventilation F-012 complète, 242/244 F-012 restent non publiés ; les frais de dossier
+      // restent néanmoins dans 264 (et hors 294). Sur ce golden, conservation = ECART (frais notaire).
+      assert.equal(findCase("244"), undefined);
+      assert.equal(liasseRfs.form2033B.conservationDetail.status, "ECART");
+      // L'écart de conservation F-012 reste les frais notaire ; les FD sont ajoutés des deux côtés
+      // (attendu/attribue) via le mapper — l'écart affiché reste FRAIS_NOTAIRE.
+      assert.equal(liasseRfs.form2033B.conservationDetail.ecart, FRAIS_NOTAIRE);
+    });
+    it("réconciliation Cerfa avec crédit : 270 − 294 − 300 = 310", () => {
+      const v = (id: string) => (findCase(id)?.value as number | undefined) ?? 0;
+      assert.equal(round2(v("270") - v("294") - v("300")), v("310"));
+    });
+    it("264 (total charges exploitation) et 270 (résultat exploitation) — formule officielle + frais dossier F-011", () => {
+      const charges264 = round2(CHARGES_EXPLOITATION + AMORT_CALCULE + FRAIS_DOSSIER);
       const resultat270 = round2(RECETTES_2026 - charges264);
       assert.equal(findCase("264")?.value, charges264);
       assert.equal(findCase("270")?.value, resultat270);
+      assert.equal(round2(TOTAL_CHARGES_FINANCEMENT - FRAIS_DOSSIER), findCase("294")?.value);
     });
     it("314 / 330 / 372 absents (aucun déficit dans ce dossier)", () => {
       assert.equal(findCase("314"), undefined);

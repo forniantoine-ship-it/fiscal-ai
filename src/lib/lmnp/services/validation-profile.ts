@@ -5,6 +5,9 @@ import { ventilationFromDraft } from "./amortissement-profile";
 import { revenusFromDraft } from "./revenus-profile";
 import { sessionToExtractionData } from "./revenue-gpt-ui-prefill";
 import { excludedLoanIdsFromFinancing } from "./f011/credit-financing-to-financement-charges";
+import { effectiveFinancementCharges } from "./declaration/credit-state";
+import { aggregateFinancementTerms } from "@/runtime/capabilities/f006/aggregate-inputs";
+import { round2 } from "@/runtime/capabilities/f006/types";
 
 // Source unique du prix (aussi lue par le serveur pour le montant Stripe).
 export { GENERATION_PRICE_TTC } from "./payment/price";
@@ -34,7 +37,15 @@ export interface MissingDossierItem {
 
 export interface FiscalSummary {
   rentalIncome: number;
+  /** Charges déductibles de l'exercice : F-012 + frais d'acquisition en charges (F-010) + financement de l'exercice (F-011). */
   detectedCharges: number;
+  /**
+   * A3 — charges engagées avant la mise en location (AX-011 / TRF-0030 :
+   * déductibles, retranchées du résultat avant amortissement par F-006).
+   * Portées à part de `detectedCharges` — comme `FiscalEngineOutput.chargesPreExploitation`
+   * — pour que l'estimation reste additive ligne à ligne.
+   */
+  preExploitationCharges: number;
   calculatedAmortization: number;
   estimatedFiscalResult: number;
 }
@@ -253,21 +264,44 @@ function totalDetectedCharges(draft: DeclarationDraft | undefined, properties: P
   return charges.summary.totalCharges;
 }
 
+/**
+ * A3 — pré-exploitation transportée telle quelle depuis F-012 et F-011, avec exactement l'agrégation de
+ * `aggregateFiscalInputs()` (F-006, TRF-0030) : taxe foncière/assurances/copropriété prorata (F-012) + intérêts +
+ * assurance emprunteur (F-011). Jamais recalculée ici : 0 tant que les assistants n'ont pas produit ces totaux.
+ */
+function totalPreExploitationCharges(draft: DeclarationDraft | undefined): number {
+  const finite = (value: number | undefined) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const { preExploitationFinancement } = aggregateFinancementTerms({ financementCharges: effectiveFinancementCharges(draft) });
+  return Math.round((finite(draft?.chargesAssistant?.totalPreExploitation) + finite(preExploitationFinancement)) * 100) / 100;
+}
+
 export function buildFiscalSummary(
   draft: DeclarationDraft | undefined,
   properties: Property[],
   fiscalYear = new Date().getFullYear() - 1,
 ): FiscalSummary {
   const rentalIncome = totalRentalIncome(draft, fiscalYear);
-  const detectedCharges = totalDetectedCharges(draft, properties);
+  const preExploitationCharges = totalPreExploitationCharges(draft);
+  // Point 3 (lot 2) — même lecture que F-006 (`aggregateFinancementTerms`) des deux autres charges déjà
+  // persistées : frais d'acquisition déduits immédiatement (F-010) et charges de financement de l'exercice
+  // (F-011). Aucun calcul : transport de totaux existants. Le repli reste une ESTIMATION (39C simplifié, sans
+  // stocks de déficits/amortissements antérieurs, voir `amortInPreview`) — jamais un second moteur fiscal.
+  const { fraisEnCharges, chargesFinancement } = aggregateFinancementTerms({
+    financementCharges: effectiveFinancementCharges(draft),
+    logementAmortissement: draft?.logementAmortissement,
+  });
+  // `detectedCharges` = même définition que `FiscalEngineOutput.totalCharges` (affichage exact) : charges F-012
+  // + frais d'acquisition en charges + financement de l'exercice — la ligne affichée reste additive.
+  const detectedCharges = round2(totalDetectedCharges(draft, properties) + fraisEnCharges + chargesFinancement);
   const calculatedAmortization = totalAnnualAmortization(draft);
-  const resultatAvantAmort = rentalIncome - detectedCharges;
+  const resultatAvantAmort = rentalIncome - detectedCharges - preExploitationCharges;
   const amortInPreview = Math.min(calculatedAmortization, Math.max(0, resultatAvantAmort));
   const estimatedFiscalResult = resultatAvantAmort - amortInPreview;
 
   return {
     rentalIncome,
     detectedCharges,
+    preExploitationCharges,
     calculatedAmortization,
     estimatedFiscalResult,
   };
@@ -361,6 +395,18 @@ export function buildValidationFiscalDisplay(
     rows: [
       { key: "recettes", label: "Revenus locatifs", value: summary.rentalIncome, format: formatCurrency },
       { key: "charges", label: "Charges détectées", value: summary.detectedCharges, format: formatCurrency },
+      // A3 — même ligne, même libellé et même masquage à 0 que l'affichage exact
+      // (voir plus haut) : l'estimation reste additive, comme le résultat final.
+      ...(summary.preExploitationCharges > 0
+        ? [
+            {
+              key: "chargesPreExploitation",
+              label: "Charges déductibles de pré-exploitation",
+              value: summary.preExploitationCharges,
+              format: formatCurrency,
+            },
+          ]
+        : []),
       {
         key: "amortissement",
         label: "Amortissements calculés",

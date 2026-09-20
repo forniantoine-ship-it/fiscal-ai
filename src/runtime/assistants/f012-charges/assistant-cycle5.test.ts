@@ -13,6 +13,7 @@ import { collectedToChargeRegistry, toF012PersistedStateWithRegistry } from "./c
 import { chargeRegistryToComputeInput } from "./registry-to-compute-input";
 import { snapshotF012State, toF012PersistedState, type F012CollectedData, type F012Deps } from "./types";
 import type { FieldSource } from "../../contracts/FieldSource";
+import type { AssuranceF011Reference } from "../../capabilities/f012/assurance-recouvrement";
 import type { F012CategoryId, ProfilCharges } from "../../capabilities/f012/types";
 
 const EXERCISE = 2024;
@@ -47,6 +48,7 @@ function computeFromCollectedDirect(
   collected: F012CollectedData,
   fieldSources: Partial<Record<string, FieldSource>>,
   dateMiseEnService = MES,
+  f011?: AssuranceF011Reference,
 ): ComputeChargesExerciceOutput {
   const travaux = collected.travaux.flatMap((t) => {
     if (!t.natureIntervention) return [];
@@ -75,6 +77,7 @@ function computeFromCollectedDirect(
     divers: collected.divers,
     travaux,
     fieldSources,
+    ...(f011 ? { assuranceEmprunteurF011: f011 } : {}),
   });
 }
 
@@ -84,6 +87,7 @@ function computeFromCollectedViaRegistry(
   fieldSources: Partial<Record<string, FieldSource>> = {},
   profil: ProfilCharges = PROFIL_SIMPLE,
   dateMiseEnService = MES,
+  f011?: AssuranceF011Reference,
 ): ComputeChargesExerciceOutput {
   const registry = collectedToChargeRegistry({
     collected,
@@ -93,7 +97,7 @@ function computeFromCollectedViaRegistry(
     exercise: EXERCISE,
   });
   return computeChargesExercice(
-    chargeRegistryToComputeInput(registry, { dateMiseEnService, fieldSources }),
+    chargeRegistryToComputeInput(registry, { dateMiseEnService, fieldSources, assuranceEmprunteurF011: f011 }),
   );
 }
 
@@ -116,13 +120,14 @@ function assertFiscalEquivalent(
     fieldSources?: Partial<Record<string, FieldSource>>;
     profil?: ProfilCharges;
     dateMiseEnService?: string;
+    f011?: AssuranceF011Reference;
   } = {},
 ) {
   const fieldSources = opts.fieldSources ?? {};
   const profil = opts.profil ?? PROFIL_SIMPLE;
   const dateMiseEnService = opts.dateMiseEnService ?? MES;
-  const oldResult = computeFromCollectedDirect(collected, fieldSources, dateMiseEnService);
-  const newResult = computeFromCollectedViaRegistry(collected, fieldSources, profil, dateMiseEnService);
+  const oldResult = computeFromCollectedDirect(collected, fieldSources, dateMiseEnService, opts.f011);
+  const newResult = computeFromCollectedViaRegistry(collected, fieldSources, profil, dateMiseEnService, opts.f011);
   assert.deepEqual(fiscalSlice(newResult), fiscalSlice(oldResult), "OLD RESULT === NEW RESULT");
   return { oldResult, newResult };
 }
@@ -306,7 +311,7 @@ describe("F-012 Cycle 5 — équivalence fiscale collected → registry → comp
           financementOverlap: "assurance_emprunteur",
         },
       ],
-    });
+    }, { f011: { exerciceFiscal: EXERCISE, montantAnnuel: 300 } });
     assert.equal(oldResult.charges.totalDeductible, 1200);
     assert.ok(oldResult.charges.lignes.some((l) => l.id === "divers-ass" && l.deductibilite === "non_deductible"));
   });

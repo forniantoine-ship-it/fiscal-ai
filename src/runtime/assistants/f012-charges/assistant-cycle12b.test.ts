@@ -26,7 +26,7 @@ const PROFIL_SIMPLE = { copropriete: false, agence: false, travaux: false, vacan
 const PROFIL_FULL = { copropriete: true, agence: true, travaux: true, vacance: false, comptable: true };
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-function pipeline(state: F012State) {
+function pipeline(state: F012State, f011?: { exerciceFiscal: number; montantAnnuel: number }) {
   const registry = collectedToChargeRegistry({
     collected: state.collected,
     profil: state.profil,
@@ -37,6 +37,7 @@ function pipeline(state: F012State) {
   const input = chargeRegistryToComputeInput(registry, {
     dateMiseEnService: "2023-01-01",
     fieldSources: state.fieldSources,
+    assuranceEmprunteurF011: f011,
   });
   const result = computeChargesExercice(input);
   return { registry, input, result };
@@ -295,10 +296,15 @@ describe("F-012 Cycle 12B — invariant registry → compute", () => {
     });
     assert.equal(turn.state.collected.assurancePno, 600);
     assert.equal(turn.state.collected.assuranceGli, undefined);
-    const { registry, result } = pipeline(turn.state);
+    // Contrepartie F-011 réelle : 500 € d'assurance emprunteur sur l'exercice (DEPS_F011).
+    const { registry, result } = pipeline(turn.state, { exerciceFiscal: YEAR, montantAnnuel: 500 });
     assert.equal(registry.charges.some((row) => row.amount === 600 && row.familyId === "assurances"), true);
-    assert.equal(registry.charges.some((row) => row.amount === 500 && row.exclusionReason === "f011_overlap"), false);
-    assert.equal(result.charges.totalDeductible, 600);
+    // La part « emprunteur » n'est plus perdue sur son libellé : enregistrée comme candidate, neutralisée par F-011.
+    assert.equal(registry.charges.some((row) => row.amount === 500 && row.exclusionReason === "f011_overlap"), true);
+    assert.equal(result.charges.totalDeductible, 600, "600 (PNO) ; les 500 € d'assurance emprunteur sont comptés par F-011");
+    assert.equal(result.charges.recouvrementAssuranceF011?.recouvert, 500);
+    // Contre-épreuve : sans assurance côté F-011, ces 500 € ne disparaissent pas.
+    assert.equal(pipeline(turn.state).result.charges.totalDeductible, 1100);
   });
 
   it("9. 1 800 en champ structuré", async () => {

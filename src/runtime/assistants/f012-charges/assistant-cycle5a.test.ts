@@ -260,6 +260,7 @@ describe("F-012 Cycle 5A — persistence / reprise / totaux", () => {
       exerciceFiscal: EXERCISE,
       dateMiseEnService: "2023-01-01",
       divers: marked.divers,
+      assuranceEmprunteurF011: { exerciceFiscal: EXERCISE, montantAnnuel: 300 },
     });
     assert.equal(computed.charges.totalDeductible, 0);
   });

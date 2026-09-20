@@ -266,12 +266,17 @@ describe("F-012 Cycle 11 — anti-oubli et collecte intelligente", () => {
     });
     const item = turn.state.collected.divers.find((row) => row.description === "Assurance emprunteur");
     assert.equal(item?.financementOverlap, "assurance_emprunteur");
+    // Contrepartie F-011 RÉELLE (300 € d'assurance sur l'exercice) : la ligne est neutralisée, jamais sur un libellé seul.
     const computed = computeChargesExercice({
       exerciceFiscal: YEAR,
       dateMiseEnService: "2023-01-01",
       divers: turn.state.collected.divers,
+      assuranceEmprunteurF011: { exerciceFiscal: YEAR, montantAnnuel: 300 },
     });
     assert.equal(computed.charges.totalDeductible, 0);
+    // Contre-épreuve : sans contrepartie F-011, la même ligne est comptée normalement.
+    const sansF011 = computeChargesExercice({ exerciceFiscal: YEAR, dateMiseEnService: "2023-01-01", divers: turn.state.collected.divers });
+    assert.equal(sansF011.charges.totalDeductible, 300);
   });
 
   it("P — totaux fiscaux OLD / NEW identiques", async () => {

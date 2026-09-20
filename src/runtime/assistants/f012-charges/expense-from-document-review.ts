@@ -47,12 +47,10 @@ import type { F012CollectedData } from "./types";
  * table de correspondance vers `ChargeCategorie` (déjà utilisée telle quelle
  * par `collected-to-registry.ts` pour les mêmes catégories).
  *
- * Retourne `undefined` pour toute proposition dont `exclusionReason` est déjà
- * posé par l'extracteur (assurance emprunteur, loyers encaissés, frais de
- * financement, fonds de travaux ALUR, avance de trésorerie) : ces lignes ne
- * sont — et n'ont jamais été — fiscalement utilisables ; elles ne deviennent
- * JAMAIS une `Expense` (comportement identique à aujourd'hui, où
- * `isProposalRecordable()` les bloque déjà avant toute Charge).
+ * Retourne `undefined` pour les propositions encore exclues normativement
+ * (loyers encaissés, fonds de travaux ALUR, avance de trésorerie).
+ * Assurance emprunteur / frais de financement : deviennent des `Expense`
+ * `divers` candidates au recouvrement F-011 (jamais exclus sur le seul libellé).
  */
 function categoryForProposal(proposal: ChargeProposal): ChargeCategorie | undefined {
   if (proposal.exclusionReason) return undefined;
@@ -60,8 +58,10 @@ function categoryForProposal(proposal: ChargeProposal): ChargeCategorie | undefi
     case "assurances":
       if (proposal.insuranceKind === "gli") return "assurance_gli";
       if (proposal.insuranceKind === "logement") return "assurance_pno";
+      if (proposal.insuranceKind === "emprunteur") return "divers";
       return undefined;
     case "gestion":
+      if (proposal.gestionKind === "financement") return "divers";
       if (proposal.gestionKind === "etat_des_lieux") return "honoraires_gestion";
       if (proposal.gestionKind === "comptable" || proposal.gestionKind === "logiciel") {
         return "honoraires_comptable";
@@ -79,6 +79,14 @@ function categoryForProposal(proposal: ChargeProposal): ChargeCategorie | undefi
     case "impots":
       return undefined;
   }
+}
+
+function financingOverlapForProposal(
+  proposal: ChargeProposal,
+): "assurance_emprunteur" | "frais_dossier" | undefined {
+  if (proposal.insuranceKind === "emprunteur") return "assurance_emprunteur";
+  if (proposal.gestionKind === "financement") return "frais_dossier";
+  return undefined;
 }
 
 /** Extrait le suffixe stable déjà porté par `ChargeProposal.id` (voir limitation syndic ci-dessus). */
@@ -123,6 +131,7 @@ export function expenseFromDecidedProposal(proposal: ChargeProposal, fiscalYear:
     category,
     decision: proposal.decision === "confirmed" || proposal.decision === "modified" ? proposal.decision : "ignored",
     coproType: category === "copropriete" ? proposal.coproType ?? "provisions" : undefined,
+    financingOverlap: financingOverlapForProposal(proposal),
   };
 }
 

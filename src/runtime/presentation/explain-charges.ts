@@ -45,9 +45,13 @@ export function explainCharges(input: ExplainChargesInput): ExplainChargesOutput
   ];
 
   if (charges.totalPreExploitation > 0) {
+    // AX-011 / TRF-0030 — une charge engagée avant la mise en location est
+    // déductible (F-006 la retranche via `chargesPreExploitation`) ; elle est
+    // seulement portée à part du total ci-dessus, jamais perdue.
     lines.push(
-      `${fmtEur(charges.totalPreExploitation)} correspondent à la période avant votre mise en location ` +
-        "et ne sont pas déductibles cette année.",
+      `${fmtEur(charges.totalPreExploitation)} de charges engagées avant votre mise en location (pré-exploitation) ` +
+        "sont déductibles dès cet exercice — elles ne sont pas comptées dans le total ci-dessus, qui ne couvre que " +
+        "la période d'exploitation, mais elles réduisent bien votre résultat fiscal cette année.",
     );
   }
 

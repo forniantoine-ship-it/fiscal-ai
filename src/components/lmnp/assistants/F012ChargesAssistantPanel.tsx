@@ -74,6 +74,8 @@ import {
   type F012State,
   type ChargeCategorie,
 } from "@/runtime";
+import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
+import { buildChargesAssistantOutput } from "@/lib/lmnp/services/f012/charges-assistant-output";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -391,7 +393,7 @@ function ResultSummary({ result }: { result: F012Result }) {
         <RecapRow label="À amortir" value={fmtEur(charges.totalAmortissable)} />
       ) : null}
       {charges.totalPreExploitation > 0 ? (
-        <RecapRow label="Pré-exploitation (non déductible)" value={fmtEur(charges.totalPreExploitation)} />
+        <RecapRow label="Pré-exploitation (déductible séparément)" value={fmtEur(charges.totalPreExploitation)} />
       ) : null}
       <AnomalyList anomalies={result.anomalies} />
     </Card>
@@ -750,8 +752,17 @@ export function F012ChargesAssistantPanel() {
   // assurance emprunteur dans "Charges diverses" (RAI-000). Champs primitifs
   // extraits individuellement pour que la dépendance du useMemo ci-dessous
   // reste aussi précise que pour `dateMiseEnService`.
-  const financementTotalAssurance = draft?.financementCharges?.totalAssurance;
-  const financementTotalCapitalRembourse = draft?.financementCharges?.totalCapitalRembourse;
+  // Latence « prêt saisi puis aucun crédit » — un prêt explicitement retiré ne doit plus faire classer une
+  // assurance saisie comme « déjà comptée par F-011 » (donc non déductible).
+  const financementEffectif = effectiveFinancementCharges(draft);
+  const financementTotalAssurance = financementEffectif?.totalAssurance;
+  const financementTotalAssurancePre = financementEffectif?.totalAssurancePreExploitation;
+  const financementExercice = financementEffectif?.exerciceFiscal;
+  const financementTotalCapitalRembourse = financementEffectif?.totalCapitalRembourse;
+  const financementTotalFraisDossier = (financementEffectif?.prets ?? []).reduce(
+    (acc, p) => acc + (p.fraisDossierDeductibles ?? 0),
+    0,
+  );
 
   const assistant = useMemo(
     () =>
@@ -765,10 +776,15 @@ export function F012ChargesAssistantPanel() {
           dateMiseEnService,
           knownCopropriete,
           financementCharges:
-            financementTotalAssurance !== undefined || financementTotalCapitalRembourse !== undefined
+            financementTotalAssurance !== undefined ||
+            financementTotalCapitalRembourse !== undefined ||
+            financementTotalFraisDossier > 0
               ? {
                   totalAssurance: financementTotalAssurance ?? 0,
+                  totalAssurancePreExploitation: financementTotalAssurancePre,
+                  totalFraisDossier: financementTotalFraisDossier,
                   totalCapitalRembourse: financementTotalCapitalRembourse ?? 0,
+                  exerciceFiscal: financementExercice,
                 }
               : undefined,
         },
@@ -777,7 +793,10 @@ export function F012ChargesAssistantPanel() {
       dateMiseEnService,
       knownCopropriete,
       financementTotalAssurance,
+      financementTotalAssurancePre,
+      financementExercice,
       financementTotalCapitalRembourse,
+      financementTotalFraisDossier,
       fiscalYear,
       workspace.fiscalYear.id,
     ],
@@ -817,6 +836,12 @@ export function F012ChargesAssistantPanel() {
             totalNonDeductible: chargesAssistant.totalNonDeductible,
             totalAmortissable: chargesAssistant.totalAmortissable,
             totalPreExploitation: chargesAssistant.totalPreExploitation,
+            parCategoriePreExploitation: chargesAssistant.parCategoriePreExploitation,
+            parCategorieNonDeductible: chargesAssistant.parCategorieNonDeductible,
+            // La référence de recouvrement F-011 doit survivre à une re-persistance : sans elle, la garde de
+            // péremption (F-006) serait silencieusement désactivée.
+            recouvrementAssuranceF011: chargesAssistant.recouvrementAssuranceF011,
+            recouvrementFraisDossierF011: chargesAssistant.recouvrementFraisDossierF011,
             composantsNouveaux: chargesAssistant.composantsNouveaux,
           },
           explanation: "",
@@ -897,17 +922,7 @@ export function F012ChargesAssistantPanel() {
       if (!result) return;
       const now = new Date().toISOString();
       const chargesAssistantState = toF012PersistedStateWithRegistry(finalState, now, fiscalYear);
-      const chargesAssistant = {
-        exerciceFiscal: result.charges.exerciceFiscal,
-        totalDeductible: result.charges.totalDeductible,
-        totalNonDeductible: result.charges.totalNonDeductible,
-        totalAmortissable: result.charges.totalAmortissable,
-        totalPreExploitation: result.charges.totalPreExploitation,
-        parCategorie: result.charges.parCategorie,
-        composantsNouveaux: result.charges.composantsNouveaux,
-        fieldSources: finalState.fieldSources,
-        computedAt: now,
-      };
+      const chargesAssistant = buildChargesAssistantOutput(result.charges, finalState.fieldSources, now);
 
       // Chantier 2 — F012 → F014 freshness (§4) : une (re)confirmation qui
       // change réellement un composant amortissable (nouveau, supprimé, ou

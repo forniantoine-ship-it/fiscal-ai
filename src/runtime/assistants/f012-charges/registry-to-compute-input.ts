@@ -8,11 +8,16 @@ import type { CoproLigneInput } from "../../capabilities/f012/compute-copro-dedu
 import type { ChargeRegistry } from "../../capabilities/f012/charge";
 import { scalarChargeId } from "../../capabilities/f012/charge";
 import type { FieldSource } from "../../contracts/FieldSource";
+import type { AssuranceF011Reference } from "../../capabilities/f012/assurance-recouvrement";
 
 export type RegistryToComputeInputDeps = {
   dateMiseEnService: string;
   /** Si fourni, réutilise les clés actuelles (dont divers-par-description) — équivalence fiscale. */
   fieldSources?: Partial<Record<string, FieldSource>>;
+  /** Assurance emprunteur de l'année établie par F-011 (transport pur) — voir `assurance-recouvrement.ts`. */
+  assuranceEmprunteurF011?: AssuranceF011Reference;
+  /** Frais de dossier F-011 de l'exercice (enveloppe séparée). */
+  fraisDossierF011?: AssuranceF011Reference;
 };
 
 function pickScalar(registry: ChargeRegistry, slot: string): number | undefined {
@@ -109,6 +114,8 @@ export function chargeRegistryToComputeInput(
   const fraisEtatDesLieux = pickScalar(registry, "frais-etat-des-lieux");
 
   return {
+    ...(deps.assuranceEmprunteurF011 ? { assuranceEmprunteurF011: deps.assuranceEmprunteurF011 } : {}),
+    ...(deps.fraisDossierF011 ? { fraisDossierF011: deps.fraisDossierF011 } : {}),
     exerciceFiscal: registry.exercise,
     dateMiseEnService: deps.dateMiseEnService,
     taxeFonciere: sumCharges(registry, (charge) => charge.category === "taxe_fonciere"),

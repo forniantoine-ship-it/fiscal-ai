@@ -183,9 +183,11 @@ describe("P1-PDF-01 — scénarios mapper (A–G)", () => {
     const form = map2033BFromRfs(
       rfs(
         fiscalResult({
+          // A1 — détail cohérent : la taxe foncière est ici la seule charge d'exploitation, donc 244 l'explique en
+          // totalité (un détail partiel n'est plus publié, voir rfs-2033b.test.ts R4).
           charges: {
-            totalDeductible: 3200,
-            chargesExploitation: 3200,
+            totalDeductible: 1200,
+            chargesExploitation: 1200,
             chargesFinancement: 0,
             chargesPreExploitation: 0,
             totalNonDeductible: 0,

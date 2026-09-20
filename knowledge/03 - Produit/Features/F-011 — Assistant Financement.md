@@ -5,7 +5,7 @@ type: feature
 status: approved
 version: "1.0"
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-09-20
 owner: product-owner
 priorité: haute
 tags: [feature, financement, crédit, emprunt, intérêts, lmnp]
@@ -101,7 +101,7 @@ Contrairement aux assistants précédents où le chemin sans document est un che
 | Output | Source | Validé par |
 |---|---|---|
 | `interets_emprunt_exercice` (par prêt, puis agrégé) | Extraction ou reconstruction | Validation Engine (cohérence tableau) |
-| `interets_pre_exploitation` (isolés, non déductibles) | Calcul depuis date_mise_en_service | Validation Engine |
+| `interets_pre_exploitation` (isolés, déductibles — portés à part du total de l'exercice, AX-011 / JUG-011) | Calcul depuis date_mise_en_service | Validation Engine |
 | `assurance_emprunt_exercice` (par prêt, puis agrégé) | Extraction ou saisie | Confirmation utilisateur |
 | `frais_dossier_deductibles` (si exercice de souscription) | Extraction ou saisie | Confirmation utilisateur |
 | `garantie_deductible` (si exercice de souscription) | Extraction ou saisie | Confirmation utilisateur |
@@ -211,7 +211,7 @@ L'Explanation Engine traduit ce résultat en : "Sur [exercice], vos charges de f
 
 | Référence | Rôle dans cet Assistant |
 |---|---|
-| AX-006 (analogue) | Les charges de financement ne sont déductibles qu'à compter de la date de mise en service. Intérêts pré-exploitation = non déductibles pour l'exercice courant. |
+| AX-011 / JUG-011 / SAV-018 / TRF-0030 | Les intérêts (et l'assurance emprunteur) payés avant la date de mise en service sont des charges de pré-exploitation : déductibles dès l'exercice (déduction immédiate, JUG-011 choix A), isolés du total de l'exercice et retranchés du résultat avant amortissement. AX-006 ne régit que le début de l'amortissement. |
 | SAV-xxx (à créer) | Intérêts d'emprunt : déductibles comme charges (ligne 23 P) |
 | SAV-xxx (à créer) | Capital remboursé : jamais déductible en LMNP réel |
 | SAV-xxx (à créer) | IRA (indemnités de remboursement anticipé) : déductibles comme charges l'année du remboursement |
@@ -290,7 +290,7 @@ Pour chaque prêt :
 
   → Résumé du prêt :
     Intérêts déductibles de l'exercice : €X
-    dont pré-exploitation (non déductibles) : €Y
+    Charges de pré-exploitation (déductibles, portées à part) : €Y
     Assurance déductible : €Z
     Capital remboursé (non déductible) : €W
     CRD au 31/12 : €V
@@ -307,8 +307,10 @@ Explanation Engine :
 "Sur l'exercice [AAAA], vos charges de financement déductibles s'élèvent à €TOTAL,
  dont €X d'intérêts d'emprunt et €Y d'assurance.
  Les €Z de remboursement de capital ne sont pas déductibles — c'est normal et attendu."
-[Si pré-exploitation] "€W d'intérêts payés avant votre première mise en location ne sont
- pas déductibles cette année. Vous pouvez les intégrer à vos frais d'acquisition."
+[Si pré-exploitation] "€W d'intérêts payés avant votre première mise en location sont
+ déductibles dès cet exercice. Ils ne sont pas comptés dans le total ci-dessus mais réduisent
+ bien votre résultat fiscal. Ne les intégrez pas à vos frais d'acquisition : ils sont déjà
+ déduits (double comptage sinon)."
 
 Confirmation utilisateur → FINANCEMENT_TERMINE
 ```
@@ -375,7 +377,7 @@ Confirmation utilisateur → FINANCEMENT_TERMINE
 
 ✓ Pour un bien avec deux prêts, les deux sont configurés séquentiellement et leurs charges sont agrégées en un total clair.
 
-✓ Les intérêts payés avant la mise en location sont automatiquement identifiés et présentés à l'utilisateur comme non déductibles, avec explication.
+✓ Les intérêts payés avant la mise en location sont automatiquement identifiés et présentés à l'utilisateur comme des charges de pré-exploitation déductibles (portées à part), avec explication.
 
 ✓ La distinction capital/intérêts est expliquée une fois, clairement, avant d'afficher le résultat — PROF-001 comprend pourquoi le montant déductible est inférieur à ses mensualités.
 

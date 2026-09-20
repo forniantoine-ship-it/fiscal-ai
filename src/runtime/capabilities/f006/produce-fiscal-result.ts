@@ -92,6 +92,11 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       chargesExploitationPreExploitation: input.chargesAssistant?.totalPreExploitation ?? 0,
       totalNonDeductible: data.totalNonDeductible,
       detailParCategorie: input.chargesAssistant?.parCategorie,
+      // A1 — ventilations et frais d'acquisition transportés tels quels (jamais recalculés,
+      // n'entrent dans aucune formule) : voir FiscalResult.charges.
+      detailPreExploitationParCategorie: input.chargesAssistant?.parCategoriePreExploitation,
+      detailNonDeductibleParCategorie: input.chargesAssistant?.parCategorieNonDeductible,
+      fraisAcquisitionEnCharges: input.logementAmortissement?.fraisEnCharges ?? 0,
     },
     resultatAvantAmort,
     amortCalcule: data.amortCalcule,

@@ -5,7 +5,7 @@ type: feature
 status: approved
 version: "1.0"
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-09-20
 owner: product-owner
 priorité: haute
 tags: [feature, charges, déductibilité, copropriété, travaux, lmnp]
@@ -117,7 +117,7 @@ Ce profilage produit un inventaire personnalisé de catégories à remplir — c
 | `charges_deductibles_exercice` (par catégorie + total) | Qualification + calcul | Validation Engine + confirmation |
 | `charges_amortissables_exercice` (liste, renvoyées vers F-010) | Qualification travaux | Validation Engine |
 | `charges_non_deductibles_exercice` (signalées à l'utilisateur) | Qualification | Information utilisateur |
-| `charges_pre_exploitation` (isolées, non déductibles) | Calcul depuis date_mise_en_service | Validation Engine |
+| `charges_pre_exploitation` (isolées, déductibles — portées à part du total de l'exercice, AX-011 / TRF-0030) | Calcul depuis date_mise_en_service | Validation Engine |
 
 L'Explanation Engine traduit le résultat en : "Vos charges déductibles pour [exercice] s'élèvent à €X. Détail : €Y de taxes, €Z d'assurances, €W de gestion, €V de charges copropriété, €U de réparations déductibles."
 
@@ -234,7 +234,7 @@ Trois occurrences du même dépassement de responsabilité :
 
 | Référence | Rôle dans cet Assistant |
 |---|---|
-| AX-006 (analogue charges) | Charges non déductibles avant la date_mise_en_service |
+| AX-011 / SAV-017 / SAV-021 / JUG-011 / TRF-0030 | Les charges engagées avant la date_mise_en_service (pré-exploitation) sont déductibles si l'intention locative est démontrable ; elles sont isolées, portées à part et retranchées du résultat avant amortissement. AX-006 ne régit que le début de l'amortissement, jamais la déductibilité des charges. |
 | JUG-008 (à créer) | Qualification réparation vs. amélioration pour travaux individuels |
 | JUG-009 (à créer) | Appels de fonds gros travaux copropriété : charge ou amortissement |
 | JUG-010 (à créer) | Charges mixtes personnelles/professionnelles : proratisation |
@@ -243,7 +243,7 @@ Trois occurrences du même dépassement de responsabilité :
 | SAV-Charges-03 (backlog) | Fonds de travaux ALUR non déductible à la cotisation |
 | SAV-Charges-04 (backlog) | Charges récupérables vs. non récupérables |
 | SAV-Charges-05 (backlog) | Remboursement d'assurance : réduction de charge ou produit |
-| SAV-PreExploitation (backlog, 2/3) | Charges avant mise en service non déductibles — taxe foncière, assurances, copro, travaux |
+| ~~SAV-PreExploitation (backlog, 2/3)~~ — sans objet | Hypothèse « charges avant mise en service non déductibles » infirmée : règle contraire déjà approuvée (AX-011, SAV-017, SAV-021, JUG-011, TRF-0025, TRF-0030 ; BOFiP BOI-BIC-CHAMP-40-20 §360). Ne pas créer ce SAV. |
 
 ---
 
@@ -384,7 +384,7 @@ Pour chaque item saisi : description + montant
 
 # Contraintes métier
 
-- Toute charge payée avant la `date_mise_en_service` (F-009) est isolée et non déductible. L'utilisateur est informé mais n'est pas bloqué.
+- Toute charge payée avant la `date_mise_en_service` (F-009) est isolée comme charge de pré-exploitation. Elle reste déductible (AX-011, TRF-0030) : elle est portée à part du total de l'exercice et retranchée du résultat avant amortissement. L'utilisateur est informé mais n'est pas bloqué.
 - Le fonds de travaux ALUR n'est jamais déductible l'année de son versement. Cette règle s'applique sans exception.
 - L'assurance emprunteur ne doit jamais apparaître dans cet assistant (déjà dans F-011). Si détectée, alerte de doublon.
 - Le remboursement du capital du prêt ne doit jamais être accepté comme charge (déjà dans F-011). Si détecté, erreur bloquante avec explication.
@@ -449,7 +449,7 @@ Pour chaque item saisi : description + montant
 
 ✓ Toute charge qualifiée comme "amélioration" est transmise à F-010 via `COMPOSANT_NOUVEAU` et n'est pas comptabilisée comme charge déductible.
 
-✓ Les charges payées avant la mise en location sont automatiquement isolées et présentées comme non déductibles, avec explication.
+✓ Les charges payées avant la mise en location sont automatiquement isolées et présentées comme des charges de pré-exploitation déductibles (portées à part du total de l'exercice), avec explication.
 
 ✓ L'assurance emprunteur saisie ici déclenche une alerte de doublon.
 
@@ -471,7 +471,7 @@ Facture unique de €12 000 pour "rénovation complète de la salle de bain". Qu
 
 ## Cas pré-exploitation
 
-Bien mis en service le 1er juin. Taxe foncière annuelle de €1 200. Prorata : 5 mois sur 12 → €500 déductibles / €700 non déductibles (pré-exploitation). Explanation Engine explique le calcul et la règle.
+Bien mis en service le 1er juin. Taxe foncière annuelle de €1 200. Prorata : 5 mois sur 12 → €500 de charges de l'exercice / €700 de pré-exploitation, également déductibles (AX-011) et portés à part. Explanation Engine explique le calcul et la règle.
 
 ---
 

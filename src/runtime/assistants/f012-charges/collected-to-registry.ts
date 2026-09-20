@@ -272,7 +272,10 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
         exercise,
         provenance: provenance(fieldSources, item.description),
         financingOverlap: item.financementOverlap,
-        exclusionReason: item.financementOverlap === "assurance_emprunteur" ? "f011_overlap" : undefined,
+        exclusionReason:
+          item.financementOverlap === "assurance_emprunteur" || item.financementOverlap === "frais_dossier"
+            ? "f011_overlap"
+            : undefined,
       }),
     );
   }
@@ -304,7 +307,10 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
         paidAt: line.paidAt,
         provenance: provenance(fieldSources, line.id),
         financingOverlap: line.financementOverlap,
-        exclusionReason: line.financementOverlap === "assurance_emprunteur" ? "f011_overlap" : undefined,
+        exclusionReason:
+          line.financementOverlap === "assurance_emprunteur" || line.financementOverlap === "frais_dossier"
+            ? "f011_overlap"
+            : undefined,
       }),
     );
   }

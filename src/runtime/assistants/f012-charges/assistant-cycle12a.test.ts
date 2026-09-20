@@ -404,8 +404,19 @@ describe("F-012 Cycle 12A — anti-oubli sans rallonger le parcours", () => {
       montant: 300,
       description: "Assurance emprunteur du crédit",
     });
+    // Le libellé n'est plus un motif d'exclusion : ce n'est pas une assurance PNO, la ligne est enregistrée comme
+    // CANDIDATE au recouvrement F-011 (jamais perdue) et neutralisée dans le compute à hauteur de F-011 seulement.
     assert.equal(blocked.state.collected.assurancePno, undefined);
-    assert.equal(blocked.state.step, "category_collect");
+    const candidate = blocked.state.collected.divers.find((row) => row.description === "Assurance emprunteur du crédit");
+    assert.equal(candidate?.financementOverlap, "assurance_emprunteur");
+    assert.equal(candidate?.montant, 300);
+    const viaFamille = computeChargesExercice({
+      exerciceFiscal: YEAR,
+      dateMiseEnService: "2023-01-01",
+      divers: blocked.state.collected.divers,
+      assuranceEmprunteurF011: { exerciceFiscal: YEAR, montantAnnuel: 300 },
+    });
+    assert.equal(viaFamille.charges.totalDeductible, 0, "F-011 établit 300 € : neutralisés");
     turn = await assistant.handle(blocked.state, { type: "none_family" });
     turn = await assistant.handle(turn.state, {
       type: "submit_family_autres",
@@ -417,7 +428,8 @@ describe("F-012 Cycle 12A — anti-oubli sans rallonger le parcours", () => {
     const computed = computeChargesExercice({
       exerciceFiscal: YEAR,
       dateMiseEnService: "2023-01-01",
-      divers: turn.state.collected.divers,
+      divers: [item!],
+      assuranceEmprunteurF011: { exerciceFiscal: YEAR, montantAnnuel: 300 },
     });
     assert.equal(computed.charges.totalDeductible, 0);
   });

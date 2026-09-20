@@ -68,6 +68,38 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
       message: "Charges non calculées (F-012 Charges).",
       field: "chargesAssistant",
     });
+  } else if (input.chargesAssistant.recouvrementAssuranceF011) {
+    // Recouvrement F-011 / F-012 : F-012 a neutralisé une assurance emprunteur à hauteur de ce que F-011 établissait
+    // à ce moment-là. Si F-011 a changé depuis (prêt modifié, ajouté, retiré), ce recouvrement est PÉRIMÉ : la charge
+    // serait comptée deux fois (F-011 a augmenté) ou perdue (F-011 a diminué). Jamais deviné : F-012 doit être reconfirmé.
+    const courante = Math.round(((input.financementCharges?.totalAssurance ?? 0) + (input.financementCharges?.totalAssurancePreExploitation ?? 0)) * 100);
+    const reference = Math.round(input.chargesAssistant.recouvrementAssuranceF011.reference * 100);
+    if (courante !== reference) {
+      anomalies.push({
+        severity: "error",
+        message:
+          "L'assurance de votre prêt a changé depuis la confirmation de vos charges : confirmez à nouveau vos charges pour éviter un doublon ou un oubli.",
+        field: "chargesAssistant.recouvrementAssuranceF011",
+      });
+    }
+  }
+
+  if (input.chargesAssistant?.recouvrementFraisDossierF011) {
+    const fromTotal = input.financementCharges?.totalFraisDossierDeductibles;
+    const fromPrets = (input.financementCharges?.prets ?? []).reduce(
+      (acc, p) => acc + (p.fraisDossierDeductibles ?? 0),
+      0,
+    );
+    const courante = Math.round((fromTotal !== undefined ? fromTotal : fromPrets) * 100);
+    const reference = Math.round(input.chargesAssistant.recouvrementFraisDossierF011.reference * 100);
+    if (courante !== reference) {
+      anomalies.push({
+        severity: "error",
+        message:
+          "Les frais de dossier de votre prêt ont changé depuis la confirmation de vos charges : confirmez à nouveau vos charges pour éviter un doublon ou un oubli.",
+        field: "chargesAssistant.recouvrementFraisDossierF011",
+      });
+    }
   }
 
   if (!input.amortissementAssistant) {

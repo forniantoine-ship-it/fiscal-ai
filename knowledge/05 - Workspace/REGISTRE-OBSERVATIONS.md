@@ -60,7 +60,7 @@ Un signal sans nouvelle occurrence depuis trois Assistants consécutifs peut êt
 | Signal | Description | Occurrences | Observé dans |
 |---|---|---|---|
 | RT-001 — Priorité multi-occurrences | Règle de résolution quand un même Field apparaît à plusieurs endroits d'un document avec des valeurs potentiellement divergentes | 1/3 | F-010 |
-| SAV-PreExploitation | Charges non déductibles avant la date_mise_en_service — règle transversale à tous les assistants de charges et financement | 2/3 | F-011, F-012 |
+| ~~SAV-PreExploitation~~ — infirmé (2026-09-20) | Hypothèse « charges non déductibles avant la date_mise_en_service » contredite par AX-011, SAV-017, SAV-021, JUG-011, TRF-0030 (approuvés) et BOFiP BOI-BIC-CHAMP-40-20 §360 : ces charges sont déductibles. Origine de l'erreur : extrapolation abusive d'AX-006 (début de l'amortissement). Corrigé dans F-011/F-012. Ne pas promouvoir en SAV. | 2/3 | F-011, F-012 |
 
 ---
 

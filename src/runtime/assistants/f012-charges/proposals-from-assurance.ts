@@ -163,9 +163,9 @@ function descriptionFor(kind: AssuranceProposalKind): string {
 }
 
 function exclusionFor(kind: AssuranceProposalKind): string | undefined {
-  if (kind === "emprunteur") {
-    return "Cette assurance concerne votre prêt. Elle est déjà prise en compte dans Financement.";
-  }
+  // Assurance emprunteur : plus jamais exclue sur le seul libellé — candidature
+  // F-011, neutralisée uniquement à hauteur du montant F-011 (compute).
+  void kind;
   return undefined;
 }
 
