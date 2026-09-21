@@ -180,6 +180,8 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
               lastSyncedServerRevision,
               snapshots: listed.snapshots,
               fallbackYear: lastClosedFiscalYear(),
+              // Lot 3 — server active year wins over civil fallback / stale local N.
+              activeFiscalYear: dossier.active_fiscal_year,
             });
             baseWorkspace = decision.workspace ?? createDefaultWorkspace();
             if (!baseWorkspace.fiscalYear.dossierId) {
@@ -465,6 +467,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   const createNextFiscalYear = useCallback(async () => {
     await runCreateNextFiscalYear({
       dossierId: getCurrentDossierId(),
+      userId: authUserIdRef.current,
       workspace: toPersisted(stateRef.current),
       dispatchCreateNextFiscalYear: (nextFiscalYear, properties) =>
         dispatch({ type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear, properties }),

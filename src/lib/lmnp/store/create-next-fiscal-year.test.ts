@@ -1,9 +1,5 @@
 /**
- * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — tests de runCreateNextFiscalYear().
- * `persistTransition` est injecté (même pattern que `deleteOnServer` dans
- * document-deletion-plan.test.ts) — ces tests exercent le comportement RÉEL
- * de l'orchestration (préconditions, ordre, garde de réentrance), pas une
- * fonction pure isolée.
+ * Lot 3 — create-next converge sur la même commande serveur (idempotente).
  * Run: npx tsx --test src/lib/lmnp/store/create-next-fiscal-year.test.ts
  */
 import { describe, it } from "node:test";
@@ -16,7 +12,10 @@ import {
 import type { PersistedWorkspace } from "./persistence";
 import type { FiscalYear, Property } from "../types";
 import type { FiscalYearClosure } from "../types/dossier";
-import type { PersistFiscalYearTransitionResult } from "./dossier-db";
+import { serializeWorkspaceSnapshot } from "./workspace-snapshot";
+import type { TransitionCommitResult } from "@/lib/lmnp/services/fiscal-year-transition/types";
+
+const NOW = "2026-01-01T00:00:00.000Z";
 
 function closure(overrides: Partial<FiscalYearClosure> = {}): FiscalYearClosure {
   return {
@@ -24,8 +23,8 @@ function closure(overrides: Partial<FiscalYearClosure> = {}): FiscalYearClosure 
     fiscalYearId: "fy-1",
     dossierId: "dossier-1",
     stocks: { deficits: [], amortissementsReportes: 0 },
-    computedAt: "2026-01-01T00:00:00.000Z",
-    closedAt: "2026-01-01T00:00:00.000Z",
+    computedAt: NOW,
+    closedAt: NOW,
     ...overrides,
   };
 }
@@ -40,7 +39,7 @@ function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
     dossierId: "dossier-1",
     closures: [closure()],
     createdAt: "2025-01-01T00:00:00.000Z",
-    updatedAt: "2025-01-01T00:00:00.000Z",
+    updatedAt: NOW,
     ...overrides,
   };
 }
@@ -58,49 +57,51 @@ function baseWorkspace(overrides: Partial<PersistedWorkspace> = {}): PersistedWo
   };
 }
 
-function stubPersistTransition(nextFiscalYear: FiscalYear) {
-  const calls: unknown[] = [];
-  const fn = async (params: { dossierId: string; workspace: PersistedWorkspace; now: string }) => {
-    calls.push(params);
-    const result: PersistFiscalYearTransitionResult = {
-      dossier: { id: params.dossierId, properties: [], financements: [], fiscalYearIds: [], createdAt: params.now, updatedAt: params.now },
-      closedFiscalYear: { ...params.workspace.fiscalYear, dossierId: params.dossierId, documents: [], extractions: [], validationItems: [], ledgerEntries: [] },
-      nextFiscalYear,
-    };
-    return result;
+function nextWorkspace(properties?: Property[]): PersistedWorkspace {
+  return {
+    fiscalYear: baseFiscalYear({
+      id: "fy-2",
+      year: 2026,
+      status: "draft",
+      previousFiscalYearId: "fy-1",
+      closures: [],
+      stocksOuverture: {
+        sourceClosureId: "closure-1",
+        stocks: { deficits: [], amortissementsReportes: 0 },
+      },
+    }),
+    properties: properties ?? [
+      { id: "prop-1", label: "Mon bien", address: "1 rue X", city: "Lyon", postalCode: "69000" },
+    ],
+    documents: [],
+    extractions: [],
+    validationItems: [],
+    ledgerEntries: [],
+    declarationDraft: { completedSteps: [] },
   };
-  return { fn, calls };
 }
 
-describe("runCreateNextFiscalYear — préconditions (P0-1 v2)", () => {
-  it("T-P0-1/T-P0-7/T-P0-8 — chemin nominal : persiste puis dispatche exactement le FiscalYear renvoyé", async () => {
-    __testResetCreateNextFiscalYearGuard();
-    const nextFiscalYear = baseFiscalYear({ id: "fy-2", year: 2026, status: "draft", previousFiscalYearId: "fy-1", closures: [] });
-    const stub = stubPersistTransition(nextFiscalYear);
-    let dispatched: FiscalYear | null = null;
-    let error: string | null = "untouched";
-
-    await runCreateNextFiscalYear({
-      dossierId: "dossier-1",
-      workspace: baseWorkspace(),
-      persistTransition: stub.fn,
-      dispatchCreateNextFiscalYear: (fy) => {
-        dispatched = fy;
-      },
-      onError: (message) => {
-        error = message;
-      },
-    });
-
-    assert.equal(stub.calls.length, 1);
-    assert.deepEqual(dispatched, nextFiscalYear, "le FiscalYear dispatché est EXACTEMENT celui renvoyé par la persistance, jamais recalculé");
-    assert.equal(error, null);
+function stubCommit(ws: PersistedWorkspace) {
+  const serialized = serializeWorkspaceSnapshot(ws);
+  assert.equal(serialized.ok, true);
+  if (!serialized.ok) throw new Error("unreachable");
+  return async (): Promise<TransitionCommitResult> => ({
+    status: "idempotent",
+    fromYear: 2025,
+    nextYear: 2026,
+    closedRevision: 4,
+    nextRevision: 2,
+    closedAt: NOW,
+    activeFiscalYear: 2026,
+    nextPayload: serialized.envelope,
+    nextSchemaVersion: 1,
   });
+}
 
-  it("P0-B — dispatch `properties` = celles du Dossier persisté (amortissementBase fusionnée), jamais `workspace.properties` stale", async () => {
+describe("runCreateNextFiscalYear — Lot 3 server path", () => {
+  it("chemin nominal : commit serveur → dispatch FiscalYear + properties exacts", async () => {
     __testResetCreateNextFiscalYearGuard();
-    const nextFiscalYear = baseFiscalYear({ id: "fy-2", year: 2026, status: "draft", previousFiscalYearId: "fy-1", closures: [] });
-    const persistedProperties: Property[] = [
+    const props: Property[] = [
       {
         id: "prop-1",
         label: "Mon bien",
@@ -109,197 +110,130 @@ describe("runCreateNextFiscalYear — préconditions (P0-1 v2)", () => {
         postalCode: "69000",
         amortissementBase: {
           composants: [
-            { id: "travaux-1", label: "Extension", montant: 12000, dureeAnnees: 18, origin: "f012_travaux", dateDebut: "2025-06-01" },
+            {
+              id: "travaux-1",
+              label: "Extension",
+              montant: 12000,
+              dureeAnnees: 18,
+              origin: "f012_travaux",
+              dateDebut: "2025-06-01",
+            },
           ],
         },
       },
     ];
-    const fn = async (params: { dossierId: string; workspace: PersistedWorkspace; now: string }) => {
-      const result: PersistFiscalYearTransitionResult = {
-        dossier: {
-          id: params.dossierId,
-          properties: persistedProperties,
-          financements: [],
-          fiscalYearIds: [],
-          createdAt: params.now,
-          updatedAt: params.now,
-        },
-        closedFiscalYear: { ...params.workspace.fiscalYear, dossierId: params.dossierId, documents: [], extractions: [], validationItems: [], ledgerEntries: [] },
-        nextFiscalYear,
-      };
-      return result;
-    };
+    const ws = nextWorkspace(props);
+    let dispatchedFy: FiscalYear | null = null;
+    let dispatchedProps: Property[] | null = null;
+    let error: string | null = "untouched";
 
-    let dispatchedProperties: Property[] | null = null;
     await runCreateNextFiscalYear({
       dossierId: "dossier-1",
+      userId: "user-1",
       workspace: baseWorkspace(),
-      persistTransition: fn,
-      dispatchCreateNextFiscalYear: (_fy, properties) => {
-        dispatchedProperties = properties;
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: stubCommit(ws),
+      getAuthToken: async () => "tok",
+      mirrorLocalAfterCommit: async () => {},
+      dispatchCreateNextFiscalYear: (fy, properties) => {
+        dispatchedFy = fy;
+        dispatchedProps = properties;
       },
-      onError: () => {},
+      onError: (m) => {
+        error = m;
+      },
     });
 
-    assert.deepEqual(dispatchedProperties, persistedProperties);
-    assert.equal(dispatchedProperties?.[0]?.amortissementBase?.composants[0]?.id, "travaux-1");
+    assert.equal(dispatchedFy?.id, "fy-2");
+    assert.equal(dispatchedFy?.previousFiscalYearId, "fy-1");
+    assert.equal(dispatchedProps?.[0]?.amortissementBase?.composants[0]?.id, "travaux-1");
+    assert.equal(error, null);
   });
 
-  it("T-P0-9 — les documents de N sont transmis tels quels à la persistance, jamais supprimés ni altérés par cette orchestration", async () => {
+  it("N non clos → refus, aucun commit", async () => {
     __testResetCreateNextFiscalYearGuard();
-    const documents = [
-      { id: "doc-1", fiscalYearId: "fy-1", propertyId: "prop-1", fileName: "bail.pdf", mimeType: "application/pdf", sizeBytes: 100, category: "bail" as const, documentType: "lease_contract" as const, status: "analyzed" as const, uploadedAt: "2025-01-01T00:00:00.000Z", hasSupabaseArtifacts: true },
-    ];
-    const stub = stubPersistTransition(baseFiscalYear({ id: "fy-2" }));
-
+    let commitCalls = 0;
+    let error: string | null = null;
     await runCreateNextFiscalYear({
       dossierId: "dossier-1",
-      workspace: baseWorkspace({ documents }),
-      persistTransition: stub.fn,
+      userId: "user-1",
+      workspace: baseWorkspace({ fiscalYear: baseFiscalYear({ status: "draft", closures: [] }) }),
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: async () => {
+        commitCalls += 1;
+        throw new Error("no");
+      },
+      getAuthToken: async () => "tok",
       dispatchCreateNextFiscalYear: () => {},
-      onError: () => {},
+      onError: (m) => {
+        error = m;
+      },
     });
-
-    assert.equal(stub.calls.length, 1);
-    const passedWorkspace = (stub.calls[0] as { workspace: PersistedWorkspace }).workspace;
-    assert.deepEqual(passedWorkspace.documents, documents, "les documents de N sont transmis intacts — aucune suppression, aucune purge Supabase dans ce flux");
+    assert.equal(commitCalls, 0);
+    assert.ok(error);
   });
 
-  it("T-P0-3 — dossierId === null → aucun appel de persistance, aucun dispatch, erreur explicite", async () => {
+  it("dossierId null → refus", async () => {
     __testResetCreateNextFiscalYearGuard();
-    const stub = stubPersistTransition(baseFiscalYear({ id: "fy-2" }));
-    let dispatched = false;
     let error: string | null = null;
-
     await runCreateNextFiscalYear({
       dossierId: null,
+      userId: "user-1",
       workspace: baseWorkspace(),
-      persistTransition: stub.fn,
-      dispatchCreateNextFiscalYear: () => {
-        dispatched = true;
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: async () => {
+        throw new Error("no");
       },
-      onError: (message) => {
-        error = message;
-      },
-    });
-
-    assert.equal(stub.calls.length, 0, "aucune tentative de persistance sans dossierId");
-    assert.equal(dispatched, false);
-    assert.ok(error, "une erreur explicite doit être renvoyée");
-  });
-
-  it("T-P0-4 — N non clôturé → STOP, aucun appel de persistance, aucun dispatch", async () => {
-    __testResetCreateNextFiscalYearGuard();
-    const stub = stubPersistTransition(baseFiscalYear({ id: "fy-2" }));
-    let dispatched = false;
-    let error: string | null = null;
-
-    await runCreateNextFiscalYear({
-      dossierId: "dossier-1",
-      workspace: baseWorkspace({ fiscalYear: baseFiscalYear({ status: "ready_to_close" }) }),
-      persistTransition: stub.fn,
-      dispatchCreateNextFiscalYear: () => {
-        dispatched = true;
-      },
-      onError: (message) => {
-        error = message;
+      getAuthToken: async () => "tok",
+      dispatchCreateNextFiscalYear: () => {},
+      onError: (m) => {
+        error = m;
       },
     });
-
-    assert.equal(stub.calls.length, 0);
-    assert.equal(dispatched, false);
     assert.ok(error);
   });
 
-  it("T-P0-5 — closure absente → STOP, aucun appel de persistance, aucun dispatch", async () => {
+  it("double appel : un seul commit", async () => {
     __testResetCreateNextFiscalYearGuard();
-    const stub = stubPersistTransition(baseFiscalYear({ id: "fy-2" }));
-    let dispatched = false;
-    let error: string | null = null;
-
-    await runCreateNextFiscalYear({
-      dossierId: "dossier-1",
-      workspace: baseWorkspace({ fiscalYear: baseFiscalYear({ closures: [] }) }),
-      persistTransition: stub.fn,
-      dispatchCreateNextFiscalYear: () => {
-        dispatched = true;
-      },
-      onError: (message) => {
-        error = message;
-      },
-    });
-
-    assert.equal(stub.calls.length, 0);
-    assert.equal(dispatched, false);
-    assert.ok(error);
-  });
-
-  it("T-P0-10 — échec de persistance → aucun dispatch, aucune donnée locale modifiée (rien à annuler : aucune suppression n'a jamais eu lieu)", async () => {
-    __testResetCreateNextFiscalYearGuard();
-    let dispatched = false;
-    let error: string | null = null;
-
-    await runCreateNextFiscalYear({
-      dossierId: "dossier-1",
-      workspace: baseWorkspace(),
-      persistTransition: async () => {
-        throw new Error("écriture IndexedDB atomique échouée");
-      },
-      dispatchCreateNextFiscalYear: () => {
-        dispatched = true;
-      },
-      onError: (message) => {
-        error = message;
-      },
-    });
-
-    assert.equal(dispatched, false);
-    assert.equal(error, "écriture IndexedDB atomique échouée");
-  });
-
-  it("T-P0-11 — double appel rapide ne crée pas deux N+1 : le second est rejeté pendant que le premier est en cours", async () => {
-    __testResetCreateNextFiscalYearGuard();
+    const ws = nextWorkspace();
     let resolveFirst: (() => void) | undefined;
-    const firstPending = new Promise<void>((resolve) => {
-      resolveFirst = resolve;
+    const gate = new Promise<void>((r) => {
+      resolveFirst = r;
     });
-    const nextFiscalYear = baseFiscalYear({ id: "fy-2" });
-
-    const slowStub = {
-      fn: async (p: { dossierId: string; workspace: PersistedWorkspace; now: string }) => {
-        await firstPending;
-        return {
-          dossier: { id: p.dossierId, properties: [], financements: [], fiscalYearIds: [], createdAt: p.now, updatedAt: p.now },
-          closedFiscalYear: { ...p.workspace.fiscalYear, dossierId: p.dossierId, documents: [], extractions: [], validationItems: [], ledgerEntries: [] },
-          nextFiscalYear,
-        } satisfies PersistFiscalYearTransitionResult;
-      },
+    let commitCalls = 0;
+    const slow = async (): Promise<TransitionCommitResult> => {
+      commitCalls += 1;
+      await gate;
+      return stubCommit(ws)();
     };
-
     const dispatches: FiscalYear[] = [];
     const errors: (string | null)[] = [];
-
-    const firstCall = runCreateNextFiscalYear({
+    const a = runCreateNextFiscalYear({
       dossierId: "dossier-1",
+      userId: "user-1",
       workspace: baseWorkspace(),
-      persistTransition: slowStub.fn,
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: slow,
+      getAuthToken: async () => "tok",
+      mirrorLocalAfterCommit: async () => {},
       dispatchCreateNextFiscalYear: (fy) => dispatches.push(fy),
       onError: (m) => errors.push(m),
     });
-
-    // Le second appel démarre PENDANT que le premier est encore en vol.
-    const secondCall = runCreateNextFiscalYear({
+    const b = runCreateNextFiscalYear({
       dossierId: "dossier-1",
+      userId: "user-1",
       workspace: baseWorkspace(),
-      persistTransition: slowStub.fn,
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: slow,
+      getAuthToken: async () => "tok",
+      mirrorLocalAfterCommit: async () => {},
       dispatchCreateNextFiscalYear: (fy) => dispatches.push(fy),
       onError: (m) => errors.push(m),
     });
-
     resolveFirst?.();
-    await Promise.all([firstCall, secondCall]);
-
-    assert.equal(dispatches.length, 1, "un seul N+1 doit avoir été dispatché malgré le double appel");
-    assert.ok(errors.some((e) => e && e.length > 0), "le second appel doit recevoir une erreur explicite, pas un silence");
+    await Promise.all([a, b]);
+    assert.equal(commitCalls, 1);
+    assert.equal(dispatches.length, 1);
+    assert.ok(errors.some((e) => e && e.length > 0));
   });
 });

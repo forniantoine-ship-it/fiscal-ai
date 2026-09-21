@@ -194,10 +194,15 @@ describe("contournement — l'orchestration de clôture refuse un exercice dont 
       dossierId: "dossier-x",
       userId: "user-x",
       workspace: { ...workspace({ ...fy, dossierId: "dossier-x" }) },
-      flushPendingWorkspace: async () => undefined,
-      persistClosureAndTransition: async () => {
+      // Lot 3 — flush succeeds so prepare can refuse on prior-history; commit must never run.
+      flushForTransition: async () => ({ status: "ok", revision: 3 }),
+      commitOnServer: async () => {
         persisted = true;
         throw new Error("ne doit jamais être appelée");
+      },
+      getAuthToken: async () => "tok",
+      mirrorLocalAfterCommit: async () => {
+        persisted = true;
       },
       dispatchCloseAndCreateNext: () => undefined,
       onError: (message) => {

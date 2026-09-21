@@ -42,6 +42,7 @@ import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
 import {
   __resetWorkspaceSnapshotSyncForTests,
   saveWorkspaceSnapshotToServer,
+  saveWorkspaceSnapshotToServerForTransition,
 } from "./workspace-snapshot-client";
 import {
   normalizeLastSyncedServerRevision,
@@ -295,12 +296,15 @@ export async function reconcileLocalWorkspaceWithSnapshots(input: {
   lastSyncedServerRevision?: number | null;
   snapshots: WorkspaceSnapshotRecord[];
   fallbackYear: number;
+  /** Lot 3 — server active year when known. */
+  activeFiscalYear?: number | null;
 }): Promise<WorkspaceHydrationDecision> {
   const decision = resolveWorkspaceHydration({
     local: input.local,
     lastSyncedServerRevision: input.lastSyncedServerRevision,
     snapshots: input.snapshots,
     fallbackYear: input.fallbackYear,
+    activeFiscalYear: input.activeFiscalYear,
   });
   if (decision.source === "server") {
     await putWorkspaceRecord(input.userId, decision.workspace, {
@@ -377,6 +381,12 @@ async function writeWorkspaceToDisk(
       await stampLocalWorkspaceSyncedRevision(userId, serverSave.revision);
     }
     if (isStaleWorkspaceWrite(generation)) return;
+    if (serverSave.status === "closed") {
+      // Lot 3 — old tab autosave against closed N: do not stamp, do not overwrite.
+      console.warn("[lmnp] autosave rejected — fiscal year closed on server", { userId });
+      notifyAutosaveStatus("error");
+      return;
+    }
     if (serverSave.status === "error") {
       notifyAutosaveStatus("error");
       return;
@@ -449,6 +459,83 @@ export async function flushWorkspaceSave(
   if (snapshot) {
     await saveWorkspace(snapshot.userId, snapshot.data);
   }
+}
+
+export type StrictWorkspaceFlushResult =
+  | { status: "ok"; revision: number }
+  | {
+      status: "failed";
+      reason: "no_user" | "server_unavailable" | "already_closed" | "serialize_failed" | "invalid_revision" | string;
+    };
+
+/**
+ * Lot 3 — flush required before N→N+1. Soft skip is not proof.
+ * Cancels debounce, forces IDB write, then CAS-saves from lastSyncedServerRevision
+ * (never adopts the live server revision by reading it first — B2).
+ *
+ * F2 — knownRevision is only used when the IDB record matches the workspace
+ * being flushed (same fiscal year + dossier). Cross-year revision reuse → fail-closed.
+ */
+export async function flushWorkspaceSaveForTransition(
+  userId: string | null,
+  workspace: PersistedWorkspace,
+): Promise<StrictWorkspaceFlushResult> {
+  if (!userId) return { status: "failed", reason: "no_user" };
+
+  if (saveWorkspaceTimer) {
+    clearTimeout(saveWorkspaceTimer);
+    saveWorkspaceTimer = null;
+  }
+  pendingWorkspace = null;
+
+  const existingLocal = await getWorkspaceRecord(userId);
+  const localData =
+    existingLocal?.data && isValidWorkspace(existingLocal.data) ? existingLocal.data : null;
+  const targetYear = workspace.fiscalYear.year;
+  const targetDossierId = workspace.fiscalYear.dossierId ?? getCurrentDossierId(userId);
+
+  // F2 — refuse to inherit lastSyncedServerRevision from a different year/dossier.
+  if (localData) {
+    const localYear = localData.fiscalYear.year;
+    const localDossierId = localData.fiscalYear.dossierId;
+    if (localYear !== targetYear) {
+      return { status: "failed", reason: "scope_mismatch" };
+    }
+    if (
+      localDossierId &&
+      targetDossierId &&
+      localDossierId !== targetDossierId
+    ) {
+      return { status: "failed", reason: "scope_mismatch" };
+    }
+  }
+
+  const knownRevision = normalizeLastSyncedServerRevision(
+    existingLocal?.lastSyncedServerRevision,
+  );
+
+  try {
+    await putWorkspaceRecord(userId, workspace);
+  } catch (error) {
+    console.error("[lmnp] transition local flush failed", { userId, error });
+    return { status: "failed", reason: "serialize_failed" };
+  }
+
+  const dossierId = targetDossierId;
+  if (!dossierId) {
+    return { status: "failed", reason: "server_unavailable" };
+  }
+
+  const serverSave = await saveWorkspaceSnapshotToServerForTransition({
+    dossierId,
+    workspace,
+    knownRevision: knownRevision ?? null,
+  });
+  if (serverSave.status !== "ok") {
+    return { status: "failed", reason: serverSave.reason };
+  }
+  await stampLocalWorkspaceSyncedRevision(userId, serverSave.revision);
+  return { status: "ok", revision: serverSave.revision };
 }
 
 export async function persistDocumentFile(

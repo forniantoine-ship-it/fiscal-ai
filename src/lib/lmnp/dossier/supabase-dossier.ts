@@ -7,6 +7,8 @@ export type LmnpDossier = {
   city: string | null;
   lmnp_type: string | null;
   created_at: string;
+  /** Lot 3 — server-authoritative active calendar year (null = legacy). */
+  active_fiscal_year: number | null;
 };
 
 export type SupabaseDocumentRow = {
@@ -28,7 +30,7 @@ export type SupabaseDocumentRow = {
 const DOCUMENT_SELECT =
   "id, user_id, dossier_id, file_name, file_path, extraction_status, created_at, fiscal_year, document_role, property_id";
 
-const DOSSIER_SELECT = "id, user_id, status, city, lmnp_type, created_at";
+const DOSSIER_SELECT = "id, user_id, status, city, lmnp_type, created_at, active_fiscal_year";
 
 function logSupabaseError(
   label: string,
@@ -64,7 +66,15 @@ export async function fetchActiveDossierForUser(userId: string): Promise<LmnpDos
     return null;
   }
 
-  return data as LmnpDossier | null;
+  if (!data) return null;
+
+  return {
+    ...(data as Omit<LmnpDossier, "active_fiscal_year">),
+    active_fiscal_year:
+      typeof (data as { active_fiscal_year?: unknown }).active_fiscal_year === "number"
+        ? ((data as { active_fiscal_year: number }).active_fiscal_year)
+        : null,
+  };
 }
 
 export async function createLmnpDossier(
@@ -88,7 +98,13 @@ export async function createLmnpDossier(
   }
 
   console.log("[dossier] created", { dossierId: data.id, userId });
-  return data as LmnpDossier;
+  return {
+    ...(data as Omit<LmnpDossier, "active_fiscal_year">),
+    active_fiscal_year:
+      typeof (data as { active_fiscal_year?: unknown }).active_fiscal_year === "number"
+        ? ((data as { active_fiscal_year: number }).active_fiscal_year)
+        : null,
+  };
 }
 
 export async function ensureActiveDossier(userId: string): Promise<LmnpDossier | null> {

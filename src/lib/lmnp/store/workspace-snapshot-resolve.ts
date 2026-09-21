@@ -23,13 +23,16 @@ export type WorkspaceSnapshotRecord = {
   revision: number;
   payload: unknown;
   updatedAt: string;
+  /** Lot 3 — when set, snapshot is closed server-side; autosave must not write. */
+  closedAt?: string | null;
+  successorFiscalYear?: number | null;
 };
 
 export type WorkspaceHydrationDecision =
   | {
       source: "server";
       workspace: PersistedWorkspace;
-      blockWrites: false;
+      blockWrites: boolean;
       lastSyncedServerRevision: number;
     }
   | { source: "local"; workspace: PersistedWorkspace; blockWrites: false; uploadLocal: boolean }
@@ -38,7 +41,7 @@ export type WorkspaceHydrationDecision =
       source: "blocked";
       workspace: PersistedWorkspace | null;
       blockWrites: true;
-      reason: "unsupported_schema_version" | "invalid_snapshot";
+      reason: "unsupported_schema_version" | "invalid_snapshot" | "closed_archive";
       schemaVersion?: number;
     };
 
@@ -57,11 +60,25 @@ function workspacesAreEquivalent(
   return JSON.stringify(a.envelope.workspace) === JSON.stringify(b.envelope.workspace);
 }
 
-function pickTargetYear(
+/**
+ * Lot 3 — year selection for hydrate.
+ * Priority: server active fiscal year (when snapshot exists) → local cache →
+ * civil fallbackYear → most recently updated snapshot.
+ * `activeFiscalYear` absent/null keeps legacy Lot 1/P0 behaviour.
+ */
+export function pickTargetYear(
   local: PersistedWorkspace | null,
   snapshots: WorkspaceSnapshotRecord[],
   fallbackYear: number,
+  activeFiscalYear?: number | null,
 ): number | null {
+  if (
+    typeof activeFiscalYear === "number" &&
+    Number.isInteger(activeFiscalYear) &&
+    snapshots.some((row) => row.fiscalYear === activeFiscalYear)
+  ) {
+    return activeFiscalYear;
+  }
   if (local) return local.fiscalYear.year;
   if (snapshots.some((row) => row.fiscalYear === fallbackYear)) return fallbackYear;
   if (snapshots.length === 0) return null;
@@ -72,16 +89,30 @@ function pickTargetYear(
   })[0].fiscalYear;
 }
 
+/** Archive primitive: closed server snapshot may be loaded read-only. */
+export function resolveClosedArchiveSnapshotAccess(
+  snapshot: WorkspaceSnapshotRecord | undefined,
+): { ok: true } | { ok: false; reason: string } {
+  if (!snapshot) return { ok: false, reason: "Exercice introuvable sur le serveur." };
+  if (snapshot.closedAt == null) {
+    return { ok: false, reason: "Cet exercice n'est pas une archive fermée." };
+  }
+  return { ok: true };
+}
+
 export function resolveWorkspaceHydration(input: {
   local: PersistedWorkspace | null;
   lastSyncedServerRevision?: number | null;
   snapshots: WorkspaceSnapshotRecord[];
   fallbackYear: number;
+  /** Lot 3 — server-authoritative active year when present. */
+  activeFiscalYear?: number | null;
 }): WorkspaceHydrationDecision {
   const { local, snapshots, fallbackYear } = input;
   const lastSynced = normalizeLastSyncedServerRevision(input.lastSyncedServerRevision);
-  const year = pickTargetYear(local, snapshots, fallbackYear);
+  const year = pickTargetYear(local, snapshots, fallbackYear, input.activeFiscalYear);
   const snapshot = year == null ? undefined : snapshots.find((row) => row.fiscalYear === year);
+  const isClosedArchive = snapshot?.closedAt != null;
 
   if (snapshot) {
     const parsed = parseWorkspaceSnapshot(snapshot.payload);
@@ -99,10 +130,14 @@ export function resolveWorkspaceHydration(input: {
       const serverDecision = {
         source: "server" as const,
         workspace: serverWorkspace,
-        blockWrites: false as const,
+        blockWrites: isClosedArchive,
         lastSyncedServerRevision: snapshot.revision,
       };
-      if (local && lastSynced != null) {
+      if (isClosedArchive) {
+        // Closed N must never autosave — even if a stale local cache differs.
+        return serverDecision;
+      }
+      if (local && lastSynced != null && local.fiscalYear.year === year) {
         if (snapshot.revision > lastSynced) return serverDecision;
         if (!workspacesAreEquivalent(local, serverWorkspace)) {
           return { source: "local", workspace: local, blockWrites: false, uploadLocal: true };
