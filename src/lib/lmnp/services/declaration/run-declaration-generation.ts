@@ -26,11 +26,18 @@ import {
 import type {
   DeclarationDraft,
   FiscalEngineOutput,
+  FiscalYear,
   LiasseEngineOutput,
 } from "@/lib/lmnp/types/domain";
+import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
+import { enrichImmobilisationsRfs, reconcileImmobilisationsContinuity } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 
 /** Code anomalie stable — Blocker #3 Lot C (gate génération). */
 export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED";
+
+/** Lot 5 B2 — réconciliation ouverture/clôture immobilisations échouée. */
+export const IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED =
+  "IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED";
 
 /**
  * Blocker #3 — détection + validité marker uniquement (déterministe, offline).
@@ -153,6 +160,17 @@ export function runDeclarationGeneration(
    * jamais dérivée d'un exercice différent.
    */
   dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision },
+  /**
+   * Lot 5 — continuité immobilisations :
+   * - `composantsF012Merged` : F-012 historiques + courants (via mergeComposantsF012 côté appelant) ;
+   * - `immobilisationsOuverture` : brut/cumul clôture N pour 2033-C 490/570 ;
+   * - `propertyId` : porté tel quel quand connu (jamais inventé).
+   */
+  continuity?: {
+    composantsF012Merged?: ComposantNouveau[];
+    immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+    propertyId?: string;
+  },
 ): DeclarationGenerationResult {
   // Blocker #3 Lot C — avant tout calcul fiscal : TF legacy unresolved bloque.
   const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
@@ -217,23 +235,53 @@ export function runDeclarationGeneration(
 
   // RFS — assemblage pur, aucun second appel à produceFiscalResult() : le même
   // `fiscalResult` (F-006, complet) calculé ci-dessus est injecté tel quel.
-  // Immobilisations/emprunts : lecture seule des sorties déjà persistées de
-  // F-010/F-011/F-012, jamais recalculées ici. `valeurTerrain` (Cycle 35),
-  // `montantMobilier` (Cycle 58), `dateMiseEnService` et `composantsNouveaux`
-  // (P3-LIASSE-1B.2) sont des champs frères de `.plan` dans la sortie durable
-  // de F-010/du draft — fusionnés ici (transport pur, aucun calcul) pour ne
-  // pas se perdre en route vers la RFS. `composantsNouveaux` est transporté
-  // PAR RÉFÉRENCE (même tableau que `draft.chargesAssistant.composantsNouveaux`,
-  // jamais recopié), sur le même modèle que `emprunts` ci-dessous.
+  // Immobilisations : F-010 plan + F-012 fusionnés (Lot 5) + ouvertures N.
   const immobilisations = draft?.logementAmortissement
-    ? {
-        ...draft.logementAmortissement.plan,
-        valeurTerrain: draft.logementAmortissement.valeurTerrain,
-        montantMobilier: draft.logementAmortissement.montantMobilier,
-        dateMiseEnService: draft.dateMiseEnService,
-        composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
-      }
+    ? enrichImmobilisationsRfs({
+        immobilisations: {
+          ...draft.logementAmortissement.plan,
+          valeurTerrain: draft.logementAmortissement.valeurTerrain,
+          montantMobilier: draft.logementAmortissement.montantMobilier,
+          dateMiseEnService: draft.dateMiseEnService,
+          composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
+        },
+        exerciceFiscal: fiscalYear,
+        composantsMerged:
+          continuity?.composantsF012Merged ?? draft.chargesAssistant?.composantsNouveaux,
+        propertyId: continuity?.propertyId,
+        ouverture: continuity?.immobilisationsOuverture
+          ? {
+              valeurBruteOuverture: continuity.immobilisationsOuverture.brut,
+              amortissementsCumulesOuverture:
+                continuity.immobilisationsOuverture.amortissementsCumules,
+              sourceClosureId: continuity.immobilisationsOuverture.sourceClosureId,
+            }
+          : undefined,
+      })
     : undefined;
+
+  // Lot 5 B2 — fail-closed en amont de la liasse : une divergence
+  // ouverture/clôture (fausse acquisition, 570+572≠576) bloque la génération.
+  if (immobilisations) {
+    const reconciliation = reconcileImmobilisationsContinuity({
+      immobilisations,
+      exercice: fiscalYear,
+      amortCalcule: fiscalResult.amortCalcule,
+    });
+    if (reconciliation.status === "fail") {
+      return {
+        status: "blocked",
+        anomalies: [
+          {
+            severity: "error",
+            field: "immobilisations",
+            message: `${IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED}: ${reconciliation.reason}`,
+          },
+        ],
+      };
+    }
+  }
+
   // A5(1) — voir `resolveEmpruntsForRfs` : `[]` uniquement si le client a
   // explicitement déclaré ne pas avoir de crédit (`creditDeclaredNoneAt`) ; une
   // absence de réponse reste `undefined` (jamais transformée en « aucun crédit »).

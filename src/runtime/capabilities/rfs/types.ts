@@ -14,11 +14,27 @@
 
 import type { FiscalResult } from "../f006/types";
 import type { IdentiteDeclarante } from "../f007/types";
-import type { AmortissementPlan } from "../f010/types";
+import type { AmortissementPlan, PlanLigne } from "../f010/types";
 import type { PretFinancementExercice } from "../f011/types";
 import type { ComposantNouveau } from "../f012/types";
 import type { PatrimonialState } from "../bilan/types";
 import type { Dispense2033AState } from "./dispense-2033a";
+
+/** Lot 5 — détail annuel d'un composant F-012 (historique ou acquisition). */
+export type ComposantImmobilisationRfs = PlanLigne & {
+  id: string;
+  provenance: "historique" | "acquisition_exercice";
+  propertyId?: string;
+  origin?: ComposantNouveau["origin"];
+  dateDebut?: string;
+};
+
+/** Lot 5 — ouvertures comptables issues de la clôture N (jamais inventées). */
+export type MouvementsImmobilisationsRfs = {
+  valeurBruteOuverture: number;
+  amortissementsCumulesOuverture: number;
+  sourceClosureId?: string;
+};
 
 /**
  * Plan d'amortissement (F-010) enrichi de la valeur du terrain — Cycle 35 —
@@ -71,8 +87,23 @@ export type ImmobilisationsRfs = AmortissementPlan & {
    * `undefined` si le dossier n'a pas encore de `chargesAssistant` (F-012
    * non exécuté) — distinct d'un tableau vide, qui signifie « F-012 exécuté,
    * aucun travaux à amortir » (CL-002, F-014 KS).
+   *
+   * Lot 5 — peut aussi transporter les composants F-012 historiques repris
+   * depuis `Property.amortissementBase` (fusion déterministe par id).
    */
   composantsNouveaux?: ComposantNouveau[];
+  /**
+   * Lot 5 — détail annuel (dotation / cumul / VNC) des composants F-012,
+   * produit par `detailComposantsNouveaux` (réutilise assemblePlan F-010).
+   * Permet au registre patrimonial et aux Cerfa de ne plus traiter le cumul
+   * F-012 comme UNKNOWN.
+   */
+  composantsDetail?: ComposantImmobilisationRfs[];
+  /**
+   * Lot 5 — ouvertures comptables depuis la clôture N (exercice ultérieur).
+   * Absentes au premier exercice de mise en service (GO-2 : 490/570 = 0).
+   */
+  mouvements?: MouvementsImmobilisationsRfs;
 };
 
 /**

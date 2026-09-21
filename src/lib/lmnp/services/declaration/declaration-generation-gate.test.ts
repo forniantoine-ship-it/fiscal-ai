@@ -12,6 +12,7 @@ import { runDeclarationGeneration } from "./run-declaration-generation";
 import { LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, Property } from "../../types";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
+import { computeAmortizationPlan } from "@/runtime/capabilities/f010/compute-amortization-plan";
 
 const PROPERTY: Property = {
   id: "prop-1",
@@ -21,7 +22,40 @@ const PROPERTY: Property = {
   postalCode: "69001",
 };
 
+/** Plan F-010 réel — jamais `lignes: []` + totalDotations > 0 (impossible produit). */
+function coherentLogementAmortissement(dateMiseEnService = "2020-01-01", exerciceFiscal = 2025) {
+  const computed = computeAmortizationPlan({
+    prixAcquisition: 200000,
+    mobilierInclus: false,
+    fraisNotaire: 0,
+    choixTraitementFrais: "deduction",
+    typeBien: "appartement",
+    ratioTerrain: 0.2,
+    dateMiseEnService,
+    exerciceFiscal,
+  });
+  return {
+    computedAt: "2026-01-01T00:00:00.000Z",
+    prixRevient: computed.prixRevient,
+    valeurTerrain: computed.valeurTerrain,
+    valeurBati: computed.valeurBati,
+    baseAmortissableBati: computed.baseAmortissableBati,
+    montantMobilier: computed.montantMobilierIsole,
+    dotationAnnuelle: computed.plan.totalAnnuelExercice,
+    dureeMoyenneAnnees: 30,
+    prorataRatio: computed.prorataRatio,
+    plan: computed.plan,
+    fraisEnCharges: computed.fraisEnCharges,
+    fieldSources: {},
+  } satisfies NonNullable<DeclarationDraft["logementAmortissement"]>;
+}
+
 function completeFlags(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
+  const dateMiseEnService =
+    typeof overrides.dateMiseEnService === "string" ? overrides.dateMiseEnService : "2020-01-01";
+  const logementAmortissement =
+    overrides.logementAmortissement ?? coherentLogementAmortissement(dateMiseEnService, 2025);
+  const defaultDotations = logementAmortissement.plan.totalAnnuelExercice;
   return {
     completedSteps: [],
     inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
@@ -31,25 +65,20 @@ function completeFlags(overrides: Partial<DeclarationDraft> = {}): DeclarationDr
     // que chargesAssistant/amortissementAssistant déjà fournis ci-dessous
     // par chaque test) : un fixture "complet" doit donc fournir une valeur,
     // exactement comme pour ces deux autres champs.
-    logementAmortissement: {
-      computedAt: "2026-01-01T00:00:00.000Z",
-      prixRevient: 200000,
-      valeurTerrain: 40000,
-      valeurBati: 160000,
-      baseAmortissableBati: 160000,
-      montantMobilier: 0,
-      dotationAnnuelle: 5333,
-      dureeMoyenneAnnees: 30,
-      // AmortissementPlan (F-010, @/runtime/capabilities/f010/types.ts) —
-      // pas le PlanAmortissement de F-014 : forme réellement lue par
-      // map-2033a.ts (`immo.lignes.reduce(...)`), jamais { composants }.
-      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
-    } as DeclarationDraft["logementAmortissement"],
+    // Lot 5 B2 — plan F-010 réel (lignes non vides) aligné sur la dotation.
+    logementAmortissement,
     creditDeclaredNoneAt: "2026-01-01T00:00:00.000Z",
     revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
     chargesConfirmedAt: "2026-01-01T00:00:00.000Z",
     amortissementConfirmedAt: "2026-01-01T00:00:00.000Z",
+    amortissementAssistant: {
+      exerciceFiscal: 2025,
+      totalDotations: defaultDotations,
+      status: "validated",
+    },
     ...overrides,
+    // Si overrides remplace dateMiseEnService/logement sans plan cohérent,
+    // les tests qui fournissent explicitement logementAmortissement gardent la main.
   };
 }
 
@@ -377,6 +406,8 @@ describe("Cycle 24 — gate.fiscalResult === preview.fiscalResult === résultat 
   });
 
   it("déficit — résultat avant amortissement déjà négatif : amortissement intégralement reporté (art. 39C), jamais de resultatFiscal négatif", () => {
+    // Lot 5 B2 — plan F-010 cohérent avec totalDotations=3720 (premier exercice).
+    // L'ancienne fixture `lignes: []` + 3720 était impossible en parcours produit.
     const draft = completeFlags({
       siret: "12345678901234",
       siren: "123456789",
@@ -385,6 +416,32 @@ describe("Cycle 24 — gate.fiscalResult === preview.fiscalResult === résultat 
       dateMiseEnService: "2025-02-01",
       revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 5100 },
       chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 14962, totalPreExploitation: 0 },
+      logementAmortissement: {
+        computedAt: "2026-01-01T00:00:00.000Z",
+        prixRevient: 200000,
+        valeurTerrain: 40000,
+        valeurBati: 160000,
+        baseAmortissableBati: 160000,
+        montantMobilier: 0,
+        dotationAnnuelle: 3720,
+        dureeMoyenneAnnees: 30,
+        plan: {
+          lignes: [
+            {
+              label: "Bâti",
+              montant: 160000,
+              dureeAnnees: 30,
+              dotationAnnuelle: 5333.33,
+              dotationExercice: 3720,
+              amortissementsCumules: 3720,
+              vnc: 156280,
+            },
+          ],
+          totalAnnuelExercice: 3720,
+          totalBrut: 160000,
+        },
+        fieldSources: {},
+      },
       amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3720, status: "validated" },
     } as DeclarationDraft);
 

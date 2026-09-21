@@ -41,6 +41,7 @@ import {
   extractDossierLevelDataFromWorkspace,
   extractIdentity,
 } from "../services/dossier/fiscal-year-cycle";
+import { snapshotImmobilisationsFromGeneratedRfs } from "../services/dossier/immobilisations-comptables";
 
 /**
  * Récupère le Dossier existant, ou le construit une seule fois depuis le
@@ -332,6 +333,14 @@ export async function persistFiscalYearClosureAndTransition(params: {
       ? { state: patrimoineN, ranSituation: ranSituationN }
       : undefined;
 
+  // Lot 5 — snapshot comptable immobilisations depuis la RFS de N
+  // (même composition que prepareFiscalYearTransitionCandidate).
+  const immobilisationsComptables = snapshotImmobilisationsFromGeneratedRfs({
+    immobilisations: workspace.declarationDraft?.rfs?.immobilisations,
+    exerciceFiscal: workspace.fiscalYear.year,
+    propertyId: workspace.fiscalYear.propertyIds[0],
+  });
+
   const closedFiscalYearIdentity = closeFiscalYear(
     { ...workspace.fiscalYear, status: "closed", updatedAt: now },
     fiscalResult,
@@ -339,6 +348,7 @@ export async function persistFiscalYearClosureAndTransition(params: {
     {
       sourceDeclarationVersionId: workspace.declarationDraft?.declaration?.currentVersionId,
       patrimoine: patrimoineSource,
+      immobilisationsComptables,
     },
   );
 

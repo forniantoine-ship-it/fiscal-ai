@@ -233,7 +233,8 @@ describe("Lot 4 — transition N→N+1 via builder réel", () => {
     assert.equal(draft.logementAssistantState?.prixAcquisition, 250000);
     assert.equal(draft.logementAssistantState?.adresse, "12 rue des Lilas, 75011 Paris");
     assert.notEqual(draft.logementAssistantState?.step, "complete");
-    assert.equal(draft.logementAssistantState?.fraisNotaire, undefined, "one-shot frais N absents");
+    assert.equal(draft.logementAssistantState?.fraisNotaire, 0, "frais historiques déduits → montant courant 0 (pas de re-déduction)");
+    assert.equal(draft.logementAssistantState?.choixTraitementFrais, "deduction", "choix fiscal historique durable");
     assert.equal(draft.logementAmortissement, undefined);
     assert.equal(draft.logementConfirmedAt, undefined);
     assert.equal(

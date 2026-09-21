@@ -122,6 +122,14 @@ export interface F010State {
   localisation?: Localisation;
   fraisNotaire?: number;
   choixTraitementFrais?: "integration" | "deduction";
+  /**
+   * Lot 5 B3 — frais d'acquisition du bien déjà traités fiscalement
+   * (déduction consommée ou intégration à la base).
+   */
+  fraisAcquisitionHistoriques?: {
+    montant: number;
+    traitement: "integration" | "deduction";
+  };
   mobilierInclus?: boolean;
   montantMobilier?: number;
   mobilierMode?: "lot" | "detaille";
@@ -272,6 +280,15 @@ export type F010PersistedState = {
   localisation?: Localisation;
   fraisNotaire?: number;
   choixTraitementFrais?: "integration" | "deduction";
+  /**
+   * Lot 5 B3 — frais d'acquisition du bien déjà traités fiscalement
+   * (déduction consommée ou intégration à la base). Permet à N+1 de
+   * rejouer le plan sans repasser par un choix irréversible.
+   */
+  fraisAcquisitionHistoriques?: {
+    montant: number;
+    traitement: "integration" | "deduction";
+  };
   mobilierInclus?: boolean;
   montantMobilier?: number;
   mobilierMode?: "lot" | "detaille";
@@ -324,6 +341,7 @@ export function toF010PersistedState(
     localisation: state.localisation,
     fraisNotaire: state.fraisNotaire,
     choixTraitementFrais: state.choixTraitementFrais,
+    fraisAcquisitionHistoriques: state.fraisAcquisitionHistoriques,
     mobilierInclus: state.mobilierInclus,
     montantMobilier: state.montantMobilier,
     mobilierMode: state.mobilierMode,

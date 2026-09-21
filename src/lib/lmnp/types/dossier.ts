@@ -177,6 +177,31 @@ export interface FinancementBase {
  * place : une correction produit une NOUVELLE entrée dans `FiscalYear.closures[]`,
  * jamais un remplacement (D1 — correction autorisée mais versionnée).
  */
+/**
+ * Lot 5 — snapshot comptable des immobilisations à la clôture (brut / cumul /
+ * VNC). Distinct du stock fiscal d'amortissements non déduits
+ * (`FiscalResult.stocks.amortissementsReportes`).
+ */
+export type ImmobilisationComptableActif = {
+  id: string;
+  propertyId?: string;
+  label: string;
+  categorie: "terrain" | "composant" | "travaux";
+  coutBrut: number;
+  amortissementCumule: number;
+  vnc: number;
+  provenance: "historique" | "acquisition_exercice";
+  origin?: "f012_travaux" | "f012_copro";
+  dateDebut?: string;
+};
+
+export type ImmobilisationsComptablesSnapshot = {
+  brutCloture: number;
+  amortissementsCumulesCloture: number;
+  vncCloture: number;
+  actifs: ImmobilisationComptableActif[];
+};
+
 export interface FiscalYearClosure {
   id: string;
   fiscalYearId: string;
@@ -190,6 +215,11 @@ export interface FiscalYearClosure {
   dossierId?: string;
   sourceDeclarationVersionId?: string;
   stocks: FiscalEngineOutput["stocks"];
+  /**
+   * Lot 5 — continuité comptable immobilisations → ouverture N+1.
+   * Absent si le registre n'était pas fiable à la clôture (UNKNOWN ≠ ZERO).
+   */
+  immobilisationsComptables?: ImmobilisationsComptablesSnapshot;
   computedAt: string;
   closedAt: string;
   /**

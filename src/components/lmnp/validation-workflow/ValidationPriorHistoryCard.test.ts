@@ -92,7 +92,12 @@ describe("garde de câblage — chaque point d'entrée qui décide d'un paiement
 
   it("ValidationDocumentStep : porte, paiement et génération", () => {
     const source = read("components/lmnp/documents/ValidationDocumentStep.tsx");
-    assert.match(source, /resolveDeclarationGenerationGate\(\{[\s\S]*?priorHistory,[\s\S]*?\}\)/, "la porte reçoit l'éligibilité");
+    const gateArgs = extractCallObjectLiterals(source, "resolveDeclarationGenerationGate");
+    assert.ok(gateArgs.length > 0, "au moins un appel à la porte");
+    assert.ok(
+      gateArgs.every((args) => /\bpriorHistory\b/.test(args)),
+      "la porte reçoit l'éligibilité",
+    );
     const generation = source.slice(source.indexOf("const handleGenerationComplete"));
     assert.match(generation.slice(0, 500), /resolvePriorHistoryEligibility\(fiscalYear\)\.eligible/, "génération : relecture défensive");
     // Payment V1 — le paiement passe désormais par le checkout serveur ; la relecture défensive précède tout appel.
@@ -144,14 +149,45 @@ describe("garde de fail-open — aucun nouvel appelant de la porte ne peut omett
       const rel = path.relative(srcRoot, file).split(path.sep).join("/");
       if (rel === DEFINITION) continue;
       const source = readFileSync(file, "utf-8");
-      const calls = [...source.matchAll(/resolveDeclarationGenerationGate\(\{([\s\S]*?)\n\s*\}\)/g)];
+      const calls = extractCallObjectLiterals(source, "resolveDeclarationGenerationGate");
       if (calls.length === 0) continue;
       seen.push(rel);
       if (DRIFT_ONLY_CALLERS.has(rel)) continue;
-      if (!calls.every((call) => /\bpriorHistory\b/.test(call[1]))) offenders.push(rel);
+      if (!calls.every((args) => /\bpriorHistory\b/.test(args))) offenders.push(rel);
     }
     assert.deepEqual(offenders, [], "appelant(s) qui décident d'un paiement/génération sans éligibilité");
     assert.ok(seen.includes("components/lmnp/documents/ValidationDocumentStep.tsx"), "le scan trouve bien l'appelant de production");
     assert.ok(seen.includes("lib/lmnp/services/dossier/fiscal-year-cycle.ts"), "le scan trouve bien les appelants de dérive");
   });
 });
+
+/**
+ * Extrait le corps de chaque littéral d'objet passé à `callee({ ... })`,
+ * en respectant les accolades imbriquées (ex. `continuity: resolveX({ ... })`).
+ * Évite le faux positif d'un regex non-greedy qui s'arrête au premier `}`.
+ */
+function extractCallObjectLiterals(source: string, callee: string): string[] {
+  const needle = `${callee}({`;
+  const bodies: string[] = [];
+  let from = 0;
+  while (from < source.length) {
+    const start = source.indexOf(needle, from);
+    if (start < 0) break;
+    const openBrace = start + callee.length + 1; // index of '{'
+    let depth = 0;
+    let i = openBrace;
+    for (; i < source.length; i++) {
+      const ch = source[i];
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          bodies.push(source.slice(openBrace + 1, i));
+          break;
+        }
+      }
+    }
+    from = i + 1;
+  }
+  return bodies;
+}

@@ -16,6 +16,7 @@
  * technique doit voir traduit simplement.
  */
 import { resolveDeclarationGenerationGate } from "./declaration-generation-gate";
+import { resolveImmobilisationsContinuityForGeneration } from "../dossier/fiscal-year-cycle";
 import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
 
 export function resolveDeclarationOutOfDate(input: {
@@ -40,6 +41,13 @@ export function resolveDeclarationOutOfDate(input: {
     // déclarer "périmé" à tort pour un exercice en continuité (déficits
     // antérieurs/amortissements reportés non nuls) sans aucune modification.
     stocksOuverture: fiscalYear.stocksOuverture?.stocks,
+    // Lot 5 B2 — même continuité immobilisations que la génération finale.
+    continuity: resolveImmobilisationsContinuityForGeneration({
+      draft: declarationDraft,
+      properties,
+      propertyIds: fiscalYear.propertyIds,
+      immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+    }),
   });
 
   return gate.referenceGenerationStatus === "stale";

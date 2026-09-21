@@ -542,6 +542,17 @@ export interface FiscalYear {
     stocks: FiscalEngineOutput["stocks"];
   };
   /**
+   * Lot 5 — ouvertures comptables immobilisations (brut / cumul clôture N),
+   * résolues depuis `FiscalYearClosure.immobilisationsComptables` à la
+   * création de N+1. Distinct de `stocksOuverture` (stock fiscal art. 39 C).
+   */
+  immobilisationsOuverture?: {
+    sourceClosureId: string;
+    brut: number;
+    amortissementsCumules: number;
+    vnc: number;
+  };
+  /**
    * G1-P1 — miroir exact de `stocksOuverture` ci-dessus, pour la continuité
    * patrimoniale (compte exploitant / RAN) plutôt que les stocks fiscaux.
    * Résolu par `resolvePatrimoineOuvertureNPlusUn()`, persisté une seule fois

@@ -1,6 +1,10 @@
 import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import {
+  computeClosingImmobilisationsTotals,
+  reconcileImmobilisationsContinuity,
+} from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 
 /**
  * Projection Cerfa 2033-C-SD (Immobilisations — Amortissements — Plus-values
@@ -104,7 +108,7 @@ export type Form2033C = {
 };
 
 const RAISON_DIVERGENCE_F010_F014 =
-  "fiscalResult.amortCalcule (F-014, source fiscale autoritaire, inclut d'éventuels composantsNouveaux issus de F-012) diverge de rfs.immobilisations.totalAnnuelExercice (F-010 seul, qui ne reçoit jamais ces composants nouveaux). Cette divergence prouve que rfs.immobilisations est incomplet pour ce dossier — au moins un élément amortissable existe sans que son coût brut ne soit reflété dans totalBrut. Produire cette case depuis F-010 seul sous-évaluerait silencieusement le formulaire ; aucune reconstruction de la part manquante n'est tentée ici (même garde que les cases 028/030 du 2033-A, Cycle 37).";
+  "fiscalResult.amortCalcule (F-014) diverge de rfs.immobilisations.totalAnnuelExercice + Σ composantsDetail.dotationExercice — la composition RFS est incomplète ou incohérente ; 496/576/490/492/570 restent non alimentées (fail-closed).";
 
 const RAISON_TERRAIN_ABSENT =
   "rfs.immobilisations est présent mais sans valeurTerrain (dossier ou fixture antérieur à l'exposition de cette donnée, Cycle 35) — produire une valeur brute sans le terrain sous-évaluerait silencieusement la valeur réelle plutôt que de signaler l'absence.";
@@ -113,17 +117,26 @@ const RAISON_IMMO_ABSENT =
   "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté).";
 
 const RAISON_MOUVEMENT_EXERCICE_ULTERIEUR =
-  "GO-2 n'alimente 490/492/570 que pour le PREMIER exercice de mise en service (rfs.immobilisations.dateMiseEnService), où « début d'exercice »=0 et « augmentations »=brut par définition comptable. Pour un exercice ultérieur, reconstruire ces colonnes exigerait le détail des composantsNouveaux propres à CET exercice (montant par montant) — donnée non traitée par ce jalon (STOP composants nouveaux). Seule la colonne « fin d'exercice », indépendante de cette ambiguïté, reste alimentée.";
+  "Exercice ultérieur à la mise en service : 490/492/570 exigent les ouvertures comptables issues de la clôture N (rfs.immobilisations.mouvements). Absentes → non alimentées (UNKNOWN ≠ ZERO). Lot 5.";
 
 const RAISON_MOUVEMENT_DATE_ABSENTE =
   "rfs.immobilisations.dateMiseEnService est absente — impossible de déterminer si l'exercice courant est le premier exercice de mise en service, condition nécessaire pour alimenter « début d'exercice »/« augmentations » (GO-2). Jamais supposée par défaut.";
+
+const RAISON_F012_SANS_DETAIL =
+  "Des composants F-012 existent sans composantsDetail enrichi — brut/cumul/net non fiables (Lot 5 fail-closed).";
+
+const RAISON_RECONCILIATION_BRUT =
+  "Réconciliation brut échouée : closingGross ≠ openingGross + acquisitions explicites (provenance acquisition_exercice). Une variation n'est pas une acquisition — 490/492/496 non alimentées (Lot 5 fail-closed).";
+
+const RAISON_RECONCILIATION_AMORT =
+  "Réconciliation amortissements échouée : 570 + 572 ≠ 576 (ouverture + dotation exercice ≠ cumul clôture). Aucune sortie inventée — cases non alimentées (Lot 5 fail-closed).";
 
 // 494/574 (diminutions) restent hors périmètre GO-2, quel que soit
 // l'exercice : aucune notion de cession/sortie d'actif n'existe nulle part
 // dans F-006/F-010/F-012/F-014 (Cycle 54, toujours vrai) — indépendant de
 // dateMiseEnService.
 const RAISON_MOUVEMENT_DIMINUTIONS =
-  "Cette colonne exige une notion de cession/sortie d'actif en cours d'exercice, qui n'existe nulle part dans F-006/F-010/F-012/F-014 aujourd'hui (Cycle 54) — hors périmètre quel que soit l'exercice (Cadre III, cessions : non traité par GO-2).";
+  "Cette colonne exige une notion de cession/sortie d'actif en cours d'exercice, qui n'existe nulle part dans F-006/F-010/F-012/F-014 aujourd'hui (Cycle 54) — hors périmètre quel que soit l'exercice (Cadre III, cessions : non traité par GO-2). Lot 5 : aucune invention de disposal.";
 
 const RAISON_426_IMMO_ABSENT =
   "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté), donc aucune valeur de terrain à projeter.";
@@ -213,83 +226,241 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
     });
   }
 
-  // Garde F-010/F-014 — dupliquée à l'identique depuis map-2033a.ts (Cycle 37),
-  // voir doc de fichier ci-dessus pour la justification de la duplication.
+  // Lot 5 — garde F-010/F-014 : amortCalcule doit matcher F-010 + détail F-012.
+  const f012Details = immo?.composantsDetail ?? [];
+  const f012SansDetail =
+    immo !== undefined &&
+    (immo.composantsNouveaux?.length ?? 0) > 0 &&
+    f012Details.length === 0;
+  const dotationF012 = round2(f012Details.reduce((acc, d) => acc + d.dotationExercice, 0));
   const amortissementDivergent =
-    immo !== undefined && Math.abs(round2(fr.amortCalcule - immo.totalAnnuelExercice)) > 0.01;
+    immo !== undefined &&
+    !f012SansDetail &&
+    Math.abs(round2(fr.amortCalcule - (immo.totalAnnuelExercice + dotationF012))) > 0.01;
 
   const LABEL_490 = "Valeur brute des immobilisations au début de l'exercice";
   const LABEL_492 = "Augmentations (immobilisations)";
   const LABEL_570 = "Montant des amortissements au début de l'exercice";
 
-  if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
-    const brut = round2(immo.totalBrut + immo.valeurTerrain);
-    const amortissementsCumules = round2(immo.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
-
-    // Case 496 — Cadre I, TOTAL, colonne "Valeur brute des immobilisations à
-    // la fin de l'exercice". Même valeur/formule que la case 028 du 2033-A.
-    cases.push({
-      caseId: "496",
-      label: "Valeur brute des immobilisations à la fin de l'exercice",
-      value: brut,
-      trace: {
-        source: "FiscalResult",
-        path: "rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain (= case 028 du 2033-A-SD)",
-        ksArtifacts: ["TRF-0032"],
-      },
-    });
-    // Case 576 — Cadre II, TOTAL, colonne "Montant des amortissements à la
-    // fin de l'exercice". Même valeur/formule que la composante amortissement
-    // de la case 030 du 2033-A.
-    cases.push({
-      caseId: "576",
-      label: "Montant des amortissements à la fin de l'exercice",
-      value: amortissementsCumules,
-      trace: {
-        source: "FiscalResult",
-        path: "Σ rfs.immobilisations.lignes[].amortissementsCumules (= composante amortissement de la case 030 du 2033-A-SD)",
-        ksArtifacts: ["TRF-0032"],
-      },
-    });
-
-    // GO-2 — 490/492/570 uniquement pour le premier exercice de mise en
-    // service (voir doc de fichier ci-dessus). `dateMiseEnService` absente
-    // → impossible de trancher, jamais supposé "premier exercice" par défaut.
-    if (immo.dateMiseEnService === undefined) {
-      casesNonAlimentees.push(
-        { caseId: "490", label: LABEL_490, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
-        { caseId: "492", label: LABEL_492, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
-        { caseId: "570", label: LABEL_570, raison: RAISON_MOUVEMENT_DATE_ABSENTE, categorie: "donnee_absente" },
-      );
-    } else if (new Date(immo.dateMiseEnService).getFullYear() === rfs.exercice) {
-      cases.push(
-        {
-          caseId: "490",
-          label: LABEL_490,
-          value: 0,
-          trace: { source: "FiscalResult", path: "premier exercice de mise en service (rfs.immobilisations.dateMiseEnService) ⇒ 0 par définition comptable", ksArtifacts: ["TRF-0032"] },
-        },
-        {
-          caseId: "492",
-          label: LABEL_492,
-          value: brut,
-          trace: { source: "FiscalResult", path: "premier exercice de mise en service ⇒ augmentations = valeur brute fin d'exercice (= case 496)", ksArtifacts: ["TRF-0032"] },
-        },
-        {
-          caseId: "570",
-          label: LABEL_570,
-          value: 0,
-          trace: { source: "FiscalResult", path: "premier exercice de mise en service (rfs.immobilisations.dateMiseEnService) ⇒ 0 par définition comptable", ksArtifacts: ["TRF-0032"] },
-        },
-      );
+  if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent && !f012SansDetail) {
+    const totals = computeClosingImmobilisationsTotals(immo);
+    if (!totals) {
+      // Défense : totals absents malgré les gardes ci-dessus.
+      for (const [caseId, label] of [
+        ["490", LABEL_490],
+        ["492", LABEL_492],
+        ["496", "Valeur brute des immobilisations à la fin de l'exercice"],
+        ["570", LABEL_570],
+        ["576", "Montant des amortissements à la fin de l'exercice"],
+      ] as const) {
+        casesNonAlimentees.push({
+          caseId,
+          label,
+          raison: RAISON_F012_SANS_DETAIL,
+          categorie: "donnee_absente",
+        });
+      }
     } else {
-      casesNonAlimentees.push(
-        { caseId: "490", label: LABEL_490, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
-        { caseId: "492", label: LABEL_492, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
-        { caseId: "570", label: LABEL_570, raison: RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, categorie: "donnee_absente" },
-      );
+      const { brut, amortissementsCumules } = totals;
+
+      const pushMouvementNonAlimente = (raison: string, categorie: CerfaCaseNonAlimenteeCategorie) => {
+        casesNonAlimentees.push(
+          { caseId: "490", label: LABEL_490, raison, categorie },
+          { caseId: "492", label: LABEL_492, raison, categorie },
+          { caseId: "570", label: LABEL_570, raison, categorie },
+        );
+      };
+
+      const pushTotauxNonAlimentes = (raison: string) => {
+        for (const [caseId, label] of [
+          ["490", LABEL_490],
+          ["492", LABEL_492],
+          ["496", "Valeur brute des immobilisations à la fin de l'exercice"],
+          ["570", LABEL_570],
+          ["576", "Montant des amortissements à la fin de l'exercice"],
+        ] as const) {
+          casesNonAlimentees.push({
+            caseId,
+            label,
+            raison,
+            categorie: "incoherence_modele",
+          });
+        }
+      };
+
+      // Lot 5 B2 — réconciliation avant toute publication de 490/492/570/496/576.
+      const reconciliation = reconcileImmobilisationsContinuity({
+        immobilisations: immo,
+        exercice: rfs.exercice,
+        amortCalcule: fr.amortCalcule,
+      });
+
+      if (reconciliation.status === "fail") {
+        pushTotauxNonAlimentes(
+          reconciliation.code === "IMMOBILISATIONS_AMORT_RECONCILIATION_FAILED"
+            ? RAISON_RECONCILIATION_AMORT
+            : RAISON_RECONCILIATION_BRUT,
+        );
+      } else if (immo.dateMiseEnService === undefined) {
+        cases.push(
+          {
+            caseId: "496",
+            label: "Valeur brute des immobilisations à la fin de l'exercice",
+            value: brut,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "576",
+            label: "Montant des amortissements à la fin de l'exercice",
+            value: amortissementsCumules,
+            trace: {
+              source: "FiscalResult",
+              path: "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+        );
+        pushMouvementNonAlimente(RAISON_MOUVEMENT_DATE_ABSENTE, "donnee_absente");
+      } else if (reconciliation.status === "ok" && reconciliation.mode === "premier_exercice") {
+        cases.push(
+          {
+            caseId: "496",
+            label: "Valeur brute des immobilisations à la fin de l'exercice",
+            value: brut,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "576",
+            label: "Montant des amortissements à la fin de l'exercice",
+            value: amortissementsCumules,
+            trace: {
+              source: "FiscalResult",
+              path: "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "490",
+            label: LABEL_490,
+            value: 0,
+            trace: {
+              source: "FiscalResult",
+              path: "premier exercice de mise en service ⇒ 0",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "492",
+            label: LABEL_492,
+            value: brut,
+            trace: {
+              source: "FiscalResult",
+              path: "premier exercice ⇒ augmentations = brut fin (= 496)",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "570",
+            label: LABEL_570,
+            value: 0,
+            trace: {
+              source: "FiscalResult",
+              path: "premier exercice de mise en service ⇒ 0",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+        );
+      } else if (reconciliation.status === "ok" && reconciliation.mode === "exercice_ulterieur" && immo.mouvements) {
+        const acquisitions = reconciliation.acquisitionsExercice;
+        cases.push(
+          {
+            caseId: "496",
+            label: "Valeur brute des immobilisations à la fin de l'exercice",
+            value: brut,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "576",
+            label: "Montant des amortissements à la fin de l'exercice",
+            value: amortissementsCumules,
+            trace: {
+              source: "FiscalResult",
+              path: "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "490",
+            label: LABEL_490,
+            value: immo.mouvements.valeurBruteOuverture,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.mouvements.valeurBruteOuverture (clôture N)",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "492",
+            label: LABEL_492,
+            value: acquisitions,
+            trace: {
+              source: "FiscalResult",
+              path: "Σ composantsDetail[provenance=acquisition_exercice].montant (pas closing−opening)",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "570",
+            label: LABEL_570,
+            value: immo.mouvements.amortissementsCumulesOuverture,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.mouvements.amortissementsCumulesOuverture (clôture N)",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+        );
+      } else {
+        // unknown opening — publier 496/576 si fiables, jamais 490/570 = 0 inventé.
+        cases.push(
+          {
+            caseId: "496",
+            label: "Valeur brute des immobilisations à la fin de l'exercice",
+            value: brut,
+            trace: {
+              source: "FiscalResult",
+              path: "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+          {
+            caseId: "576",
+            label: "Montant des amortissements à la fin de l'exercice",
+            value: amortissementsCumules,
+            trace: {
+              source: "FiscalResult",
+              path: "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules",
+              ksArtifacts: ["TRF-0032"],
+            },
+          },
+        );
+        pushMouvementNonAlimente(RAISON_MOUVEMENT_EXERCICE_ULTERIEUR, "donnee_absente");
+      }
     }
-  } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && amortissementDivergent) {
+  } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && (amortissementDivergent || f012SansDetail)) {
+    const raison = f012SansDetail ? RAISON_F012_SANS_DETAIL : RAISON_DIVERGENCE_F010_F014;
     for (const [caseId, label] of [
       ["490", LABEL_490],
       ["492", LABEL_492],
@@ -297,7 +468,12 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
       ["570", LABEL_570],
       ["576", "Montant des amortissements à la fin de l'exercice"],
     ] as const) {
-      casesNonAlimentees.push({ caseId, label, raison: RAISON_DIVERGENCE_F010_F014, categorie: "incoherence_modele" });
+      casesNonAlimentees.push({
+        caseId,
+        label,
+        raison,
+        categorie: f012SansDetail ? "donnee_absente" : "incoherence_modele",
+      });
     }
   } else if (immo !== undefined) {
     for (const [caseId, label] of [

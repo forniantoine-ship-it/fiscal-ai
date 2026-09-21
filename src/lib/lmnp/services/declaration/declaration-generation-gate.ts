@@ -326,6 +326,18 @@ export function resolveDeclarationGenerationGate(input: {
    */
   stocksOuverture?: FiscalEngineOutput["stocks"];
   /**
+   * Lot 5 B2 — même continuité immobilisations que la génération finale
+   * (`ValidationDocumentStep` → 6e argument de `runDeclarationGeneration`).
+   * Absent = comportement historique (premier exercice / appelants sans
+   * ouverture). Présent = payment gate et génération finale partagent la
+   * même sémantique de réconciliation (fail-closed avant checkout).
+   */
+  continuity?: {
+    composantsF012Merged?: import("@/runtime/capabilities/f012/types").ComposantNouveau[];
+    immobilisationsOuverture?: import("../../types/domain").FiscalYear["immobilisationsOuverture"];
+    propertyId?: string;
+  };
+  /**
    * P0 launch safety — éligibilité d'antériorité LMNP
    * (`resolvePriorHistoryEligibility()`). Tout appelant qui décide d'un
    * paiement ou d'une génération DOIT la fournir : un exercice qui n'est pas
@@ -382,12 +394,14 @@ export function resolveDeclarationGenerationGate(input: {
     // commentaire du paramètre ci-dessus) : jamais `undefined` en dur, qui
     // désynchronisait ce preview de la génération réelle pour un exercice
     // en continuité.
+    // Lot 5 B2 — même continuité immobilisations que ValidationDocumentStep.
     const preview = runDeclarationGeneration(
       input.draft,
       input.fiscalYear,
       input.stocksOuverture,
       input.draft?.bilanPatrimonial,
       input.draft?.dispense2033A,
+      input.continuity,
     );
     if (preview.status === "blocked") {
       return {
@@ -450,12 +464,14 @@ export function resolveDeclarationGenerationGate(input: {
 
   // G1-P0 — idem : même bilanPatrimonial que la génération réelle.
   // P0-1A — idem : même stocksOuverture que la génération réelle.
+  // Lot 5 B2 — idem : même continuité immobilisations.
   const preview = runDeclarationGeneration(
     input.draft,
     input.fiscalYear,
     input.stocksOuverture,
     input.draft?.bilanPatrimonial,
     input.draft?.dispense2033A,
+    input.continuity,
   );
   if (preview.status === "blocked") {
     return {

@@ -21,6 +21,7 @@ import type {
 import type {
   FiscalYearClosure,
   FinancementBase,
+  ImmobilisationsComptablesSnapshot,
   PatrimoineOuvertureResult,
   PropertyAmortissementBase,
   PropertyAmortissementComposant,
@@ -118,6 +119,35 @@ export function mergeComposantsF012(
   for (const c of composantsF012DepuisBase(fromBase)) merged.set(c.id, c);
   for (const c of fromExercice ?? []) merged.set(c.id, c);
   return [...merged.values()];
+}
+
+/**
+ * Lot 5 B2 — même sémantique de continuité immobilisations pour payment gate
+ * et génération finale (ValidationDocumentStep). Jamais inventée : lit
+ * `FiscalYear.immobilisationsOuverture` + fusion F-012 déjà établie.
+ */
+export function resolveImmobilisationsContinuityForGeneration(input: {
+  draft: DeclarationDraft | undefined;
+  properties: Property[];
+  propertyIds: string[];
+  immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+}): {
+  composantsF012Merged?: ComposantNouveau[];
+  immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+  propertyId?: string;
+} {
+  const propertyId = input.propertyIds[0];
+  const property = propertyId
+    ? input.properties.find((p) => p.id === propertyId)
+    : undefined;
+  return {
+    composantsF012Merged: mergeComposantsF012(
+      input.draft?.chargesAssistant?.composantsNouveaux,
+      property?.amortissementBase,
+    ),
+    immobilisationsOuverture: input.immobilisationsOuverture,
+    propertyId,
+  };
 }
 
 /**
@@ -250,6 +280,8 @@ export function buildFiscalYearClosure(input: {
   sourceDeclarationVersionId?: string;
   now: string;
   patrimoine?: { state: PatrimonialState; ranSituation: RanSituation };
+  /** Lot 5 — snapshot comptable immobilisations (UNKNOWN ≠ ZERO si absent). */
+  immobilisationsComptables?: ImmobilisationsComptablesSnapshot;
 }): FiscalYearClosure {
   const clotureCompteExploitant = input.patrimoine?.state.compteExploitant.clotureN;
   const patrimoine =
@@ -268,6 +300,7 @@ export function buildFiscalYearClosure(input: {
     sourceDeclarationVersionId: input.sourceDeclarationVersionId,
     stocks: input.stocks,
     patrimoine,
+    immobilisationsComptables: input.immobilisationsComptables,
     computedAt: input.computedAt,
     closedAt: input.now,
   };
@@ -377,6 +410,13 @@ export function canCloseFiscalYear(input: {
     // réelle en tenait compte pour un exercice N+1, détectant une dérive
     // artificielle et bloquant une clôture pourtant valide.
     stocksOuverture: fiscalYear.stocksOuverture?.stocks,
+    // Lot 5 B2 — même continuité immobilisations que ValidationDocumentStep.
+    continuity: resolveImmobilisationsContinuityForGeneration({
+      draft: declarationDraft,
+      properties,
+      propertyIds: fiscalYear.propertyIds,
+      immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+    }),
   });
 
   switch (gate.referenceGenerationStatus) {
@@ -432,6 +472,8 @@ export function closeFiscalYear(
     sourceDeclarationVersionId?: string;
     /** G1-P1 — voir `buildFiscalYearClosure()`. Absent ⇒ closure sans continuité patrimoniale, comportement rigoureusement inchangé. */
     patrimoine?: { state: PatrimonialState; ranSituation: RanSituation };
+    /** Lot 5 — snapshot comptable immobilisations. */
+    immobilisationsComptables?: ImmobilisationsComptablesSnapshot;
   },
 ): FiscalYear {
   if (!fiscalResult) return fiscalYear;
@@ -443,6 +485,7 @@ export function closeFiscalYear(
     sourceDeclarationVersionId: options?.sourceDeclarationVersionId,
     now,
     patrimoine: options?.patrimoine,
+    immobilisationsComptables: options?.immobilisationsComptables,
   });
   return appendClosure(fiscalYear, closure);
 }
@@ -643,7 +686,7 @@ export function buildNextExerciseFromClosedYear(input: {
     nextFiscalYearBase,
     input.closedFiscalYear,
   );
-  const fiscalYear: FiscalYear =
+  let fiscalYear: FiscalYear =
     patrimoineOuvertureResult.status === "available"
       ? {
           ...nextFiscalYearWithStocks,
@@ -655,12 +698,32 @@ export function buildNextExerciseFromClosedYear(input: {
         }
       : nextFiscalYearWithStocks;
 
+  // Lot 5 — ouvertures comptables immobilisations (distinctes du stock fiscal).
+  const closureN = latestClosure(input.closedFiscalYear);
+  const immoSnap = closureN?.immobilisationsComptables;
+  if (
+    closureN &&
+    immoSnap &&
+    typeof immoSnap.brutCloture === "number" &&
+    typeof immoSnap.amortissementsCumulesCloture === "number"
+  ) {
+    fiscalYear = {
+      ...fiscalYear,
+      immobilisationsOuverture: {
+        sourceClosureId: closureN.id,
+        brut: immoSnap.brutCloture,
+        amortissementsCumules: immoSnap.amortissementsCumulesCloture,
+        vnc: immoSnap.vncCloture,
+      },
+    };
+  }
+
   const sourceClosureId =
     stocksOuvertureResult.status === "available"
       ? stocksOuvertureResult.sourceClosureId
       : patrimoineOuvertureResult.status === "available"
         ? patrimoineOuvertureResult.sourceClosureId
-        : latestClosure(input.closedFiscalYear)?.id;
+        : closureN?.id;
 
   return {
     fiscalYear,

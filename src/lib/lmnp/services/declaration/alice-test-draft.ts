@@ -3,13 +3,49 @@
  * mis en service le 01/02/2025 : janvier = pré-exploitation), construit avec le VRAI calcul F-012 puis la VRAIE
  * construction de la sortie persistée (`buildChargesAssistantOutput`) : aucun montant de charges n'est codé en dur
  * dans les assertions des tests qui l'utilisent, ils lisent ce que F-012 produit.
+ *
+ * Lot 5 B2 — `logementAmortissement.plan` est un VRAI plan F-010 (lignes non
+ * vides) aligné sur `amortissementAssistant.totalDotations`. L'ancienne
+ * fixture `plan: { lignes: [], totalBrut: 0 }` + `totalDotations: 2979.54`
+ * était impossible dans le parcours produit (F-010 `assemblePlan` produit
+ * toujours des lignes ; F-014 dérive `total_dotations_exercice` de ce plan).
  */
 import { computeChargesExercice, type ComputeChargesExerciceInput } from "@/runtime/capabilities/f012/compute-charges-exercice";
+import { computeAmortizationPlan } from "@/runtime/capabilities/f010/compute-amortization-plan";
 import type { PretFinancementExercice } from "@/runtime";
 import type { DeclarationDraft } from "../../types";
 import { buildChargesAssistantOutput } from "../f012/charges-assistant-output";
 
 export const ALICE_YEAR = 2025;
+
+function aliceLogementAmortissement(dateMiseEnService: string) {
+  // Montants historiques Alice (~93k prix de revient, ~4k mobilier, terrain ~18%).
+  const computed = computeAmortizationPlan({
+    prixAcquisition: 89000,
+    mobilierInclus: true,
+    montantMobilier: 4000,
+    fraisNotaire: 0,
+    choixTraitementFrais: "deduction",
+    typeBien: "appartement",
+    ratioTerrain: 0.18,
+    dateMiseEnService,
+    exerciceFiscal: ALICE_YEAR,
+  });
+  return {
+    computedAt: "2026-01-01T00:00:00.000Z",
+    prixRevient: computed.prixRevient,
+    valeurTerrain: computed.valeurTerrain,
+    valeurBati: computed.valeurBati,
+    baseAmortissableBati: computed.baseAmortissableBati,
+    montantMobilier: computed.montantMobilierIsole,
+    dotationAnnuelle: computed.plan.totalAnnuelExercice,
+    dureeMoyenneAnnees: 25,
+    prorataRatio: computed.prorataRatio,
+    plan: computed.plan,
+    fraisEnCharges: computed.fraisEnCharges,
+    fieldSources: {},
+  } satisfies NonNullable<DeclarationDraft["logementAmortissement"]>;
+}
 
 export function f012Output(input: Partial<ComputeChargesExerciceInput> & { dateMiseEnService?: string }) {
   const { charges } = computeChargesExercice({
@@ -26,6 +62,7 @@ export function aliceDraft(
   dateMiseEnService = "2025-02-01",
 ): DeclarationDraft {
   const { persisted } = f012Output({ ...charges, dateMiseEnService });
+  const logementAmortissement = aliceLogementAmortissement(dateMiseEnService);
   return {
     completedSteps: [],
     siren: "123456789",
@@ -34,23 +71,18 @@ export function aliceDraft(
     dateMiseEnService,
     inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
     logementConfirmedAt: "2026-01-01T00:00:00.000Z",
-    logementAmortissement: {
-      computedAt: "2026-01-01T00:00:00.000Z",
-      prixRevient: 93000,
-      valeurTerrain: 16740,
-      valeurBati: 76260,
-      baseAmortissableBati: 76260,
-      montantMobilier: 4000,
-      dotationAnnuelle: 3265.95,
-      dureeMoyenneAnnees: 25,
-      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
-    } as unknown as DeclarationDraft["logementAmortissement"],
+    logementAmortissement,
     revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
     chargesConfirmedAt: "2026-01-01T00:00:00.000Z",
     amortissementConfirmedAt: "2026-01-01T00:00:00.000Z",
     revenusAssistant: { exerciceFiscal: ALICE_YEAR, totalRecettes: 7150 },
     chargesAssistant: persisted,
-    amortissementAssistant: { exerciceFiscal: ALICE_YEAR, totalDotations: 2979.54, status: "validated" },
+    // Dotation = plan F-010 réel (prorata MES) — jamais un scalaire décorrélé.
+    amortissementAssistant: {
+      exerciceFiscal: ALICE_YEAR,
+      totalDotations: logementAmortissement.plan.totalAnnuelExercice,
+      status: "validated",
+    },
     ...overrides,
   } as DeclarationDraft;
 }

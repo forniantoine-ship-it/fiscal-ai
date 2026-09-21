@@ -15,11 +15,44 @@ import assert from "node:assert/strict";
 import { resolveEmpruntsForRfs } from "./resolve-emprunts-for-rfs";
 import { runDeclarationGeneration } from "./run-declaration-generation";
 import { EMPTY_PATRIMONIAL_INTAKE_STATE, buildBilanPatrimonial } from "./patrimonial-intake";
+import { computeAmortizationPlan } from "@/runtime/capabilities/f010/compute-amortization-plan";
 import type { PretFinancementExercice } from "@/runtime";
 import type { DeclarationDraft } from "../../types";
 
 const YEAR = 2025;
 const NONE_AT = "2026-09-19T20:17:45.833Z";
+
+/**
+ * Plan F-010 réel (lignes non vides) aligné sur le totalDotations historique
+ * Alice 2 979,54 € — jamais `plan: { lignes: [] }` + dotation > 0 (impossible produit).
+ */
+function aliceLogementAmortissement(dateMiseEnService = "2025-02-01") {
+  const computed = computeAmortizationPlan({
+    prixAcquisition: 97000,
+    mobilierInclus: true,
+    montantMobilier: 4000,
+    fraisNotaire: 0,
+    choixTraitementFrais: "deduction",
+    typeBien: "appartement",
+    ratioTerrain: 0.18,
+    dateMiseEnService,
+    exerciceFiscal: YEAR,
+  });
+  return {
+    computedAt: "2026-01-01T00:00:00.000Z",
+    prixRevient: computed.prixRevient,
+    valeurTerrain: computed.valeurTerrain,
+    valeurBati: computed.valeurBati,
+    baseAmortissableBati: computed.baseAmortissableBati,
+    montantMobilier: computed.montantMobilierIsole,
+    dotationAnnuelle: computed.plan.totalAnnuelExercice,
+    dureeMoyenneAnnees: 25,
+    prorataRatio: computed.prorataRatio,
+    plan: computed.plan,
+    fraisEnCharges: computed.fraisEnCharges,
+    fieldSources: {},
+  } satisfies NonNullable<DeclarationDraft["logementAmortissement"]>;
+}
 
 const pret = (crd: number, pretId = "pret-1"): PretFinancementExercice => ({
   pretId,
@@ -108,6 +141,7 @@ describe("A5(1) — resolveEmpruntsForRfs : les trois états crédit", () => {
 
 /** Dossier fictif de l'audit (2025, achat sans crédit, pré-exploitation janvier). */
 function draft(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
+  const logementAmortissement = aliceLogementAmortissement();
   return {
     completedSteps: [],
     siren: "123456789",
@@ -116,23 +150,18 @@ function draft(overrides: Partial<DeclarationDraft> = {}): DeclarationDraft {
     dateMiseEnService: "2025-02-01",
     inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
     logementConfirmedAt: "2026-01-01T00:00:00.000Z",
-    logementAmortissement: {
-      computedAt: "2026-01-01T00:00:00.000Z",
-      prixRevient: 93000,
-      valeurTerrain: 16740,
-      valeurBati: 76260,
-      baseAmortissableBati: 76260,
-      montantMobilier: 4000,
-      dotationAnnuelle: 3265.95,
-      dureeMoyenneAnnees: 25,
-      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
-    } as DeclarationDraft["logementAmortissement"],
+    logementAmortissement,
     revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
     chargesConfirmedAt: "2026-01-01T00:00:00.000Z",
     amortissementConfirmedAt: "2026-01-01T00:00:00.000Z",
     revenusAssistant: { exerciceFiscal: YEAR, totalRecettes: 7150 },
     chargesAssistant: { exerciceFiscal: YEAR, totalDeductible: 660, totalPreExploitation: 60 },
-    amortissementAssistant: { exerciceFiscal: YEAR, totalDotations: 2979.54, status: "validated" },
+    // Dotation = plan F-010 réel (prorata MES) — cohérent avec totalAnnuelExercice.
+    amortissementAssistant: {
+      exerciceFiscal: YEAR,
+      totalDotations: logementAmortissement.plan.totalAnnuelExercice,
+      status: "validated",
+    },
     ...overrides,
   } as DeclarationDraft;
 }

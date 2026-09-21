@@ -43,10 +43,41 @@ export function seedLogementAssistantForNextYear(
     adresse: prev.adresse,
     dateAcquisition: prev.dateAcquisition,
     localisation: prev.localisation,
-    // Frais d'acquisition = one-shot N : ne pas les rejouer comme saisie N+1.
-    // L'utilisateur revoit le bien ; le traitement frais est redemandé.
-    fraisNotaire: undefined,
-    choixTraitementFrais: undefined,
+    // Lot 5 B3 — frais d'acquisition historiques :
+    // - déduction N : choix irréversible conservé, montant courant = 0
+    //   (déjà consommés fiscalement) → F010 ne redemande pas collect_frais,
+    //   fraisEnCharges N+1 = 0 (pas de double déduction) ;
+    // - intégration : montant + choix conservés (base historique stable),
+    //   pas une acquisition N+1.
+    ...(prev.choixTraitementFrais === "integration"
+    ? {
+        fraisNotaire: prev.fraisNotaire,
+        choixTraitementFrais: "integration" as const,
+        fraisAcquisitionHistoriques:
+          prev.fraisNotaire !== undefined
+            ? {
+                montant: prev.fraisNotaire,
+                traitement: "integration" as const,
+              }
+            : prev.fraisAcquisitionHistoriques,
+      }
+    : prev.choixTraitementFrais === "deduction"
+      ? {
+          fraisNotaire: 0,
+          choixTraitementFrais: "deduction" as const,
+          fraisAcquisitionHistoriques: {
+            // Préférer le montant historique déjà figé (N+1→N+2) :
+            // `fraisNotaire` courant est 0 (consommé), jamais écraser l'historique.
+            montant: prev.fraisAcquisitionHistoriques?.montant ?? prev.fraisNotaire ?? 0,
+            traitement: "deduction" as const,
+          },
+        }
+      : {
+          // Traitement inconnu : ne pas inventer ; laisser F010 collecter si besoin.
+          fraisNotaire: undefined,
+          choixTraitementFrais: undefined,
+          fraisAcquisitionHistoriques: prev.fraisAcquisitionHistoriques,
+        }),
     mobilierInclus: prev.mobilierInclus,
     montantMobilier: prev.montantMobilier,
     mobilierMode: prev.mobilierMode,

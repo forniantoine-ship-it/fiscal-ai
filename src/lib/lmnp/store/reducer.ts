@@ -51,6 +51,7 @@ import {
   closeFiscalYear,
   createNextDeclarationDraft,
 } from "../services/dossier/fiscal-year-cycle";
+import { snapshotImmobilisationsFromGeneratedRfs } from "../services/dossier/immobilisations-comptables";
 import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
 
 export type FileRegistry = Map<string, File>;
@@ -1121,11 +1122,20 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       // nouvelle étape UX inventée. `closeFiscalYear()` est un no-op si
       // aucun FiscalResult n'existe encore — jamais une closure vide.
       const now = nowIso();
+      // Lot 5 B1 — même snapshot RFS que le parcours produit prepare/RPC.
+      const immobilisationsComptables = snapshotImmobilisationsFromGeneratedRfs({
+        immobilisations: state.declarationDraft?.rfs?.immobilisations,
+        exerciceFiscal: state.fiscalYear.year,
+        propertyId: state.fiscalYear.propertyIds[0],
+      });
       const closedFiscalYear = closeFiscalYear(
         touchFiscalYear(state.fiscalYear, "closed"),
         state.declarationDraft?.fiscalResult,
         now,
-        { sourceDeclarationVersionId: state.declarationDraft?.declaration?.currentVersionId },
+        {
+          sourceDeclarationVersionId: state.declarationDraft?.declaration?.currentVersionId,
+          immobilisationsComptables,
+        },
       );
       return finalizeState({
         ...state,

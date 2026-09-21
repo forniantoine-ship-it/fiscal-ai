@@ -45,6 +45,7 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { resolveImmobilisationsContinuityForGeneration } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   canOfferPaymentWithoutCerfa,
   isBlockingAnomaliesInpiOnly,
@@ -125,9 +126,26 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         // régénération. Valeur déjà résolue et persistée sur `fiscalYear`,
         // jamais recalculée ici.
         stocksOuverture: fiscalYear.stocksOuverture?.stocks,
+        // Lot 5 B2 — même continuité immobilisations que handleGenerationComplete.
+        continuity: resolveImmobilisationsContinuityForGeneration({
+          draft,
+          properties: workspace.properties,
+          propertyIds: fiscalYear.propertyIds,
+          immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+        }),
         priorHistory,
       }),
-    [draft, fiscalYear.stocksOuverture, fiscalYear.year, generated, paid, priorHistory, workspace.properties],
+    [
+      draft,
+      fiscalYear.immobilisationsOuverture,
+      fiscalYear.propertyIds,
+      fiscalYear.stocksOuverture,
+      fiscalYear.year,
+      generated,
+      paid,
+      priorHistory,
+      workspace.properties,
+    ],
   );
   const snapshot = gate.snapshot;
 
@@ -285,12 +303,19 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     // G1-P0 — même bilanPatrimonial que l'aperçu du gate
     // (declaration-generation-gate.ts) : jamais une seconde construction de
     // BilanInputs, transmis tel quel depuis le draft.
+    const continuity = resolveImmobilisationsContinuityForGeneration({
+      draft,
+      properties: workspace.properties,
+      propertyIds: fiscalYear.propertyIds,
+      immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+    });
     const outcome = runDeclarationGeneration(
       draft,
       fiscalYear.year,
       fiscalYear.stocksOuverture?.stocks,
       draft?.bilanPatrimonial,
       draft?.dispense2033A,
+      continuity,
     );
 
     if (outcome.status === "blocked") {

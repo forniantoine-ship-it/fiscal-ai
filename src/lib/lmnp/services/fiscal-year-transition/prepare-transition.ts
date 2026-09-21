@@ -9,6 +9,7 @@ import {
   closeFiscalYear,
   extractDossierLevelDataFromWorkspace,
 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
+import { snapshotImmobilisationsFromGeneratedRfs } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import {
   serializeWorkspaceSnapshot,
@@ -76,6 +77,16 @@ export function prepareFiscalYearTransitionCandidate(input: {
       ? { state: patrimoineN, ranSituation: ranSituationN }
       : undefined;
 
+  // Lot 5 B1 — snapshot depuis la RFS déjà générée/validée de N, au boundary
+  // produit réel (prepare → RPC Lot 3). Jamais une année déjà clôturée.
+  const immobilisationsComptables = sourceAlreadyClosed
+    ? undefined
+    : snapshotImmobilisationsFromGeneratedRfs({
+        immobilisations: workspace.declarationDraft?.rfs?.immobilisations,
+        exerciceFiscal: workspace.fiscalYear.year,
+        propertyId: workspace.fiscalYear.propertyIds[0],
+      });
+
   const closedFiscalYearIdentity: FiscalYear = sourceAlreadyClosed
     ? { ...workspace.fiscalYear, dossierId, updatedAt: now }
     : closeFiscalYear(
@@ -85,6 +96,7 @@ export function prepareFiscalYearTransitionCandidate(input: {
         {
           sourceDeclarationVersionId: workspace.declarationDraft?.declaration?.currentVersionId,
           patrimoine: patrimoineSource,
+          immobilisationsComptables,
         },
       );
 

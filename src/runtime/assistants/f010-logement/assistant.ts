@@ -324,6 +324,7 @@ export class F010LogementAssistant {
       localisation: persisted.localisation,
       fraisNotaire: persisted.fraisNotaire,
       choixTraitementFrais: persisted.choixTraitementFrais,
+      fraisAcquisitionHistoriques: persisted.fraisAcquisitionHistoriques,
       mobilierInclus: persisted.mobilierInclus,
       montantMobilier: persisted.montantMobilier,
       mobilierMode: persisted.mobilierMode,
