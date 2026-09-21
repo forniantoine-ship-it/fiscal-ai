@@ -246,6 +246,22 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   // référence.
   const resultatComptable = resultatComptableCentral(fr);
 
+  // Case 318 — MOUVEMENT ANNUEL. Source canonique : amortNonDeduitExercice (G10).
+  // Snapshots RFS antérieurs à G10 n'ont pas ce champ : fallback dérivé
+  // round2(amortCalcule − amortDeduct). Jamais amortReporte (STOCK FINAL).
+  const amortNonDeduitExplicite =
+    typeof fr.amortNonDeduitExercice === "number" && Number.isFinite(fr.amortNonDeduitExercice)
+      ? fr.amortNonDeduitExercice
+      : undefined;
+  const amortNonDeduitPour318 =
+    amortNonDeduitExplicite !== undefined
+      ? round2(amortNonDeduitExplicite)
+      : round2(fr.amortCalcule - fr.amortDeduct);
+  const trace318Path =
+    amortNonDeduitExplicite !== undefined
+      ? "fiscalResult.amortNonDeduitExercice"
+      : "fiscalResult.amortCalcule − fiscalResult.amortDeduct (legacy fallback)";
+
   const cases: CerfaCase[] = [
     {
       caseId: "232",
@@ -341,10 +357,10 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       label: "Amortissements excédentaires et autres amortissements non déductibles",
       // MOUVEMENT ANNUEL (amortissements N comptabilisés mais non déduits N) —
       // jamais le STOCK FINAL (`amortReporte`), qui peut inclure l'ouverture.
-      value: round2(fr.amortNonDeduitExercice),
+      value: amortNonDeduitPour318,
       trace: {
         ...baseTrace,
-        path: "fiscalResult.amortNonDeduitExercice",
+        path: trace318Path,
         ksArtifacts: ["TRF-0031", "TRF-0032"],
       },
     },

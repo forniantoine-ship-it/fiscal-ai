@@ -431,3 +431,137 @@ describe("G10 — consommation ultérieure du stock sans double comptage", () =>
     assert.equal(case318(fr), 0, "aucune double comptabilisation du mouvement N dans 318 de N+1");
   });
 });
+
+describe("G10.1 — compatibilité anciens snapshots RFS (amortNonDeduitExercice absent)", () => {
+  function legacySnapshot(partial: {
+    amortCalcule: number;
+    amortDeduct: number;
+    amortReporte: number;
+    amortNonDeduitExercice?: number;
+  }): FiscalRepresentation {
+    const fr = {
+      exercice: 2025,
+      recettes: { total: 9000 },
+      charges: {
+        totalDeductible: 2000,
+        chargesExploitation: 2000,
+        chargesFinancement: 0,
+        chargesPreExploitation: 0,
+        totalNonDeductible: 0,
+      },
+      resultatAvantAmort: 7000,
+      amortCalcule: partial.amortCalcule,
+      amortDeduct: partial.amortDeduct,
+      amortReporte: partial.amortReporte,
+      amortReportesUtilises: 0,
+      resultatFiscal: 0,
+      deficitNouveau: 0,
+      deficitsImputes: 0,
+      perteExceptionnelle: 0,
+      stocks: {
+        deficits: [],
+        amortissementsReportes: partial.amortReporte,
+        deficitsExpires: [],
+      },
+      trace: { ksArtifacts: ["TRF-0032"], computedAt: "2026-01-01T00:00:00.000Z", journal: [] },
+      status: "computed" as const,
+      anomalies: [],
+    };
+    // Snapshot nouveau : champ présent. Ancien : propriété omise (pas undefined
+    // explicite) — comme un JSON pré-G10 désérialisé.
+    const fiscalResult =
+      partial.amortNonDeduitExercice !== undefined
+        ? ({ ...fr, amortNonDeduitExercice: partial.amortNonDeduitExercice } as FiscalResult)
+        : (fr as FiscalResult);
+    if (partial.amortNonDeduitExercice === undefined) {
+      assert.equal(
+        "amortNonDeduitExercice" in fiscalResult,
+        false,
+        "l'ancien snapshot doit omettre la propriété, pas la poser à undefined",
+      );
+    }
+    return buildFiscalRepresentation({ identite: IDENTITE, fiscalResult });
+  }
+
+  function read318(rfs: FiscalRepresentation) {
+    const c = map2033BFromRfs(rfs).cases.find((x) => x.caseId === "318");
+    assert.ok(c, "318 doit être produite");
+    return c!;
+  }
+
+  it("snapshot nouveau : 318 = amortNonDeduitExercice (2000), pas le stock 4000", () => {
+    const c = read318(
+      legacySnapshot({
+        amortNonDeduitExercice: 2000,
+        amortCalcule: 3000,
+        amortDeduct: 1000,
+        amortReporte: 4000,
+      }),
+    );
+    assert.equal(c.value, 2000);
+    assert.equal(Number.isFinite(c.value as number), true);
+    assert.notEqual(c.value, 4000);
+    assert.equal(c.trace.path, "fiscalResult.amortNonDeduitExercice");
+  });
+
+  it("ancien snapshot sans champ : 318 = round2(amortCalcule − amortDeduct) = 2000", () => {
+    const c = read318(
+      legacySnapshot({
+        amortCalcule: 3000,
+        amortDeduct: 1000,
+        amortReporte: 4000,
+      }),
+    );
+    assert.equal(c.value, 2000);
+    assert.equal(Number.isNaN(c.value as number), false);
+    assert.notEqual(c.value, 4000, "jamais le stock final");
+    assert.match(c.trace.path, /legacy fallback/);
+    assert.doesNotMatch(c.trace.path, /amortReporte/);
+  });
+
+  it("ancien snapshot mouvement nul : 318 = 0 malgré stock 2000", () => {
+    const c = read318(
+      legacySnapshot({
+        amortCalcule: 3000,
+        amortDeduct: 3000,
+        amortReporte: 2000,
+      }),
+    );
+    assert.equal(c.value, 0);
+    assert.equal(Number.isNaN(c.value as number), false);
+    assert.notEqual(c.value, 2000);
+  });
+
+  it("ancien snapshot dotation 0 + stock historique : 318 = 0", () => {
+    const c = read318(
+      legacySnapshot({
+        amortCalcule: 0,
+        amortDeduct: 0,
+        amortReporte: 2000,
+      }),
+    );
+    assert.equal(c.value, 0);
+    assert.equal(Number.isFinite(c.value as number), true);
+    assert.notEqual(c.value, 2000);
+  });
+
+  it("protection : jamais NaN, jamais amortReporte comme 318", () => {
+    const cases = [
+      legacySnapshot({ amortCalcule: 3000, amortDeduct: 1000, amortReporte: 4000 }),
+      legacySnapshot({ amortCalcule: 0, amortDeduct: 0, amortReporte: 2000 }),
+      legacySnapshot({
+        amortNonDeduitExercice: 2000,
+        amortCalcule: 3000,
+        amortDeduct: 1000,
+        amortReporte: 4000,
+      }),
+    ];
+    for (const rfs of cases) {
+      const c = read318(rfs);
+      assert.equal(Number.isNaN(c.value as number), false);
+      assert.equal(Number.isFinite(c.value as number), true);
+      assert.notEqual(c.value, rfs.fiscalResult.amortReporte, "318 ≠ stock final");
+      assert.doesNotMatch(c.trace.path, /amortReporte/);
+    }
+  });
+});
