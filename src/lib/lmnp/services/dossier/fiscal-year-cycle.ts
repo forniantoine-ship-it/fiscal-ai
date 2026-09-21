@@ -289,23 +289,12 @@ export function canCreateNextFiscalYear(fiscalYear: FiscalYear): CreateNextFisca
  * vérifie jamais `transmittedAt` — la clôture reste indépendante de la
  * télétransmission EDI (JOURNEY_MARK_TRANSMITTED, chemin séparé).
  *
- * P0-1 (audit "Idempotence + Generation Gate", constats B1/B2) —
- * `declarationGeneratedAt` renseigné est nécessaire mais jamais suffisant :
- * ce flag ne redevient jamais `undefined` pour une correction d'identité
- * (nom, adresse, email, téléphone, SIREN, `activityStartDate`) — seuls
- * `financementCharges`/`revenusAssistant`/`amortissementAssistant`/
- * `logementAmortissement`/`siret`/`dateMiseEnService`/`activityType`
- * l'invalident (reducer.ts, `DECLARATION_PATCH_DRAFT`). La SEULE vérité déjà
- * fiable pour "la génération correspond-elle encore aux données actuelles ?"
- * est `resolveDeclarationGenerationGate()` (declaration-generation-gate.ts) —
- * elle recalcule un aperçu frais et compare aussi bien la dérive fiscale
- * (totalRecettes/totalCharges/amortDeduct/amortReporte) que l'identité
- * complète (`identiteChanged()`, elle-même fondée sur
- * `identiteFromDeclarationDraft()`, la même fonction que la génération
- * réelle). Réutilisée ici telle quelle — aucune seconde liste de champs,
- * aucun fingerprint parallèle : `gate.canGenerate === true` après une
- * génération signifie exactement "une régénération est nécessaire", donc la
- * clôture doit être refusée dans ce cas précis.
+ * Lot 1 — clôture positive : `declarationGeneratedAt` et `gate.canGenerate
+ * === false` ne suffisent JAMAIS. `canGenerate === false` amalgamait
+ * « dossier incomplet / recalcul bloqué / génération à jour » — seul
+ * `referenceGenerationStatus === "current"` est une preuve positive qu'une
+ * génération de référence valide et fraîche correspond encore à l'état
+ * métier courant (même porte, mêmes comparaisons fisc/identité/patrimoine).
  */
 export function canCloseFiscalYear(input: {
   fiscalYear: FiscalYear;
@@ -333,6 +322,22 @@ export function canCloseFiscalYear(input: {
     };
   }
 
+  const stored = declarationDraft?.fiscalResult;
+  if (!stored) {
+    return {
+      ok: false,
+      reason:
+        "Aucune génération de déclaration exploitable n'est disponible pour cet exercice — générez-la avant de clôturer.",
+    };
+  }
+  if (stored.exercice !== fiscalYear.year) {
+    return {
+      ok: false,
+      reason:
+        "La génération disponible ne correspond pas à l'exercice en cours — régénérez la déclaration avant de clôturer.",
+    };
+  }
+
   const gate = resolveDeclarationGenerationGate({
     draft: declarationDraft,
     properties,
@@ -347,15 +352,42 @@ export function canCloseFiscalYear(input: {
     stocksOuverture: fiscalYear.stocksOuverture?.stocks,
   });
 
-  if (gate.canGenerate) {
-    return {
-      ok: false,
-      reason:
-        "Le dossier a changé depuis la dernière génération de votre déclaration — régénérez-la avant de clôturer l'exercice.",
-    };
+  switch (gate.referenceGenerationStatus) {
+    case "absent":
+      return {
+        ok: false,
+        reason:
+          "Aucune génération de déclaration exploitable n'est disponible pour cet exercice — générez-la avant de clôturer.",
+      };
+    case "incomplete":
+      return {
+        ok: false,
+        reason:
+          "Le dossier n'est pas complet — impossible de clôturer l'exercice pour l'instant.",
+      };
+    case "blocked":
+      return {
+        ok: false,
+        reason:
+          "Le dossier ne permet plus de recalculer une déclaration valide — impossible de clôturer l'exercice pour l'instant.",
+      };
+    case "stale":
+      return {
+        ok: false,
+        reason:
+          "Le dossier a changé depuis la dernière génération de votre déclaration — régénérez-la avant de clôturer l'exercice.",
+      };
+    case "current":
+      return { ok: true };
+    default:
+      // Jamais `!canGenerate` comme preuve positive : un statut manquant
+      // n'autorise pas la clôture.
+      return {
+        ok: false,
+        reason:
+          "Impossible de vérifier que la déclaration générée est encore à jour — régénérez-la avant de clôturer l'exercice.",
+      };
   }
-
-  return { ok: true };
 }
 
 /**
@@ -520,11 +552,20 @@ export function resolvePatrimoineOuvertureNPlusUn(
  * validations, declarationDraft) : seules les références stables (dossierId,
  * propertyIds) sont reportées. `previousFiscalYearId` pointe explicitement
  * vers N ; les stocks d'ouverture ne sont jamais calculés ici — ils sont lus
- * à la demande via `resolveStocksOuverture()`.
+ * à la demande via `resolveStocksOuverture()` (ou appliqués par
+ * `buildNextExerciseFromClosedYear()`).
+ *
+ * `nextFiscalYearId` injectable : même entrée + mêmes IDs ⇒ même résultat
+ * (Lot 1 — constructeur déterministe). Absent ⇒ `crypto.randomUUID()`.
  */
-export function createNextFiscalYear(current: FiscalYear, dossierId: string | undefined, now: string): FiscalYear {
+export function createNextFiscalYear(
+  current: FiscalYear,
+  dossierId: string | undefined,
+  now: string,
+  nextFiscalYearId?: string,
+): FiscalYear {
   return {
-    id: crypto.randomUUID(),
+    id: nextFiscalYearId ?? crypto.randomUUID(),
     year: current.year + 1,
     status: "draft",
     regime: current.regime,
@@ -534,6 +575,70 @@ export function createNextFiscalYear(current: FiscalYear, dossierId: string | un
     closures: [],
     createdAt: now,
     updatedAt: now,
+  };
+}
+
+/**
+ * Lot 1 — constructeur métier pur N→N+1.
+ *
+ * Frontière unique : reçoit N déjà clôturé (avec sa closure), le draft de N
+ * (uniquement pour l'identité durable), et les valeurs non déterministes
+ * injectées (id / horodatage). Produit l'état initial de N+1 via une liste
+ * EXPLICITE — jamais un spread global de `DeclarationDraft`, jamais un clone
+ * de workspace, jamais de sessions/confirmations/résultats/documents N.
+ *
+ * Réutilise `resolveStocksOuverture` / `resolvePatrimoineOuvertureNPlusUn` :
+ * une ouverture requise mais indisponible n'est jamais convertie en zéro.
+ */
+export function buildNextExerciseFromClosedYear(input: {
+  closedFiscalYear: FiscalYear;
+  previousDraft: DeclarationDraft | undefined;
+  dossierId: string | undefined;
+  nextFiscalYearId: string;
+  now: string;
+}): {
+  fiscalYear: FiscalYear;
+  declarationDraft: DeclarationDraft;
+  /** Closure réellement consommée pour les ouvertures (si disponible). */
+  sourceClosureId: string | undefined;
+} {
+  const nextFiscalYearBase = createNextFiscalYear(
+    input.closedFiscalYear,
+    input.dossierId,
+    input.now,
+    input.nextFiscalYearId,
+  );
+
+  const stocksOuvertureResult = resolveStocksOuverture(nextFiscalYearBase, input.closedFiscalYear);
+  const nextFiscalYearWithStocks = applyStocksOuvertureResult(nextFiscalYearBase, stocksOuvertureResult);
+
+  const patrimoineOuvertureResult = resolvePatrimoineOuvertureNPlusUn(
+    nextFiscalYearBase,
+    input.closedFiscalYear,
+  );
+  const fiscalYear: FiscalYear =
+    patrimoineOuvertureResult.status === "available"
+      ? {
+          ...nextFiscalYearWithStocks,
+          patrimoineOuverture: {
+            sourceClosureId: patrimoineOuvertureResult.sourceClosureId,
+            ouvertureCompteExploitant: patrimoineOuvertureResult.ouvertureCompteExploitant,
+            ran: patrimoineOuvertureResult.ran,
+          },
+        }
+      : nextFiscalYearWithStocks;
+
+  const sourceClosureId =
+    stocksOuvertureResult.status === "available"
+      ? stocksOuvertureResult.sourceClosureId
+      : patrimoineOuvertureResult.status === "available"
+        ? patrimoineOuvertureResult.sourceClosureId
+        : latestClosure(input.closedFiscalYear)?.id;
+
+  return {
+    fiscalYear,
+    declarationDraft: createNextDeclarationDraft(input.previousDraft),
+    sourceClosureId,
   };
 }
 

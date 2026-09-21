@@ -358,14 +358,46 @@ describe("clôture — un exercice dont l'antériorité n'est pas établie ne se
       ...overrides,
     };
   }
-  const close = (fiscalYear: FiscalYear) => canCloseFiscalYear({ fiscalYear, declarationDraft: undefined, properties: [] });
+
+  // Lot 1 — clôture positive : l'antériorité n'est testable indépendamment
+  // que si une génération de référence valide et fraîche est déjà présente.
+  const draftBase = generableDraft();
+  const generation = runDeclarationGeneration(draftBase, 2025);
+  assert.equal(generation.status, "generated");
+  if (generation.status !== "generated") throw new Error("unreachable");
+  const freshDraft = {
+    ...draftBase,
+    fiscalResult: generation.fiscalResult,
+    rfs: generation.rfs,
+  } as DeclarationDraft;
+
+  const close = (fiscalYear: FiscalYear) =>
+    canCloseFiscalYear({
+      fiscalYear,
+      declarationDraft: freshDraft,
+      properties: [PROPERTY],
+    });
 
   it("première année déclarée → clôture autorisée", () => {
     assert.equal(close(closable({ priorHistoryDeclaration: { status: "FIRST_REAL_YEAR", declaredAt: NOW } })).ok, true);
   });
 
   it("continuité native prouvée → clôture autorisée", () => {
-    assert.equal(close(closable({ previousFiscalYearId: "fy-0", stocksOuverture: VALID_OPENING })).ok, true);
+    const stocksOuverture = VALID_OPENING;
+    const draftContinuity = generableDraft({
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 8000, status: "validated" },
+    });
+    const gen = runDeclarationGeneration(draftContinuity, 2025, stocksOuverture.stocks);
+    assert.equal(gen.status, "generated");
+    if (gen.status !== "generated") throw new Error("unreachable");
+    const result = canCloseFiscalYear({
+      fiscalYear: closable({ previousFiscalYearId: "fy-0", stocksOuverture }),
+      declarationDraft: { ...draftContinuity, fiscalResult: gen.fiscalResult, rfs: gen.rfs } as DeclarationDraft,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, true);
   });
 
   it("aucune réponse / externe / prédécesseur sans stocks → clôture refusée", () => {

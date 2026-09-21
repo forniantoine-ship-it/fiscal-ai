@@ -11,6 +11,24 @@ import {
   type ValidationDossierSnapshot,
 } from "../validation-profile";
 
+/**
+ * Lot 1 N→N+1 — preuve positive sur la génération de référence déjà stockée
+ * (`generated: true`). Distingue explicitement les cas que `canGenerate`
+ * amalgamait : `canGenerate === false` n'est PAS une preuve de fraîcheur.
+ *
+ * - `absent`     : aucun `fiscalResult` stocké à comparer ;
+ * - `incomplete` : dossier incomplet / multi-bien — recalcul impossible ;
+ * - `blocked`    : dossier « complet » mais F-006/F-007 refuse le recalcul ;
+ * - `stale`      : recalcul possible et divergent de la génération stockée ;
+ * - `current`    : recalcul possible et strictement aligné (fraîcheur positive).
+ */
+export type ReferenceGenerationStatus =
+  | "absent"
+  | "incomplete"
+  | "blocked"
+  | "stale"
+  | "current";
+
 export type DeclarationGenerationGate = {
   snapshot: ValidationDossierSnapshot;
   canCheckout: boolean;
@@ -26,6 +44,13 @@ export type DeclarationGenerationGate = {
    * même approximatif.
    */
   fiscalResult?: FiscalEngineOutput;
+  /**
+   * Présent uniquement quand `input.generated === true` : statut de la
+   * génération de référence face à l'état métier courant. Absent pour un
+   * appelant qui n'a pas encore généré (parcours paiement / première
+   * génération).
+   */
+  referenceGenerationStatus?: ReferenceGenerationStatus;
   /**
    * P0 launch safety — présent uniquement si l'appelant a fourni
    * `input.priorHistory`. `eligible: false` ⇒ toutes les capacités ci-dessus
@@ -190,6 +215,53 @@ function isDeepEqualPlainValue(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Lot 1 / F1 — projection sémantique de `FiscalEngineOutput` pour la preuve
+ * de fraîcheur. Compare TOUT le résultat fiscal durable déjà produit par
+ * `runDeclarationGeneration()` (y compris `resultatFiscal`,
+ * `resultatAvantAmort`, `chargesPreExploitation`, `deficitNouveau`, stocks),
+ * pas seulement les quatre scalaires historiques (totalRecettes / totalCharges
+ * / amortDeduct / amortReporte) qui laissaient passer une dérive
+ * pré-exploitation (F012 `totalPreExploitation`) alors que `resultatFiscal`
+ * changeait.
+ *
+ * Exclus volontairement (non métier / non déterministes) :
+ * - `computedAt`
+ * - `trace` (journal technique + `computedAt` interne)
+ *
+ * Normalisations d'absence (dossiers antérieurs à P0-3b) : `undefined` sur
+ * `chargesPreExploitation` / `deficitsExpires` ≡ 0 / [] — jamais un faux
+ * stale purement lié à l'apparition du champ.
+ */
+function fiscalEngineSemanticProjection(result: FiscalEngineOutput) {
+  return {
+    exercice: result.exercice,
+    resultatFiscal: result.resultatFiscal,
+    resultatAvantAmort: result.resultatAvantAmort,
+    totalRecettes: result.totalRecettes,
+    totalCharges: result.totalCharges,
+    chargesPreExploitation: result.chargesPreExploitation ?? 0,
+    amortDeduct: result.amortDeduct,
+    amortReporte: result.amortReporte,
+    deficitNouveau: result.deficitNouveau,
+    stocks: {
+      deficits: result.stocks?.deficits ?? [],
+      amortissementsReportes: result.stocks?.amortissementsReportes ?? 0,
+      deficitsExpires: result.stocks?.deficitsExpires ?? [],
+    },
+  };
+}
+
+function fiscalEngineOutputChanged(
+  stored: FiscalEngineOutput,
+  preview: FiscalEngineOutput,
+): boolean {
+  return !isDeepEqualPlainValue(
+    fiscalEngineSemanticProjection(stored),
+    fiscalEngineSemanticProjection(preview),
+  );
+}
+
+/**
  * P0-1B (2026-09-07) — le drift fiscal (recettes/charges/amortissement) et
  * l'identité (ci-dessus) ne couvrent pas le patrimoine (068/072/164/166/172,
  * amortissements-provisions patrimoniaux, tiers, compte exploitant, RAN...) :
@@ -280,46 +352,77 @@ export function resolveDeclarationGenerationGate(input: {
 
   if (input.generated) {
     const stored = input.draft?.fiscalResult;
-    if (snapshot.isComplete && !snapshot.isMultiProperty) {
-      // G1-P0 — même bilanPatrimonial que la génération réelle (voir plus
-      // bas) : jamais une seconde construction de BilanInputs, jamais un
-      // aperçu qui diverge silencieusement du document réellement produit.
-      // P0-1A — même stocksOuverture que la génération réelle (voir le
-      // commentaire du paramètre ci-dessus) : jamais `undefined` en dur, qui
-      // désynchronisait ce preview de la génération réelle pour un exercice
-      // en continuité.
-      const preview = runDeclarationGeneration(
-        input.draft,
-        input.fiscalYear,
-        input.stocksOuverture,
-        input.draft?.bilanPatrimonial,
-        input.draft?.dispense2033A,
-      );
-      if (
-        preview.status === "generated" &&
-        (stored?.totalRecettes !== preview.fiscalResult.totalRecettes ||
-          stored?.totalCharges !== preview.fiscalResult.totalCharges ||
-          stored?.amortDeduct !== preview.fiscalResult.amortDeduct ||
-          stored?.amortReporte !== preview.fiscalResult.amortReporte ||
-          identiteChanged(input.draft, input.fiscalYear) ||
-          patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine))
-      ) {
-        return {
-          snapshot,
-          canCheckout: false,
-          canRetryAfterPayment: true,
-          canGenerate: true,
-          blockingAnomalies: [],
-          recoveryItems: [],
-          // P0-5.1 — `preview.fiscalResult` est déjà calculé ci-dessus (ligne
-          // utilisée pour détecter la dérive elle-même) : l'omettre ici forçait
-          // ValidationFiscalSummary à retomber sur buildFiscalSummary(), une
-          // estimation qui ignore chargesFinancement/chargesPreExploitation et
-          // le moteur 39C/déficits antérieurs, alors que showMainContent rend
-          // bien ce composant dans cet état (gate.canGenerate === true).
-          fiscalResult: preview.fiscalResult,
-        };
-      }
+    if (!stored) {
+      return {
+        snapshot,
+        canCheckout: false,
+        canRetryAfterPayment: false,
+        canGenerate: false,
+        blockingAnomalies: [],
+        recoveryItems: snapshot.isComplete ? [] : snapshot.missing,
+        referenceGenerationStatus: "absent",
+      };
+    }
+    if (!snapshot.isComplete || snapshot.isMultiProperty) {
+      return {
+        snapshot,
+        canCheckout: false,
+        canRetryAfterPayment: false,
+        canGenerate: false,
+        blockingAnomalies: [],
+        recoveryItems: snapshot.missing,
+        referenceGenerationStatus: "incomplete",
+      };
+    }
+
+    // G1-P0 — même bilanPatrimonial que la génération réelle (voir plus
+    // bas) : jamais une seconde construction de BilanInputs, jamais un
+    // aperçu qui diverge silencieusement du document réellement produit.
+    // P0-1A — même stocksOuverture que la génération réelle (voir le
+    // commentaire du paramètre ci-dessus) : jamais `undefined` en dur, qui
+    // désynchronisait ce preview de la génération réelle pour un exercice
+    // en continuité.
+    const preview = runDeclarationGeneration(
+      input.draft,
+      input.fiscalYear,
+      input.stocksOuverture,
+      input.draft?.bilanPatrimonial,
+      input.draft?.dispense2033A,
+    );
+    if (preview.status === "blocked") {
+      return {
+        snapshot,
+        canCheckout: false,
+        canRetryAfterPayment: false,
+        canGenerate: false,
+        blockingAnomalies: preview.anomalies,
+        recoveryItems: recoveryItemsFromAnomalies(preview.anomalies),
+        referenceGenerationStatus: "blocked",
+      };
+    }
+
+    const drifted =
+      fiscalEngineOutputChanged(stored, preview.fiscalResult) ||
+      identiteChanged(input.draft, input.fiscalYear) ||
+      patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine);
+
+    if (drifted) {
+      return {
+        snapshot,
+        canCheckout: false,
+        canRetryAfterPayment: true,
+        canGenerate: true,
+        blockingAnomalies: [],
+        recoveryItems: [],
+        // P0-5.1 — `preview.fiscalResult` est déjà calculé ci-dessus (ligne
+        // utilisée pour détecter la dérive elle-même) : l'omettre ici forçait
+        // ValidationFiscalSummary à retomber sur buildFiscalSummary(), une
+        // estimation qui ignore chargesFinancement/chargesPreExploitation et
+        // le moteur 39C/déficits antérieurs, alors que showMainContent rend
+        // bien ce composant dans cet état (gate.canGenerate === true).
+        fiscalResult: preview.fiscalResult,
+        referenceGenerationStatus: "stale",
+      };
     }
 
     return {
@@ -329,6 +432,8 @@ export function resolveDeclarationGenerationGate(input: {
       canGenerate: false,
       blockingAnomalies: [],
       recoveryItems: [],
+      fiscalResult: preview.fiscalResult,
+      referenceGenerationStatus: "current",
     };
   }
 

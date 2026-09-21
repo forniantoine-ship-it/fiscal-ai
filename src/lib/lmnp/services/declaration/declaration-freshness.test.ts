@@ -42,6 +42,19 @@ function completeFlags(overrides: Partial<DeclarationDraft> = {}): DeclarationDr
     completedSteps: [],
     inpiConfirmedAt: NOW,
     logementConfirmedAt: NOW,
+    // Lot 1 / F1 — isLogementComplete() exige la sortie F-010 ; sans elle
+    // les tests de dérive devenaient vacueux (incomplete ≠ stale).
+    logementAmortissement: {
+      computedAt: NOW,
+      prixRevient: 200000,
+      valeurTerrain: 40000,
+      valeurBati: 160000,
+      baseAmortissableBati: 160000,
+      montantMobilier: 0,
+      dotationAnnuelle: 5333,
+      dureeMoyenneAnnees: 30,
+      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+    } as DeclarationDraft["logementAmortissement"],
     creditDeclaredNoneAt: NOW,
     revenusConfirmedAt: NOW,
     chargesConfirmedAt: NOW,
@@ -187,5 +200,25 @@ describe("resolveDeclarationOutOfDate — P0-2a", () => {
       properties: [PROPERTY],
     });
     assert.equal(result, false);
+  });
+
+  it("F1 — totalPreExploitation modifié après génération → outOfDate true (résultatFiscal change sans les 4 scalaires historiques)", () => {
+    const draft = apresGeneration(
+      generationReadyDraft({
+        chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      }),
+    );
+    const corrige = {
+      ...draft,
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 2500 },
+    } as DeclarationDraft;
+    assert.equal(
+      resolveDeclarationOutOfDate({
+        fiscalYear: baseFiscalYear(),
+        declarationDraft: corrige,
+        properties: [PROPERTY],
+      }),
+      true,
+    );
   });
 });

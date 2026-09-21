@@ -17,8 +17,11 @@ import {
 } from "./close-and-create-next-fiscal-year";
 import { FiscalYearAlreadyClosedError } from "./dossier-db";
 import type { PersistedWorkspace } from "./persistence";
-import type { FiscalYear } from "../types";
+import type { DeclarationDraft, FiscalYear } from "../types";
 import type { PersistFiscalYearClosureAndTransitionResult } from "./dossier-db";
+import { runDeclarationGeneration } from "../services/declaration/run-declaration-generation";
+
+const NOW = "2026-09-01T00:00:00.000Z";
 
 function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
   return {
@@ -28,13 +31,54 @@ function baseFiscalYear(overrides: Partial<FiscalYear> = {}): FiscalYear {
     regime: "reel",
     propertyIds: ["prop-1"],
     dossierId: "dossier-1",
-    declarationGeneratedAt: "2026-09-01T00:00:00.000Z",
-    priorHistoryDeclaration: { status: "FIRST_REAL_YEAR", declaredAt: "2026-09-01T00:00:00.000Z" },
+    declarationGeneratedAt: NOW,
+    priorHistoryDeclaration: { status: "FIRST_REAL_YEAR", declaredAt: NOW },
     closures: [],
     createdAt: "2025-01-01T00:00:00.000Z",
     updatedAt: "2025-01-01T00:00:00.000Z",
     ...overrides,
   };
+}
+
+/** Draft clôturable (Lot 1) : génération de référence valide et fraîche. */
+function closableDeclarationDraft(): DeclarationDraft {
+  const draft = {
+    completedSteps: [],
+    inpiConfirmedAt: NOW,
+    logementConfirmedAt: NOW,
+    logementAmortissement: {
+      computedAt: NOW,
+      prixRevient: 200000,
+      valeurTerrain: 40000,
+      valeurBati: 160000,
+      baseAmortissableBati: 160000,
+      montantMobilier: 0,
+      dotationAnnuelle: 5333,
+      dureeMoyenneAnnees: 30,
+      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+    },
+    creditDeclaredNoneAt: NOW,
+    revenusConfirmedAt: NOW,
+    chargesConfirmedAt: NOW,
+    amortissementConfirmedAt: NOW,
+    siret: "12345678901234",
+    siren: "123456789",
+    exploitantFirstName: "Marie",
+    exploitantLastName: "Dupont",
+    exploitantEmail: "marie.dupont@example.com",
+    exploitantTelephone: "0601020304",
+    personalAddress: "10 rue des Lilas",
+    personalCity: "Lyon",
+    personalPostalCode: "69001",
+    dateMiseEnService: "2020-01-01",
+    revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+    chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+    amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+  } as DeclarationDraft;
+  const generation = runDeclarationGeneration(draft, 2025);
+  assert.equal(generation.status, "generated", "fixture d'orchestration doit produire une génération réelle");
+  if (generation.status !== "generated") throw new Error("unreachable");
+  return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
 }
 
 function baseWorkspace(overrides: Partial<PersistedWorkspace> = {}): PersistedWorkspace {
@@ -45,7 +89,7 @@ function baseWorkspace(overrides: Partial<PersistedWorkspace> = {}): PersistedWo
     extractions: [],
     validationItems: [],
     ledgerEntries: [],
-    declarationDraft: { completedSteps: [], fiscalResult: undefined },
+    declarationDraft: closableDeclarationDraft(),
     ...overrides,
   };
 }

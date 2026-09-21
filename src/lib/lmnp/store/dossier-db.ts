@@ -36,14 +36,10 @@ import type {
 } from "../types/domain";
 import type { Dossier, InpiStatus, InpiStatusSource } from "../types/dossier";
 import {
-  applyStocksOuvertureResult,
+  buildNextExerciseFromClosedYear,
   closeFiscalYear,
-  createNextDeclarationDraft,
-  createNextFiscalYear,
   extractDossierLevelDataFromWorkspace,
   extractIdentity,
-  resolvePatrimoineOuvertureNPlusUn,
-  resolveStocksOuverture,
 } from "../services/dossier/fiscal-year-cycle";
 
 /**
@@ -195,7 +191,16 @@ export async function persistFiscalYearTransition(params: {
 
   const baseDossier = await buildOrLoadDossier(dossierId, workspace, now);
   const { properties, financements } = extractDossierLevelDataFromWorkspace(workspace);
-  const nextFiscalYear = createNextFiscalYear(closedFiscalYear, dossierId, now);
+  // Lot 1 — même constructeur métier que persistFiscalYearClosureAndTransition :
+  // stocks/patrimoine d'ouverture + draft d'identité, jamais deux contrats N+1.
+  const built = buildNextExerciseFromClosedYear({
+    closedFiscalYear,
+    previousDraft: workspace.declarationDraft,
+    dossierId,
+    nextFiscalYearId: crypto.randomUUID(),
+    now,
+  });
+  const nextFiscalYear = built.fiscalYear;
   const nextFiscalYearRecord: FiscalYearRecord = {
     ...nextFiscalYear,
     documents: [],
@@ -349,38 +354,17 @@ export async function persistFiscalYearClosureAndTransition(params: {
 
   const baseDossier = await buildOrLoadDossier(dossierId, workspace, now);
   const { properties, financements } = extractDossierLevelDataFromWorkspace(workspace);
-  const nextFiscalYearBase = createNextFiscalYear(closedFiscalYear, dossierId, now);
-  // P1-1 — branchement réel des stocks N → N+1 : `closedFiscalYear` porte
-  // déjà sa nouvelle closure (closeFiscalYear() vient de l'ajouter
-  // ci-dessus) et `nextFiscalYearBase.previousFiscalYearId` pointe déjà vers
-  // elle (createNextFiscalYear()) — resolveStocksOuverture() revérifie ses 6
-  // conditions sur ces objets réels (jamais présumées). Persisté sur
-  // FiscalYear N+1 lui-même, jamais dans `declarationDraft.fiscalResult`
-  // (réservé au miroir de la dernière génération du MÊME exercice).
-  const stocksOuvertureResult = resolveStocksOuverture(nextFiscalYearBase, closedFiscalYear);
-  const nextFiscalYearWithStocks: FiscalYear = applyStocksOuvertureResult(
-    nextFiscalYearBase,
-    stocksOuvertureResult,
-  );
-  // G1-P1 — même patron exact que les stocks ci-dessus : `nextFiscalYearBase`
-  // porte déjà `previousFiscalYearId` (createNextFiscalYear()) et
-  // `closedFiscalYear` porte déjà sa nouvelle closure (closeFiscalYear() vient
-  // de l'ajouter ci-dessus) — resolvePatrimoineOuvertureNPlusUn() revérifie
-  // ses propres gardes sur ces objets réels. Persisté sur FiscalYear N+1
-  // lui-même, jamais dans `declarationDraft.bilanPatrimonial` (qui reste
-  // vierge à chaque nouvel exercice, cf. createNextDeclarationDraft()).
-  const patrimoineOuvertureResult = resolvePatrimoineOuvertureNPlusUn(nextFiscalYearBase, closedFiscalYear);
-  const nextFiscalYear: FiscalYear =
-    patrimoineOuvertureResult.status === "available"
-      ? {
-          ...nextFiscalYearWithStocks,
-          patrimoineOuverture: {
-            sourceClosureId: patrimoineOuvertureResult.sourceClosureId,
-            ouvertureCompteExploitant: patrimoineOuvertureResult.ouvertureCompteExploitant,
-            ran: patrimoineOuvertureResult.ran,
-          },
-        }
-      : nextFiscalYearWithStocks;
+  // Lot 1 — constructeur métier unique (mêmes ouvertures + draft que
+  // persistFiscalYearTransition). `closedFiscalYear` porte déjà sa nouvelle
+  // closure (closeFiscalYear() vient de l'ajouter ci-dessus).
+  const built = buildNextExerciseFromClosedYear({
+    closedFiscalYear,
+    previousDraft: workspace.declarationDraft,
+    dossierId,
+    nextFiscalYearId: crypto.randomUUID(),
+    now,
+  });
+  const nextFiscalYear = built.fiscalYear;
   const nextFiscalYearRecord: FiscalYearRecord = {
     ...nextFiscalYear,
     documents: [],
@@ -415,7 +399,7 @@ export async function persistFiscalYearClosureAndTransition(params: {
     extractions: [],
     validationItems: [],
     ledgerEntries: [],
-    declarationDraft: createNextDeclarationDraft(workspace.declarationDraft),
+    declarationDraft: built.declarationDraft,
     aiActivityFeed: [],
   };
 

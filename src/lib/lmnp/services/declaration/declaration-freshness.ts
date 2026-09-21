@@ -9,8 +9,9 @@
  *
  * Réutilise `resolveDeclarationGenerationGate()` (P0-1, déjà la source de vérité
  * du drift, déjà consommée par `canCloseFiscalYear()`) — aucune seconde liste de
- * champs, aucun recalcul indépendant. `gate.canGenerate === true` après une
- * génération signifie exactement "les données actuelles ne correspondent plus à
+ * champs, aucun recalcul indépendant. `referenceGenerationStatus === "stale"`
+ * (et, de façon équivalente historique, `gate.canGenerate === true` après une
+ * génération) signifie exactement "les données actuelles ne correspondent plus à
  * la dernière génération" : c'est exactement le signal qu'un utilisateur non
  * technique doit voir traduit simplement.
  */
@@ -41,5 +42,5 @@ export function resolveDeclarationOutOfDate(input: {
     stocksOuverture: fiscalYear.stocksOuverture?.stocks,
   });
 
-  return gate.canGenerate;
+  return gate.referenceGenerationStatus === "stale";
 }

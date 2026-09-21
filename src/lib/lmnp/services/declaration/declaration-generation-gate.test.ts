@@ -169,13 +169,12 @@ describe("Cycle 22 — porte de génération déclaration", () => {
   });
 
   it("déclaration déjà générée, montants alignés → plus aucune action de génération", () => {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
     const gate = resolveDeclarationGenerationGate({
-      draft: {
-        ...generationReadyDraft(),
-        // Valeurs F-006 réellement produites par generationReadyDraft() (9000 - 2000
-        // de charges, 1500 d'amortissement intégralement déductible, rien reporté).
-        fiscalResult: { totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, amortReporte: 0 },
-      } as DeclarationDraft,
+      draft: { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft,
       properties: [PROPERTY],
       fiscalYear: 2025,
       paid: true,
@@ -185,14 +184,20 @@ describe("Cycle 22 — porte de génération déclaration", () => {
     assert.equal(gate.canCheckout, false);
     assert.equal(gate.canRetryAfterPayment, false);
     assert.equal(gate.canGenerate, false);
+    assert.equal(gate.referenceGenerationStatus, "current");
   });
 
   it("Cycle 23 — déclaration déjà générée mais recettes corrigées → régénération sans re-paiement", () => {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
     const gate = resolveDeclarationGenerationGate({
       draft: {
-        ...generationReadyDraft(),
+        ...draft,
+        fiscalResult: generation.fiscalResult,
+        rfs: generation.rfs,
         revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 4780.9 },
-        fiscalResult: { totalRecettes: 9561.8 },
       } as DeclarationDraft,
       properties: [PROPERTY],
       fiscalYear: 2025,
@@ -203,14 +208,20 @@ describe("Cycle 22 — porte de génération déclaration", () => {
     assert.equal(gate.canCheckout, false, "pas de second paiement");
     assert.equal(gate.canRetryAfterPayment, true);
     assert.equal(gate.canGenerate, true, "la 2031-SD ne doit pas rester figée sur l'ancien total");
+    assert.equal(gate.referenceGenerationStatus, "stale");
   });
 
   it("déclaration déjà générée mais charges corrigées (recettes inchangées) → régénération sans re-paiement", () => {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
     const gate = resolveDeclarationGenerationGate({
       draft: {
-        ...generationReadyDraft(),
+        ...draft,
+        fiscalResult: generation.fiscalResult,
+        rfs: generation.rfs,
         chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 6000, totalPreExploitation: 0 },
-        fiscalResult: { totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, amortReporte: 0 },
       } as DeclarationDraft,
       properties: [PROPERTY],
       fiscalYear: 2025,
@@ -221,14 +232,20 @@ describe("Cycle 22 — porte de génération déclaration", () => {
     assert.equal(gate.canCheckout, false, "pas de second paiement");
     assert.equal(gate.canRetryAfterPayment, true, "la dérive des charges doit être détectée, pas seulement les recettes");
     assert.equal(gate.canGenerate, true);
+    assert.equal(gate.referenceGenerationStatus, "stale");
   });
 
   it("déclaration déjà générée mais amortissement corrigé (recettes inchangées) → régénération sans re-paiement", () => {
+    const draft = generationReadyDraft();
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
     const gate = resolveDeclarationGenerationGate({
       draft: {
-        ...generationReadyDraft(),
+        ...draft,
+        fiscalResult: generation.fiscalResult,
+        rfs: generation.rfs,
         amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 4200, status: "validated" },
-        fiscalResult: { totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, amortReporte: 0 },
       } as DeclarationDraft,
       properties: [PROPERTY],
       fiscalYear: 2025,
@@ -243,6 +260,7 @@ describe("Cycle 22 — porte de génération déclaration", () => {
       "la dérive de l'amortissement doit être détectée, pas seulement les recettes",
     );
     assert.equal(gate.canGenerate, true);
+    assert.equal(gate.referenceGenerationStatus, "stale");
   });
 
   /**
@@ -257,16 +275,19 @@ describe("Cycle 22 — porte de génération déclaration", () => {
    * `chargesPreExploitation`, et ignore le moteur 39C/déficits antérieurs.
    */
   it("P0-5.1 — dérive après génération (financement ajouté) : gate.fiscalResult est le FiscalResult exact recalculé, jamais undefined", () => {
+    const draftBase = generationReadyDraft();
+    const generation = runDeclarationGeneration(draftBase, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
     const draft = {
-      ...generationReadyDraft(),
+      ...draftBase,
+      fiscalResult: generation.fiscalResult,
+      rfs: generation.rfs,
       financementCharges: {
         exerciceFiscal: 2025,
         totalChargesFinancementExercice: 1200,
         totalInteretsPreExploitation: 0,
       },
-      // Valeur stockée AVANT l'ajout du financement — déclenche la dérive
-      // (totalCharges stocké = 2000, sans financement).
-      fiscalResult: { totalRecettes: 9000, totalCharges: 2000, amortDeduct: 1500, amortReporte: 0 },
     } as DeclarationDraft;
 
     const gate = resolveDeclarationGenerationGate({
@@ -279,6 +300,7 @@ describe("Cycle 22 — porte de génération déclaration", () => {
 
     assert.equal(gate.canRetryAfterPayment, true, "l'ajout du financement doit être détecté comme une dérive");
     assert.equal(gate.canGenerate, true);
+    assert.equal(gate.referenceGenerationStatus, "stale");
     assert.ok(gate.fiscalResult, "le FiscalResult exact (déjà calculé pour détecter la dérive) doit être exposé, jamais undefined");
 
     // Le FiscalResult exposé doit être EXACTEMENT celui réellement recalculé —
@@ -880,5 +902,136 @@ describe("P0-1B — patrimoine (rfs.patrimoine) comme défense indépendante du 
       "le draft fourni (fiscalResult/rfs/patrimoine/declarationVersions) ne doit jamais être muté par le preview",
     );
     assert.equal(JSON.stringify(bilan), bilanSnapshot, "le bilanPatrimonial fourni ne doit jamais être muté par le preview");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lot 1 / F1 — preuve de fraîcheur = projection sémantique complète de
+// FiscalEngineOutput (pas les 4 scalaires historiques seuls).
+// ---------------------------------------------------------------------------
+describe("Lot 1 / F1 — fraîcheur fiscale sémantique (totalPreExploitation et voisinage)", () => {
+  function apresGeneration(draft: DeclarationDraft): DeclarationDraft {
+    const generation = runDeclarationGeneration(draft, 2025);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+  }
+
+  it("F1 blocker — totalPreExploitation modifié après génération → stale (les 4 scalaires historiques resteraient égaux)", () => {
+    const draft = apresGeneration(
+      generationReadyDraft({
+        chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      } as DeclarationDraft),
+    );
+    assert.equal(draft.fiscalResult!.resultatFiscal, 5500);
+    assert.equal(draft.fiscalResult!.chargesPreExploitation ?? 0, 0);
+
+    const reouvertF012 = {
+      ...draft,
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 2500 },
+    } as DeclarationDraft;
+    const recomputed = runDeclarationGeneration(reouvertF012, 2025);
+    assert.equal(recomputed.status, "generated");
+    if (recomputed.status !== "generated") throw new Error("unreachable");
+    assert.equal(recomputed.fiscalResult.resultatFiscal, 3000, "précondition métier : résultat fiscal a vraiment changé");
+
+    // Preuve que l'ANCIENNE frontière (4 scalaires) aurait autorisé un faux-current :
+    assert.equal(draft.fiscalResult!.totalRecettes, recomputed.fiscalResult.totalRecettes);
+    assert.equal(draft.fiscalResult!.totalCharges, recomputed.fiscalResult.totalCharges);
+    assert.equal(draft.fiscalResult!.amortDeduct, recomputed.fiscalResult.amortDeduct);
+    assert.equal(draft.fiscalResult!.amortReporte, recomputed.fiscalResult.amortReporte);
+
+    const gate = resolveDeclarationGenerationGate({
+      draft: reouvertF012,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.referenceGenerationStatus, "stale");
+    assert.equal(gate.canGenerate, true);
+  });
+
+  it("A — seul computedAt / trace différent → current (pas de faux stale technique)", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const technique = {
+      ...draft,
+      fiscalResult: {
+        ...draft.fiscalResult!,
+        computedAt: "2099-12-31T23:59:59.000Z",
+        trace: {
+          ...draft.fiscalResult!.trace,
+          computedAt: "2099-12-31T23:59:59.000Z",
+          journal: [...draft.fiscalResult!.trace.journal, { trf: "TECH", label: "noop", value: 0 }],
+        },
+      },
+    } as DeclarationDraft;
+    const gate = resolveDeclarationGenerationGate({
+      draft: technique,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.referenceGenerationStatus, "current");
+  });
+
+  it("B — resultatFiscal réellement différent (patch direct du miroir stocké) → stale", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrige = {
+      ...draft,
+      fiscalResult: { ...draft.fiscalResult!, resultatFiscal: draft.fiscalResult!.resultatFiscal - 2500 },
+    } as DeclarationDraft;
+    const gate = resolveDeclarationGenerationGate({
+      draft: corrige,
+      properties: [PROPERTY],
+      fiscalYear: 2025,
+      paid: true,
+      generated: true,
+    });
+    assert.equal(gate.referenceGenerationStatus, "stale");
+  });
+
+  it("C — resultatAvantAmort / chargesPreExploitation divergents → stale", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const corrigeAvantAmort = {
+      ...draft,
+      fiscalResult: {
+        ...draft.fiscalResult!,
+        resultatAvantAmort: draft.fiscalResult!.resultatAvantAmort - 1000,
+        // garder resultatFiscal volontairement égal pour isoler la frontière
+        resultatFiscal: draft.fiscalResult!.resultatFiscal,
+      },
+    } as DeclarationDraft;
+    assert.equal(
+      resolveDeclarationGenerationGate({
+        draft: corrigeAvantAmort,
+        properties: [PROPERTY],
+        fiscalYear: 2025,
+        paid: true,
+        generated: true,
+      }).referenceGenerationStatus,
+      "stale",
+    );
+
+    const corrigePreEx = {
+      ...draft,
+      fiscalResult: {
+        ...draft.fiscalResult!,
+        chargesPreExploitation: (draft.fiscalResult!.chargesPreExploitation ?? 0) + 500,
+        resultatFiscal: draft.fiscalResult!.resultatFiscal,
+        resultatAvantAmort: draft.fiscalResult!.resultatAvantAmort,
+      },
+    } as DeclarationDraft;
+    assert.equal(
+      resolveDeclarationGenerationGate({
+        draft: corrigePreEx,
+        properties: [PROPERTY],
+        fiscalYear: 2025,
+        paid: true,
+        generated: true,
+      }).referenceGenerationStatus,
+      "stale",
+    );
   });
 });

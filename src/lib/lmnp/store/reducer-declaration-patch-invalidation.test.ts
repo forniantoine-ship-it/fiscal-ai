@@ -847,6 +847,20 @@ function p0_1dCompleteFlags(overrides: Partial<Record<string, unknown>> = {}): R
     completedSteps: [],
     inpiConfirmedAt: "2026-01-01T00:00:00.000Z",
     logementConfirmedAt: "2026-01-01T00:00:00.000Z",
+    // Lot 1 — sortie F-010 requise pour isLogementComplete(). Forme lue par
+    // map-2033a (`plan.lignes`), pas le `{composants}` du fixture d'invalidation
+    // reducer (celui-ci reste pour les tests DECLARATION_PATCH_DRAFT #9–#11).
+    logementAmortissement: {
+      computedAt: "2026-01-01T00:00:00.000Z",
+      prixRevient: 200000,
+      valeurTerrain: 40000,
+      valeurBati: 160000,
+      baseAmortissableBati: 160000,
+      montantMobilier: 0,
+      dotationAnnuelle: 5333,
+      dureeMoyenneAnnees: 30,
+      plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+    },
     creditDeclaredNoneAt: "2026-01-01T00:00:00.000Z",
     revenusConfirmedAt: "2026-01-01T00:00:00.000Z",
     chargesConfirmedAt: "2026-01-01T00:00:00.000Z",

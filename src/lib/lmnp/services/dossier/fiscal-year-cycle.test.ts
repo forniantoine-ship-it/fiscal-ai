@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
 import {
   appendClosure,
   buildFiscalYearClosure,
+  buildNextExerciseFromClosedYear,
   canCloseFiscalYear,
   canCreateNextFiscalYear,
   composantsF012DepuisBase,
@@ -621,16 +622,19 @@ describe("canCloseFiscalYear — précondition du geste de clôture", () => {
     assert.equal(result.ok, false);
   });
 
-  it("autorise quand status === ready_to_close ET declarationGeneratedAt existe (dossier minimal, aucune dérive détectable)", () => {
+  it("refuse quand status === ready_to_close ET declarationGeneratedAt existe mais aucune génération exploitable (dossier minimal)", () => {
+    // Lot 1 — clôture positive : `canGenerate === false` (dossier incomplet /
+    // aucune génération) n'autorise JAMAIS la clôture.
     const result = canCloseFiscalYear({
       fiscalYear: baseFiscalYear({ status: "ready_to_close", declarationGeneratedAt: NOW, priorHistoryDeclaration: FIRST_YEAR_DECLARED }),
       declarationDraft: undefined,
       properties: [],
     });
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, false);
   });
 
   it("ne dépend jamais de transmittedAt — la clôture reste indépendante de l'EDI", () => {
+    // Fixture minimaliste : sans génération fraîche, refuse (indépendamment de transmittedAt).
     const withoutTransmission = canCloseFiscalYear({
       fiscalYear: baseFiscalYear({
         status: "ready_to_close",
@@ -641,7 +645,7 @@ describe("canCloseFiscalYear — précondition du geste de clôture", () => {
       declarationDraft: undefined,
       properties: [],
     });
-    assert.equal(withoutTransmission.ok, true);
+    assert.equal(withoutTransmission.ok, false);
   });
 });
 
@@ -665,6 +669,20 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
       completedSteps: [],
       inpiConfirmedAt: NOW,
       logementConfirmedAt: NOW,
+      // V1 Bucket-1 / Lot 1 — isLogementComplete() exige la sortie F-010
+      // (`logementAmortissement`), pas seulement l'horodatage : sans elle le
+      // gate court-circuite la détection de dérive (incomplete ≠ current).
+      logementAmortissement: {
+        computedAt: NOW,
+        prixRevient: 200000,
+        valeurTerrain: 40000,
+        valeurBati: 160000,
+        baseAmortissableBati: 160000,
+        montantMobilier: 0,
+        dotationAnnuelle: 5333,
+        dureeMoyenneAnnees: 30,
+        plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
+      } as DeclarationDraft["logementAmortissement"],
       creditDeclaredNoneAt: NOW,
       revenusConfirmedAt: NOW,
       chargesConfirmedAt: NOW,
@@ -901,6 +919,96 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
     });
     assert.equal(result.ok, true, "un patrimoine inchangé ne doit jamais bloquer une clôture par ailleurs valide");
   });
+
+  it("Lot1 — différence purement technique (computedAt) après génération → ne rend pas stale / clôture autorisée", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const technique = {
+      ...draft,
+      logementAmortissement: {
+        ...draft.logementAmortissement!,
+        computedAt: "2099-12-31T23:59:59.000Z",
+      },
+    } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: technique,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, true, "un timestamp technique ne doit jamais invalider une génération autrement fraîche");
+  });
+
+  it("Lot1 — dérive patrimoniale après génération → canCloseFiscalYear === false", () => {
+    const bilanAvant: BilanInputs = {
+      tresorerie: { bankMode: "INCONNU" },
+      compteExploitant: {},
+      ran: { situation: "NATIF" },
+      ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 500 }] },
+    };
+    const draft = { ...generationReadyDraft(), bilanPatrimonial: bilanAvant } as DeclarationDraft;
+    const generation = runDeclarationGeneration(draft, 2025, undefined, bilanAvant);
+    assert.equal(generation.status, "generated");
+    if (generation.status !== "generated") throw new Error("unreachable");
+    const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
+    const bilanApres: BilanInputs = {
+      ...bilanAvant,
+      ventilationTiers: { postes: [{ nature: "LOYER_DU_PAR_LOCATAIRE", montant: 900 }] },
+    };
+    const corrige = { ...draftGenere, bilanPatrimonial: bilanApres } as DeclarationDraft;
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: corrige,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+  });
+
+  it("Lot1 — transmittedAt n'influence jamais une clôture autrement valide", () => {
+    const draft = apresGeneration(generationReadyDraft());
+    const withTx = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear({ transmittedAt: NOW }),
+      declarationDraft: draft,
+      properties: [PROPERTY],
+    });
+    const withoutTx = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear({ transmittedAt: undefined }),
+      declarationDraft: draft,
+      properties: [PROPERTY],
+    });
+    assert.equal(withTx.ok, true);
+    assert.equal(withoutTx.ok, true);
+  });
+
+  it("F1 blocker — totalPreExploitation modifié (résultatFiscal 5500→3000) → canCloseFiscalYear refuse (ancien 4-scalaires aurait autorisé)", () => {
+    const draft = apresGeneration(
+      generationReadyDraft({
+        chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      }),
+    );
+    assert.equal(draft.fiscalResult!.resultatFiscal, 5500);
+
+    const reouvertF012 = {
+      ...draft,
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 2500 },
+    } as DeclarationDraft;
+    const recomputed = runDeclarationGeneration(reouvertF012, 2025);
+    assert.equal(recomputed.status, "generated");
+    if (recomputed.status !== "generated") throw new Error("unreachable");
+    assert.equal(recomputed.fiscalResult.resultatFiscal, 3000);
+
+    // Ancienne frontière insuffisante : les 4 scalaires restent égaux.
+    assert.equal(draft.fiscalResult!.totalRecettes, recomputed.fiscalResult.totalRecettes);
+    assert.equal(draft.fiscalResult!.totalCharges, recomputed.fiscalResult.totalCharges);
+    assert.equal(draft.fiscalResult!.amortDeduct, recomputed.fiscalResult.amortDeduct);
+    assert.equal(draft.fiscalResult!.amortReporte, recomputed.fiscalResult.amortReporte);
+
+    const result = canCloseFiscalYear({
+      fiscalYear: readyFiscalYear(),
+      declarationDraft: reouvertF012,
+      properties: [PROPERTY],
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.ok === false && /changé depuis la dernière génération/i.test(result.reason));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -934,5 +1042,184 @@ describe("resolveArchivedFiscalYearAccess — précondition d'accès à l'histor
     const record = baseFiscalYear({ status: "closed", dossierId: "dossier-1" });
     const result = resolveArchivedFiscalYearAccess(record, "");
     assert.equal(result.ok, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lot 1 — constructeur pur N→N+1 (contrat explicite, déterministe).
+// ---------------------------------------------------------------------------
+describe("buildNextExerciseFromClosedYear — Lot 1 contrat N→N+1", () => {
+  function closedN(overrides: Partial<FiscalYear> = {}): FiscalYear {
+    return baseFiscalYear({
+      id: "fy-N",
+      year: 2025,
+      status: "closed",
+      regime: "reel",
+      propertyIds: ["prop-1", "prop-2"],
+      dossierId: "dossier-1",
+      closures: [
+        {
+          id: "closure-N",
+          fiscalYearId: "fy-N",
+          dossierId: "dossier-1",
+          stocks: STOCKS_V1,
+          computedAt: NOW,
+          closedAt: NOW,
+          patrimoine: {
+            compteExploitantAvantAffectationResultat: 1200,
+            resultatComptableExercice: 5500,
+            ranSituation: "NATIF",
+            ranValeur: 0,
+          },
+        },
+      ],
+      ...overrides,
+    });
+  }
+
+  function richPreviousDraft(): DeclarationDraft {
+    return {
+      completedSteps: ["siren", "revenus", "charges"],
+      siren: "123456789",
+      siret: "12345678901234",
+      exploitantFirstName: "Marie",
+      exploitantLastName: "Dupont",
+      exploitantEmail: "marie@example.com",
+      activityStartDate: "2019-06-01",
+      dateMiseEnService: "2020-01-01",
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 9000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 2000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 1500, status: "validated" },
+      fiscalResult: {
+        exercice: 2025,
+        resultatFiscal: 5500,
+        resultatAvantAmort: 7000,
+        totalRecettes: 9000,
+        totalCharges: 2000,
+        amortDeduct: 1500,
+        amortReporte: 0,
+        deficitNouveau: 0,
+        stocks: STOCKS_V1,
+        trace: { ksArtifacts: [], computedAt: NOW, journal: [] },
+        computedAt: NOW,
+      },
+      rfs: { identite: { siren: "123456789" } } as DeclarationDraft["rfs"],
+      liasseResult: { form2031: {} } as DeclarationDraft["liasseResult"],
+      liasseRfs: {} as DeclarationDraft["liasseRfs"],
+      declaration: { id: "decl-1", fiscalYearId: "fy-N", createdAt: NOW },
+      declarationGeneratedAt: NOW,
+      inpiConfirmedAt: NOW,
+      logementConfirmedAt: NOW,
+      revenusConfirmedAt: NOW,
+      chargesConfirmedAt: NOW,
+      amortissementConfirmedAt: NOW,
+      paidAt: NOW,
+    } as DeclarationDraft;
+  }
+
+  it("8–13 — année N+1, previousFiscalYearId, sourceClosureId, stocks, patrimoine, identité stables", () => {
+    const previous = richPreviousDraft();
+    const built = buildNextExerciseFromClosedYear({
+      closedFiscalYear: closedN(),
+      previousDraft: previous,
+      dossierId: "dossier-1",
+      nextFiscalYearId: "fy-N1",
+      now: "2027-01-01T00:00:00.000Z",
+    });
+
+    assert.equal(built.fiscalYear.year, 2026);
+    assert.equal(built.fiscalYear.id, "fy-N1");
+    assert.equal(built.fiscalYear.previousFiscalYearId, "fy-N");
+    assert.equal(built.sourceClosureId, "closure-N");
+    assert.equal(built.fiscalYear.stocksOuverture?.sourceClosureId, "closure-N");
+    assert.deepEqual(built.fiscalYear.stocksOuverture?.stocks, STOCKS_V1);
+    assert.equal(built.fiscalYear.patrimoineOuverture?.sourceClosureId, "closure-N");
+    assert.equal(typeof built.fiscalYear.patrimoineOuverture?.ouvertureCompteExploitant, "number");
+    assert.deepEqual(built.fiscalYear.propertyIds, ["prop-1", "prop-2"]);
+    assert.equal(built.fiscalYear.dossierId, "dossier-1");
+    assert.equal(built.fiscalYear.regime, "reel");
+    assert.equal(built.declarationDraft.siren, "123456789");
+    assert.equal(built.declarationDraft.exploitantFirstName, "Marie");
+    assert.equal(built.declarationDraft.activityStartDate, "2019-06-01");
+  });
+
+  it("14–19 — revenus/charges/génération/paiement/confirmations/documents N absents du draft N+1", () => {
+    const built = buildNextExerciseFromClosedYear({
+      closedFiscalYear: closedN(),
+      previousDraft: richPreviousDraft(),
+      dossierId: "dossier-1",
+      nextFiscalYearId: "fy-N1",
+      now: NOW,
+    });
+    const draft = built.declarationDraft as Record<string, unknown>;
+    assert.equal(draft.revenusAssistant, undefined);
+    assert.equal(draft.chargesAssistant, undefined);
+    assert.equal(draft.fiscalResult, undefined);
+    assert.equal(draft.rfs, undefined);
+    assert.equal(draft.liasseResult, undefined);
+    assert.equal(draft.liasseRfs, undefined);
+    assert.equal(draft.declaration, undefined);
+    assert.equal(draft.paidAt, undefined);
+    assert.equal(draft.declarationGeneratedAt, undefined);
+    assert.deepEqual(built.declarationDraft.completedSteps, []);
+    assert.equal(draft.revenusConfirmedAt, undefined);
+    assert.equal(draft.chargesConfirmedAt, undefined);
+    assert.equal(draft.amortissementConfirmedAt, undefined);
+    assert.equal(draft.inpiConfirmedAt, undefined);
+    assert.equal(draft.logementConfirmedAt, undefined);
+    assert.equal(draft.logementAmortissement, undefined);
+    assert.deepEqual(built.fiscalYear.closures, []);
+    assert.equal(built.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(built.fiscalYear.paidAt, undefined);
+  });
+
+  it("20 — mêmes entrées + mêmes IDs/timestamps injectés = résultat identique", () => {
+    const input = {
+      closedFiscalYear: closedN(),
+      previousDraft: richPreviousDraft(),
+      dossierId: "dossier-1",
+      nextFiscalYearId: "fy-N1-fixed",
+      now: "2027-02-02T12:00:00.000Z",
+    };
+    const a = buildNextExerciseFromClosedYear(input);
+    const b = buildNextExerciseFromClosedYear(input);
+    assert.deepEqual(a, b);
+  });
+
+  it("ouverture patrimoniale indisponible → jamais un zéro inventé", () => {
+    const closedSansPatrimoine = closedN({
+      closures: [
+        {
+          id: "closure-N",
+          fiscalYearId: "fy-N",
+          dossierId: "dossier-1",
+          stocks: STOCKS_V1,
+          computedAt: NOW,
+          closedAt: NOW,
+        },
+      ],
+    });
+    const built = buildNextExerciseFromClosedYear({
+      closedFiscalYear: closedSansPatrimoine,
+      previousDraft: undefined,
+      dossierId: "dossier-1",
+      nextFiscalYearId: "fy-N1",
+      now: NOW,
+    });
+    assert.equal(built.fiscalYear.patrimoineOuverture, undefined);
+    assert.ok(built.fiscalYear.stocksOuverture, "les stocks restent disponibles indépendamment du patrimoine");
+  });
+
+  it("ne mute jamais l'exercice N source (pas de reseed silencieux)", () => {
+    const n = closedN();
+    const snapshot = structuredClone(n);
+    buildNextExerciseFromClosedYear({
+      closedFiscalYear: n,
+      previousDraft: richPreviousDraft(),
+      dossierId: "dossier-1",
+      nextFiscalYearId: "fy-N1",
+      now: NOW,
+    });
+    assert.deepEqual(n, snapshot);
   });
 });
