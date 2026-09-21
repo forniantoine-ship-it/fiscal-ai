@@ -504,19 +504,19 @@ describe("F-014 — Cohérence avec le FiscalResult (F-006)", () => {
 
 describe("F-014 — Explication déduit / reporté (AX-015, AX-017)", () => {
   it("indique une déduction totale sans jargon quand rien n'est reporté", () => {
-    const text = expF014UsageFiscal({ amortDeduct: 1500, amortReporte: 0 });
+    const text = expF014UsageFiscal({ amortDeduct: 1500, amortNonDeduitExercice: 0 });
     assert.match(text, /intégralité/i);
     assert.doesNotMatch(text, /report/i);
   });
 
   it("indique un report total quand le résultat ne permet aucune déduction", () => {
-    const text = expF014UsageFiscal({ amortDeduct: 0, amortReporte: 6779 });
+    const text = expF014UsageFiscal({ amortDeduct: 0, amortNonDeduitExercice: 6779 });
     assert.match(text, /6.779/);
     assert.match(text, /sans limite de durée/i);
   });
 
   it("indique un partage déduit/reporté quand les deux sont non nuls", () => {
-    const text = expF014UsageFiscal({ amortDeduct: 1200, amortReporte: 300 });
+    const text = expF014UsageFiscal({ amortDeduct: 1200, amortNonDeduitExercice: 300 });
     assert.match(text, /1.200/);
     assert.match(text, /300/);
     assert.match(text, /sans limite de durée/i);

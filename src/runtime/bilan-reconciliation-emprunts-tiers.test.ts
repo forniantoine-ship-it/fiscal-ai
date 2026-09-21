@@ -365,6 +365,7 @@ describe("Correction R-02 — inclusion CONJOINTE emprunt + découvert", () => {
       amortCalcule: 0,
       amortDeduct: 0,
       amortReporte: 0,
+      amortNonDeduitExercice: 0,
       amortReportesUtilises: 0,
       resultatFiscal: 0,
       deficitNouveau: 0,

@@ -90,7 +90,8 @@ import { splitFinancementFor2033B } from "./split-financement-2033b";
  * `fiscalResult.deficitsImputes` (déjà calculé par TRF-0031), qui ne
  * participe à aucun calcul de 352/354/370/372 (lectures indépendantes de
  * `resultatFiscal`/`deficitNouveau`), ne reçoit jamais `deficitNouveau`, et
- * ne reçoit jamais `amortReporte`/ARD (voir case 318, flux totalement
+ * ne reçoit jamais le mouvement annuel d'amortissement non déduit ni le
+ * stock final ARD (voir case 318 = `amortNonDeduitExercice`, flux totalement
  * distinct). 218/254 exceptées, 350 est la première case du groupe 209-350
  * sortie du statut « non traitée ».
  *
@@ -338,8 +339,14 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     {
       caseId: "318",
       label: "Amortissements excédentaires et autres amortissements non déductibles",
-      value: round2(fr.amortReporte),
-      trace: { ...baseTrace, path: "fiscalResult.amortReporte", ksArtifacts: ["TRF-0031", "TRF-0032"] },
+      // MOUVEMENT ANNUEL (amortissements N comptabilisés mais non déduits N) —
+      // jamais le STOCK FINAL (`amortReporte`), qui peut inclure l'ouverture.
+      value: round2(fr.amortNonDeduitExercice),
+      trace: {
+        ...baseTrace,
+        path: "fiscalResult.amortNonDeduitExercice",
+        ksArtifacts: ["TRF-0031", "TRF-0032"],
+      },
     },
   ];
 

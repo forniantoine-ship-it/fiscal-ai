@@ -242,6 +242,7 @@ function fiscalEngineSemanticProjection(result: FiscalEngineOutput) {
     chargesPreExploitation: result.chargesPreExploitation ?? 0,
     amortDeduct: result.amortDeduct,
     amortReporte: result.amortReporte,
+    amortNonDeduitExercice: result.amortNonDeduitExercice ?? 0,
     deficitNouveau: result.deficitNouveau,
     stocks: {
       deficits: result.stocks?.deficits ?? [],

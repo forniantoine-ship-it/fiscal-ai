@@ -504,7 +504,8 @@ export function buildLiasseDossierDocument(
     resultatComptable: resultatComptable(fr),
     amortissementCalcule: fr.amortCalcule,
     amortissementDeductible: fr.amortDeduct,
-    amortissementReporte: fr.amortReporte,
+    // MOUVEMENT ANNUEL (≠ stock final `amortReporte` / stocks.amortissementsReportes).
+    amortissementReporte: fr.amortNonDeduitExercice,
     amortissementReportesUtilises: fr.amortReportesUtilises,
     resultatFiscal: fr.resultatFiscal,
     deficitFiscal: fr.deficitNouveau,
@@ -519,7 +520,7 @@ export function buildLiasseDossierDocument(
     deficitsImputes: fr.deficitsImputes,
     stockDeficitsCloture: fr.stocks.deficits,
     deficitsExpires: fr.stocks.deficitsExpires,
-    amortissementReporteExercice: fr.amortReporte,
+    amortissementReporteExercice: fr.amortNonDeduitExercice,
     amortissementReportesUtilises: fr.amortReportesUtilises,
     stockAmortissementsReportesCloture: fr.stocks.amortissementsReportes,
   };

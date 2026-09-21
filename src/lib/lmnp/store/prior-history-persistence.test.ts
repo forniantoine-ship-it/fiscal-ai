@@ -71,6 +71,7 @@ function fiscalResult(): FiscalEngineOutput {
     totalCharges: 2000,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     deficitNouveau: 0,
     stocks: { deficits: [{ millesime: 2025, montant: 800 }], amortissementsReportes: 500 },
     trace: { ksArtifacts: [], computedAt: NOW, journal: [] },

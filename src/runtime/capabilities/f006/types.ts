@@ -230,7 +230,19 @@ export type FiscalResult = {
   resultatAvantAmort: number;
   amortCalcule: number;
   amortDeduct: number;
+  /**
+   * STOCK FINAL d'amortissements fiscalement non déduits (TRF-0031).
+   * Inclut le stock d'ouverture net de consommation + le mouvement annuel.
+   * Ne pas confondre avec `amortNonDeduitExercice` (mouvement annuel seul).
+   */
   amortReporte: number;
+  /**
+   * MOUVEMENT ANNUEL — amortissements comptabilisés au titre de N mais non
+   * déduits au titre de N : `round2(amortCalcule − amortDeduct)`.
+   * Indépendant de `amortReportesUtilises` (consommation du stock historique).
+   * Source de la case 2033-B 318. Distinct de `amortReporte` (stock final).
+   */
+  amortNonDeduitExercice: number;
   amortReportesUtilises: number;
   resultatFiscal: number;
   deficitNouveau: number;

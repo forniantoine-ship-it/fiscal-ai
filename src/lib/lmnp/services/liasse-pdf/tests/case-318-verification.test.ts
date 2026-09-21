@@ -36,12 +36,12 @@ describe("Case 318 (2033-B-SD) — vérification dédiée", () => {
     );
   });
 
-  it("(2) valeur produite par le mapper — round2(amortReporte), inchangé", () => {
+  it("(2) valeur produite par le mapper — round2(amortNonDeduitExercice), mouvement annuel", () => {
     const rfs = buildDossierTemoinRfs();
     const form = map2033BFromRfs(rfs);
     const case318 = form.cases.find((c) => c.caseId === "318");
     assert.ok(case318);
-    assert.equal(case318?.value, rfs.fiscalResult.amortReporte);
+    assert.equal(case318?.value, rfs.fiscalResult.amortNonDeduitExercice);
   });
 
   it("(3)+(6) emplacement correct dans le PDF final — extraction post-render à la bonne page, position mesurée dans le manifeste", async () => {

@@ -21,7 +21,7 @@ import {
 } from "./render-liasse-dossier-pdf";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 5100 },
     charges: {
@@ -35,6 +35,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 3720,
     amortDeduct: 0,
     amortReporte: 3720,
+    amortNonDeduitExercice: 3720,
     amortReportesUtilises: 0,
     resultatFiscal: 0,
     deficitNouveau: 9862,
@@ -46,6 +47,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = {

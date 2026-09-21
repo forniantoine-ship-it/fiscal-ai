@@ -281,6 +281,7 @@ describe("assemblePatrimoine — intégration minimale P1-B.2 sans perturber P1-
     amortCalcule: 0,
     amortDeduct: 0,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 0,
     deficitNouveau: 0,

@@ -297,7 +297,10 @@ export function F014AmortissementsAssistantPanel() {
     if (!fiscalResultMatchesAmortissementTotal(fiscalResult.trace.journal, plan.total_dotations_exercice)) {
       return undefined;
     }
-    return expF014UsageFiscal({ amortDeduct: fiscalResult.amortDeduct, amortReporte: fiscalResult.amortReporte });
+    return expF014UsageFiscal({
+      amortDeduct: fiscalResult.amortDeduct,
+      amortNonDeduitExercice: fiscalResult.amortNonDeduitExercice ?? 0,
+    });
   }, [state.result, draft?.fiscalResult]);
 
   return (

@@ -20,14 +20,15 @@ function fmtEur(value: number): string {
  */
 export function explainFiscalResult(input: ExplainFiscalResultInput): ExplainFiscalResultOutput {
   const { result } = input;
-  const { resultatFiscal, resultatAvantAmort, amortDeduct, amortReporte, deficitNouveau } = result;
+  const { resultatFiscal, resultatAvantAmort, amortDeduct, amortNonDeduitExercice, deficitNouveau } = result;
 
   let headline: string;
   let subtitle: string;
 
   if (deficitNouveau > 0) {
     headline = `Déficit de ${fmtEur(deficitNouveau)} avant amortissement`;
-    subtitle = `${fmtEur(amortReporte)} d'amortissements reportés sur les exercices suivants.`;
+    // Mouvement annuel des dotations non déduites (≠ stock final amortReporte).
+    subtitle = `${fmtEur(amortNonDeduitExercice)} d'amortissements reportés sur les exercices suivants.`;
   } else if (resultatFiscal === 0 && amortDeduct > 0) {
     headline = "Résultat fiscal nul";
     subtitle = `Vos amortissements (${fmtEur(amortDeduct)}) absorbent l'intégralité du bénéfice avant amortissement.`;

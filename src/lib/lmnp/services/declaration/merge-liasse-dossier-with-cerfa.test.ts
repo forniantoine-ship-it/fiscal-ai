@@ -94,6 +94,7 @@ function fiscalResult(): FiscalResult {
     amortCalcule: 3720,
     amortDeduct: 0,
     amortReporte: 3720,
+    amortNonDeduitExercice: 3720,
     amortReportesUtilises: 0,
     resultatFiscal: 0,
     deficitNouveau: 9862,

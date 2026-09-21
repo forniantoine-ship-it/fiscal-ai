@@ -432,9 +432,9 @@ function buildFormationDuResultat(fr: FiscalResult, isDeficit: boolean): string[
     lignes.push(`Amortissement déductible cette année : ${fmtEur(fr.amortDeduct)}`);
   }
 
-  if (fr.amortReporte > 0) {
+  if (fr.amortNonDeduitExercice > 0) {
     lignes.push(
-      `Amortissement non déduit cette année, reporté sans limite de durée (art. 39 C du CGI) : ${fmtEur(fr.amortReporte)}`,
+      `Amortissement non déduit cette année, reporté sans limite de durée (art. 39 C du CGI) : ${fmtEur(fr.amortNonDeduitExercice)}`,
     );
   }
 
@@ -455,7 +455,7 @@ function buildFormationDuResultat(fr: FiscalResult, isDeficit: boolean): string[
  * Rappel de la prestation réalisée, adapté au dossier — chaque phrase n'est
  * ajoutée que si le fait qu'elle décrit s'est réellement produit dans ce
  * FiscalResult (ex. la limitation d'amortissement n'est mentionnée que si
- * `amortReporte > 0`). Pur choix parmi des phrases fixes, aucun calcul.
+ * `amortNonDeduitExercice > 0`). Pur choix parmi des phrases fixes, aucun calcul.
  */
 function buildTravailEffectue(fr: FiscalResult, isDeficit: boolean): string[] {
   const lignes: string[] = [
@@ -464,7 +464,7 @@ function buildTravailEffectue(fr: FiscalResult, isDeficit: boolean): string[] {
     "L'amortissement de votre bien et de son mobilier a été calculé selon les règles du régime réel LMNP.",
   ];
 
-  if (fr.amortReporte > 0) {
+  if (fr.amortNonDeduitExercice > 0) {
     lignes.push(
       "La limitation de la déduction de l'amortissement (article 39 C du CGI) a été appliquée et le surplus a été mis en report.",
     );
@@ -520,6 +520,7 @@ export function buildClientSummaryDocument(
       chargesPreExploitation: fr.charges.chargesPreExploitation,
       amortissementCalcule: fr.amortCalcule,
       amortissementDeductible: fr.amortDeduct,
+      // STOCK FINAL à clôture (≠ mouvement annuel — cf. amortNonDeduitExercice / case 318).
       amortissementReporte: fr.amortReporte,
       resultatAvantAmortissement: fr.resultatAvantAmort,
       resultatFiscal: fr.resultatFiscal,

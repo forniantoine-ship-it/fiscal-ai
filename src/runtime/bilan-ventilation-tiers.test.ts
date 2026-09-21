@@ -357,6 +357,7 @@ describe("assemblePatrimoine — ventilation intégrée sans casser P0/P1-A/P1-B
     amortCalcule: 0,
     amortDeduct: 0,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 0,
     deficitNouveau: 0,

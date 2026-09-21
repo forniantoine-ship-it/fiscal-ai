@@ -347,6 +347,7 @@ export function runDeclarationGeneration(
       chargesPreExploitation: fiscalResult.charges.chargesPreExploitation,
       amortDeduct: fiscalResult.amortDeduct,
       amortReporte: fiscalResult.amortReporte,
+      amortNonDeduitExercice: fiscalResult.amortNonDeduitExercice,
       deficitNouveau: fiscalResult.deficitNouveau,
       stocks: fiscalResult.stocks,
       trace: fiscalResult.trace,

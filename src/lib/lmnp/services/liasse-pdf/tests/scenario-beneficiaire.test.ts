@@ -46,6 +46,7 @@ export const SCENARIO_FISCAL_RESULT: FiscalResult = {
   amortCalcule: 2000,
   amortDeduct: 2000,
   amortReporte: 0,
+  amortNonDeduitExercice: 0,
   amortReportesUtilises: 0,
   resultatFiscal: 4200,
   deficitNouveau: 0,

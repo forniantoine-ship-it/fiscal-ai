@@ -12,7 +12,7 @@ import type { AmortissementPlan } from "./capabilities/f010/types";
 import type { PretFinancementExercice } from "./capabilities/f011/types";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: { totalDeductible: 2000, chargesExploitation: 2000, chargesFinancement: 0, chargesPreExploitation: 0 },
@@ -20,6 +20,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -31,6 +32,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = {

@@ -1109,6 +1109,7 @@ describe("buildNextExerciseFromClosedYear — Lot 1 contrat N→N+1", () => {
         totalCharges: 2000,
         amortDeduct: 1500,
         amortReporte: 0,
+        amortNonDeduitExercice: 0,
         deficitNouveau: 0,
         stocks: STOCKS_V1,
         trace: { ksArtifacts: [], computedAt: NOW, journal: [] },

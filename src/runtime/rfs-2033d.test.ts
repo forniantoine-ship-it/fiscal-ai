@@ -20,7 +20,7 @@ import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation, ImmobilisationsRfs } from "./capabilities/rfs/types";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: {
@@ -34,6 +34,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -45,6 +46,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = { siren: "104545108", siret: "10454510800011", denomination: "Elsa Bouvard" };
@@ -104,6 +109,7 @@ describe("P3-LIASSE-1A — Test 2 : aucune donnée fabriquée", () => {
       deficitNouveau: 500,
       deficitsImputes: 300,
       amortReporte: 900,
+      amortNonDeduitExercice: 0,
       stocks: { deficits: stocksRiches, amortissementsReportes: 900, deficitsExpires: [] },
     });
     const form = map2033DFromRfs(rfs(fr, immobilisations));

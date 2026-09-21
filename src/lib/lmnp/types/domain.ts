@@ -751,7 +751,14 @@ export interface FiscalEngineOutput {
    */
   chargesPreExploitation?: number;
   amortDeduct: number;
+  /** STOCK FINAL d'amortissements non déduits — ≠ mouvement annuel. */
   amortReporte: number;
+  /**
+   * MOUVEMENT ANNUEL : amortissements N comptabilisés mais non déduits N
+   * (`round2(amortCalcule − amortDeduct)`). Optionnel pour les drafts
+   * antérieurs à G10 ; source de la case 2033-B 318 lorsqu'il est présent.
+   */
+  amortNonDeduitExercice?: number;
   deficitNouveau: number;
   stocks: {
     deficits: { millesime: number; montant: number }[];

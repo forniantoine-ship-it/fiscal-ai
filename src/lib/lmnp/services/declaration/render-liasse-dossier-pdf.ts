@@ -391,8 +391,8 @@ function renderFormation(cursor: DossierCursor, document: LiasseDossierDocument)
   cursor.rule();
   cursor.amountRow("Amortissements calculés", f.amortissementCalcule);
   cursor.amountRow("Amortissements déductibles", f.amortissementDeductible);
-  cursor.amountRow("Amortissements reportés", f.amortissementReporte);
-  cursor.amountRow("Amortissements reportés utilisés", f.amortissementReportesUtilises);
+  cursor.amountRow("Amortissements non déduits de l'exercice (mouvement annuel)", f.amortissementReporte);
+  cursor.amountRow("Amortissements reportés utilisés (consommation du stock)", f.amortissementReportesUtilises);
   cursor.rule();
   cursor.amountRow("Résultat fiscal", f.resultatFiscal, { bold: true });
   if (f.resultatPrincipal.nature === "deficit") {
@@ -594,9 +594,9 @@ function renderReports(cursor: DossierCursor, document: LiasseDossierDocument): 
 
   cursor.amountRow("Déficit de l'exercice", r.deficitExercice);
   cursor.amountRow("Déficits imputés", r.deficitsImputes);
-  cursor.amountRow("Amortissements reportés de l'exercice", r.amortissementReporteExercice);
-  cursor.amountRow("Amortissements reportés utilisés", r.amortissementReportesUtilises);
-  cursor.amountRow("Stock d'amortissements reportés à clôture", r.stockAmortissementsReportesCloture, { bold: true });
+  cursor.amountRow("Amortissements non déduits de l'exercice (mouvement annuel)", r.amortissementReporteExercice);
+  cursor.amountRow("Amortissements reportés utilisés (consommation du stock)", r.amortissementReportesUtilises);
+  cursor.amountRow("Stock d'amortissements reportés à clôture (stock final)", r.stockAmortissementsReportesCloture, { bold: true });
 
   if (r.deficitsAnterieurs.length > 0) {
     cursor.spacer(2);

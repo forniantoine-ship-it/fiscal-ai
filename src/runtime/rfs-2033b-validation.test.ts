@@ -20,7 +20,7 @@ import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation } from "./capabilities/rfs/types";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: {
@@ -34,6 +34,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -45,6 +46,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = { siren: "104545108", siret: "10454510800011", denomination: "Elsa Bouvard" };
@@ -445,6 +450,7 @@ describe("Cycle 33 — STEP 7 : résultat final correct malgré une présentatio
       amortCalcule: 3000,
       amortDeduct: 1000,
       amortReporte: 2000,
+      amortNonDeduitExercice: 2000,
       deficitsImputes: 4000,
       resultatFiscal: 0,
       deficitNouveau: 0,
@@ -512,6 +518,7 @@ describe("Cycle 33 — STEP 9 : assembleLiasseFromRfs() reflète exactement map2
       amortCalcule: 2500,
       amortDeduct: 2500,
       amortReporte: 0,
+      amortNonDeduitExercice: 0,
       deficitsImputes: 1000,
       resultatFiscal: 4500,
       charges: { totalDeductible: 4000, chargesExploitation: 4000, chargesFinancement: 800, chargesPreExploitation: 0, totalNonDeductible: 150 },

@@ -4,6 +4,7 @@ import { applyAmortissementStocks } from "./apply-amortissement-stocks";
 import { computeResultatAvantAmort } from "./compute-resultat-avant-amort";
 import { validateFiscalInputs } from "./validate-fiscal-inputs";
 import type { ComputeFiscalResultOutput, FiscalEngineInputs, FiscalResult } from "./types";
+import { round2 } from "./types";
 
 /**
  * Composition explicite F-006 (TRF-0029→TRF-0032, RAI-014) — ADR-003.
@@ -60,7 +61,12 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
     { trf: "TRF-0030", label: "Résultat avant amortissement", value: resultatAvantAmort },
     { trf: "TRF-0012", label: "Amortissement calculé (F-014)", value: data.amortCalcule },
     { trf: "TRF-0031", label: "Amortissement déduit", value: application.amortDeduct },
-    { trf: "TRF-0031", label: "Amortissement reporté", value: application.amortReporte },
+    {
+      trf: "TRF-0031",
+      label: "Amortissement non déduit de l'exercice (mouvement annuel)",
+      value: round2(data.amortCalcule - application.amortDeduct),
+    },
+    { trf: "TRF-0031", label: "Amortissement reporté (stock final)", value: application.amortReporte },
     { trf: "TRF-0031", label: "Déficits imputés", value: application.deficitsImputes },
     { trf: "TRF-0032", label: "Résultat fiscal", value: application.resultatFiscal },
   ];
@@ -102,6 +108,7 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
     amortCalcule: data.amortCalcule,
     amortDeduct: application.amortDeduct,
     amortReporte: application.amortReporte,
+    amortNonDeduitExercice: round2(data.amortCalcule - application.amortDeduct),
     amortReportesUtilises: application.amortReportesUtilises,
     resultatFiscal: application.resultatFiscal,
     deficitNouveau: application.deficitNouveau,

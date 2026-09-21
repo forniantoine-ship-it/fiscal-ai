@@ -19,7 +19,7 @@ import type { PretFinancementExercice } from "./capabilities/f011/types";
 import { applyAmortissementStocks } from "./capabilities/f006/apply-amortissement-stocks";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: {
@@ -33,6 +33,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -44,6 +45,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = { siren: "104545108", siret: "10454510800011", denomination: "Elsa Bouvard" };
@@ -108,10 +113,11 @@ describe("Cycle 30 — TEST 1 à 4 : cases pass-through", () => {
     assert.equal(findCase(form, "294")?.value, 4602);
   });
 
-  it("318 reprend exactement fiscalResult.amortReporte", () => {
-    const fr = fiscalResult({ amortReporte: 3720 });
+  it("318 reprend exactement fiscalResult.amortNonDeduitExercice (mouvement annuel)", () => {
+    const fr = fiscalResult({ amortNonDeduitExercice: 3720, amortReporte: 9000 });
     const form = map2033BFromRfs(rfs(fr));
     assert.equal(findCase(form, "318")?.value, 3720);
+    assert.notEqual(findCase(form, "318")?.value, fr.amortReporte, "318 ne doit plus lire le stock final");
   });
 
   it("audit fiscal ciblé (case 350) — 350 reprend exactement fiscalResult.deficitsImputes", () => {
@@ -1017,6 +1023,7 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
       amortCalcule: 1500,
       resultatFiscal: 5400,
       amortReporte: 300,
+      amortNonDeduitExercice: 300,
       deficitsImputes: 200,
     });
     const form = map2033BFromRfs(rfs(fr));
@@ -1088,6 +1095,7 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
       amortCalcule: 800,
       amortDeduct: application.amortDeduct,
       amortReporte: application.amortReporte,
+      amortNonDeduitExercice: 0,
       amortReportesUtilises: application.amortReportesUtilises,
       resultatFiscal: application.resultatFiscal,
       deficitNouveau: application.deficitNouveau,
@@ -1095,14 +1103,14 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
     });
     const form = map2033BFromRfs(rfs(fr));
 
-    assert.equal(findCase(form, "318")?.value, 0, "318 = amortReporte = 0 (ARD intégralement consommé)");
+    assert.equal(findCase(form, "318")?.value, 0, "318 = mouvement annuel = 0 (dotation N intégralement déduite)");
     assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
     assert.equal(findCase(form, "370")?.value, 100, "370 = resultatFiscal = 100 (>0)");
     assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0, pas de déficit LMNP cette année");
     assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal > 0, jamais < 0");
   });
 
-  it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=900, 350=600, 330/370/372 absentes", () => {
+  it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=400 (mouvement annuel), stock final=900, 350=600", () => {
     const application = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 1000,
@@ -1112,14 +1120,16 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
     });
     assert.equal(application.resultatFiscal, 0);
     assert.equal(application.deficitsImputes, 600);
-    assert.equal(application.amortReporte, 900);
+    assert.equal(application.amortReporte, 900, "stock final inchangé");
     assert.equal(application.amortReportesUtilises, 0);
+    assert.equal(application.amortDeduct, 400);
 
     const fr = fiscalResult({
       resultatAvantAmort: 1000,
       amortCalcule: 800,
       amortDeduct: application.amortDeduct,
       amortReporte: application.amortReporte,
+      amortNonDeduitExercice: round2(800 - application.amortDeduct),
       amortReportesUtilises: application.amortReportesUtilises,
       resultatFiscal: application.resultatFiscal,
       deficitNouveau: application.deficitNouveau,
@@ -1127,7 +1137,8 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
     });
     const form = map2033BFromRfs(rfs(fr));
 
-    assert.equal(findCase(form, "318")?.value, 900, "318 = amortReporte = 900 (400 amortissement non déduit + 500 ARD intact)");
+    assert.equal(findCase(form, "318")?.value, 400, "318 = mouvement annuel seul (800 − 400), sans ARD d'ouverture");
+    assert.notEqual(findCase(form, "318")?.value, fr.amortReporte, "318 ≠ stock final");
     assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
     assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0 (résultat avant amort positif)");
     assert.equal(findCase(form, "370"), undefined, "370 absente : resultatFiscal = 0, pas > 0");

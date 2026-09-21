@@ -15,7 +15,7 @@ import type { FiscalRepresentation, ImmobilisationsRfs } from "@/runtime/capabil
 import { buildLiasseDossierDocument } from "./build-liasse-dossier-document";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 5100 },
     charges: {
@@ -29,6 +29,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 3720,
     amortDeduct: 0,
     amortReporte: 3720,
+    amortNonDeduitExercice: 3720,
     amortReportesUtilises: 0,
     resultatFiscal: 0,
     deficitNouveau: 9862,
@@ -40,6 +41,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = {
@@ -138,7 +143,7 @@ describe("buildLiasseDossierDocument — vérité fiscale = RFS", () => {
     assert.equal(f.resultatAvantAmortissement, fr.resultatAvantAmort);
     assert.equal(f.amortissementCalcule, fr.amortCalcule);
     assert.equal(f.amortissementDeductible, fr.amortDeduct);
-    assert.equal(f.amortissementReporte, fr.amortReporte);
+    assert.equal(f.amortissementReporte, fr.amortNonDeduitExercice);
     assert.equal(f.amortissementReportesUtilises, fr.amortReportesUtilises);
     assert.equal(f.resultatFiscal, fr.resultatFiscal);
     assert.equal(f.deficitFiscal, fr.deficitNouveau);

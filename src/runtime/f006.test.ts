@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { applyAmortissementStocks } from "./capabilities/f006/apply-amortissement-stocks";
 import { computeResultatAvantAmort } from "./capabilities/f006/compute-resultat-avant-amort";
 import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
+import { round2 } from "./capabilities/f006/types";
 import { explainFiscalResult } from "./presentation/explain-fiscal-result";
 import { F006FiscalEngineAssistant } from "./assistants/f006-fiscal-engine/assistant";
 import { computeChargesExercice } from "./capabilities/f012/compute-charges-exercice";
@@ -702,7 +703,8 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
     // Ordre effectif de F-006 (SAV-027, non modifié) : déficits imputés avant l'amortissement.
     assert.equal(applicationF006.deficitsImputes, 4000, "le déficit antérieur est intégralement imputé en premier");
     assert.equal(applicationF006.amortDeduct, 1000, "il ne reste que 1000 de résultat pour l'amortissement");
-    assert.equal(applicationF006.amortReporte, 2000, "3000 calculé − 1000 déduit = 2000 reporté (case 318 actuelle)");
+    assert.equal(applicationF006.amortReporte, 2000, "3000 calculé − 1000 déduit = 2000 stock final (égal au mouvement annuel si ouverture = 0)");
+    assert.equal(round2(3000 - applicationF006.amortDeduct), 2000, "mouvement annuel / case 318 = 2000");
     assert.equal(applicationF006.resultatFiscal, 0);
 
     // Ordre alternatif "formulaire officiel" (art. 39 C appliqué indépendamment
@@ -756,9 +758,11 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
     // Le `reste` est à 0 avant même d'atteindre l'étape ARD (3ᵉ priorité,
     // SAV-027) : le stock préexistant de 500 n'est JAMAIS entamé.
     assert.equal(result.amortReportesUtilises, 0, "l'ARD préexistant (500) n'est pas utilisé : le reste est déjà à 0 après déficit + amortissement");
-    // amortReporte (case 318) = (800 calculé − 400 déduit) + (500 ARD initial − 0 utilisé) = 900.
-    assert.equal(result.amortReporte, 900, "318 = 400 d'amortissement de l'exercice non déduit + 500 d'ARD préexistant intact");
+    // STOCK FINAL (≠ case 318) = (800 calculé − 400 déduit) + (500 ARD initial − 0 utilisé) = 900.
+    assert.equal(result.amortReporte, 900, "stock final = 400 non déduit de l'exercice + 500 ARD préexistant intact");
     assert.equal(result.stockAmortissementsReportesMisAJour, 900);
+    // MOUVEMENT ANNUEL (case 318) = amortCalcule − amortDeduct = 400 — indépendant du stock d'ouverture.
+    assert.equal(round2(800 - result.amortDeduct), 400, "318 = mouvement annuel seul, sans stock d'ouverture");
     assert.equal(result.resultatFiscal, 0);
     assert.equal(result.deficitNouveau, 0);
   });
@@ -780,8 +784,10 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
     // c'est la démonstration explicite de la CONSOMMATION de l'ARD, absente
     // du scénario R5-A ci-dessus.
     assert.equal(result.amortReportesUtilises, 500, "l'ARD préexistant est intégralement consommé une fois déficit et amortissement de l'exercice absorbés");
-    // amortReporte (case 318) = (800 − 800) + (500 − 500) = 0 : plus aucun stock reporté.
+    // amortReporte (STOCK FINAL) = (800 − 800) + (500 − 500) = 0 : plus aucun stock reporté.
+    // Mouvement annuel (case 318) = 800 − 800 = 0 également.
     assert.equal(result.amortReporte, 0);
+    assert.equal(round2(800 - result.amortDeduct), 0, "318 = 0 quand la dotation N est intégralement déduite");
     assert.equal(result.stockAmortissementsReportesMisAJour, 0);
     // Résultat fiscal final : 2000 − 600 − 800 − 500 = 100.
     assert.equal(result.resultatFiscal, 100);

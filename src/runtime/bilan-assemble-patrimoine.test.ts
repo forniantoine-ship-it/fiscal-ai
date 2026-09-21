@@ -25,6 +25,7 @@ const FISCAL_RESULT: FiscalResult = {
   amortCalcule: 0,
   amortDeduct: 0,
   amortReporte: 0,
+  amortNonDeduitExercice: 0,
   amortReportesUtilises: 0,
   resultatFiscal: 5500,
   deficitNouveau: 0,

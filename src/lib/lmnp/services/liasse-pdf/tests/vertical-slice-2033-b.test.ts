@@ -50,7 +50,7 @@ function findCase(cases: CerfaCase[], caseId: string) {
 }
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: {
@@ -64,6 +64,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -75,6 +76,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 function rfs(fr: FiscalResult): FiscalRepresentation {
@@ -95,11 +100,13 @@ function packFromApplication(
   app: ReturnType<typeof applyAmortissementStocks>,
   extras: Partial<FiscalResult> = {},
 ): FiscalResult {
+  const amortCalcule = extras.amortCalcule ?? 0;
   return fiscalResult({
     resultatAvantAmort: extras.resultatAvantAmort ?? 0,
-    amortCalcule: extras.amortCalcule ?? 0,
+    amortCalcule,
     amortDeduct: app.amortDeduct,
     amortReporte: app.amortReporte,
+    amortNonDeduitExercice: Math.round((amortCalcule - app.amortDeduct) * 100) / 100,
     amortReportesUtilises: app.amortReportesUtilises,
     resultatFiscal: app.resultatFiscal,
     deficitNouveau: app.deficitNouveau,

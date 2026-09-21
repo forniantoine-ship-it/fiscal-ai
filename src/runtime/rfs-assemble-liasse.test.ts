@@ -17,7 +17,7 @@ import type { IdentiteDeclarante } from "./capabilities/f007/types";
 import type { FiscalRepresentation } from "./capabilities/rfs/types";
 
 function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
-  return {
+  const merged: FiscalResult = {
     exercice: 2025,
     recettes: { total: 9000 },
     charges: {
@@ -31,6 +31,7 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     amortCalcule: 1500,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     amortReportesUtilises: 0,
     resultatFiscal: 5500,
     deficitNouveau: 0,
@@ -42,6 +43,10 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.amortNonDeduitExercice === undefined) {
+    merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
+  }
+  return merged;
 }
 
 const IDENTITE: IdentiteDeclarante = {
@@ -130,14 +135,15 @@ describe("Cycle 31 — TEST 3 et 4 : valeurs exactes des cases pass-through", ()
     const representation = rfs(
       fiscalResult({
         charges: { totalDeductible: 6602, chargesExploitation: 2000, chargesFinancement: 4602, chargesPreExploitation: 0 },
-        amortReporte: 3720,
+        amortReporte: 9000,
+        amortNonDeduitExercice: 3720,
         deficitsImputes: 1500,
       }),
     );
     const liasse = assembleLiasseFromRfs(representation);
     const byId = (id: string) => liasse.form2033B.cases.find((c) => c.caseId === id)?.value;
     assert.equal(byId("294"), representation.fiscalResult.charges.chargesFinancement);
-    assert.equal(byId("318"), representation.fiscalResult.amortReporte);
+    assert.equal(byId("318"), representation.fiscalResult.amortNonDeduitExercice);
     // Audit fiscal ciblé (déficits LMNP) — 360 est réservée aux entreprises à
     // l'IS (Notice 2033-NOT-SD) : jamais alimentée ici, même avec deficitsImputes > 0.
     assert.equal(byId("360"), undefined);

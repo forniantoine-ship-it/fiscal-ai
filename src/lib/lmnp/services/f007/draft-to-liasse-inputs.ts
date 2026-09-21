@@ -108,9 +108,17 @@ export function fiscalResultFromDraft(
       detailParCategorie: draft?.chargesAssistant?.parCategorie,
     },
     resultatAvantAmort: stored.resultatAvantAmort,
+    // G10 — fallback `amortDeduct + amortReporte` reste suspect dès qu'un stock
+    // historique existe (amortReporte = stock final). Conservé tel quel faute
+    // d'amortCalcule durable sur FiscalEngineOutput ; signalé en finding différé.
     amortCalcule: draft?.amortissementAssistant?.totalDotations ?? stored.amortDeduct + stored.amortReporte,
     amortDeduct: stored.amortDeduct,
     amortReporte: stored.amortReporte,
+    amortNonDeduitExercice:
+      stored.amortNonDeduitExercice ??
+      (draft?.amortissementAssistant?.totalDotations != null
+        ? Math.round((draft.amortissementAssistant.totalDotations - stored.amortDeduct) * 100) / 100
+        : 0),
     amortReportesUtilises: 0,
     resultatFiscal: stored.resultatFiscal,
     deficitNouveau: stored.deficitNouveau,

@@ -59,7 +59,7 @@ export const CERFA_2033B_SCOPE_2026: readonly Cerfa2033BScopeEntry[] = [
   { caseId: "310", status: "REQUIRED_FOR_SCOPE", note: "Toujours produite (résultat comptable)." },
   { caseId: "312", status: "OPTIONAL", note: "Produite si resultatComptable > 0." },
   { caseId: "314", status: "OPTIONAL", note: "Produite si resultatComptable < 0." },
-  { caseId: "318", status: "REQUIRED_FOR_SCOPE", note: "Toujours produite (amortReporte)." },
+  { caseId: "318", status: "REQUIRED_FOR_SCOPE", note: "Toujours produite (MOUVEMENT ANNUEL amortNonDeduitExercice = amortCalcule − amortDeduct ; distinct du STOCK FINAL amortReporte)." },
   { caseId: "330", status: "OPTIONAL", note: "Produite si deficitNouveau > 0." },
   { caseId: "350", status: "REQUIRED_FOR_SCOPE", note: "Toujours produite (deficitsImputes, y compris 0 réel)." },
   { caseId: "370", status: "OPTIONAL", note: "Produite si resultatFiscal > 0." },

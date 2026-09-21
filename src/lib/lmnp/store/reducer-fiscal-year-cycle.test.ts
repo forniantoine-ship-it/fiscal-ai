@@ -41,6 +41,7 @@ function fiscalResult(overrides: Partial<FiscalEngineOutput> = {}): FiscalEngine
     totalCharges: 2000,
     amortDeduct: 1500,
     amortReporte: 0,
+    amortNonDeduitExercice: 0,
     deficitNouveau: 0,
     stocks: { deficits: [{ millesime: 2025, montant: 800 }], amortissementsReportes: 0 },
     trace: { ksArtifacts: [], computedAt: "2026-09-04T00:00:00.000Z", journal: [] },

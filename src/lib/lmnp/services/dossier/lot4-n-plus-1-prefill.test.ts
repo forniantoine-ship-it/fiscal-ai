@@ -182,6 +182,7 @@ function richNDraft(): DeclarationDraft {
       totalCharges: 3000,
       amortDeduct: 8000,
       amortReporte: 0,
+      amortNonDeduitExercice: 0,
       deficitNouveau: 0,
       stocks: STOCKS,
       trace: { ksArtifacts: [], computedAt: NOW, journal: [] },

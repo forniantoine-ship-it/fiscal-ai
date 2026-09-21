@@ -85,20 +85,23 @@ export function explainAmortissements(
   return { headline, subtitle, explanation };
 }
 
-/** EXP-F014-06 — distinction amortissement calculé / déduit / reporté (AX-015, AX-017). */
-export function expF014UsageFiscal(usage: { amortDeduct: number; amortReporte: number }): string {
-  if (usage.amortReporte <= 0) {
+/** EXP-F014-06 — distinction amortissement calculé / déduit / non déduit de l'exercice (AX-015, AX-017). */
+export function expF014UsageFiscal(usage: {
+  amortDeduct: number;
+  amortNonDeduitExercice: number;
+}): string {
+  if (usage.amortNonDeduitExercice <= 0) {
     return "L'intégralité de ce montant a été déduite de votre résultat imposable de l'exercice.";
   }
   if (usage.amortDeduct <= 0) {
     return (
       `Votre résultat avant amortissement ne permettait pas d'en déduire cette année : ` +
-      `la totalité, ${fmtEur(usage.amortReporte)}, est reportée sans limite de durée sur vos bénéfices futurs.`
+      `la totalité, ${fmtEur(usage.amortNonDeduitExercice)}, est reportée sans limite de durée sur vos bénéfices futurs.`
     );
   }
   return (
     `Cette année, ${fmtEur(usage.amortDeduct)} ont été effectivement déduits de votre résultat imposable. ` +
-    `Le solde, ${fmtEur(usage.amortReporte)}, est reporté sans limite de durée : l'amortissement ne peut jamais créer de déficit.`
+    `Le solde, ${fmtEur(usage.amortNonDeduitExercice)}, est reporté sans limite de durée : l'amortissement ne peut jamais créer de déficit.`
   );
 }
 

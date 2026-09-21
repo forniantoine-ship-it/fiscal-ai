@@ -1337,6 +1337,7 @@ const RUNTIME_TRUTH_FISCAL_RESULT: FiscalResult = {
   amortCalcule: 1500,
   amortDeduct: 1500,
   amortReporte: 0,
+  amortNonDeduitExercice: 0,
   amortReportesUtilises: 0,
   resultatFiscal: 5500,
   deficitNouveau: 0,
