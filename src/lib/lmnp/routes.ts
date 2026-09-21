@@ -56,9 +56,12 @@ export function documentJourneyRoute(stepId?: DocumentJourneyStepId | string): s
   return `${LMNP_ROUTES.documents}?step=${encodeURIComponent(stepId)}`;
 }
 
-/** P1 — vue read-only d'un exercice clôturé (`/declarations/[fiscalYearId]`). */
-export function archivedDeclarationRoute(fiscalYearId: string): string {
-  return `${LMNP_ROUTES.declarations}/${encodeURIComponent(fiscalYearId)}`;
+/**
+ * Lot 6A — vue read-only d'un exercice clôturé.
+ * Param = année civile (clé archive serveur), jamais un UUID IndexedDB.
+ */
+export function archivedDeclarationRoute(fiscalYear: number | string): string {
+  return `${LMNP_ROUTES.declarations}/${encodeURIComponent(String(fiscalYear))}`;
 }
 
 /** Map declaration-flow suffix paths (e.g. /recettes) to flat routes. */

@@ -5,59 +5,72 @@ import { useRouter } from "next/navigation";
 
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useDossier } from "@/lib/lmnp/dossier";
-import { loadArchivedFiscalYear, type FiscalYearRecord } from "@/lib/lmnp/store/dossier-db";
-import { resolveArchivedFiscalYearAccess } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
+import {
+  archivedLiasseRecordFromWorkspace,
+  loadArchivedWorkspaceFromServer,
+  parseArchivedFiscalYearParam,
+} from "@/lib/lmnp/store/fiscal-year-archive";
 import { ArchivedDeclarationView } from "@/components/lmnp/declaration/ArchivedDeclarationView";
+import type { ArchivedLiasseDownloadRecord } from "@/lib/lmnp/services/declaration/resolve-archived-liasse-download";
 
 type LoadState =
   | { status: "loading" }
-  | { status: "denied" }
-  | { status: "ready"; record: FiscalYearRecord };
+  | { status: "denied"; year: number }
+  | { status: "ready"; year: number; record: ArchivedLiasseDownloadRecord };
 
 /**
- * P1 — Historique. Charge UNIQUEMENT `loadArchivedFiscalYear(fiscalYearId)`
- * (store/dossier-db.ts, lecture seule) — jamais un dispatch vers le
- * workspace actif, jamais `useLmnp()` pour les données affichées : le
- * workspace courant (exercice actif) n'est ni lu ni modifié par cette page.
- * Vérifie `resolveArchivedFiscalYearAccess()` (dossier + statut clôturé)
- * avant tout rendu — un exercice introuvable, d'un autre dossier, ou non
- * clôturé (dont l'exercice actif lui-même) redirige proprement vers "Mes
- * déclarations", même convention que `declarations/page.tsx` existant
- * (`router.replace` sur précondition non remplie).
+ * Lot 6A — Historique. Charge UNIQUEMENT le snapshot serveur Lot 3
+ * (lecture seule) — jamais le store IndexedDB local des exercices,
+ * jamais un dispatch vers le workspace actif, jamais le hook du
+ * workspace live pour les données affichées.
+ *
+ * Param de route = année civile. Un exercice non clôturé côté serveur
+ * (dont l'actif N+1) est refusé et redirige vers "Mes déclarations".
  */
 export function ArchivedDeclarationPageClient({ fiscalYearId }: { fiscalYearId: string }) {
   const router = useRouter();
   const { currentDossierId, isReady: dossierReady } = useDossier();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const year = parseArchivedFiscalYearParam(fiscalYearId);
+  // Sync denial without setState in the effect (invalid route / no dossier).
+  const deniedEarly = dossierReady && (year == null || !currentDossierId);
+  const deniedLoad = state.status === "denied" && year != null && state.year === year;
+  const denied = deniedEarly || deniedLoad;
+  const ready =
+    state.status === "ready" && year != null && state.year === year ? state.record : null;
 
   useEffect(() => {
-    if (!dossierReady) return;
+    if (!dossierReady || year == null || !currentDossierId) return;
     let cancelled = false;
-
-    loadArchivedFiscalYear(fiscalYearId).then((record) => {
+    const targetYear = year;
+    const dossierId = currentDossierId;
+    loadArchivedWorkspaceFromServer({ dossierId, fiscalYear: targetYear }).then((result) => {
       if (cancelled) return;
-      const access = resolveArchivedFiscalYearAccess(record, currentDossierId ?? "");
-      if (!access.ok || !record) {
-        setState({ status: "denied" });
+      if (result.status !== "ok") {
+        setState({ status: "denied", year: targetYear });
         return;
       }
-      setState({ status: "ready", record });
+      // readOnly / blockWrites are always true on success — never adopt as active.
+      setState({
+        status: "ready",
+        year: targetYear,
+        record: archivedLiasseRecordFromWorkspace(result.workspace),
+      });
     });
-
     return () => {
       cancelled = true;
     };
-  }, [dossierReady, currentDossierId, fiscalYearId]);
+  }, [dossierReady, currentDossierId, year]);
 
   useEffect(() => {
-    if (state.status === "denied") {
+    if (denied) {
       router.replace(LMNP_ROUTES.declarationsHistorique);
     }
-  }, [state.status, router]);
+  }, [denied, router]);
 
-  if (state.status !== "ready") {
+  if (denied || !ready) {
     return <p className="text-center text-stone-500">Chargement…</p>;
   }
 
-  return <ArchivedDeclarationView record={state.record} />;
+  return <ArchivedDeclarationView record={ready} />;
 }

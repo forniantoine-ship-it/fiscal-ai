@@ -11,42 +11,54 @@ import { typography } from "@/design-system/theme/typography";
 import { archivedDeclarationRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useDossier } from "@/lib/lmnp/dossier";
 import { useLmnp } from "@/lib/lmnp/store";
-import { listFiscalYearsForDossier } from "@/lib/lmnp/store/db";
-import type { FiscalYearRecord } from "@/lib/lmnp/store/dossier-db";
+import {
+  listClosedFiscalYearArchives,
+  type ArchivedFiscalYearSummary,
+} from "@/lib/lmnp/store/fiscal-year-archive";
+
+type ArchivesLoad =
+  | { dossierId: string; status: "ok"; archives: ArchivedFiscalYearSummary[] }
+  | { dossierId: string; status: "error" };
 
 /**
- * P1 — "Mes déclarations" : exercice en cours + exercices clôturés du même
- * dossier. Utilise `listFiscalYearsForDossier()` (déjà indexé par
- * `dossierId`, jamais un scan complet de STORE_FISCAL_YEARS) — jamais
- * l'exercice actif n'est dupliqué depuis sa coquille technique dans ce
- * store : seuls les exercices `status === "closed"` y sont listés, l'actif
- * vient exclusivement du workspace live (`useLmnp()`).
+ * Lot 6A — "Mes déclarations" : exercice actif (workspace live) + exercices
+ * clôturés depuis les snapshots serveur Lot 3 (`listClosedFiscalYearArchives`).
+ * Jamais IndexedDB STORE_FISCAL_YEARS — cold browser / IDB vide doit lister N.
  */
 export default function DeclarationsHistoriquePage() {
   const { workspace, isReady: workspaceReady } = useLmnp();
   const { currentDossierId, isReady: dossierReady } = useDossier();
-  const [closedYears, setClosedYears] = useState<FiscalYearRecord[] | null>(null);
+  const [load, setLoad] = useState<ArchivesLoad | null>(null);
 
   useEffect(() => {
-    if (!dossierReady) return;
+    if (!dossierReady || !currentDossierId) return;
     let cancelled = false;
-    const pending = currentDossierId
-      ? listFiscalYearsForDossier<FiscalYearRecord>(currentDossierId)
-      : Promise.resolve<FiscalYearRecord[]>([]);
-    pending.then((records) => {
+    const dossierId = currentDossierId;
+    listClosedFiscalYearArchives(dossierId).then((result) => {
       if (cancelled) return;
-      setClosedYears(records.filter((record) => record.status === "closed"));
+      if (result.status !== "ok") {
+        setLoad({ dossierId, status: "error" });
+        return;
+      }
+      setLoad({ dossierId, status: "ok", archives: result.archives });
     });
     return () => {
       cancelled = true;
     };
   }, [dossierReady, currentDossierId]);
 
-  if (!workspaceReady || !dossierReady || closedYears === null) {
+  // No dossier → empty list without sync setState in the effect.
+  const noDossier = dossierReady && !currentDossierId;
+  const loadForDossier =
+    currentDossierId && load?.dossierId === currentDossierId ? load : null;
+  const closedYears = noDossier ? [] : loadForDossier?.status === "ok" ? loadForDossier.archives : null;
+  const listError = noDossier ? false : loadForDossier?.status === "error";
+
+  if (!workspaceReady || !dossierReady || (!noDossier && closedYears === null && !listError)) {
     return <p className="text-center text-stone-500">Chargement…</p>;
   }
 
-  const sortedClosedYears = [...closedYears].sort((a, b) => b.year - a.year);
+  const archives = closedYears ?? [];
 
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
@@ -73,12 +85,12 @@ export default function DeclarationsHistoriquePage() {
           <p style={{ ...typography.body.desktop, color: colors.text.primary }}>
             {workspace.fiscalYear.year} — En cours
           </p>
-          <Button href={LMNP_ROUTES.declarations}>Ouvrir</Button>
+          <Button href={LMNP_ROUTES.dashboard}>Ouvrir</Button>
         </li>
 
-        {sortedClosedYears.map((fiscalYear) => (
+        {archives.map((archive) => (
           <li
-            key={fiscalYear.id}
+            key={archive.fiscalYear}
             className="flex items-center justify-between gap-4"
             style={{
               borderRadius: radius.lg,
@@ -87,16 +99,22 @@ export default function DeclarationsHistoriquePage() {
             }}
           >
             <p style={{ ...typography.body.desktop, color: colors.text.primary }}>
-              {fiscalYear.year} — Clôturée
+              {archive.fiscalYear} — Clôturé
             </p>
-            <Button variant="secondary" href={archivedDeclarationRoute(fiscalYear.id)}>
+            <Button variant="secondary" href={archivedDeclarationRoute(archive.fiscalYear)}>
               Voir la déclaration
             </Button>
           </li>
         ))}
       </ul>
 
-      {sortedClosedYears.length === 0 ? (
+      {listError ? (
+        <p className="text-center" style={{ ...typography.caption.desktop, color: colors.error.DEFAULT }}>
+          Impossible de charger vos exercices clôturés. Vérifiez votre connexion.
+        </p>
+      ) : null}
+
+      {!listError && archives.length === 0 ? (
         <p className="text-center" style={{ ...typography.caption.desktop, color: colors.text.muted }}>
           Aucun exercice clôturé pour l&apos;instant.
         </p>

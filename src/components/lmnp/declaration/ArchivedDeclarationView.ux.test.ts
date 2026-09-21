@@ -97,7 +97,20 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
     assert.equal(viewCode.includes("Dossier.properties"), false);
     assert.equal(viewCode.includes("Dossier.financements"), false);
     assert.equal(pageCode.includes("useLmnp"), false);
-    assert.ok(pageSource.includes("<ArchivedDeclarationView record={state.record} />"));
+    assert.ok(
+      pageSource.includes("<ArchivedDeclarationView record={ready} />") ||
+        pageSource.includes("<ArchivedDeclarationView record={state.record} />"),
+    );
+  });
+
+  it("Lot 6A — page archive charge le serveur Lot 3, jamais IndexedDB", () => {
+    const pageCode = pageSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    assert.ok(pageCode.includes("loadArchivedWorkspaceFromServer"));
+    assert.ok(pageCode.includes("archivedLiasseRecordFromWorkspace"));
+    assert.ok(pageCode.includes("parseArchivedFiscalYearParam"));
+    assert.equal(pageCode.includes("loadArchivedFiscalYear"), false);
+    assert.equal(pageCode.includes("listFiscalYearsForDossier"), false);
+    assert.equal(pageCode.includes("from \"@/lib/lmnp/store/dossier-db\""), false);
   });
 
   it("les extras et le versionId viennent du record historique, sans ID inventé", () => {

@@ -1,6 +1,8 @@
 /**
- * Lot 3 — archive / history primitives (server snapshots).
+ * Lot 3 / Lot 6A — archive / history primitives (server snapshots).
  * V1: list closed years, load closed snapshot read-only, never autosave.
+ * Lot 6A: UI "Mes déclarations" + archive page consume these helpers only —
+ * never IndexedDB STORE_FISCAL_YEARS for cold-safe history.
  */
 import { listWorkspaceSnapshots } from "@/lib/lmnp/store/workspace-snapshot-client";
 import {
@@ -10,6 +12,7 @@ import {
 } from "@/lib/lmnp/store/workspace-snapshot-resolve";
 import { parseWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
+import type { ArchivedLiasseDownloadRecord } from "@/lib/lmnp/services/declaration/resolve-archived-liasse-download";
 
 export type ArchivedFiscalYearSummary = {
   fiscalYear: number;
@@ -69,6 +72,8 @@ export async function loadArchivedWorkspaceFromServer(input: {
     return { status: "error", reason: "Snapshot d'archive illisible." };
   }
   // Prove hydrate path would also block writes for this closed year.
+  // Does NOT adopt this year as activeFiscalYear — local:null force-loads
+  // the closed snapshot; callers must never dispatch the result into LmnpProvider.
   const decision = resolveWorkspaceHydration({
     local: null,
     snapshots: [snapshot],
@@ -85,4 +90,30 @@ export async function loadArchivedWorkspaceFromServer(input: {
     blockWrites: true,
     revision: snapshot.revision,
   };
+}
+
+/**
+ * Lot 6A — map a closed server workspace to the archive download/view contract.
+ * Pure: never reads IndexedDB, never invents version IDs.
+ */
+export function archivedLiasseRecordFromWorkspace(
+  workspace: PersistedWorkspace,
+): ArchivedLiasseDownloadRecord {
+  return {
+    year: workspace.fiscalYear.year,
+    stocksOuverture: workspace.fiscalYear.stocksOuverture,
+    closures: workspace.fiscalYear.closures,
+    declarationDraft: workspace.declarationDraft ?? null,
+  };
+}
+
+/**
+ * Lot 6A — route param for `/declarations/[fiscalYearId]` is the calendar year
+ * (server archive key), not an IndexedDB UUID.
+ */
+export function parseArchivedFiscalYearParam(raw: string): number | null {
+  if (!/^\d{4}$/.test(raw.trim())) return null;
+  const year = Number(raw.trim());
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
+  return year;
 }
