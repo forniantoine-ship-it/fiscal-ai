@@ -1032,7 +1032,11 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      fiscalYear: workspace.fiscalYear.year,
+      documentRole: "durable_reference",
+      propertyId: workspace.fiscalYear.propertyIds[0],
+    });
 
     if (uploadedFiles.length === 0) {
       console.error("[LogementDocumentStep] upload failed: no files stored in Supabase");
@@ -1052,6 +1056,8 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
           documentId: documentIds[index],
           isSupabaseDocumentId: true,
           storagePath: filePaths[index],
+          fiscalYear: workspace.fiscalYear.year,
+          documentRole: "durable_reference" as const,
         })),
       });
       showInfo(
@@ -1074,6 +1080,8 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[index],
         isSupabaseDocumentId: true,
         storagePath: filePaths[index],
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "durable_reference" as const,
       })),
     });
 

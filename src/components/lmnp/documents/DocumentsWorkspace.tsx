@@ -310,7 +310,10 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
     return () => window.clearTimeout(timer);
   }, [uploadedIds.join(","), hasProcessing, isAnalyzing, runAnalysisForIds, uploadedIds]);
 
-  function handleUpload(files: File[], meta?: { supabaseDocumentIds: string[] }) {
+  function handleUpload(
+    files: File[],
+    meta?: { supabaseDocumentIds: string[]; filePaths: string[] },
+  ) {
     if (!files.length) return;
     dispatch({
       type: "UPLOAD_DOCUMENTS",
@@ -319,6 +322,9 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
         category: step.category as DocumentCategory,
         documentId: meta?.supabaseDocumentIds?.[index],
         isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
+        storagePath: meta?.filePaths?.[index],
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "annual_evidence" as const,
       })),
     });
     showInfo(
@@ -359,7 +365,12 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
       <WorkspaceProgress label="Progression documents & dossier" />
 
       <Card interactive>
-        <DocumentUploadZone hint={step.uploadHint} onFiles={handleUpload} />
+        <DocumentUploadZone
+          hint={step.uploadHint}
+          fiscalYear={workspace.fiscalYear.year}
+          propertyId={workspace.fiscalYear.propertyIds[0]}
+          onFiles={handleUpload}
+        />
         <div className="mt-4 flex items-center justify-between gap-4">
           <p style={{ ...typography.caption.desktop, color: colors.text.muted }}>
             {isBusy ? "Analyse IA en cours…" : "PDF ou images — dépôt multiple accepté"}

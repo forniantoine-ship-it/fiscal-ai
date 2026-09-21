@@ -658,7 +658,11 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      fiscalYear: workspace.fiscalYear.year,
+      documentRole: "annual_evidence",
+      propertyId: workspace.fiscalYear.propertyIds[0],
+    });
 
     if (uploadedFiles.length === 0) {
       console.error("[ChargesDocumentStep] upload failed: no files stored in Supabase");
@@ -689,6 +693,8 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         isSupabaseDocumentId: true,
         storagePath: filePaths[index],
         category: CHARGES_UPLOAD_CATEGORY,
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "annual_evidence" as const,
       })),
     });
 

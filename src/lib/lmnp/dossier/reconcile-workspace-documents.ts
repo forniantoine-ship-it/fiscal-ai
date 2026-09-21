@@ -6,6 +6,11 @@ import type {
 } from "@/lib/lmnp/types";
 
 import type { SupabaseDocumentRow } from "./supabase-dossier";
+import {
+  canMergeRemoteMetadataIntoLocal,
+  resolveEffectiveFiscalYear,
+  type DocumentRole,
+} from "./document-fiscal-origin";
 
 const CONTINUITY_PATTERN =
   /liasse|amortissement|tableau|export|comptable|fiscal|2033|2031|bilan/i;
@@ -57,88 +62,103 @@ function isSameRemoteDocument(local: LmnpDocument, remote: SupabaseDocumentRow):
   return local.fileName === remote.file_name;
 }
 
+function mapDocumentRole(
+  role: SupabaseDocumentRow["document_role"],
+): DocumentRole | undefined {
+  if (role === "annual_evidence" || role === "durable_reference") return role;
+  return undefined;
+}
+
 export function reconcileWorkspaceDocuments(params: {
   localDocuments: LmnpDocument[];
   supabaseDocuments: SupabaseDocumentRow[];
   fiscalYearId: string;
+  /** Calendar year of the workspace being reconciled — required for Lot 2 isolation. */
+  fiscalYear: number;
   propertyId?: string;
   localBlobDocumentIds: Set<string>;
   localExtractedDocumentIds: Set<string>;
+  /**
+   * Optional snapshot index for deterministic legacy proof
+   * (document id → exactly one snapshot year).
+   */
+  legacySnapshots?: ReadonlyArray<{ fiscalYear: number; documentIds: ReadonlyArray<string> }>;
 }): {
   documents: LmnpDocument[];
   restored: number;
   metadataOnly: number;
+  skippedForeignYear: number;
+  skippedLegacyUnresolved: number;
+  skippedDurableReference: number;
 } {
   const {
     localDocuments,
     supabaseDocuments,
     fiscalYearId,
+    fiscalYear,
     propertyId,
     localBlobDocumentIds,
     localExtractedDocumentIds,
+    legacySnapshots,
   } = params;
 
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  console.log("[reconciliation-entry]", {
-    localDocCount: localDocuments.length,
-    remoteRowCount: supabaseDocuments.length,
-    localDocs: localDocuments.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      category: doc.category,
-      documentType: doc.documentType,
-    })),
-    remoteRows: supabaseDocuments.map((row) => ({
-      id: row.id,
-      fileName: row.file_name,
-      extractionStatus: row.extraction_status,
-    })),
-  });
-
   if (supabaseDocuments.length === 0) {
-    console.log("[reconciliation-exit]", {
-      path: "early-return-no-supabase-docs",
-      mergedDocCount: localDocuments.length,
-      mergedDocs: localDocuments.map((doc) => ({
-        id: doc.id,
-        fileName: doc.fileName,
-        status: doc.status,
-      })),
-    });
-    return { documents: localDocuments, restored: 0, metadataOnly: 0 };
+    return {
+      documents: localDocuments,
+      restored: 0,
+      metadataOnly: 0,
+      skippedForeignYear: 0,
+      skippedLegacyUnresolved: 0,
+      skippedDurableReference: 0,
+    };
   }
 
   const keptLocal = localDocuments.filter((local) => {
     const droppedBy = supabaseDocuments.find(
       (remote) => isSameRemoteDocument(local, remote) && local.id !== remote.id,
     );
-    if (droppedBy) {
-      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-      console.log("[charges-post-reconcile] LOCAL DOC DROPPED (id mismatch)", {
-        localId: local.id,
-        localFileName: local.fileName,
-        localStatus: local.status,
-        localHasBlob: localBlobDocumentIds.has(local.id),
-        matchedSupabaseId: droppedBy.id,
-        matchedSupabaseFileName: droppedBy.file_name,
-        matchedSupabaseStatus: droppedBy.extraction_status,
-        matchedBy: local.id === droppedBy.id
-          ? "id"
-          : local.storagePath === droppedBy.file_path
-            ? "storagePath"
-            : "fileName",
-      });
-    }
     return !droppedBy;
   });
 
   const mergedById = new Map(keptLocal.map((document) => [document.id, document]));
   let restored = 0;
   let metadataOnly = 0;
+  let skippedForeignYear = 0;
+  let skippedLegacyUnresolved = 0;
+  let skippedDurableReference = 0;
 
   for (const row of supabaseDocuments) {
     const existing = mergedById.get(row.id);
+    const effectiveFiscalYear = resolveEffectiveFiscalYear({
+      serverFiscalYear: row.fiscal_year,
+      documentId: row.id,
+      snapshots: legacySnapshots,
+    });
+    const origin = {
+      fiscalYear: effectiveFiscalYear ?? null,
+      documentRole: mapDocumentRole(row.document_role),
+      propertyId: row.property_id,
+    };
+
+    const allowed = canMergeRemoteMetadataIntoLocal({
+      hasLocalDocument: Boolean(existing),
+      origin,
+      workspaceFiscalYear: fiscalYear,
+    });
+
+    if (!allowed) {
+      if (origin.fiscalYear == null) {
+        skippedLegacyUnresolved += 1;
+      } else if (origin.fiscalYear !== fiscalYear) {
+        skippedForeignYear += 1;
+      } else if (origin.documentRole === "durable_reference") {
+        skippedDurableReference += 1;
+      } else {
+        skippedForeignYear += 1;
+      }
+      continue;
+    }
+
     if (existing) {
       const supabaseStatus = mapSupabaseStatus(row.extraction_status);
       const hasLocalBlob = localBlobDocumentIds.has(existing.id);
@@ -146,38 +166,17 @@ export function reconcileWorkspaceDocuments(params: {
       const guardPassed =
         existing.status === "analyzed" && (hasLocalBlob || hasLocalExtractions);
       const finalStatus: DocumentStatus = guardPassed ? "analyzed" : supabaseStatus;
-      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-      console.log("[charges-reconciliation-guard]", {
-        id: existing.id,
-        localStatus: existing.status,
-        hasLocalBlob,
-        hasLocalExtractions,
-        guardPassed,
-        finalStatus,
-      });
-      console.log("[charges-reconciliation]", {
-        id: existing.id,
-        fileName: existing.fileName,
-        localStatus: existing.status,
-        supabaseStatus: row.extraction_status,
-        finalStatus,
-      });
-      const mergedDoc = {
+      const mergedDoc: LmnpDocument = {
         ...existing,
         storagePath: existing.storagePath ?? row.file_path,
         fileName: row.file_name,
         status: finalStatus,
         uploadedAt: row.created_at,
+        fiscalYear: existing.fiscalYear ?? effectiveFiscalYear ?? fiscalYear,
+        documentRole: existing.documentRole ?? mapDocumentRole(row.document_role),
+        propertyId: existing.propertyId ?? row.property_id ?? propertyId,
       };
       mergedById.set(row.id, mergedDoc);
-      // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-      console.log("[charges-post-reconcile]", {
-        id: mergedDoc.id,
-        fileName: mergedDoc.fileName,
-        finalStatus: mergedDoc.status,
-        hasLocalBlob: localBlobDocumentIds.has(mergedDoc.id),
-        path: "existing",
-      });
       continue;
     }
 
@@ -189,10 +188,13 @@ export function reconcileWorkspaceDocuments(params: {
     const hasLocalBlob = localBlobDocumentIds.has(row.id);
     const category = inferDocumentCategory(row.file_name);
     const remoteRestored = !hasLocalBlob;
+    const mappedRole = mapDocumentRole(row.document_role);
     const document: LmnpDocument = {
       id: row.id,
       fiscalYearId,
-      propertyId,
+      fiscalYear: effectiveFiscalYear ?? fiscalYear,
+      documentRole: mappedRole ?? "annual_evidence",
+      propertyId: row.property_id ?? propertyId,
       fileName: row.file_name,
       mimeType: inferMimeType(row.file_name),
       sizeBytes: 0,
@@ -208,14 +210,6 @@ export function reconcileWorkspaceDocuments(params: {
     };
 
     mergedById.set(row.id, document);
-    // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-    console.log("[charges-post-reconcile]", {
-      id: document.id,
-      fileName: document.fileName,
-      finalStatus: document.status,
-      hasLocalBlob: localBlobDocumentIds.has(document.id),
-      path: "new-supabase-doc",
-    });
     restored += 1;
 
     if (remoteRestored) {
@@ -223,6 +217,7 @@ export function reconcileWorkspaceDocuments(params: {
       console.log("[documents] restored metadata-only", {
         documentId: row.id,
         fileName: row.file_name,
+        fiscalYear,
       });
     }
   }
@@ -231,25 +226,24 @@ export function reconcileWorkspaceDocuments(params: {
     b.uploadedAt.localeCompare(a.uploadedAt),
   );
 
-  if (restored > 0) {
-    console.log("[documents] restored into workspace", {
+  if (restored > 0 || skippedForeignYear > 0 || skippedLegacyUnresolved > 0) {
+    console.log("[documents] reconciled by fiscal year", {
+      fiscalYear,
       restored,
       metadataOnly,
+      skippedForeignYear,
+      skippedLegacyUnresolved,
+      skippedDurableReference,
       total: documents.length,
     });
   }
 
-  // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
-  console.log("[reconciliation-exit]", {
-    path: "full-merge",
-    mergedDocCount: documents.length,
-    mergedDocs: documents.map((doc) => ({
-      id: doc.id,
-      fileName: doc.fileName,
-      status: doc.status,
-      category: doc.category,
-    })),
-  });
-
-  return { documents, restored, metadataOnly };
+  return {
+    documents,
+    restored,
+    metadataOnly,
+    skippedForeignYear,
+    skippedLegacyUnresolved,
+    skippedDurableReference,
+  };
 }

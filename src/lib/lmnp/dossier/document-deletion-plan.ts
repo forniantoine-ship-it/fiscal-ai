@@ -1,4 +1,8 @@
 import type { DeleteDocumentOutcome } from "./delete-document";
+import {
+  shouldDestroyServerArtifactsOnRemove,
+  type DocumentRole,
+} from "./document-fiscal-origin";
 
 export type DocumentDeletionPlan =
   | { kind: "local-only" }
@@ -9,12 +13,29 @@ export type DocumentDeletionPlan =
  * Decides whether removing a document needs a server round-trip, purely from
  * data already on the document (hasSupabaseArtifacts, set at upload time —
  * never inferred from filename or other heuristics) and the current dossier id.
+ *
+ * Lot 2 — durable historical references and documents whose origin year is
+ * not the active workspace year are unlinked locally only: destroying the
+ * Storage object would erase evidence still needed by a closed exercise.
  */
 export function resolveDocumentDeletionPlan(params: {
   hasSupabaseArtifacts?: boolean;
   dossierId: string | null;
+  documentRole?: DocumentRole | null;
+  originFiscalYear?: number | null;
+  activeFiscalYear?: number;
 }): DocumentDeletionPlan {
   if (!params.hasSupabaseArtifacts) {
+    return { kind: "local-only" };
+  }
+
+  if (
+    !shouldDestroyServerArtifactsOnRemove({
+      documentRole: params.documentRole,
+      originFiscalYear: params.originFiscalYear,
+      activeFiscalYear: params.activeFiscalYear,
+    })
+  ) {
     return { kind: "local-only" };
   }
 

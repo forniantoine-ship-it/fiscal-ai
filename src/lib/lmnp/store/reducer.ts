@@ -82,6 +82,14 @@ export type LmnpAction =
          * for documents-table reconcile.
          */
         storagePath?: string;
+        /**
+         * Lot 2 — calendar year of origin. Defaults to the active workspace
+         * year when omitted (local-only producers). Server uploads must already
+         * have written the same year on the documents row.
+         */
+        fiscalYear?: number;
+        /** Lot 2 — annual_evidence (default) or durable_reference. */
+        documentRole?: "annual_evidence" | "durable_reference";
       }[];
     }
   | { type: "REMOVE_DOCUMENT"; documentId: string }
@@ -629,9 +637,11 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "UPLOAD_DOCUMENTS": {
       const now = nowIso();
       const newDocs: LmnpDocument[] = action.files.map(
-        ({ file, category, documentId, isSupabaseDocumentId, storagePath }) => ({
+        ({ file, category, documentId, isSupabaseDocumentId, storagePath, fiscalYear, documentRole }) => ({
           id: documentId ?? crypto.randomUUID(),
           fiscalYearId: state.fiscalYear.id,
+          fiscalYear: fiscalYear ?? state.fiscalYear.year,
+          documentRole: documentRole ?? "annual_evidence",
           propertyId: state.fiscalYear.propertyIds[0],
           fileName: file.name,
           mimeType: file.type || "application/octet-stream",

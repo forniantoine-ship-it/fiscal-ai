@@ -16,7 +16,6 @@ import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 import { setCurrentDossierId } from "./current-dossier";
 import {
   ensureActiveDossier,
-  fetchDocumentsForDossier,
   type LmnpDossier,
   type SupabaseDocumentRow,
 } from "./supabase-dossier";
@@ -47,7 +46,10 @@ async function loadActiveDossierState(userId: string | null): Promise<{
   }
 
   setCurrentDossierId(dossier.id, userId);
-  const documents = await fetchDocumentsForDossier(dossier.id);
+  // Lot 2 — DossierProvider no longer loads dossier-wide documents for reconcile.
+  // Workspace hydrate fetches year-scoped rows via fetchDocumentsForDossier({ fiscalYear }).
+  // Consumers of useDossier() only need currentDossierId today.
+  const documents: SupabaseDocumentRow[] = [];
 
   console.log("[dossier] state restored", {
     userId,

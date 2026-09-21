@@ -762,7 +762,11 @@ export function F011FinancementAssistantPanel() {
         } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser([file], user.id);
+        const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser([file], user.id, {
+          fiscalYear: workspace.fiscalYear.year,
+          documentRole: "annual_evidence",
+          propertyId: workspace.fiscalYear.propertyIds[0],
+        });
         const uploadedFile = uploadedFiles[0];
         if (!uploadedFile) return;
 
@@ -773,7 +777,15 @@ export function F011FinancementAssistantPanel() {
         const storagePath = filePaths[0];
         dispatch({
           type: "UPLOAD_DOCUMENTS",
-          files: [{ file: uploadedFile, category: "emprunt", documentId, isSupabaseDocumentId: true, storagePath }],
+          files: [{
+            file: uploadedFile,
+            category: "emprunt",
+            documentId,
+            isSupabaseDocumentId: true,
+            storagePath,
+            fiscalYear: workspace.fiscalYear.year,
+            documentRole: "annual_evidence",
+          }],
         });
         dispatch({ type: "REGISTER_FILE", documentId, file: uploadedFile });
 
@@ -784,7 +796,7 @@ export function F011FinancementAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch],
+    [assistant, applyTurn, dispatch, workspace.fiscalYear.year, workspace.fiscalYear.propertyIds],
   );
 
   const openFilePicker = useCallback(() => {

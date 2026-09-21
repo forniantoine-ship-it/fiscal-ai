@@ -480,7 +480,11 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      fiscalYear: workspace.fiscalYear.year,
+      documentRole: "annual_evidence",
+      propertyId: workspace.fiscalYear.propertyIds[0],
+    });
 
     if (uploadedFiles.length === 0) {
       console.error("[ActiviteDocumentStep] upload failed: no files stored in Supabase");
@@ -517,6 +521,8 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[index],
         isSupabaseDocumentId: true,
         storagePath: filePaths[index],
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "annual_evidence" as const,
       })),
     });
 

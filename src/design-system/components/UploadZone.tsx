@@ -1,5 +1,6 @@
 "use client";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
+import type { DocumentRole } from "@/lib/lmnp/dossier/document-fiscal-origin";
 import { supabase } from "@/lib/supabase";
 import { useRef, useState, type DragEvent } from "react";
 
@@ -11,7 +12,14 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 
 export type UploadZoneProps = {
-  onFiles: (files: File[], meta?: { supabaseDocumentIds: string[] }) => void;
+  onFiles: (
+    files: File[],
+    meta?: { supabaseDocumentIds: string[]; filePaths: string[] },
+  ) => void;
+  /** Lot 2 — required calendar year of origin for every annual upload. */
+  fiscalYear: number;
+  documentRole?: DocumentRole;
+  propertyId?: string;
   hint?: string;
   title?: string;
   accept?: string;
@@ -21,6 +29,9 @@ export type UploadZoneProps = {
 
 export function UploadZone({
   onFiles,
+  fiscalYear,
+  documentRole = "annual_evidence",
+  propertyId,
   hint = "PDF ou images — dépôt multiple accepté",
   title = "TEST SUPABASE UPLOAD",
   accept = ".pdf,image/*",
@@ -52,15 +63,19 @@ export function UploadZone({
         return;
       }
     
-      const { files: uploadedFiles, documentIds: supabaseDocumentIds } =
-        await uploadFilesForUser(files, user.id);
+      const { files: uploadedFiles, documentIds: supabaseDocumentIds, filePaths } =
+        await uploadFilesForUser(files, user.id, {
+          fiscalYear,
+          documentRole,
+          propertyId,
+        });
 
       if (uploadedFiles.length === 0) {
         console.error("[UploadZone] upload failed: no files stored in Supabase");
         return;
       }
 
-      onFiles(uploadedFiles, { supabaseDocumentIds });
+      onFiles(uploadedFiles, { supabaseDocumentIds, filePaths });
     
     } catch (e) {
       console.error("AUTH ERROR", e);
@@ -135,5 +150,3 @@ export function UploadZone({
     </button>
   );
 }
-
-

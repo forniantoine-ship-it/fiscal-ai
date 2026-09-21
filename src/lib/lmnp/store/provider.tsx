@@ -212,11 +212,16 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           };
         }
 
-        const supabaseDocuments = dossier ? await fetchDocumentsForDossier(dossier.id) : [];
+        const supabaseDocuments = dossier
+          ? await fetchDocumentsForDossier(dossier.id, {
+              fiscalYear: baseWorkspace.fiscalYear.year,
+            })
+          : [];
         const reconciliation = reconcileWorkspaceDocuments({
           localDocuments: baseWorkspace.documents,
           supabaseDocuments,
           fiscalYearId: baseWorkspace.fiscalYear.id,
+          fiscalYear: baseWorkspace.fiscalYear.year,
           propertyId: baseWorkspace.fiscalYear.propertyIds[0],
           localBlobDocumentIds: new Set(fileRegistry.keys()),
           localExtractedDocumentIds: new Set(baseWorkspace.extractions.map((e) => e.documentId)),
@@ -490,6 +495,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       const plan = resolveDocumentDeletionPlan({
         hasSupabaseArtifacts: target?.hasSupabaseArtifacts,
         dossierId: getCurrentDossierId(),
+        documentRole: target?.documentRole,
+        originFiscalYear: target?.fiscalYear,
+        activeFiscalYear: stateRef.current.fiscalYear.year,
       });
 
       void runDocumentRemoval({

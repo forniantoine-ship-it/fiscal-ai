@@ -1137,6 +1137,8 @@ export function F012ChargesAssistantPanel() {
               isSupabaseDocumentId: true,
               storagePath: result.storagePath,
               category: IMPOTS_UPLOAD_CATEGORY,
+              fiscalYear,
+              documentRole: "annual_evidence",
             },
           ],
         });
@@ -1207,6 +1209,8 @@ export function F012ChargesAssistantPanel() {
               isSupabaseDocumentId: true,
               storagePath: result.storagePath,
               category: DOCUMENTARY_REVIEW_UPLOAD_CATEGORY,
+              fiscalYear,
+              documentRole: "annual_evidence",
             },
           ],
         });

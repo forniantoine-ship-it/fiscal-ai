@@ -17,7 +17,13 @@ type AmortissementUploadSectionProps = {
   uploadPrompt?: string;
   uploadedCount?: number;
   uploadedFileName?: string;
-  onFiles: (files: File[], meta?: { supabaseDocumentIds: string[] }) => void;
+  /** Lot 2 — calendar year of origin required for durable annual uploads. */
+  fiscalYear: number;
+  propertyId?: string;
+  onFiles: (
+    files: File[],
+    meta?: { supabaseDocumentIds: string[]; filePaths: string[] },
+  ) => void;
   onContinue?: () => void;
   continueLabel?: string;
   canContinue?: boolean;
@@ -35,6 +41,8 @@ export function AmortissementUploadSection({
   uploadPrompt = "Glissez vos documents ici ou cliquez pour importer",
   uploadedCount = 0,
   uploadedFileName,
+  fiscalYear,
+  propertyId,
   onFiles,
   onContinue,
   continueLabel = "Continuer",
@@ -70,15 +78,19 @@ export function AmortissementUploadSection({
       return;
     }
 
-    const { files: uploadedFiles, documentIds: supabaseDocumentIds } =
-      await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds: supabaseDocumentIds, filePaths } =
+      await uploadFilesForUser(files, user.id, {
+        fiscalYear,
+        documentRole: "annual_evidence",
+        propertyId,
+      });
 
     if (uploadedFiles.length === 0) {
       console.error("[AmortissementUploadSection] upload failed: no files stored in Supabase");
       return;
     }
 
-    onFiles(uploadedFiles, { supabaseDocumentIds });
+    onFiles(uploadedFiles, { supabaseDocumentIds, filePaths });
   };
 
   const prevent = (event: DragEvent) => {

@@ -1006,6 +1006,16 @@ export interface DocumentOcrMeta {
 export interface LmnpDocument {
   id: string;
   fiscalYearId: string;
+  /**
+   * Calendar fiscal year of origin (Lot 2). Written at upload; survives
+   * cross-device. Distinct from `fiscalYearId` (UUID of the FiscalYear record).
+   */
+  fiscalYear?: number;
+  /**
+   * annual_evidence = exercice-scoped justificatif;
+   * durable_reference = historical reuse of the same Storage blob.
+   */
+  documentRole?: "annual_evidence" | "durable_reference";
   propertyId?: string;
   fileName: string;
   mimeType: string;

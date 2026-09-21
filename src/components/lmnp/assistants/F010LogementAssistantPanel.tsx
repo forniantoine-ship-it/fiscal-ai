@@ -1348,7 +1348,11 @@ export function F010LogementAssistantPanel() {
 
         // Même pipeline Storage + documents que F009/F011/F012 — identité durable
         // unique (documents.id) + storagePath immédiat pour restore cross-device.
-        const uploadResult = await uploadFilesForUser([file], user.id);
+        const uploadResult = await uploadFilesForUser([file], user.id, {
+          fiscalYear: workspace.fiscalYear.year,
+          documentRole: "durable_reference",
+          propertyId: workspace.fiscalYear.propertyIds[0],
+        });
         const documentId = uploadResult.documentIds[0];
         const storagePath = uploadResult.filePaths[0];
         if (!documentId || !storagePath) {
@@ -1380,6 +1384,8 @@ export function F010LogementAssistantPanel() {
               documentId,
               isSupabaseDocumentId: true,
               storagePath,
+              fiscalYear: workspace.fiscalYear.year,
+              documentRole: "durable_reference",
             },
           ],
         });

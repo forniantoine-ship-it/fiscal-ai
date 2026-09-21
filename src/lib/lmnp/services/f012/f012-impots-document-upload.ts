@@ -15,7 +15,7 @@
  */
 
 import { supabase } from "@/lib/supabase";
-import { uploadFilesForUser } from "@/lib/uploadDocument";
+import { uploadFilesForUser, type UploadDocumentOptions } from "@/lib/uploadDocument";
 import { extractPdfTextClient } from "@/lib/lmnp/services/activite-ocr-text";
 import { expensesFromTaxeFonciereCorpus } from "@/runtime/assistants/f012-charges/expense-from-taxe-fonciere";
 import type { Expense } from "@/runtime/capabilities/f012/expense";
@@ -37,7 +37,11 @@ export type AnalyzeImpotsDocumentDeps = {
   /** Défaut : `supabase.auth.getUser()` — remplaçable en test, jamais un second client. */
   getAuthenticatedUserId?: () => Promise<string | null>;
   /** Défaut : `uploadFilesForUser` (`src/lib/uploadDocument.ts`) — même pipeline Storage + table `documents` que tous les autres écrans. */
-  uploadFiles?: (files: File[], userId: string) => Promise<{ files: File[]; documentIds: string[]; filePaths: string[] }>;
+  uploadFiles?: (
+    files: File[],
+    userId: string,
+    options: UploadDocumentOptions,
+  ) => Promise<{ files: File[]; documentIds: string[]; filePaths: string[] }>;
   /** Défaut : même extraction texte que `analyzePaperFile` (`.txt` direct, sinon `extractPdfTextClient`) — aucune nouvelle extraction. */
   extractText?: (file: File) => Promise<string>;
 };
@@ -87,7 +91,10 @@ export async function analyzeImpotsDocument(
   const userId = await getAuthenticatedUserId();
   if (!userId) return { status: "not_authenticated" };
 
-  const { files: uploadedFiles, documentIds, filePaths } = await uploadFiles([file], userId);
+  const { files: uploadedFiles, documentIds, filePaths } = await uploadFiles([file], userId, {
+    fiscalYear,
+    documentRole: "annual_evidence",
+  });
   if (uploadedFiles.length === 0 || documentIds.length === 0 || filePaths.length === 0) {
     return { status: "upload_failed" };
   }

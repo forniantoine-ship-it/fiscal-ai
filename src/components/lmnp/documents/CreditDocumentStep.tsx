@@ -1516,7 +1516,11 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       return;
     }
 
-    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id);
+    const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      fiscalYear: workspace.fiscalYear.year,
+      documentRole: "annual_evidence",
+      propertyId: workspace.fiscalYear.propertyIds[0],
+    });
     if (uploadedFiles.length === 0) return;
 
     // The Supabase-assigned ID — must match what goes into UPLOAD_DOCUMENTS so local
@@ -1596,6 +1600,8 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[i],
         isSupabaseDocumentId: true,
         storagePath: filePaths[i],
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "annual_evidence" as const,
       })),
     });
 

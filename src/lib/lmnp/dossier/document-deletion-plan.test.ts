@@ -28,6 +28,26 @@ describe("resolveDocumentDeletionPlan", () => {
     const plan = resolveDocumentDeletionPlan({ hasSupabaseArtifacts: true, dossierId: null });
     assert.equal(plan.kind, "blocked");
   });
+
+  it("Lot 2 — durable_reference → local-only (ne détruit pas l'historique N)", () => {
+    const plan = resolveDocumentDeletionPlan({
+      hasSupabaseArtifacts: true,
+      dossierId: "dossier-A",
+      documentRole: "durable_reference",
+    });
+    assert.deepEqual(plan, { kind: "local-only" });
+  });
+
+  it("Lot 2 — annual evidence d'un autre exercice → local-only", () => {
+    const plan = resolveDocumentDeletionPlan({
+      hasSupabaseArtifacts: true,
+      dossierId: "dossier-A",
+      documentRole: "annual_evidence",
+      originFiscalYear: 2025,
+      activeFiscalYear: 2026,
+    });
+    assert.deepEqual(plan, { kind: "local-only" });
+  });
 });
 
 describe("runDocumentRemoval — comportement client (P1-3.2, tests #11-14)", () => {

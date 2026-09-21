@@ -17,7 +17,16 @@ export type SupabaseDocumentRow = {
   file_path: string;
   extraction_status: string;
   created_at: string;
+  /** Calendar year of origin. NULL = legacy / unresolved — never invent. */
+  fiscal_year: number | null;
+  /** annual_evidence | durable_reference | null (legacy). */
+  document_role: "annual_evidence" | "durable_reference" | null;
+  /** Optional property attachment (multi-bien-ready). */
+  property_id: string | null;
 };
+
+const DOCUMENT_SELECT =
+  "id, user_id, dossier_id, file_name, file_path, extraction_status, created_at, fiscal_year, document_role, property_id";
 
 const DOSSIER_SELECT = "id, user_id, status, city, lmnp_type, created_at";
 
@@ -92,21 +101,35 @@ export async function ensureActiveDossier(userId: string): Promise<LmnpDossier |
   return createLmnpDossier(userId);
 }
 
-export async function fetchDocumentsForDossier(dossierId: string): Promise<SupabaseDocumentRow[]> {
+/**
+ * Fetches documents for a dossier scoped to one calendar fiscal year.
+ *
+ * Also returns legacy rows (`fiscal_year IS NULL`) so reconcile can
+ * fail-closed on them (or merge metadata only when already present locally).
+ * Rows belonging to another proven year are never returned.
+ */
+export async function fetchDocumentsForDossier(
+  dossierId: string,
+  options: { fiscalYear: number },
+): Promise<SupabaseDocumentRow[]> {
+  const { fiscalYear } = options;
+
   const { data, error } = await supabase
     .from("documents")
-    .select("id, user_id, dossier_id, file_name, file_path, extraction_status, created_at")
+    .select(DOCUMENT_SELECT)
     .eq("dossier_id", dossierId)
+    .or(`fiscal_year.eq.${fiscalYear},fiscal_year.is.null`)
     .order("created_at", { ascending: false });
 
   if (error) {
-    logSupabaseError("fetch documents failed", { dossierId }, error);
+    logSupabaseError("fetch documents failed", { dossierId, fiscalYear }, error);
     return [];
   }
 
   const documents = (data ?? []) as SupabaseDocumentRow[];
   console.log("[documents] fetched from Supabase", {
     dossierId,
+    fiscalYear,
     count: documents.length,
   });
   return documents;

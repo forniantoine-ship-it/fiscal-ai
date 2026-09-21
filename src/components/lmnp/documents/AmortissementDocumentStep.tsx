@@ -986,7 +986,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
     files: File[],
     category: DocumentCategory,
     section: "continuity" | "travaux" | "mobilier",
-    meta?: { supabaseDocumentIds: string[] },
+    meta?: { supabaseDocumentIds: string[]; filePaths?: string[] },
   ) => {
     if (!files.length) return;
 
@@ -1033,6 +1033,9 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         category,
         documentId: meta?.supabaseDocumentIds?.[index],
         isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
+        storagePath: meta?.filePaths?.[index],
+        fiscalYear: workspace.fiscalYear.year,
+        documentRole: "annual_evidence" as const,
       })),
     });
 
@@ -1221,6 +1224,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         helper="Ancienne liasse fiscale, tableau d'amortissements ou export comptable utile."
         uploadedCount={continuityDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
+        fiscalYear={workspace.fiscalYear.year}
+        propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "continuity", meta)}
         canContinue={continuityCanContinue}
         onContinue={() => handleSectionContinue("continuity")}
@@ -1235,6 +1240,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         helper="Vous pouvez regrouper ici vos factures de travaux et, le cas échéant, vos factures de mobilier. Une section dédiée apparaîtra si du mobilier est détecté."
         uploadedCount={travauxDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
+        fiscalYear={workspace.fiscalYear.year}
+        propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
         canContinue={travauxCanContinue}
         onContinue={() => handleSectionContinue("travaux")}
@@ -1258,6 +1265,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         title="Ajoutez vos factures de mobilier"
         uploadedCount={mobilierDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
+        fiscalYear={workspace.fiscalYear.year}
+        propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "mobilier", meta)}
         canContinue={showMobilierLaunchAnalysis}
         onContinue={() => handleSectionContinue("mobilier")}
