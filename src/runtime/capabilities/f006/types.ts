@@ -114,6 +114,12 @@ export type FiscalEngineInputs = {
   logementAmortissement?: {
     computedAt: string;
     /**
+     * Lot 4 — millésime de confirmation F-010. Optionnel (legacy) ; lu uniquement
+     * par `validateFiscalInputs` pour year-safety, jamais par l'agrégation /
+     * le moteur (transport pur de `fraisEnCharges` uniquement).
+     */
+    exerciceFiscal?: number;
+    /**
      * JUG-001 : frais d'acquisition en déduction immédiate (TRF-0001, F-010).
      * Transport pur — jamais recalculé ici. Optionnel : 0 si l'assistant n'a
      * pas encore produit cette donnée ou si les frais sont intégrés au prix

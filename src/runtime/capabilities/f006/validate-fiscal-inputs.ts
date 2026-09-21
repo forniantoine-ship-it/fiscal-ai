@@ -1,5 +1,6 @@
 import type { Anomaly } from "../../contracts/Anomaly";
 import type { FiscalEngineInputs, ValidateFiscalInputsOutput } from "./types";
+import { annualOutputYearMismatchReason } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 
 /**
  * Vérifie que toutes les sorties assistants requises sont disponibles (F-006 préconditions).
@@ -22,7 +23,7 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
       field: "revenusAssistant",
     });
   } else {
-    if (input.revenusAssistant.exerciceFiscal !== input.exerciceFiscal) {
+    if (annualOutputYearMismatchReason("revenusAssistant", input.revenusAssistant, input.exerciceFiscal)) {
       anomalies.push({
         severity: "error",
         message: "Exercice fiscal des recettes incohérent avec le dossier.",
@@ -62,11 +63,25 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
     });
   }
 
+  if (annualOutputYearMismatchReason("financementCharges", input.financementCharges, input.exerciceFiscal)) {
+    anomalies.push({
+      severity: "error",
+      message: "Exercice fiscal du financement incohérent avec le dossier.",
+      field: "financementCharges.exerciceFiscal",
+    });
+  }
+
   if (!input.chargesAssistant) {
     anomalies.push({
       severity: "fatal",
       message: "Charges non calculées (F-012 Charges).",
       field: "chargesAssistant",
+    });
+  } else if (annualOutputYearMismatchReason("chargesAssistant", input.chargesAssistant, input.exerciceFiscal)) {
+    anomalies.push({
+      severity: "error",
+      message: "Exercice fiscal des charges incohérent avec le dossier.",
+      field: "chargesAssistant.exerciceFiscal",
     });
   } else if (input.chargesAssistant.recouvrementAssuranceF011) {
     // Recouvrement F-011 / F-012 : F-012 a neutralisé une assurance emprunteur à hauteur de ce que F-011 établissait
@@ -114,6 +129,18 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
       message: "Le plan d'amortissement doit être validé avant le calcul fiscal.",
       field: "amortissementAssistant.status",
     });
+  } else if (
+    annualOutputYearMismatchReason(
+      "amortissementAssistant",
+      input.amortissementAssistant,
+      input.exerciceFiscal,
+    )
+  ) {
+    anomalies.push({
+      severity: "error",
+      message: "Exercice fiscal des amortissements incohérent avec le dossier.",
+      field: "amortissementAssistant.exerciceFiscal",
+    });
   }
 
   if (!input.logementAmortissement) {
@@ -121,6 +148,18 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
       severity: "warning",
       message: "Plan logement absent — le calcul peut continuer si F-014 est validé.",
       field: "logementAmortissement",
+    });
+  } else if (
+    annualOutputYearMismatchReason(
+      "logementAmortissement",
+      input.logementAmortissement,
+      input.exerciceFiscal,
+    )
+  ) {
+    anomalies.push({
+      severity: "error",
+      message: "Exercice fiscal du plan logement incohérent avec le dossier.",
+      field: "logementAmortissement.exerciceFiscal",
     });
   }
 

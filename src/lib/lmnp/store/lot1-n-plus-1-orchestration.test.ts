@@ -92,7 +92,7 @@ describe("Lot 1 — orchestration : chemins unifiés + pas de reseed", () => {
     assert.deepEqual(
       viaTransitionSemantics.declarationDraft,
       createNextDeclarationDraft(previousDraft),
-      "le draft N+1 est exactement createNextDeclarationDraft (identité seule)",
+      "le draft N+1 est exactement createNextDeclarationDraft (identité + prefills durables)",
     );
   });
 

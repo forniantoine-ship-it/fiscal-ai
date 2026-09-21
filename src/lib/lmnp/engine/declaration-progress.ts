@@ -42,7 +42,7 @@ function isStepComplete(id: DeclarationStepId, ws: PersistedWorkspace): boolean 
   const draft = ws.declarationDraft ?? { completedSteps: [] };
   if (draft.completedSteps.includes(id)) return true;
 
-  const { fiscalYear, documents, properties, validationItems } = ws;
+  const { fiscalYear, documents, validationItems } = ws;
   const pending = validationItems.filter((v) => v.status === "pending").length;
 
   switch (id) {
@@ -53,10 +53,10 @@ function isStepComplete(id: DeclarationStepId, ws: PersistedWorkspace): boolean 
     case "exploitant":
       return Boolean(draft.exploitantFirstName?.trim() && draft.exploitantLastName?.trim());
     case "logement":
-      // Source de vérité canonique = logementConfirmedAt (partagée avec dashboard-workflow-model,
-      // document-journey-progress et dossier-status). Le repli adresse/ville est conservé pour ne
-      // pas régresser un dossier hérité dont l'état ne serait pas visible dans ce dépôt.
-      return isDocumentStepComplete("logement", ws) || properties.some((p) => p.address.trim() && p.city.trim());
+      // Lot 4 — Property.address durable ≠ confirmation annuelle F010.
+      // Source de vérité = logementConfirmedAt / document journey, jamais
+      // la seule présence d'une adresse reportée N→N+1.
+      return isDocumentStepComplete("logement", ws);
     case "amortissement":
       return (
         draft.completedSteps.includes("amortissement") ||

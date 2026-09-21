@@ -37,8 +37,16 @@ import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
 import { resolvePriorHistoryEligibility } from "../declaration/prior-history-eligibility";
+import {
+  seedFinancementAssistantForNextYear,
+  seedLogementAssistantForNextYear,
+} from "./n-plus-1-durable-prefill";
 
-/** Champs d'identité — Dossier-level (audit P3-SOCLE-CYCLE-FISCAL, Blocker A) — jamais remis à zéro au passage N → N+1. */
+/**
+ * Champs durables Dossier-level — jamais remis à zéro au passage N → N+1.
+ * Lot 4 : `dateMiseEnService` (RAI-003) est un fait durable du logement /
+ * activité, distinct de toute confirmation annuelle F009.
+ */
 const IDENTITY_FIELDS = [
   "siren",
   "siret",
@@ -53,6 +61,7 @@ const IDENTITY_FIELDS = [
   "establishmentCity",
   "establishmentPostalCode",
   "activityStartDate",
+  "dateMiseEnService",
 ] as const satisfies readonly (keyof DeclarationDraft)[];
 
 /**
@@ -175,17 +184,35 @@ export function extractFinancementBases(
   loans: F011LoanDraft[] | undefined,
 ): FinancementBase[] {
   if (!loans) return [];
-  return loans.map((loan) => ({
-    pretId: loan.pretId,
-    capitalInitial: loan.capitalInitial,
-    tauxNominal: loan.tauxNominal,
-    dureeMois: loan.dureeMois,
-    datePremiereMensualite: loan.datePremiereMensualite,
-    assuranceAnnuelle: loan.assuranceAnnuelle,
-    fraisDossier: loan.fraisDossier,
-    garantieDeductible: loan.commissionCaution,
-    iraDeductible: loan.iraMontant,
-  }));
+  return loans.map((loan) => {
+    // Millésime de souscription : uniquement s'il est EXPLICITEMENT connu
+    // (flag annuel N). Jamais déduit de datePremiereMensualite (peut différer).
+    // Sans millésime, les one-offs restent stockés mais ne seront jamais
+    // déduits automatiquement (computeFinancementExercice : anneeSouscription
+    // === exercice uniquement).
+    const anneeSouscription =
+      loan.souscritCetExercice === true && loan.datePremiereMensualite
+        ? Number(loan.datePremiereMensualite.slice(0, 4))
+        : undefined;
+
+    return {
+      pretId: loan.pretId,
+      typePret: loan.typePret,
+      capitalInitial: loan.capitalInitial,
+      tauxNominal: loan.tauxNominal,
+      dureeMois: loan.dureeMois,
+      datePremiereMensualite: loan.datePremiereMensualite,
+      assuranceAnnuelle: loan.assuranceAnnuelle,
+      assuranceType: loan.assuranceType,
+      typeGarantie: loan.typeGarantie,
+      // One-offs conservés pour l'historique Dossier, jamais re-seedés en
+      // F011LoanDraft N+1 (voir seedFinancementAssistantForNextYear).
+      fraisDossier: loan.fraisDossier,
+      garantieDeductible: loan.commissionCaution,
+      iraDeductible: loan.iraMontant,
+      anneeSouscription: Number.isFinite(anneeSouscription) ? anneeSouscription : undefined,
+    };
+  });
 }
 
 /**
@@ -643,14 +670,20 @@ export function buildNextExerciseFromClosedYear(input: {
 }
 
 /**
- * Construit le draft de départ de N+1 : identité Dossier-level reportée,
- * tout le reste (assistants, résultats, déclaration) explicitement vide —
- * "declarationDraft = nouvel état d'exercice" (P3-SOCLE-CYCLE-FISCAL §12).
+ * Construit le draft de départ de N+1 : identité + faits durables allowlistés
+ * (Lot 4), tout le reste (confirmations, outputs annuels, documents,
+ * génération) explicitement vide — "nouvel exercice avec mémoire durable",
+ * jamais un clone de N (P3-SOCLE-CYCLE-FISCAL §12 + Lot 4 Phase 12).
  */
 export function createNextDeclarationDraft(previousDraft: DeclarationDraft | undefined): DeclarationDraft {
+  const logementAssistantState = seedLogementAssistantForNextYear(previousDraft);
+  const financementAssistantState = seedFinancementAssistantForNextYear(previousDraft);
+
   return {
     completedSteps: [],
     ...extractIdentity(previousDraft),
+    ...(logementAssistantState ? { logementAssistantState } : {}),
+    ...(financementAssistantState ? { financementAssistantState } : {}),
   };
 }
 

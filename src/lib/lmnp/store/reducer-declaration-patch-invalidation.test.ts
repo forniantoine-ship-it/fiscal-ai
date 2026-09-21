@@ -424,6 +424,127 @@ describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activit�
     assert.equal(next.fiscalYear.paidAt, PAID_AT);
   });
 
+  it("#13b Lot 4 blocker — dateMiseEnService A→B invalide F010–F014 dérivés + génération ; A→A no-op ; inputs source préservés", async () => {
+    const lmnpReducer = await loadReducer();
+    const DATE_A = "2020-01-01";
+    const DATE_B = "2021-06-15";
+    const logementState = {
+      step: "complete" as const,
+      nature: "achat" as const,
+      acquisitionSource: "manuel" as const,
+      prixAcquisition: 250000,
+      typeBien: "appartement" as const,
+      surface: 55,
+      adresse: "12 rue Test",
+      dateAcquisition: "2019-03-15",
+      fraisNotaire: 15000,
+      choixTraitementFrais: "deduction" as const,
+      montantMobilier: 5000,
+      fieldSources: {},
+      confirmed: { prixAcquisition: true },
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const financementState = {
+      step: "complete" as const,
+      presenceEmprunt: true,
+      nombrePrets: 1,
+      currentLoanIndex: 0,
+      loans: [],
+      fieldSources: {},
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const chargesState = {
+      step: "complete" as const,
+      fieldSources: {},
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
+    const chargesOutput = {
+      exerciceFiscal: 2026,
+      totalDeductible: 2000,
+      totalNonDeductible: 0,
+      totalAmortissable: 0,
+      totalPreExploitation: 0,
+      parCategorie: {},
+      composantsNouveaux: [],
+      fieldSources: {},
+      computedAt: "2026-01-01T00:00:00Z",
+    };
+    const draft = {
+      completedSteps: ["siren", "logement", "credit", "charges", "revenus", "amortissement"],
+      dateMiseEnService: DATE_A,
+      logementAssistantState: logementState as never,
+      financementAssistantState: financementState as never,
+      chargesAssistantState: chargesState as never,
+      logementAmortissement: logementAmortissementFixture({ exerciceFiscal: 2026 }),
+      financementCharges: financementFixture(),
+      chargesAssistant: chargesOutput,
+      revenusAssistant: revenusFixture(),
+      amortissementAssistant: amortissementFixture(),
+      logementConfirmedAt: "2026-01-01T00:00:00Z",
+      creditConfirmedAt: "2026-01-01T00:00:00Z",
+      chargesConfirmedAt: "2026-01-01T00:00:00Z",
+      revenusConfirmedAt: "2026-01-01T00:00:00Z",
+      amortissementConfirmedAt: "2026-01-01T00:00:00Z",
+      fiscalResult: { exercice: 2026, resultatFiscal: 1000 } as never,
+      rfs: { kind: "rfs" } as never,
+      liasseResult: { kind: "liasse" } as never,
+      liasseRfs: { kind: "liasseRfs" } as never,
+    };
+    const state = baseState(
+      draft,
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+
+    const afterChange = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dateMiseEnService: DATE_B },
+    });
+    const nextDraft = afterChange.declarationDraft!;
+
+    assert.equal(nextDraft.dateMiseEnService, DATE_B);
+    // F010–F014 dérivés + confirmations invalidés
+    assert.equal(nextDraft.logementAmortissement, undefined);
+    assert.equal(nextDraft.financementCharges, undefined);
+    assert.equal(nextDraft.chargesAssistant, undefined);
+    assert.equal(nextDraft.revenusAssistant, undefined);
+    assert.equal(nextDraft.amortissementAssistant, undefined);
+    assert.equal(nextDraft.logementConfirmedAt, undefined);
+    assert.equal(nextDraft.creditConfirmedAt, undefined);
+    assert.equal(nextDraft.chargesConfirmedAt, undefined);
+    assert.equal(nextDraft.revenusConfirmedAt, undefined);
+    assert.equal(nextDraft.amortissementConfirmedAt, undefined);
+    // Génération stale
+    assert.equal(nextDraft.fiscalResult, undefined);
+    assert.equal(nextDraft.rfs, undefined);
+    assert.equal(nextDraft.liasseResult, undefined);
+    assert.equal(nextDraft.liasseRfs, undefined);
+    assert.equal(afterChange.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(afterChange.fiscalYear.paidAt, PAID_AT);
+    // Inputs source préservés
+    assert.deepEqual(nextDraft.logementAssistantState, draft.logementAssistantState);
+    assert.deepEqual(nextDraft.financementAssistantState, draft.financementAssistantState);
+    assert.deepEqual(nextDraft.chargesAssistantState, draft.chargesAssistantState);
+
+    // A→A : aucune invalidation
+    const stateSame = baseState(
+      draft,
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+    const afterSame = lmnpReducer(stateSame, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { dateMiseEnService: DATE_A },
+    });
+    assert.equal(afterSame.declarationDraft?.logementAmortissement, draft.logementAmortissement);
+    assert.equal(afterSame.declarationDraft?.financementCharges, draft.financementCharges);
+    assert.equal(afterSame.declarationDraft?.chargesAssistant, draft.chargesAssistant);
+    assert.equal(afterSame.declarationDraft?.revenusAssistant, draft.revenusAssistant);
+    assert.equal(afterSame.declarationDraft?.amortissementAssistant, draft.amortissementAssistant);
+    assert.equal(afterSame.declarationDraft?.chargesConfirmedAt, draft.chargesConfirmedAt);
+    assert.equal(afterSame.declarationDraft?.revenusConfirmedAt, draft.revenusConfirmedAt);
+    assert.equal(afterSame.declarationDraft?.fiscalResult, draft.fiscalResult);
+    assert.equal(afterSame.fiscalYear.declarationGeneratedAt, GENERATED_AT);
+  });
+
   it("#14 activityType modifié + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
     const lmnpReducer = await loadReducer();
     const state = baseState(
@@ -476,7 +597,7 @@ describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activit�
     assert.equal(next.fiscalYear.paidAt, undefined);
   });
 
-  it("#17 chargesAssistant seul modifié (charge pure, aucun composant amortissable touché) + declarationGeneratedAt posé → aucune invalidation directe", async () => {
+  it("#17 Lot 4 — chargesAssistant modifié + declarationGeneratedAt posé → génération invalidée", async () => {
     const lmnpReducer = await loadReducer();
     const chargesFixture = {
       exerciceFiscal: 2026,
@@ -501,10 +622,11 @@ describe("DECLARATION_PATCH_DRAFT — invalidation étendue à Logement/Activit�
 
     assert.equal(
       next.fiscalYear.declarationGeneratedAt,
-      GENERATED_AT,
-      "chargesAssistant seul n'est pas une clé contributive directe : une charge pure édité sans toucher un " +
-        "composant amortissable ne doit jamais invalider la déclaration (Chantier 2 §4/§5)",
+      undefined,
+      "Lot 4 — charges F012 contributives : modification → déclaration générée stale (paidAt intact)",
     );
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+    assert.equal(next.declarationDraft?.chargesConfirmedAt, undefined);
   });
 
   it("#18 (Chantier 2 §4/§5) — F-012 modifie un composant amortissable : le panel invalide amortissementAssistant dans le même patch → declarationGeneratedAt effacé", async () => {

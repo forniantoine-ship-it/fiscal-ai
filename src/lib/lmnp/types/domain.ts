@@ -598,6 +598,12 @@ export type LmnpActivityType = "LMNP" | "LMP";
 
 /** Sortie durable de F-010 (Assistant Logement) — consommée par F-006/F-012. */
 export interface LogementAmortissementOutput {
+  /**
+   * Lot 4 — millésime de l'exercice pour lequel ce plan a été confirmé.
+   * Optionnel pour compatibilité des dossiers antérieurs ; absence = impossible
+   * de prouver l'appartenance à l'exercice actif (year-safety fail-closed).
+   */
+  exerciceFiscal?: number;
   prixRevient: number;
   /**
    * JUG-001 : frais d'acquisition en déduction immédiate (TRF-0001) — 0 si

@@ -8,6 +8,7 @@ import { excludedLoanIdsFromFinancing } from "./f011/credit-financing-to-finance
 import { effectiveFinancementCharges } from "./declaration/credit-state";
 import { aggregateFinancementTerms } from "@/runtime/capabilities/f006/aggregate-inputs";
 import { round2 } from "@/runtime/capabilities/f006/types";
+import { isAnnualOutputForActiveYear } from "./dossier/annual-output-year-safety";
 
 // Source unique du prix (aussi lue par le serveur pour le montant Stripe).
 export { GENERATION_PRICE_TTC } from "./payment/price";
@@ -73,7 +74,9 @@ export function formatEstimatedResult(value: number): string {
 }
 
 function isActiviteComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.inpiConfirmedAt || draft?.siren?.trim());
+  // Lot 4 — SIREN/identité durable ≠ confirmation annuelle F009.
+  // Seul `inpiConfirmedAt` (posé après review explicite) prouve la complétude.
+  return Boolean(draft?.inpiConfirmedAt);
 }
 
 /**
@@ -86,8 +89,10 @@ function isActiviteComplete(draft?: DeclarationDraft): boolean {
  * telle quelle) ; seule cette vérification de complétude change, pour
  * refléter l'état canonique réel plutôt qu'un horodatage qui peut mentir.
  */
-function isLogementComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.logementAmortissement);
+function isLogementComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
+  if (!draft?.logementAmortissement) return false;
+  if (fiscalYear === undefined) return true;
+  return isAnnualOutputForActiveYear(draft.logementAmortissement, fiscalYear);
 }
 
 /**
@@ -100,9 +105,13 @@ function isLogementComplete(draft?: DeclarationDraft): boolean {
  * confirmation. Même logique que `isRevenusComplete` (NEXT-1) pour refléter
  * exactement ce que `validateFiscalInputs` (F-006) bloquerait.
  */
-function isCreditComplete(draft?: DeclarationDraft): boolean {
+function isCreditComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
   if (!draft?.creditConfirmedAt && !draft?.creditDeclaredNoneAt) return false;
-  return excludedLoanIdsFromFinancing(draft?.creditFinancing).length === 0;
+  if (excludedLoanIdsFromFinancing(draft?.creditFinancing).length > 0) return false;
+  if (draft?.financementCharges && fiscalYear !== undefined) {
+    return isAnnualOutputForActiveYear(draft.financementCharges, fiscalYear);
+  }
+  return true;
 }
 
 /**
@@ -118,8 +127,10 @@ function isCreditComplete(draft?: DeclarationDraft): boolean {
  * telle quelle) ; seule cette vérification de complétude change, pour
  * refléter exactement la même condition que `validateFiscalInputs()`.
  */
-function isAmortissementComplete(draft?: DeclarationDraft): boolean {
-  return draft?.amortissementAssistant?.status === "validated";
+function isAmortissementComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
+  if (draft?.amortissementAssistant?.status !== "validated") return false;
+  if (fiscalYear === undefined) return true;
+  return isAnnualOutputForActiveYear(draft.amortissementAssistant, fiscalYear);
 }
 
 /**
@@ -129,12 +140,16 @@ function isAmortissementComplete(draft?: DeclarationDraft): boolean {
  * Revenus doit rester "incomplète" pour le dossier — même logique que
  * `isChargesComplete` ci-dessus (refléter exactement ce que F-006 bloquerait).
  */
-function isRevenusComplete(draft?: DeclarationDraft): boolean {
+function isRevenusComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
   if (!draft?.revenusConfirmedAt) return false;
   const blocking = draft.revenusAssistant?.anomalies?.some(
     (a) => a.severity === "fatal" || a.severity === "error",
   );
-  return !blocking;
+  if (blocking) return false;
+  if (draft.revenusAssistant && fiscalYear !== undefined) {
+    return isAnnualOutputForActiveYear(draft.revenusAssistant, fiscalYear);
+  }
+  return Boolean(draft.revenusAssistant);
 }
 
 /**
@@ -147,11 +162,16 @@ function isRevenusComplete(draft?: DeclarationDraft): boolean {
  * quelle) ; seule cette vérification de complétude change, pour refléter
  * exactement la même condition que `validateFiscalInputs()` (F-006).
  */
-function isChargesComplete(draft?: DeclarationDraft): boolean {
-  return Boolean(draft?.chargesAssistant);
+function isChargesComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
+  if (!draft?.chargesAssistant) return false;
+  if (fiscalYear === undefined) return true;
+  return isAnnualOutputForActiveYear(draft.chargesAssistant, fiscalYear);
 }
 
-export function buildDossierSteps(draft?: DeclarationDraft): DossierStepItem[] {
+export function buildDossierSteps(
+  draft?: DeclarationDraft,
+  fiscalYear?: number,
+): DossierStepItem[] {
   const checks: {
     id: DossierStepId;
     completeLabel: string;
@@ -168,31 +188,31 @@ export function buildDossierSteps(draft?: DeclarationDraft): DossierStepItem[] {
       id: "logement",
       completeLabel: "Logement analysé",
       incompleteLabel: "Logement à compléter",
-      complete: isLogementComplete(draft),
+      complete: isLogementComplete(draft, fiscalYear),
     },
     {
       id: "credit",
       completeLabel: "Crédit analysé",
       incompleteLabel: "Crédit à compléter",
-      complete: isCreditComplete(draft),
+      complete: isCreditComplete(draft, fiscalYear),
     },
     {
       id: "amortissement",
       completeLabel: "Amortissements calculés",
       incompleteLabel: "Amortissements à compléter",
-      complete: isAmortissementComplete(draft),
+      complete: isAmortissementComplete(draft, fiscalYear),
     },
     {
       id: "revenus",
       completeLabel: "Revenus détectés",
       incompleteLabel: "Revenus à compléter",
-      complete: isRevenusComplete(draft),
+      complete: isRevenusComplete(draft, fiscalYear),
     },
     {
       id: "charges",
       completeLabel: "Charges classées",
       incompleteLabel: "Charges à compléter",
-      complete: isChargesComplete(draft),
+      complete: isChargesComplete(draft, fiscalYear),
     },
   ];
 
@@ -432,7 +452,7 @@ export function buildValidationDossierSnapshot(
   properties: Property[],
   fiscalYear: number,
 ): ValidationDossierSnapshot {
-  const steps = buildDossierSteps(draft);
+  const steps = buildDossierSteps(draft, fiscalYear);
   const missing = buildMissingItems(steps);
 
   return {

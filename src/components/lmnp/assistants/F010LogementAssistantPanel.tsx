@@ -1252,6 +1252,7 @@ export function F010LogementAssistantPanel() {
         },
       });
       const logementAmortissement = {
+        exerciceFiscal: workspace.fiscalYear.year,
         prixRevient: r.prixRevient,
         fraisEnCharges: r.fraisEnCharges,
         valeurTerrain: r.valeurTerrain,
@@ -1278,7 +1279,7 @@ export function F010LogementAssistantPanel() {
         },
       });
     },
-    [dispatch, flushWorkspace],
+    [dispatch, flushWorkspace, workspace.fiscalYear.year],
   );
 
   /**

@@ -147,11 +147,22 @@ export interface PropertyAmortissementBase {
  */
 export interface FinancementBase {
   pretId: string;
+  /** Lot 4 — caractéristique contractuelle durable (requis pour rejouer computeFinancementExercice). */
+  typePret: import("@/runtime/capabilities/f011/types").TypePret;
   capitalInitial: number;
   tauxNominal: number;
   dureeMois: number;
   datePremiereMensualite: string;
   assuranceAnnuelle?: number;
+  /** Lot 4 — nature d'assurance contractuelle durable. */
+  assuranceType?: "bancaire" | "externe";
+  /** Lot 4 — nature de garantie contractuelle durable (classification fiscale figée F011/F012). */
+  typeGarantie?: "caution" | "hypotheque_ippd" | "aucune" | "autre";
+  /**
+   * One-offs éventuels, uniquement déductibles l'année de souscription
+   * (`anneeSouscription === exercice`). Absents / sans millésime → jamais
+   * réinjectés comme charges N+1 (UNKNOWN ≠ ZERO de déduction).
+   */
   fraisDossier?: number;
   garantieDeductible?: number;
   iraDeductible?: number;

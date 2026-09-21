@@ -198,24 +198,20 @@ function runTests(): void {
     );
   });
 
-  test("4. Adresse/ville présentes mais logementConfirmedAt absent → repli legacy conservé (declaration-progress)", () => {
-    // Aucun code de ce dépôt ne produit cet état aujourd'hui (seul CONFIRM_LOGEMENT_PROFILE
-    // écrit address/city, et il écrit toujours logementConfirmedAt dans le même dispatch).
-    // Le repli est vérifié ici pour ne pas régresser un éventuel dossier hérité hors dépôt,
-    // conformément à la consigne Cycle 0 de ne pas le supprimer sans preuve qu'il est mort.
+  test("4. Adresse/ville présentes mais logementConfirmedAt absent → Lot 4 : pas de complétude (adresse ≠ confirmation)", () => {
+    // Lot 4 — Property.address est durable et survit N→N+1 ; elle ne doit
+    // jamais satisfaire à elle seule l'étape logement de l'exercice actif.
     const fy = baseFiscalYear("draft");
     const persisted = basePersistedWorkspace(fy, {}, [addressedProperty()]);
     assertEqual(
-      resolveDeclarationProgress(persisted).steps.find((s) => s.id === "logement")?.status,
-      "completed",
-      "4 — declaration-progress reconnaît toujours le repli adresse/ville",
+      resolveDeclarationProgress(persisted).steps.find((s) => s.id === "logement")?.status === "completed",
+      false,
+      "4 — declaration-progress n'utilise plus le repli adresse/ville",
     );
-    // Les 3 autres systèmes, eux, restent sur logementConfirmedAt : divergence attendue et
-    // déjà existante avant Cycle 0 pour ce cas non atteignable — non traitée ici (hors périmètre).
     assertEqual(
       isDocumentStepComplete("logement", persisted),
       false,
-      "4 — document-journey-progress ne connaît pas le repli adresse/ville (inchangé, hors périmètre Cycle 0)",
+      "4 — document-journey-progress exige logementConfirmedAt",
     );
   });
 

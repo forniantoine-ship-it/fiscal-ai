@@ -1,5 +1,6 @@
 import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
 import { invalidateExpensesForDocument } from "@/runtime/capabilities/f012/expense";
+import { buildDownstreamInvalidationPatch } from "@/lib/lmnp/services/dossier/declaration-draft-invalidation";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import {
   createLedgerEntryFromField,
@@ -1150,6 +1151,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           "revenusAssistant",
           "amortissementAssistant",
           "logementAmortissement",
+          "chargesAssistant",
           "siret",
           "dateMiseEnService",
           "activityType",
@@ -1168,8 +1170,15 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         ] as const
       ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
 
+      // Lot 4 — invalidations déterministes des descendants (confirmations /
+      // outputs dérivés), sans toucher aux inputs source du patch.
+      const downstreamInvalidation = buildDownstreamInvalidationPatch(draft, action.patch);
+
       let fiscalYear = state.fiscalYear;
-      if (contributiveKeyChanged && fiscalYear.declarationGeneratedAt) {
+      if (
+        (contributiveKeyChanged || Object.keys(downstreamInvalidation).length > 0) &&
+        fiscalYear.declarationGeneratedAt
+      ) {
         // paidAt n'est jamais touché — seule la génération devient obsolète,
         // ce qui rouvre canRetryAfterPayment sans facturer une seconde fois.
         fiscalYear = { ...fiscalYear, declarationGeneratedAt: undefined };
@@ -1177,7 +1186,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
       return finalizeState({
         ...state,
-        declarationDraft: { ...draft, ...action.patch },
+        declarationDraft: { ...draft, ...action.patch, ...downstreamInvalidation },
         fiscalYear,
       });
     }

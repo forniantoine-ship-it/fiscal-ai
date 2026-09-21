@@ -123,14 +123,18 @@ describe("extractFinancementBases — T12", () => {
     assert.deepEqual(bases, [
       {
         pretId: "pret-1",
+        typePret: "amortissable",
         capitalInitial: 200000,
         tauxNominal: 0.032,
         dureeMois: 240,
         datePremiereMensualite: "2024-05-01",
         assuranceAnnuelle: 480,
+        assuranceType: undefined,
+        typeGarantie: undefined,
         fraisDossier: 900,
         garantieDeductible: 3200,
         iraDeductible: 0,
+        anneeSouscription: undefined,
       },
     ]);
   });
@@ -326,10 +330,17 @@ describe("createNextFiscalYear / createNextDeclarationDraft / extractIdentity", 
     assert.equal((identity as Record<string, unknown>).revenusAssistant, undefined);
   });
 
-  it("createNextDeclarationDraft reporte l'identité mais repart d'un draft vide sinon", () => {
-    const previous: DeclarationDraft = { completedSteps: ["siren"], siren: "123456789" } as DeclarationDraft;
+  it("createNextDeclarationDraft reporte l'identité durable (dont dateMiseEnService) mais repart sans confirmations/outputs", () => {
+    const previous: DeclarationDraft = {
+      completedSteps: ["siren"],
+      siren: "123456789",
+      dateMiseEnService: "2020-01-01",
+    } as DeclarationDraft;
     const next = createNextDeclarationDraft(previous);
-    assert.deepEqual(next, { completedSteps: [], siren: "123456789" });
+    assert.equal(next.siren, "123456789");
+    assert.equal(next.dateMiseEnService, "2020-01-01");
+    assert.deepEqual(next.completedSteps, []);
+    assert.equal(next.inpiConfirmedAt, undefined);
   });
 });
 
@@ -1141,6 +1152,7 @@ describe("buildNextExerciseFromClosedYear — Lot 1 contrat N→N+1", () => {
     assert.equal(built.declarationDraft.siren, "123456789");
     assert.equal(built.declarationDraft.exploitantFirstName, "Marie");
     assert.equal(built.declarationDraft.activityStartDate, "2019-06-01");
+    assert.equal(built.declarationDraft.dateMiseEnService, "2020-01-01");
   });
 
   it("14–19 — revenus/charges/génération/paiement/confirmations/documents N absents du draft N+1", () => {
