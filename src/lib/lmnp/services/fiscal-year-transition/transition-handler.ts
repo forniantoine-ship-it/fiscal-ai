@@ -1,9 +1,13 @@
 /**
- * Lot 3 — POST /api/lmnp/fiscal-year/transition
+ * Lot 3 / Lot 6B — POST /api/lmnp/fiscal-year/transition
  *
- * Auth + owner check, then service-role RPC (or injectable store for tests).
+ * Auth + owner check + fromYear payment entitlement (Lot 6B), then
+ * service-role RPC (or injectable store for tests).
  * Fiscal payloads are prepared by the client from Lot 1 builder; this handler
  * never rebuilds N+1 and never reseeds an existing successor.
+ *
+ * Payment gate (Lot 6B): HTTP handler only — never RPC, never canCloseFiscalYear.
+ * Authority = lmnp_declaration_payments for (dossierId, fromYear).
  */
 import {
   assertDossierOwnership,
@@ -12,6 +16,11 @@ import {
   OwnershipError,
   UnauthorizedError,
 } from "@/lib/supabase-server";
+import {
+  createSupabasePaymentStore,
+  getPaymentServiceClient,
+  type PaymentStore,
+} from "@/lib/lmnp/services/payment/payment-server";
 import { commitFiscalYearTransition } from "./commit-transition";
 import { commitFiscalYearTransitionViaRpc } from "./supabase-rpc";
 import {
@@ -23,6 +32,8 @@ import {
 export type TransitionHandlerDeps = {
   authenticate: (authToken: string | undefined) => Promise<{ userId: string }>;
   assertOwnership: (dossierId: string, userId: string) => Promise<void>;
+  /** Lot 6B — entitlement lookup keyed by (dossierId, fiscalYear). */
+  paymentStore: Pick<PaymentStore, "getByDossierYear">;
   commit: (input: {
     dossierId: string;
     userId: string;
@@ -78,12 +89,15 @@ function mapError(err: unknown): Response {
 }
 
 export function createDefaultTransitionHandlerDeps(): TransitionHandlerDeps {
+  // Payment store: Supabase service role only (same as delivery) — no Stripe required.
+  const paymentStore = createSupabasePaymentStore(getPaymentServiceClient());
   return {
     authenticate: (authToken) => getServerSupabaseForUser(authToken),
     assertOwnership: async (dossierId, userId) => {
       const supabase = getServerSupabaseUnscoped();
       await assertDossierOwnership(supabase, dossierId, userId);
     },
+    paymentStore,
     commit: async (input) => {
       const supabase = getServerSupabaseUnscoped();
       return commitFiscalYearTransitionViaRpc(supabase, input);
@@ -91,10 +105,36 @@ export function createDefaultTransitionHandlerDeps(): TransitionHandlerDeps {
   };
 }
 
+/** Always-paid stub for Lot 3 structural tests that are not about entitlement. */
+function alwaysPaidPaymentStore(): Pick<PaymentStore, "getByDossierYear"> {
+  return {
+    async getByDossierYear(dossierId, fiscalYear) {
+      return {
+        id: `paid-stub-${dossierId}-${fiscalYear}`,
+        dossier_id: dossierId,
+        fiscal_year: fiscalYear,
+        status: "paid",
+        amount_cents: 0,
+        currency: "eur",
+        prior_history_status: null,
+        prior_history_declared_at: null,
+        stripe_checkout_session_id: null,
+        stripe_payment_intent_id: null,
+        created_at: new Date().toISOString(),
+        paid_at: new Date().toISOString(),
+      };
+    },
+  };
+}
+
 /** Test helper: wire handler to an in-memory store (no Supabase). */
 export function createStoreBackedTransitionHandlerDeps(
   store: FiscalYearTransitionStore,
-  options?: { userIdByToken?: Record<string, string> },
+  options?: {
+    userIdByToken?: Record<string, string>;
+    /** Lot 6B — inject real payment entitlement; default = always paid (Lot 3 non-régression). */
+    paymentStore?: Pick<PaymentStore, "getByDossierYear">;
+  },
 ): TransitionHandlerDeps {
   const userIdByToken = options?.userIdByToken ?? { "tok-owner": "user-owner" };
   return {
@@ -106,6 +146,7 @@ export function createStoreBackedTransitionHandlerDeps(
       const dossier = await store.getDossier(dossierId);
       if (!dossier || dossier.userId !== userId) throw new OwnershipError();
     },
+    paymentStore: options?.paymentStore ?? alwaysPaidPaymentStore(),
     commit: (input) => commitFiscalYearTransition(store, input),
   };
 }
@@ -158,6 +199,16 @@ export async function handleFiscalYearTransitionRequest(
     }
 
     await deps.assertOwnership(dossierId, userId);
+
+    // Lot 6B — paiement N (fromYear) obligatoire avant commit. Clé exacte :
+    // (dossierId, fromYear). Jamais nextYear, jamais paidAt local.
+    const payment = await deps.paymentStore.getByDossierYear(dossierId, fromYear);
+    if (!payment || payment.status !== "paid") {
+      return jsonResponse(402, {
+        error: "Le paiement de cet exercice est requis pour clôturer et continuer.",
+        code: "payment_required",
+      });
+    }
 
     const result = await deps.commit({
       dossierId,
