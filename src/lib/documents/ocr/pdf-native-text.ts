@@ -19,6 +19,12 @@ type NormalizedPdfTextItem = {
   y: number;
 };
 
+export type NativePdfPageText = {
+  /** 1-indexed, aligned with pdfjs page numbers. */
+  pageNumber: number;
+  text: string;
+};
+
 function isPdfFile(file: File): boolean {
   return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 }
@@ -93,24 +99,28 @@ function buildSpatialPageText(items: unknown[]): { text: string; rowCount: numbe
   };
 }
 
-/**
- * Extracts embedded text from a PDF using pdf.js (browser).
- * Rows are reconstructed from text item coordinates (Y grouping, X sort).
- */
-export async function extractNativePdfText(
-  file: File,
-): Promise<{ text: string; pageCount: number }> {
-  if (!isPdfFile(file)) {
-    return { text: "", pageCount: 0 };
-  }
+async function loadPdfDocument(file: File) {
+  const isBrowser = typeof window !== "undefined";
 
-  const pdfjs = await measureCreditPipelineAwait("pdf_worker_import", import("pdfjs-dist"));
+  // Browser: standard build. Node/tests: legacy build (pas de DOMMatrix).
+  const pdfjs = await measureCreditPipelineAwait(
+    "pdf_worker_import",
+    isBrowser
+      ? import("pdfjs-dist")
+      : import("pdfjs-dist/legacy/build/pdf.mjs"),
+  );
 
-  if (typeof window !== "undefined") {
+  if (isBrowser) {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL(
       "pdfjs-dist/build/pdf.worker.min.mjs",
       import.meta.url,
     ).toString();
+  } else {
+    const { createRequire } = await import("node:module");
+    const require = createRequire(import.meta.url);
+    pdfjs.GlobalWorkerOptions.workerSrc = require.resolve(
+      "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
+    );
   }
 
   const buffer = await measureCreditPipelineAwait("pdf_array_buffer_read", file.arrayBuffer(), {
@@ -125,8 +135,24 @@ export async function extractNativePdfText(
     { fileName: file.name, totalPages: "pending" },
   );
 
+  return pdf;
+}
+
+/**
+ * Page-aware native PDF text — preserves 1-indexed pageNumber.
+ * Reuses the same pdfjs / spatial reconstruction as extractNativePdfText.
+ * Empty pages are kept (with empty text) so numbering stays aligned.
+ */
+export async function extractNativePdfPages(
+  file: File,
+): Promise<{ pages: NativePdfPageText[]; pageCount: number }> {
+  if (!isPdfFile(file)) {
+    return { pages: [], pageCount: 0 };
+  }
+
+  const pdf = await loadPdfDocument(file);
   const pageCount = Math.min(pdf.numPages, MAX_NATIVE_PDF_PAGES);
-  const pageTexts: string[] = [];
+  const pages: NativePdfPageText[] = [];
   let totalRowCount = 0;
 
   for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
@@ -148,10 +174,41 @@ export async function extractNativePdfText(
       textLength: pageResult.text.length,
     });
 
-    if (pageResult.text.trim()) {
-      pageTexts.push(pageResult.text);
-    }
+    pages.push({
+      pageNumber: pageNum,
+      text: pageResult.text,
+    });
   }
+
+  console.log("[pdf-native-text]", {
+    mode: "pages",
+    pageCount,
+    totalPages: pdf.numPages,
+    totalRowCount,
+    pagesWithText: pages.filter((p) => p.text.trim().length > 0).length,
+  });
+
+  return { pages, pageCount };
+}
+
+/**
+ * Extracts embedded text from a PDF using pdf.js (browser).
+ * Rows are reconstructed from text item coordinates (Y grouping, X sort).
+ *
+ * Contract preserved for existing callers:
+ * - returns `{ text, pageCount }`
+ * - joins non-empty pages with PAGE_SEPARATOR
+ * - skips empty pages in the joined text (historical behaviour)
+ */
+export async function extractNativePdfText(
+  file: File,
+): Promise<{ text: string; pageCount: number }> {
+  if (!isPdfFile(file)) {
+    return { text: "", pageCount: 0 };
+  }
+
+  const { pages, pageCount } = await extractNativePdfPages(file);
+  const pageTexts = pages.map((page) => page.text).filter((text) => text.trim().length > 0);
 
   const text = measureCreditPipelineSync(
     "pdf_native_text_join",
@@ -159,9 +216,13 @@ export async function extractNativePdfText(
     { pageCount },
   );
 
+  const totalRowCount = pages.reduce(
+    (sum, page) => sum + (page.text.trim() ? page.text.split("\n").length : 0),
+    0,
+  );
+
   console.log("[pdf-native-text]", {
     pageCount,
-    totalPages: pdf.numPages,
     totalRowCount,
     textLength: text.length,
     newlineCount: (text.match(/\n/g) ?? []).length,
@@ -170,4 +231,4 @@ export async function extractNativePdfText(
   return { text, pageCount };
 }
 
-export { isPdfFile };
+export { isPdfFile, PAGE_SEPARATOR, MAX_NATIVE_PDF_PAGES };

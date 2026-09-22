@@ -21,7 +21,8 @@ export {
   OCR_FAILURE_MIN_TEXT_LENGTH,
   type OcrQualityMetrics,
 } from "./ocr-quality";
-export { extractNativePdfText, isPdfFile } from "./pdf-native-text";
+export { extractNativePdfText, extractNativePdfPages, isPdfFile } from "./pdf-native-text";
+export type { NativePdfPageText } from "./pdf-native-text";
 export { fileToRasterImages, type RasterPageImage } from "./pdf-to-images";
 export {
   DocumentOcrFailedError,

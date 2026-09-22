@@ -116,3 +116,9 @@ export {
   type TaxPackageLiasseVisionFormPayload,
   type TaxPackageLiasseVisionRequester,
 } from "./extract-tax-package-liasse-observations";
+
+export {
+  extractNativeTaxPackageControlFactsFromPdf,
+  type ExtractNativeTaxPackageControlFactsFromPdfInput,
+  type ExtractNativeTaxPackageControlFactsFromPdfResult,
+} from "./extract-native-tax-package-from-pdf";

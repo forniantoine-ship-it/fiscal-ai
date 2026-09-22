@@ -553,7 +553,7 @@ describe("Lot 4D.3 — contre-audit probes (BLOCKERS + MAJOR)", () => {
     }
   });
 
-  it("PROBE E — même ligne 028 150000 030 42000 → pas de mauvaise association", async () => {
+  it("PROBE E — même ligne 028 150000 030 42000 → association bornée, pas de croisement", async () => {
     const line = "028 150000 030 42000";
     const r028 = readNativeTaxPackageCase(
       `Cerfa N° 2033-A-SD ${FORM_YEAR}\n${line}`,
@@ -565,23 +565,76 @@ describe("Lot 4D.3 — contre-audit probes (BLOCKERS + MAJOR)", () => {
       "030",
       1,
     );
-    // Acceptable : extraction_impossible (Vision fallback). Interdit : croisement.
-    if (r028.status === "present") {
-      assert.notEqual(r028.value, 42_000);
-    }
-    if (r030.status === "present") {
-      assert.notEqual(r030.value, 150_000);
-    }
-    // Au moins une des deux ne doit pas être une association silencieuse croisée ;
-    // le comportement attendu safe est extraction_impossible pour les deux.
-    assert.equal(r028.status, "extraction_impossible");
-    assert.equal(r030.status, "extraction_impossible");
+    assert.equal(r028.status, "present");
+    assert.equal(r028.value, 150_000);
+    assert.equal(r030.status, "present");
+    assert.equal(r030.value, 42_000);
 
     const result = await extract([page2033A(line)]);
     const o28 = obsFor(result.observations, "028")[0]!;
     const o30 = obsFor(result.observations, "030")[0]!;
-    assert.equal(o28.value.status, "extraction_impossible");
-    assert.equal(o30.value.status, "extraction_impossible");
+    assert.ok(isCandidatePresent(o28.value));
+    assert.ok(isCandidatePresent(o30.value));
+    assert.equal(o28.value.value, 150_000);
+    assert.equal(o30.value.value, 42_000);
+  });
+
+  it("SAFETY — rangée de codes case 026…030 → 028 jamais present(29)", () => {
+    const read = readNativeTaxPackageCase("026 027 028 029 030", "028", 1);
+    assert.notEqual(read.status, "present");
+    assert.equal(read.status, "extraction_impossible");
+  });
+
+  it("SAFETY — 028 999 030 → 028 jamais present(999)", () => {
+    const read = readNativeTaxPackageCase("028 999 030", "028", 1);
+    assert.notEqual(read.status, "present");
+    assert.equal(read.status, "extraction_impossible");
+  });
+
+  it("SAFETY — 028 111 222 030 → 028 jamais present(111222)", () => {
+    const read = readNativeTaxPackageCase("028 111 222 030", "028", 1);
+    assert.notEqual(read.status, "present");
+    assert.equal(read.status, "extraction_impossible");
+  });
+
+  it("SAFETY — montants légitimes non ambiguës restent present()", () => {
+    assert.deepEqual(readNativeTaxPackageCase("028: 150000", "028", 1), {
+      status: "present",
+      value: 150_000,
+      pageNumber: 1,
+    });
+    assert.deepEqual(readNativeTaxPackageCase("028 150000", "028", 1), {
+      status: "present",
+      value: 150_000,
+      pageNumber: 1,
+    });
+    assert.deepEqual(readNativeTaxPackageCase("028: 150 000", "028", 1), {
+      status: "present",
+      value: 150_000,
+      pageNumber: 1,
+    });
+    assert.deepEqual(readNativeTaxPackageCase("028: 150 000 000", "028", 1), {
+      status: "present",
+      value: 150_000_000,
+      pageNumber: 1,
+    });
+    assert.deepEqual(readNativeTaxPackageCase("028: 0", "028", 1), {
+      status: "present",
+      value: 0,
+      pageNumber: 1,
+    });
+  });
+
+  it("SAFETY — montant à gauche seul → missing (zone associable = droite uniquement)", () => {
+    const read = readNativeTaxPackageCase("148000 028", "028", 1);
+    assert.equal(read.status, "missing");
+  });
+
+  it("SAFETY — montant gauche ignoré si droite claire (pas d'invention cross-case)", () => {
+    // Sur une rangée, la gauche de 030 appartient à 028 — ne doit pas polluer 030.
+    const read = readNativeTaxPackageCase("028 150000 030 42000", "030", 1);
+    assert.equal(read.status, "present");
+    assert.equal(read.value, 42_000);
   });
 });
 

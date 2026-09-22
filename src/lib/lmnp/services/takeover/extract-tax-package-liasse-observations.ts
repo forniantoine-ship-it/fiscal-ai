@@ -96,6 +96,11 @@ type NativeCaseRead = {
 const AMOUNT_TOKEN =
   /-?(?:\d{1,3}(?:[ \u00a0]\d{3})+|\d+)(?:[.,]\d{1,2})?/g;
 
+/** Cases V1 — utilisées pour borner l'association montant avant le prochain numéro de case. */
+const V1_CASE_TOKEN_ALTERNATION = TAX_PACKAGE_CONTROL_V1_MATRIX.map(
+  (row) => row.sourceCase,
+).join("|");
+
 /**
  * Marqueurs FORTS uniquement — une mention narrative « 2033-A » ne suffit pas.
  * Exige le millésime Cerfa « …-SD » (ex. 2033-A-SD / 2033-C-SD).
@@ -186,18 +191,69 @@ function caseTokenRegex(sourceCase: string): RegExp {
   return new RegExp(`(^|[^0-9])(${sourceCase})(?=[^0-9]|$)`);
 }
 
-function parseAmountToken(raw: string): number | null {
+function hasDigitResidue(zone: string): boolean {
+  return /\d/.test(zone);
+}
+
+/**
+ * Montant non ambigu en mode non étiqueté.
+ * Rejette les tokens qui ressemblent à des numéros de case Cerfa (3 chiffres)
+ * ou à des suites de codes case — false positive interdit.
+ */
+function isConfidentUnlabeledAmountToken(token: string, value: number): boolean {
+  const trimmed = token.trim().replace(/\u00a0/g, " ");
+  if (value === 0) {
+    return /^0([.,]0+)?$/.test(trimmed.replace(/\s+/g, ""));
+  }
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    const head = parts[0]!.replace(/[.,]\d+$/, "");
+    // Un seul groupe de 3 chiffres = collision avec un code case (029, 999…).
+    if (/^\d{3}$/.test(head)) return false;
+    // Entier « clair » : ≥ 4 chiffres, ou décimal.
+    return head.length >= 4 || /[.,]\d+/.test(parts[0]!);
+  }
+  // Groupes fr-FR : accepter si dernier groupe = milliers « 000 », ou
+  // premier groupe < 3 chiffres (ex. « 12 000 », « 1 500 000 »), ou décimal.
+  const first = parts[0]!;
+  const last = parts[parts.length - 1]!;
+  if (parts.some((part) => /[.,]\d+/.test(part))) return true;
+  if (/^\d+$/.test(last) && /^0+$/.test(last)) return true;
+  if (/^\d{1,2}$/.test(first.replace(/[.,].*$/, ""))) return true;
+  // Ex. « 111 222 » : uniquement des groupes de 3 chiffres non-nuls → pas confiant.
+  if (parts.every((part) => /^\d{3}$/.test(part))) return false;
+  return true;
+}
+
+function parseSignedRegisterAmount(raw: string): number | null {
   const trimmed = raw.trim();
-  // Préserve le signe : un token négatif ne doit JAMAIS devenir un positif.
   if (/^-/.test(trimmed) || /^\(.*\)$/.test(trimmed)) {
     return null;
   }
   return parseRegisterAmount(trimmed);
 }
 
+function collectConfidentUnlabeledAmounts(zone: string): number[] {
+  const values: number[] = [];
+  for (const match of zone.matchAll(new RegExp(AMOUNT_TOKEN.source, "g"))) {
+    const token = match[0]!;
+    const parsed = parseSignedRegisterAmount(token);
+    if (parsed === null) continue;
+    if (!isConfidentUnlabeledAmountToken(token, parsed)) continue;
+    values.push(parsed);
+  }
+  return values;
+}
+
 /**
- * Associe un montant à une case sur UNE ligne.
- * Garde anti-faux-positif : proximité immédiate uniquement, un seul montant.
+ * Associe un montant à une case sur UNE ligne — fail closed.
+ * present() uniquement si l'association case→montant est non ambiguë.
+ *
+ * Zone associable = texte À DROITE de la case, borné par la prochaine case V1
+ * (sur une rangée Cerfa, ce texte appartient à cette case ; le texte à gauche
+ * appartient à la case précédente et n'est jamais candidat).
+ * Plusieurs montants confiants dans cette zone → extraction_impossible.
+ * Digits non confiants (codes case voisins, etc.) → extraction_impossible.
  */
 function associateAmountOnLine(
   line: string,
@@ -211,9 +267,17 @@ function associateAmountOnLine(
 
   const caseStart = tokenMatch.index + tokenMatch[1]!.length;
   const caseEnd = caseStart + sourceCase.length;
-  const afterCase = line.slice(caseEnd);
+  let afterCase = line.slice(caseEnd);
 
-  // Format étiqueté : 028: 150000 | 028 = 0 | 028:
+  // Zone bornée par la prochaine case V1 — évite de mélanger 028 et 030.
+  const nextCase = afterCase.match(
+    new RegExp(`(^|[^0-9])(${V1_CASE_TOKEN_ALTERNATION})(?=[^0-9]|$)`),
+  );
+  if (nextCase && nextCase.index !== undefined) {
+    afterCase = afterCase.slice(0, nextCase.index);
+  }
+
+  // Format étiqueté explicite : 028: 150000 | 028 = 0 | 028:
   const labeled = afterCase.match(/^\s*[:=]\s*(.*)$/);
   if (labeled) {
     const raw = (labeled[1] ?? "").trim();
@@ -221,47 +285,29 @@ function associateAmountOnLine(
     const amountMatches = [...raw.matchAll(new RegExp(AMOUNT_TOKEN.source, "g"))];
     if (amountMatches.length === 0) return { status: "extraction_impossible" };
     if (amountMatches.length > 1) return { status: "extraction_impossible" };
-    const parsed = parseAmountToken(amountMatches[0]![0]!);
+    const parsed = parseSignedRegisterAmount(amountMatches[0]![0]!);
     if (parsed === null) return { status: "extraction_impossible" };
     return { status: "present", value: parsed };
   }
 
+  // Fenêtre de proximité à droite uniquement.
   const PROXIMITY = 48;
-  const windowStart = Math.max(0, caseStart - PROXIMITY);
-  const windowEnd = Math.min(line.length, caseEnd + PROXIMITY);
-  const before = line.slice(windowStart, caseStart);
-  const after = line.slice(caseEnd, windowEnd);
+  const afterWindow = afterCase.slice(0, Math.min(afterCase.length, PROXIMITY));
+  const amounts = collectConfidentUnlabeledAmounts(afterWindow);
 
-  const amountsAfter: number[] = [];
-  for (const m of after.matchAll(new RegExp(AMOUNT_TOKEN.source, "g"))) {
-    const parsed = parseAmountToken(m[0]!);
-    if (parsed !== null) amountsAfter.push(parsed);
+  if (amounts.length === 1) {
+    return { status: "present", value: amounts[0] };
   }
-
-  const amountsBefore: number[] = [];
-  for (const m of before.matchAll(new RegExp(AMOUNT_TOKEN.source, "g"))) {
-    const parsed = parseAmountToken(m[0]!);
-    if (parsed !== null) amountsBefore.push(parsed);
-  }
-
-  if (amountsAfter.length === 1 && amountsBefore.length === 0) {
-    return { status: "present", value: amountsAfter[0] };
-  }
-  if (amountsBefore.length === 1 && amountsAfter.length === 0) {
-    return { status: "present", value: amountsBefore[0] };
-  }
-  if (amountsAfter.length + amountsBefore.length > 1) {
+  if (amounts.length > 1) {
     return { status: "extraction_impossible" };
   }
 
-  // Case présente, aucun montant dans la fenêtre → vide explicite
-  const restAfterCase = afterCase.replace(/[\s.:_\-–—|]/g, "");
-  if (restAfterCase.length === 0) {
-    return { status: "missing" };
+  // Aucun montant confiant : digits dans la zone = ambiguïté (pas missing).
+  if (hasDigitResidue(afterWindow)) {
+    return { status: "extraction_impossible" };
   }
 
-  // Texte non vide mais pas de montant associé démontré → ne pas inventer
-  return { status: "extraction_impossible" };
+  return { status: "missing" };
 }
 
 /**
