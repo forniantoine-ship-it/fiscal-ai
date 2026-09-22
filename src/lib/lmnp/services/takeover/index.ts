@@ -98,3 +98,19 @@ export {
   type TaxPackageControlFactSkip,
   type TaxPackageLiasseCaseObservation,
 } from "./extract-tax-package-control-facts-from-liasse";
+
+export {
+  buildTaxPackageLiasseVisionSystemPrompt,
+  extractTaxPackageLiasseObservations,
+  identifyTaxPackageLiasseForm,
+  readNativeTaxPackageCase,
+  TAX_PACKAGE_LIASSE_VISION_JSON_SCHEMA,
+  type ExtractTaxPackageLiasseObservationsInput,
+  type ExtractTaxPackageLiasseObservationsResult,
+  type TaxPackageLiasseFormType,
+  type TaxPackageLiassePageImage,
+  type TaxPackageLiassePageText,
+  type TaxPackageLiasseVisionCasePayload,
+  type TaxPackageLiasseVisionFormPayload,
+  type TaxPackageLiasseVisionRequester,
+} from "./extract-tax-package-liasse-observations";
