@@ -112,6 +112,15 @@ export {
 } from "./reconcile-historical-tax-package-controls";
 
 export {
+  buildExternalTakeoverFiscalYearOpening,
+  evaluateHistoricalControlsForExternalOpening,
+  type BuildExternalTakeoverFiscalYearOpeningInput,
+  type BuildExternalTakeoverFiscalYearOpeningResult,
+  type ExternalTakeoverOpeningIssue,
+  type HistoricalControlsOpeningGate,
+} from "./build-external-takeover-opening";
+
+export {
   extractTaxPackageControlFactsFromLiasse,
   type ExtractTaxPackageControlFactsFromLiasseInput,
   type ExtractTaxPackageControlFactsFromLiasseResult,
