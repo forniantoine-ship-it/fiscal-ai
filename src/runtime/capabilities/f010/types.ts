@@ -20,6 +20,33 @@ export interface ComposantAmorti {
   dotationAnnuelle: number;
 }
 
+/**
+ * Ancre d'ouverture comptable pour continuer un plan existant
+ * sans reconstruire le passé (Lot 2A).
+ */
+export type DepreciationOpeningAnchor = {
+  /** Exercice fiscal pour lequel le cumul d'ouverture s'applique. */
+  exerciceFiscal: number;
+  /** Cumul comptable attesté en ouverture (≠ stock fiscal 318). */
+  cumulComptableOuverture: number;
+};
+
+/**
+ * Paramètres minimaux d'un plan linéaire exploitables pour la dotation
+ * théorique d'un exercice (Lot 2A).
+ */
+export type DepreciationPlanParameters = {
+  /** Date de début d'amortissement (ISO YYYY-MM-DD). */
+  dateDebut: string;
+  dureeAnnees: number;
+  /**
+   * Convention de prorata de première année.
+   * Lot 2A AUTO : préférer `annuel_plein` (1re annuité entière).
+   * `jours` / `mois` restent REVIEW pour la V1 (divergence fuseau connue).
+   */
+  prorataConvention: "annuel_plein" | "mois" | "jours";
+};
+
 /** Une ligne du plan d'amortissement pour un exercice donné (TRF-0012). */
 export interface PlanLigne {
   label: string;
@@ -28,6 +55,9 @@ export interface PlanLigne {
   dotationExercice: number;
   amortissementsCumules: number;
   vnc: number;
+  /** Identité durable — obligatoire pour une ligne ancrée (Lot 2A). */
+  id?: string;
+  propertyId?: string;
 }
 
 /** Plan d'amortissement assemblé (TRF-0012). */
