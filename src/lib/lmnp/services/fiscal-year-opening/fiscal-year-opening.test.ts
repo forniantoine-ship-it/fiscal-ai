@@ -353,11 +353,9 @@ describe("Lot 1 — Fixture 4 actif historique", () => {
       assert.equal(terrain!.plan.value.kind, "non_amortizable");
     }
 
-    assert.equal(isAvailable(amorti!.plan), true);
-    if (isAvailable(amorti!.plan) && amorti!.plan.value.kind === "amortizable") {
-      assert.equal(amorti!.plan.value.startDate.slice(0, 4), "2020");
-      assert.equal(amorti!.plan.value.durationYears, 12);
-    }
+    // Snapshot pré-2B : durée connue via archive, mais convention absente
+    // → plan unavailable (INCONNU ≠ annuel_plein/jours_reels).
+    assert.equal(isUnavailable(amorti!.plan), true);
 
     // VNC dérivée / attestée : 12 000 − 4 500 = 7 500
     if (isAvailable(amorti!.coutBrut) && isAvailable(amorti!.cumulOuverture)) {

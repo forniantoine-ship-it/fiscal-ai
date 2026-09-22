@@ -64,9 +64,37 @@ function isIndexBasedAssetId(id: string): boolean {
 function planForActif(
   actif: ImmobilisationComptableActif,
   archived: PersistedWorkspace,
-): { plan: OpeningAssetPlan | undefined; ambiguous: boolean } {
+): {
+  plan: OpeningAssetPlan | undefined;
+  ambiguous: boolean;
+  unavailableReason?: string;
+} {
   if (actif.categorie === "terrain") {
     return { plan: { kind: "non_amortizable" }, ambiguous: false };
+  }
+
+  // Lot 2B — snapshot complet : date + durée + convention attestées.
+  if (actif.dureeAnnees && actif.dateDebut && actif.prorataConvention) {
+    return {
+      plan: {
+        kind: "amortizable",
+        startDate: actif.dateDebut,
+        durationYears: actif.dureeAnnees,
+        prorataConvention: actif.prorataConvention,
+      },
+      ambiguous: false,
+    };
+  }
+
+  // Date/durée connues mais convention absente → INCONNU ≠ défaut
+  // (ni annuel_plein ni jours_reels inventés).
+  if (actif.dureeAnnees && actif.dateDebut && !actif.prorataConvention) {
+    return {
+      plan: undefined,
+      ambiguous: false,
+      unavailableReason:
+        "convention de prorata absente du snapshot — INCONNU ≠ annuel_plein/jours_reels",
+    };
   }
 
   const base = archived.properties.find((p) => p.id === actif.propertyId)?.amortissementBase
@@ -78,14 +106,22 @@ function planForActif(
   const startDate =
     fromBase?.dateDebut ?? actif.dateDebut ?? base?.dateMiseEnService ?? undefined;
   if (fromBase?.dureeAnnees && startDate) {
+    if (actif.prorataConvention) {
+      return {
+        plan: {
+          kind: "amortizable",
+          startDate,
+          durationYears: fromBase.dureeAnnees,
+          prorataConvention: actif.prorataConvention,
+        },
+        ambiguous: false,
+      };
+    }
     return {
-      plan: {
-        kind: "amortizable",
-        startDate,
-        durationYears: fromBase.dureeAnnees,
-        prorataConvention: "jours_reels",
-      },
+      plan: undefined,
       ambiguous: false,
+      unavailableReason:
+        "convention de prorata absente — paramètres partiels non transformés en défaut",
     };
   }
 
@@ -93,18 +129,24 @@ function planForActif(
   if (isIndexBasedAssetId(actif.id)) {
     const index = Number(actif.id.slice("f010-".length));
     const ligne = draftPlan?.lignes[index];
-    if (ligne && draftPlan) {
+    if (ligne && draftPlan && actif.prorataConvention) {
       return {
         plan: {
           kind: "amortizable",
           startDate: archived.declarationDraft?.dateMiseEnService ?? "",
           durationYears: ligne.dureeAnnees,
-          prorataConvention: "jours_reels",
+          prorataConvention: actif.prorataConvention,
         },
         ambiguous: true,
       };
     }
-    return { plan: undefined, ambiguous: true };
+    return {
+      plan: undefined,
+      ambiguous: true,
+      unavailableReason: actif.prorataConvention
+        ? undefined
+        : "convention de prorata absente — ID index-based ambigu",
+    };
   }
 
   return { plan: undefined, ambiguous: false };
@@ -120,7 +162,7 @@ function mapAssets(
 
   const assets: OpeningAsset[] = [];
   for (const actif of snap.actifs) {
-    const { plan, ambiguous } = planForActif(actif, archived);
+    const { plan, ambiguous, unavailableReason } = planForActif(actif, archived);
     if (ambiguous) {
       issues.push(
         issue(
@@ -149,7 +191,9 @@ function mapAssets(
       cumulOuverture,
       plan: plan
         ? available(plan)
-        : unavailable("paramètres de plan absents du contexte archivé"),
+        : unavailable(
+            unavailableReason ?? "paramètres de plan absents du contexte archivé",
+          ),
       dateAcquisition: actif.dateDebut,
       vncAttestee: typeof actif.vnc === "number" ? actif.vnc : undefined,
     });

@@ -55,9 +55,16 @@ export interface PlanLigne {
   dotationExercice: number;
   amortissementsCumules: number;
   vnc: number;
-  /** Identité durable — obligatoire pour une ligne ancrée (Lot 2A). */
+  /** Identité durable — obligatoire pour une ligne ancrée (Lot 2A/2B). */
   id?: string;
   propertyId?: string;
+  /**
+   * Lot 2B — convention de prorata attestée (snapshot / N+1).
+   * Absente sur le chemin historique non ancré.
+   */
+  prorataConvention?: "annuel_plein" | "mensuel" | "jours_reels" | "mois" | "jours";
+  /** Lot 2B — date de début du plan (pour snapshot / ouverture N+1). */
+  dateDebut?: string;
 }
 
 /** Plan d'amortissement assemblé (TRF-0012). */

@@ -42,6 +42,19 @@ export {
 } from "./content-hash";
 export { validateFiscalYearOpening } from "./validate-opening";
 export {
+  resolveOpeningDepreciation,
+  applyResolvedOpeningDepreciation,
+  type ResolveOpeningDepreciationInput,
+  type ResolveOpeningDepreciationResult,
+  type ResolveOpeningDepreciationReady,
+  type ResolvedOpeningDepreciationEntry,
+} from "./resolve-opening-depreciation";
+export {
+  propagateAnchoredDepreciation,
+  type PropagateAnchoredDepreciationInput,
+  type PropagateAnchoredDepreciationResult,
+} from "./propagate-anchored-depreciation";
+export {
   fixture1Simple,
   fixture2WithCarryforwardAndAssets,
   fixture3UnavailableFacts,

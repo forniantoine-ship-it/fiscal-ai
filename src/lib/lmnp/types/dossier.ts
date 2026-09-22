@@ -193,6 +193,12 @@ export type ImmobilisationComptableActif = {
   provenance: "historique" | "acquisition_exercice";
   origin?: "f012_travaux" | "f012_copro";
   dateDebut?: string;
+  /**
+   * Lot 2B — paramètres de plan conservés au snapshot pour l'ouverture N+1.
+   * Absents sur les snapshots pré-2B (UNKNOWN ≠ invention).
+   */
+  dureeAnnees?: number;
+  prorataConvention?: "jours_reels" | "mensuel" | "annuel_plein";
 };
 
 export type ImmobilisationsComptablesSnapshot = {

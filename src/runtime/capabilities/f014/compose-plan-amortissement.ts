@@ -34,12 +34,33 @@ function ksArtifactsForLabel(label: string): string[] {
   return ["SAV-007", "JUG-004", "TRF-0009"];
 }
 
+function isAnchoredLigne(ligne: PlanLigne): boolean {
+  return typeof ligne.id === "string" && ligne.id.length > 0 && !/^f010-\d+$/.test(ligne.id);
+}
+
+/**
+ * Pour une ligne ancrée : ne reconstruit PAS le passé théorique depuis la
+ * mise en service. Une seule ligne d'exercice reflète le résultat Lot 2A.
+ * Chemin non ancré : inchangé.
+ */
 function buildPluriannuelFromLigne(
   ligne: PlanLigne,
   premiereAnnee: number,
   dotationAnnuellePleine: number,
   prorataRatio: number,
+  exerciceFiscal: number,
 ): LignePlan[] {
+  if (isAnchoredLigne(ligne)) {
+    return [
+      {
+        annee: exerciceFiscal,
+        dotation: ligne.dotationExercice,
+        cumul_amortissements: ligne.amortissementsCumules,
+        valeur_nette_comptable: ligne.vnc,
+      },
+    ];
+  }
+
   const rows: LignePlan[] = [];
   const n = ligne.dureeAnnees;
   const d1 = round2(dotationAnnuellePleine * prorataRatio);
@@ -82,8 +103,11 @@ function mapLigneToComposant(
   const estProratisee =
     exerciceFiscal === premiereAnnee && prorataRatio < 1 && ligne.dotationExercice < dotationAnnuellePleine;
 
+  // Lot 2B — identité ancrée = id stable ; sinon fallback historique f010-${index}.
+  const id = isAnchoredLigne(ligne) ? ligne.id! : `f010-${index}`;
+
   return {
-    id: `f010-${index}`,
+    id,
     nom_technique: ligne.label,
     nom_courant: toNomCourant(ligne.label),
     base_amortissable: ligne.montant,
@@ -92,7 +116,13 @@ function mapLigneToComposant(
     dotation_exercice: ligne.dotationExercice,
     est_proratisee: estProratisee,
     ks_artifacts: ksArtifactsForLabel(ligne.label),
-    plan_pluriannuel: buildPluriannuelFromLigne(ligne, premiereAnnee, dotationAnnuellePleine, prorataRatio),
+    plan_pluriannuel: buildPluriannuelFromLigne(
+      ligne,
+      premiereAnnee,
+      dotationAnnuellePleine,
+      prorataRatio,
+      exerciceFiscal,
+    ),
   };
 }
 
@@ -145,6 +175,7 @@ function mapComposantNouveau(
       premiereAnnee,
       composant.dotationAnnuelle,
       Math.min(1, prorataRatio),
+      exerciceFiscal,
     ),
   };
 }

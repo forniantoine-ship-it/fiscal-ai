@@ -38,16 +38,25 @@ export function assembleRegistreImmobilisationsPatrimoniales(input: {
   }
 
   const raisons: string[] = [];
-  const actifs: ActifImmobilise[] = immo.lignes.map((ligne) => ({
-    id: ligne.label,
-    categorie: "composant" as const,
-    label: ligne.label,
-    coutBrut: ligne.montant,
-    dureeAnnees: ligne.dureeAnnees,
-    amortissementCumule: ligne.amortissementsCumules,
-    vnc: ligne.vnc,
-    source: "F-010 (AmortissementPlan.lignes)",
-  }));
+  const actifs: ActifImmobilise[] = immo.lignes.map((ligne) => {
+    const anchoredId =
+      typeof ligne.id === "string" && ligne.id.length > 0 && !/^f010-\d+$/.test(ligne.id)
+        ? ligne.id
+        : undefined;
+    return {
+      // Lot 2B — id stable ancré ; sinon label (comportement historique F-010).
+      id: anchoredId ?? ligne.label,
+      categorie: "composant" as const,
+      label: ligne.label,
+      coutBrut: ligne.montant,
+      dureeAnnees: ligne.dureeAnnees,
+      amortissementCumule: ligne.amortissementsCumules,
+      vnc: ligne.vnc,
+      source: anchoredId
+        ? "F-010 ancré (PlanLigne.id stable)"
+        : "F-010 (AmortissementPlan.lignes)",
+    };
+  });
 
   const terrainFiable = typeof immo.valeurTerrain === "number";
   if (terrainFiable) {

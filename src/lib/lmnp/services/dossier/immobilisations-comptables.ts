@@ -26,6 +26,15 @@ import type {
 
 export type ProvenanceImmobilisation = "historique" | "acquisition_exercice";
 
+function mapProrataForSnapshot(
+  convention: PlanLigne["prorataConvention"],
+): ImmobilisationComptableActif["prorataConvention"] | undefined {
+  if (convention === "annuel_plein") return "annuel_plein";
+  if (convention === "mensuel" || convention === "mois") return "mensuel";
+  if (convention === "jours_reels" || convention === "jours") return "jours_reels";
+  return undefined;
+}
+
 export type ComposantImmobilisationDetail = PlanLigne & {
   id: string;
   provenance: ProvenanceImmobilisation;
@@ -149,9 +158,19 @@ export function snapshotImmobilisationsComptables(input: {
   const actifs: ImmobilisationComptableActif[] = [];
 
   for (const [index, ligne] of immo.lignes.entries()) {
+    const anchoredId =
+      typeof ligne.id === "string" && ligne.id.length > 0 && !/^f010-\d+$/.test(ligne.id)
+        ? ligne.id
+        : undefined;
+    // Lot 2B : id stable ancré obligatoire quand présent ; sinon fallback
+    // historique `f010-${index}` (chemin sans ancre inchangé).
+    const id = anchoredId ?? `f010-${index}`;
+    const propertyId = ligne.propertyId ?? input.propertyId;
+    const prorataConvention = mapProrataForSnapshot(ligne.prorataConvention);
+
     actifs.push({
-      id: `f010-${index}`,
-      propertyId: input.propertyId,
+      id,
+      propertyId,
       label: ligne.label,
       categorie: "composant",
       coutBrut: ligne.montant,
@@ -162,6 +181,9 @@ export function snapshotImmobilisationsComptables(input: {
         new Date(immo.dateMiseEnService).getFullYear() === input.exerciceFiscal
           ? "acquisition_exercice"
           : "historique",
+      dateDebut: ligne.dateDebut ?? immo.dateMiseEnService,
+      dureeAnnees: ligne.dureeAnnees,
+      ...(prorataConvention ? { prorataConvention } : {}),
     });
   }
 
@@ -192,6 +214,10 @@ export function snapshotImmobilisationsComptables(input: {
       provenance: d.provenance,
       origin: d.origin,
       dateDebut: d.dateDebut,
+      dureeAnnees: d.dureeAnnees,
+      ...(mapProrataForSnapshot(d.prorataConvention)
+        ? { prorataConvention: mapProrataForSnapshot(d.prorataConvention) }
+        : {}),
     });
   }
 
