@@ -58,3 +58,17 @@ export {
   fixtureTaxPackageCandidates,
   fixtureTakeoverCandidatePackage,
 } from "./fixtures";
+
+export {
+  extractDepreciationRegisterFromSpreadsheet,
+  parseRegisterAmount,
+  parseRegisterDurationYears,
+  parseRegisterStartDate,
+  type DepreciationRegisterDiagnostic,
+  type DepreciationRegisterDiagnosticCode,
+  type DepreciationRegisterExtractionResult,
+  type DepreciationRegisterExtractionStatus,
+  type DepreciationRegisterSheetMeta,
+  type ExtractDepreciationRegisterInput,
+  type RegisterColumnRole,
+} from "./extract-depreciation-register-spreadsheet";
