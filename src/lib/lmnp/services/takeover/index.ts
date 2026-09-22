@@ -72,3 +72,21 @@ export {
   type ExtractDepreciationRegisterInput,
   type RegisterColumnRole,
 } from "./extract-depreciation-register-spreadsheet";
+
+export {
+  createTaxPackageControlFact,
+  createTaxPackageControlFacts,
+  isTaxPackageControlFact,
+  isV1TaxPackageControlCase,
+  TAX_PACKAGE_CONTROL_V1_MATRIX,
+  validateTaxPackageControlFact,
+  type TaxPackageControlFact,
+  type TaxPackageControlFactDraft,
+  type TaxPackageControlFactIssue,
+  type TaxPackageControlFactKind,
+  type TaxPackageControlFacts,
+  type TaxPackageControlFormType,
+  type TaxPackageControlPeriodPosition,
+  type TaxPackageControlSourceCase,
+  type ValidateTaxPackageControlFactResult,
+} from "./tax-package-control-facts";
