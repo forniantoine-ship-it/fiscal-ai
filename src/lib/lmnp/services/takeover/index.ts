@@ -107,6 +107,11 @@ export {
 } from "./historical-control-reconciliation";
 
 export {
+  reconcileHistoricalTaxPackageControls,
+  type HistoricalTaxPackageControlsReconciliation,
+} from "./reconcile-historical-tax-package-controls";
+
+export {
   extractTaxPackageControlFactsFromLiasse,
   type ExtractTaxPackageControlFactsFromLiasseInput,
   type ExtractTaxPackageControlFactsFromLiasseResult,
