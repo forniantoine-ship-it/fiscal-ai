@@ -586,6 +586,19 @@ export interface FiscalYear {
     status: PriorHistoryDeclarationStatus;
     declaredAt: string;
   };
+  /**
+   * Lot 5.1 — réponses d'exception reprise externe (persistées pour reprise
+   * navigateur). Pas de candidates / 4E / OCR intermédiaires.
+   */
+  externalTakeoverReviewAnswers?: import("../services/takeover/review-answers").TakeoverReviewAnswers;
+  /**
+   * Lot 5.1 — Opening externe finale validée uniquement.
+   * Écriture exclusive via `persistExternalTakeoverOpening` (garde 4F.2).
+   */
+  externalTakeoverOpening?: {
+    sourceRef: string;
+    opening: import("../services/fiscal-year-opening/types").FiscalYearOpening;
+  };
 }
 
 /**

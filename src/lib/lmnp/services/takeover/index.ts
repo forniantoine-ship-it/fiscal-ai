@@ -179,3 +179,43 @@ export {
   parseTaxPackageLiasseVisionFormPayload,
   TaxPackageLiasseVisionFormZodSchema,
 } from "./tax-package-liasse-vision-server";
+
+export {
+  explicitAnswer,
+  isExplicitAnswer,
+  type ExplicitTakeoverAnswer,
+  type TakeoverAssetReviewAnswers,
+  type TakeoverReviewAnswers,
+} from "./review-answers";
+
+export {
+  applyExplicitAnswerToCandidate,
+  emptyDocumentaryFiscalStocks,
+  mergeTakeoverReviewAnswers,
+  type MergeTakeoverReviewAnswersInput,
+  type MergeTakeoverReviewAnswersResult,
+} from "./merge-review-answers";
+
+export {
+  mapIssueToTakeoverException,
+  mapIssuesToTakeoverExceptions,
+  type TakeoverException,
+  type TakeoverExceptionAnswerability,
+} from "./exceptions";
+
+export {
+  prepareExternalTakeover,
+  type ExternalTakeoverOrchestrationRole,
+  type ExternalTakeoverRegisterDocument,
+  type ExternalTakeoverTaxPackageDocument,
+  type PrepareExternalTakeoverInput,
+  type PrepareExternalTakeoverResult,
+} from "./prepare-external-takeover";
+
+export {
+  persistExternalTakeoverOpening,
+  persistExternalTakeoverReviewAnswers,
+  type PersistExternalTakeoverOpeningInput,
+  type PersistExternalTakeoverOpeningResult,
+  type PersistExternalTakeoverReviewAnswersInput,
+} from "./persist-external-takeover-opening";
