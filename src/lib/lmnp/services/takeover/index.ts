@@ -122,3 +122,26 @@ export {
   type ExtractNativeTaxPackageControlFactsFromPdfInput,
   type ExtractNativeTaxPackageControlFactsFromPdfResult,
 } from "./extract-native-tax-package-from-pdf";
+
+export {
+  extractScannedTaxPackageControlFactsFromPdf,
+  type ExtractScannedTaxPackageControlFactsFromPdfInput,
+  type ExtractScannedTaxPackageControlFactsFromPdfResult,
+  type TaxPackageScanRasterizer,
+} from "./extract-scanned-tax-package-from-pdf";
+
+export {
+  buildTaxPackageLiassePageClassifierSystemPrompt,
+  parseTaxPackageLiassePageClassifierPayload,
+  TAX_PACKAGE_LIASSE_PAGE_CLASSIFIER_JSON_SCHEMA,
+  TaxPackageLiassePageClassifierZodSchema,
+  type TaxPackageLiassePageClassification,
+  type TaxPackageLiassePageClassifier,
+} from "./classify-tax-package-liasse-page";
+
+export {
+  createTaxPackageLiassePageClassifier,
+  createTaxPackageLiasseVisionRequester,
+  parseTaxPackageLiasseVisionFormPayload,
+  TaxPackageLiasseVisionFormZodSchema,
+} from "./tax-package-liasse-vision-server";

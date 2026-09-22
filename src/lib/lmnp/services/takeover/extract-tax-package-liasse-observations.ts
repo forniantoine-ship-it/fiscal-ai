@@ -73,6 +73,12 @@ export type ExtractTaxPackageLiasseObservationsInput = {
   documentRole?: TakeoverDocumentRole;
   visionRequester?: TaxPackageLiasseVisionRequester;
   pageImages?: readonly TaxPackageLiassePageImage[];
+  /**
+   * Scan path (4D.4B) : si native = missing ET une image de page est fournie,
+   * déclencher Vision au lieu d'accepter missing (texte natif absent).
+   * 4D.4A / natif : laisser false/undefined — missing reste missing.
+   */
+  visionOnMissing?: boolean;
 };
 
 export type ExtractTaxPackageLiasseObservationsResult = {
@@ -620,7 +626,7 @@ export async function extractTaxPackageLiasseObservations(
     for (const page of formPages) {
       for (const sourceCase of cases) {
         const read = readNativeTaxPackageCase(page.text, sourceCase, page.pageNumber);
-        const value = toCandidateValue(read, {
+        let value = toCandidateValue(read, {
           documentId: input.documentId,
           documentRole,
           formType,
@@ -629,6 +635,22 @@ export async function extractTaxPackageLiasseObservations(
           confidenceValue: 0.9,
           confidenceFactors: ["native_pdf_text", formType, sourceCase],
         });
+        // Scan : missing + image → forcer le chemin Vision (pas d'acceptation silent missing).
+        if (
+          input.visionOnMissing === true &&
+          read.status === "missing" &&
+          findImage(input.pageImages, page.pageNumber)
+        ) {
+          value = extractionImpossibleCandidate(
+            "texte natif absent — Vision requise (scan)",
+            {
+              documentId: input.documentId,
+              documentRole,
+              fieldLabel: `${formType}:${sourceCase}`,
+              sourceRef: `${formType}:${sourceCase}`,
+            },
+          );
+        }
         pending.push({
           formType,
           sourceCase,
