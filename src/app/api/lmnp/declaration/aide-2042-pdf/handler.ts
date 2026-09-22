@@ -43,6 +43,7 @@ export async function handleAide2042PdfRequest(
     authToken: body.authToken,
     dossierId: body.dossierId,
     fiscalYear: body.fiscalYear,
+    fiscalYearOpening: (body as { fiscalYearOpening?: unknown }).fiscalYearOpening,
   });
   if (!access.ok) return access.response;
 

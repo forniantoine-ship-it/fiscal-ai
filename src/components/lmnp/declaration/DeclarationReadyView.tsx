@@ -21,6 +21,7 @@ import {
   FINAL_DECLARABILITY_BLOCKED_MESSAGE,
 } from "@/lib/lmnp/services/declaration/final-declarability";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
+import { resolvePersistedExternalTakeoverOpening } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { useLmnp } from "@/lib/lmnp/store";
 
 function fmtEur(value: number): string {
@@ -130,6 +131,7 @@ export function DeclarationReadyView() {
         }),
         declarationVersionId,
         fiscalYear: fiscalYear.year,
+        fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
       });
     } catch (err) {
       setLiasseDownloadError(
@@ -283,7 +285,12 @@ export function DeclarationReadyView() {
                 if (!rfs) return;
                 setAideDownloadError(undefined);
                 // Payment V1 — PDF produit par le serveur (exercice payé requis).
-                downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: fiscalYear.year }).catch((err) =>
+                downloadAide2042Pdf({
+                  rfs,
+                  activityStartDate,
+                  fiscalYear: fiscalYear.year,
+                  fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
+                }).catch((err) =>
                   setAideDownloadError(
                     err && typeof err === "object" && "message" in err && typeof err.message === "string"
                         ? err.message

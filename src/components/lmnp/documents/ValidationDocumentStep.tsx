@@ -32,7 +32,11 @@ import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { appendDeclarationVersion } from "@/lib/lmnp/services/declaration/append-declaration-version";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
-import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
+import {
+  resolveExternalOpeningProofFromFiscalYear,
+  resolvePersistedExternalTakeoverOpening,
+  resolvePriorHistoryEligibility,
+} from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import {
   declarePriorHistoryOnServer,
   pollUntil,
@@ -96,17 +100,12 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   // P0 launch safety — antériorité LMNP au réel non reprise. Recalculée à
   // chaque changement de l'exercice (jamais mise en cache dans le draft) et
   // transmise à la porte : aucun paiement ni génération sans éligibilité.
-  // Lot 5.2 — si Opening externe validée persistée, la passer comme preuve 4F.2.
+  // Lot 5.3 — une seule Opening persistée alimente eligibility + gate + génération.
+  const fiscalYearOpening = resolvePersistedExternalTakeoverOpening(fiscalYear);
   const priorHistory = useMemo(() => {
-    const opening = fiscalYear.externalTakeoverOpening?.opening;
     return resolvePriorHistoryEligibility(
       fiscalYear,
-      opening
-        ? {
-            fiscalYearOpening: opening,
-            requestedFiscalYear: fiscalYear.year,
-          }
-        : undefined,
+      resolveExternalOpeningProofFromFiscalYear(fiscalYear),
     );
   }, [fiscalYear]);
   const priorHistoryBlocked = !priorHistory.eligible;
@@ -146,6 +145,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
         }),
         priorHistory,
+        // Lot 5.3 — même Opening que runDeclarationGeneration (7e argument).
+        fiscalYearOpening,
       }),
     [
       draft,
@@ -153,6 +154,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       fiscalYear.propertyIds,
       fiscalYear.stocksOuverture,
       fiscalYear.year,
+      fiscalYearOpening,
       generated,
       paid,
       priorHistory,
@@ -261,8 +263,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   }, [continueAfterPayment, gate.canGenerate, generated, paid, router]);
 
   const handleStartCheckout = useCallback(async () => {
-    // Défense en profondeur : même résolveur que la porte ; le serveur refait le contrôle avant Stripe.
-    if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+    // Défense en profondeur : même résolveur + même preuve Opening que la porte.
+    const externalOpeningProof = resolveExternalOpeningProofFromFiscalYear(fiscalYear);
+    if (!resolvePriorHistoryEligibility(fiscalYear, externalOpeningProof).eligible) {
       throw new Error("Votre situation doit être confirmée avant le paiement.");
     }
     const declared = fiscalYear.priorHistoryDeclaration?.status;
@@ -271,6 +274,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       previousFiscalYearId: fiscalYear.previousFiscalYearId ?? undefined,
       stocksOuverture: fiscalYear.stocksOuverture,
       stocksOuvertureUnavailableReason: fiscalYear.stocksOuvertureUnavailableReason,
+      // Lot 5.3 — même Opening persistée ; le serveur la valide via isUsableExternalTakeoverOpening.
+      fiscalYearOpening,
     });
     if (outcome.status === "checkout") {
       window.location.assign(outcome.url);
@@ -280,7 +285,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     setCheckoutOpen(false);
     setPhase("idle");
     await verifyPayment();
-  }, [fiscalYear, verifyPayment]);
+  }, [fiscalYear, fiscalYearOpening, verifyPayment]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
@@ -304,7 +309,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const handleGenerationComplete = useCallback(() => {
     // P0 — jamais de F-006 avec des stocks d'ouverture par défaut ([] / 0) pour
     // un exercice dont l'antériorité n'est pas établie.
-    if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+    // Lot 5.3 — même preuve Opening que eligibility / gate / checkout.
+    const externalOpeningProof = resolveExternalOpeningProofFromFiscalYear(fiscalYear);
+    if (!resolvePriorHistoryEligibility(fiscalYear, externalOpeningProof).eligible) {
       setPhase("idle");
       return;
     }
@@ -328,6 +335,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       draft?.bilanPatrimonial,
       draft?.dispense2033A,
       continuity,
+      // Lot 5.3 — Opening externe persistée (même objet que eligibility / gate).
+      fiscalYearOpening,
     );
 
     if (outcome.status === "blocked") {
@@ -378,7 +387,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       LMNP_ROUTES.declarations,
     );
     router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear, router, showSuccess]);
+  }, [dispatch, draft, fiscalYear, fiscalYearOpening, router, showSuccess, workspace.properties]);
 
   if (generated && paid && !gate.canGenerate && !priorHistoryBlocked) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"

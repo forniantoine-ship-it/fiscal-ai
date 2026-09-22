@@ -247,7 +247,7 @@ describe("webhook — un paiement ne débloque que SON dossier/exercice, au mont
 });
 
 describe("paiement reçu alors que l'historique externe est déclaré (course résiduelle)", () => {
-  it("le droit est enregistré (l'argent a été pris) mais la LIVRAISON reste fermée (403) : remboursement à traiter", async () => {
+  it("le droit est enregistré (l'argent a été pris) mais la LIVRAISON reste fermée SANS Opening (403)", async () => {
     const { env, deps } = setup();
     env.addUser("tok", "user-antoine");
     const row = await pendingRow(env, "dossier-X", 2026);
@@ -261,6 +261,44 @@ describe("paiement reçu alors que l'historique externe est déclaré (course r�
     const access = await resolveDeliveryAccess({ authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026 }, env.deps);
     assert.equal(access.ok, false);
     assert.equal(access.ok === false && access.response.status, 403);
+  });
+
+  it("Lot 5.3 — EXTERNAL_HISTORY payé + Opening usable → livraison autorisée", async () => {
+    const { env, deps } = setup();
+    env.addUser("tok", "user-antoine");
+    const row = await pendingRow(env, "dossier-X", 2026);
+    row.prior_history_status = "EXTERNAL_HISTORY";
+    const res = await handleStripeWebhook(
+      signedRequest(eventBody("checkout.session.completed", { paymentId: row.id, dossierId: "dossier-X", fiscalYear: 2026 })),
+      deps,
+    );
+    assert.equal(res.status, 200);
+    const opening = {
+      revision: 1,
+      targetFiscalYear: 2026,
+      source: { kind: "external_takeover", takeoverId: "t1", sourceFiscalYear: 2025 },
+      validation: {
+        status: "validated",
+        openingRevision: 1,
+        contentHash: "h",
+        validatedAt: "2026-01-01T00:00:00.000Z",
+        validator: "test",
+      },
+      stocks: {
+        deficits: { status: "available", value: [] },
+        amortissementsReportes: { status: "available", value: 0 },
+      },
+      assets: { status: "unavailable", reason: "n/a" },
+      loans: { status: "unavailable", reason: "n/a" },
+      identity: { status: "unavailable", reason: "n/a" },
+      ran: { status: "unavailable", reason: "n/a" },
+      fieldProvenance: {},
+    };
+    const access = await resolveDeliveryAccess(
+      { authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026, fiscalYearOpening: opening },
+      env.deps,
+    );
+    assert.equal(access.ok, true);
   });
 });
 

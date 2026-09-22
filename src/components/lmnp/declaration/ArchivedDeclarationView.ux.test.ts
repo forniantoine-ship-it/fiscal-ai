@@ -60,9 +60,8 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
     assert.ok(viewSource.includes(AIDE_BUTTON));
     // Payment V1 — PDF produit par le serveur pour l'exercice archivé payé.
     assert.ok(viewSource.includes('from "@/lib/lmnp/services/declaration/download-aide-2042-pdf"'));
-    assert.ok(
-      viewSource.includes("downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: record.year })"),
-    );
+    assert.ok(viewSource.includes("downloadAide2042Pdf({"));
+    assert.ok(viewSource.includes("fiscalYearOpening: record.externalTakeoverOpening?.opening"));
     assert.equal(viewSource.includes("render-aide-2042-pdf"), false);
     assert.ok(viewSource.includes("const archivedDraft = record.declarationDraft"));
     assert.ok(viewSource.includes("const rfs = archivedDraft?.rfs"));

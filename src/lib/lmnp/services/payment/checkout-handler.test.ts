@@ -94,6 +94,95 @@ describe("checkout — l'éligibilité d'antériorité (P0) passe AVANT tout Str
     assert.equal(env.created.length, 0);
   });
 
+  it("Lot 5.3 — historique externe + Opening usable → session Checkout créée", async () => {
+    const { env, checkout, declare } = setup();
+    assert.equal((await declare("dossier-X", 2026, "EXTERNAL_HISTORY")).status, 200);
+    const opening = {
+      revision: 1,
+      targetFiscalYear: 2026,
+      source: { kind: "external_takeover", takeoverId: "t1", sourceFiscalYear: 2025 },
+      validation: { status: "validated", openingRevision: 1, contentHash: "h", validatedAt: "2026-01-01T00:00:00.000Z", validator: "test" },
+      stocks: {
+        deficits: { status: "available", value: [] },
+        amortissementsReportes: { status: "available", value: 0 },
+      },
+      assets: { status: "unavailable", reason: "n/a" },
+      loans: { status: "unavailable", reason: "n/a" },
+      identity: { status: "unavailable", reason: "n/a" },
+      ran: { status: "unavailable", reason: "n/a" },
+      fieldProvenance: {},
+    };
+    const res = await checkout({
+      authToken: "tok-antoine",
+      dossierId: "dossier-X",
+      fiscalYear: 2026,
+      continuity: { fiscalYearOpening: opening },
+    });
+    assert.equal(res.status, 200);
+    assert.equal(env.created.length, 1);
+  });
+
+  it("Lot 5.3 — client returning (N-1 payé) + EXTERNAL_HISTORY + Opening usable → checkout refusé", async () => {
+    const { env, checkout, declare } = setup();
+    await env.seedPaid("dossier-X", 2025);
+    assert.equal((await declare("dossier-X", 2026, "EXTERNAL_HISTORY")).status, 200);
+    const opening = {
+      revision: 1,
+      targetFiscalYear: 2026,
+      source: { kind: "external_takeover", takeoverId: "t1", sourceFiscalYear: 2025 },
+      validation: { status: "validated", openingRevision: 1, contentHash: "h", validatedAt: "2026-01-01T00:00:00.000Z", validator: "test" },
+      stocks: {
+        deficits: { status: "available", value: [] },
+        amortissementsReportes: { status: "available", value: 0 },
+      },
+      assets: { status: "unavailable", reason: "n/a" },
+      loans: { status: "unavailable", reason: "n/a" },
+      identity: { status: "unavailable", reason: "n/a" },
+      ran: { status: "unavailable", reason: "n/a" },
+      fieldProvenance: {},
+    };
+    const res = await checkout({
+      authToken: "tok-antoine",
+      dossierId: "dossier-X",
+      fiscalYear: 2026,
+      continuity: {
+        previousFiscalYearId: "fy-2025",
+        stocksOuverture: VALID_STOCKS,
+        fiscalYearOpening: opening,
+      },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(env.created.length, 0);
+  });
+
+  it("Lot 5.3 — historique externe + Opening wrong year → 403", async () => {
+    const { env, checkout, declare } = setup();
+    assert.equal((await declare("dossier-X", 2026, "EXTERNAL_HISTORY")).status, 200);
+    const opening = {
+      revision: 1,
+      targetFiscalYear: 2025,
+      source: { kind: "external_takeover", takeoverId: "t1", sourceFiscalYear: 2024 },
+      validation: { status: "validated", openingRevision: 1, contentHash: "h", validatedAt: "2026-01-01T00:00:00.000Z", validator: "test" },
+      stocks: {
+        deficits: { status: "available", value: [] },
+        amortissementsReportes: { status: "available", value: 0 },
+      },
+      assets: { status: "unavailable", reason: "n/a" },
+      loans: { status: "unavailable", reason: "n/a" },
+      identity: { status: "unavailable", reason: "n/a" },
+      ran: { status: "unavailable", reason: "n/a" },
+      fieldProvenance: {},
+    };
+    const res = await checkout({
+      authToken: "tok-antoine",
+      dossierId: "dossier-X",
+      fiscalYear: 2026,
+      continuity: { fiscalYearOpening: opening },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(env.created.length, 0);
+  });
+
   it("changer le payload de checkout ne contourne pas un historique externe déjà enregistré côté serveur", async () => {
     const { env, checkout, declare } = setup();
     await declare("dossier-X", 2026, "EXTERNAL_HISTORY");

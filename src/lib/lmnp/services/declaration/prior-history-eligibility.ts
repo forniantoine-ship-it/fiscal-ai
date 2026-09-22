@@ -53,6 +53,28 @@ export type PriorHistoryExternalOpeningProof = {
   requestedFiscalYear: number;
 };
 
+/**
+ * Lot 5.3 — source unique de l'Opening externe persistée (5.1/5.2).
+ * Jamais reconstruite : lit uniquement `fiscalYear.externalTakeoverOpening?.opening`.
+ */
+export function resolvePersistedExternalTakeoverOpening(fiscalYear: {
+  externalTakeoverOpening?: { opening: FiscalYearOpening } | undefined;
+}): FiscalYearOpening | undefined {
+  return fiscalYear.externalTakeoverOpening?.opening;
+}
+
+/**
+ * Lot 5.3 — preuve 4F.2 dérivée de la même Opening persistée (même objet).
+ */
+export function resolveExternalOpeningProofFromFiscalYear(fiscalYear: {
+  year: number;
+  externalTakeoverOpening?: { opening: FiscalYearOpening } | undefined;
+}): PriorHistoryExternalOpeningProof | undefined {
+  const fiscalYearOpening = resolvePersistedExternalTakeoverOpening(fiscalYear);
+  if (!fiscalYearOpening) return undefined;
+  return { fiscalYearOpening, requestedFiscalYear: fiscalYear.year };
+}
+
 export type PriorHistoryBlockReason =
   /** Aucune réponse : la situation ne peut pas être prouvée par les données. */
   | "ANSWER_REQUIRED"

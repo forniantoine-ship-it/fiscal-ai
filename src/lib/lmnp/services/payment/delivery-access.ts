@@ -7,7 +7,13 @@
  * jamais `paidAt` local, jamais une URL de succès. Aucun compteur, aucune
  * consommation : un exercice payé se régénère et se retélécharge sans limite.
  * Un exercice payé ne débloque jamais un autre exercice ni un autre dossier.
+ *
+ * Lot 5.3 — si `prior_history_status === EXTERNAL_HISTORY`, la livraison exige
+ * en plus une FiscalYearOpening usable (même garde 4F.2 que le checkout).
+ * Absent / wrong year / pending / wrong source → 403 fail-closed.
  */
+import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
+import { isUsableExternalTakeoverOpening } from "@/lib/lmnp/services/fiscal-year-opening/is-usable-external-takeover-opening";
 import { isNonEmptyString, jsonResponse, mapPaymentError, parseFiscalYear } from "./payment-http";
 import { createDeliveryDeps, type PaymentDeps } from "./payment-server";
 
@@ -15,6 +21,8 @@ export type DeliveryAccessInput = {
   authToken?: unknown;
   dossierId?: unknown;
   fiscalYear?: unknown;
+  /** Lot 5.3 — Opening externe persistée, requise si EXTERNAL_HISTORY. */
+  fiscalYearOpening?: unknown;
 };
 
 export type DeliveryAccessResult =
@@ -53,15 +61,21 @@ export async function resolveDeliveryAccess(
         }),
       };
     }
-    // P0 antériorité : une déclaration « historique externe » enregistrée ferme la livraison.
+    // Lot 5.3 — EXTERNAL_HISTORY : livraison seulement avec Opening usable (4F.2).
     if (row.prior_history_status === "EXTERNAL_HISTORY") {
-      return {
-        ok: false,
-        response: jsonResponse(403, {
-          error: "La reprise de votre comptabilité précédente n'est pas encore disponible.",
-          code: "prior_history_not_eligible",
-        }),
-      };
+      const opening =
+        input.fiscalYearOpening && typeof input.fiscalYearOpening === "object"
+          ? (input.fiscalYearOpening as FiscalYearOpening)
+          : undefined;
+      if (!isUsableExternalTakeoverOpening(opening, fiscalYear)) {
+        return {
+          ok: false,
+          response: jsonResponse(403, {
+            error: "La reprise de votre comptabilité précédente n'est pas encore disponible.",
+            code: "prior_history_not_eligible",
+          }),
+        };
+      }
     }
     return { ok: true, fiscalYear };
   } catch (err) {

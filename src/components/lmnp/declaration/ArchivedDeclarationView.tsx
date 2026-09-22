@@ -177,7 +177,12 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
                 if (!rfs) return;
                 setAideDownloadError(undefined);
                 // Payment V1 — PDF produit par le serveur (exercice payé requis).
-                downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: record.year }).catch((err) =>
+                downloadAide2042Pdf({
+                  rfs,
+                  activityStartDate,
+                  fiscalYear: record.year,
+                  fiscalYearOpening: record.externalTakeoverOpening?.opening,
+                }).catch((err) =>
                   setAideDownloadError(
                     err && typeof err === "object" && "message" in err && typeof err.message === "string"
                         ? err.message

@@ -95,21 +95,38 @@ describe("garde de câblage — chaque point d'entrée qui décide d'un paiement
       gateArgs.every((args) => /\bpriorHistory\b/.test(args)),
       "la porte reçoit l'éligibilité",
     );
+    assert.ok(
+      gateArgs.every((args) => /\bfiscalYearOpening\b/.test(args)),
+      "Lot 5.3 — la porte reçoit la même Opening que la génération",
+    );
     const generation = source.slice(source.indexOf("const handleGenerationComplete"));
-    assert.match(generation.slice(0, 500), /resolvePriorHistoryEligibility\(fiscalYear\)\.eligible/, "génération : relecture défensive");
+    assert.match(
+      generation.slice(0, 800),
+      /resolvePriorHistoryEligibility\(fiscalYear,\s*externalOpeningProof\)\.eligible/,
+      "génération : relecture défensive + preuve Opening",
+    );
     // Payment V1 — le paiement passe désormais par le checkout serveur ; la relecture défensive précède tout appel.
     const payment = source.slice(source.indexOf("const handleStartCheckout"));
-    assert.match(payment.slice(0, 500), /resolvePriorHistoryEligibility\(fiscalYear\)\.eligible/, "paiement : relecture défensive");
+    assert.match(
+      payment.slice(0, 800),
+      /resolvePriorHistoryEligibility\(fiscalYear,\s*externalOpeningProof\)\.eligible/,
+      "paiement : relecture défensive + preuve Opening",
+    );
   });
 
   it("/declarations : accès aux livrables conditionné à l'éligibilité", () => {
-    assert.match(read("app/(dashboard)/declarations/page.tsx"), /resolvePriorHistoryEligibility\(workspace\.fiscalYear\)/);
+    const source = read("app/(dashboard)/declarations/page.tsx");
+    assert.match(source, /resolvePriorHistoryEligibility\(/);
+    assert.match(source, /resolveExternalOpeningProofFromFiscalYear\(workspace\.fiscalYear\)/);
   });
 
   it("clôture : canCloseFiscalYear consulte le même résolveur", () => {
     const source = read("lib/lmnp/services/dossier/fiscal-year-cycle.ts");
     const close = source.slice(source.indexOf("export function canCloseFiscalYear"));
-    assert.match(close.slice(0, 2500), /resolvePriorHistoryEligibility\(fiscalYear\)/);
+    assert.match(
+      close.slice(0, 2500),
+      /resolvePriorHistoryEligibility\(fiscalYear,\s*resolveExternalOpeningProofFromFiscalYear\(fiscalYear\)\)/,
+    );
   });
 
   it("paiement sans génération : la préparation au paiement lit l'éligibilité portée par la porte", () => {

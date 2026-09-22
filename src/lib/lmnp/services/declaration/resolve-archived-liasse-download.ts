@@ -15,7 +15,10 @@ import { collectLiasseDossierExtras } from "./collect-liasse-dossier-extras";
 import type { DownloadLiasseFiscalePdfInput } from "./download-liasse-fiscale-pdf";
 import { resolveFinalDeclarabilityState } from "./final-declarability";
 
-export type ArchivedLiasseDownloadRecord = Pick<FiscalYear, "year" | "stocksOuverture" | "closures"> & {
+export type ArchivedLiasseDownloadRecord = Pick<
+  FiscalYear,
+  "year" | "stocksOuverture" | "closures" | "externalTakeoverOpening"
+> & {
   declarationDraft?: DeclarationDraft | null;
 };
 
@@ -80,6 +83,8 @@ export function resolveArchivedLiasseDownload(
       }),
       declarationVersionId,
       fiscalYear: record.year,
+      // Lot 5.3 — même Opening persistée si l'archive en porte une.
+      fiscalYearOpening: record.externalTakeoverOpening?.opening,
     },
   };
 }

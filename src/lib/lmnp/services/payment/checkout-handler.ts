@@ -45,6 +45,11 @@ function safeContinuity(value: unknown): ClientContinuityFacts | undefined {
     stocksOuverture: c.stocksOuverture as ClientContinuityFacts["stocksOuverture"],
     stocksOuvertureUnavailableReason:
       typeof c.stocksOuvertureUnavailableReason === "string" ? c.stocksOuvertureUnavailableReason : undefined,
+    // Lot 5.3 — Opening transmise telle quelle ; la garde structurelle 4F.2 décide.
+    fiscalYearOpening:
+      c.fiscalYearOpening && typeof c.fiscalYearOpening === "object"
+        ? (c.fiscalYearOpening as ClientContinuityFacts["fiscalYearOpening"])
+        : undefined,
   };
 }
 
@@ -103,6 +108,7 @@ export async function handleCheckoutRequest(
       declaration: existing?.prior_history_status,
       previousYearPaid: previous?.status === "paid",
       clientContinuity: safeContinuity(body.continuity),
+      requestedFiscalYear: fiscalYear,
     });
     if (!eligibility.eligible) {
       return jsonResponse(403, {

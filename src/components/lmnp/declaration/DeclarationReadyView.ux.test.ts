@@ -77,9 +77,8 @@ describe("DeclarationReadyView — deux documents fiscaux client", () => {
   it("l'aide 2042-C-PRO reste branchée sur son chemin existant", () => {
     // Payment V1 — le PDF est produit par le serveur (exercice payé requis), plus rendu dans le navigateur.
     assert.ok(source.includes('from "@/lib/lmnp/services/declaration/download-aide-2042-pdf"'));
-    assert.ok(
-      source.includes("downloadAide2042Pdf({ rfs, activityStartDate, fiscalYear: fiscalYear.year })"),
-    );
+    assert.ok(source.includes("downloadAide2042Pdf({"));
+    assert.ok(source.includes("fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear)"));
     assert.equal(source.includes("render-aide-2042-pdf"), false);
     assert.equal(source.includes("buildClientSummaryDocument"), false);
     assert.equal(source.includes("render-client-summary-pdf"), false);

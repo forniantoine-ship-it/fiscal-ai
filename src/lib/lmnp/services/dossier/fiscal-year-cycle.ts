@@ -37,7 +37,11 @@ import {
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
-import { resolvePriorHistoryEligibility } from "../declaration/prior-history-eligibility";
+import {
+  resolveExternalOpeningProofFromFiscalYear,
+  resolvePersistedExternalTakeoverOpening,
+  resolvePriorHistoryEligibility,
+} from "../declaration/prior-history-eligibility";
 import {
   seedFinancementAssistantForNextYear,
   seedLogementAssistantForNextYear,
@@ -372,9 +376,9 @@ export function canCloseFiscalYear(input: {
 
   // P0 launch safety — clôturer figerait des stocks issus d'un exercice dont
   // l'antériorité n'est pas établie et les présenterait ensuite comme une
-  // continuité native valide pour N+1. Même résolveur que la porte de
-  // génération : jamais une seconde règle.
-  if (!resolvePriorHistoryEligibility(fiscalYear).eligible) {
+  // continuité native valide pour N+1. Même résolveur + même preuve Opening
+  // que la porte de génération (Lot 5.3) : jamais une seconde règle.
+  if (!resolvePriorHistoryEligibility(fiscalYear, resolveExternalOpeningProofFromFiscalYear(fiscalYear)).eligible) {
     return {
       ok: false,
       reason:
@@ -417,6 +421,8 @@ export function canCloseFiscalYear(input: {
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
     }),
+    // Lot 5.3 — même Opening que la génération réelle.
+    fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
   });
 
   switch (gate.referenceGenerationStatus) {

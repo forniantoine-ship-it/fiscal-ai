@@ -50,8 +50,12 @@ export async function downloadAide2042Pdf(input: {
   rfs: FiscalRepresentation;
   activityStartDate?: string;
   fiscalYear: number;
+  /** Lot 5.3 — Opening externe persistée (requise serveur si EXTERNAL_HISTORY). */
+  fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
 }): Promise<void> {
-  const access = await resolveDeliveryContext(input.fiscalYear);
+  const access = await resolveDeliveryContext(input.fiscalYear, {
+    fiscalYearOpening: input.fiscalYearOpening,
+  });
   const bytes = await fetchAide2042PdfBytes(input, access);
   const copy = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(copy).set(bytes);

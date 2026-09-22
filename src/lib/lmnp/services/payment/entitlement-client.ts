@@ -64,12 +64,22 @@ export async function fetchPaymentEntitlement(
   return row?.status === "paid" ? { paid: true, paidAt: row.paid_at ?? undefined } : { paid: false };
 }
 
-export type DeliveryAccessContext = { authToken: string; dossierId: string; fiscalYear: number };
+export type DeliveryAccessContext = {
+  authToken: string;
+  dossierId: string;
+  fiscalYear: number;
+  /** Lot 5.3 — Opening externe persistée (requise côté serveur si EXTERNAL_HISTORY). */
+  fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
+};
 
 /** Contexte envoyé aux routes de livraison : même convention que la suppression de document (`authToken` dans le corps). */
 export async function resolveDeliveryContext(
   fiscalYear: number,
-  deps: { client?: SupabaseLike; dossierId?: string | null } = {},
+  deps: {
+    client?: SupabaseLike;
+    dossierId?: string | null;
+    fiscalYearOpening?: DeliveryAccessContext["fiscalYearOpening"];
+  } = {},
 ): Promise<DeliveryAccessContext> {
   const client = deps.client ?? (await defaultClient());
   const dossierId = deps.dossierId !== undefined ? deps.dossierId : await defaultDossierId();
@@ -78,7 +88,12 @@ export async function resolveDeliveryContext(
   } = await client.auth.getSession();
   if (!session?.access_token) throw new PaymentClientError("Session expirée. Reconnectez-vous.", "unauthenticated", 401);
   if (!dossierId) throw new PaymentClientError("Dossier introuvable.", "no_dossier", 0);
-  return { authToken: session.access_token, dossierId, fiscalYear };
+  return {
+    authToken: session.access_token,
+    dossierId,
+    fiscalYear,
+    ...(deps.fiscalYearOpening ? { fiscalYearOpening: deps.fiscalYearOpening } : {}),
+  };
 }
 
 async function postJson<T>(url: string, body: Record<string, unknown>, fetchImpl: typeof fetch): Promise<T> {

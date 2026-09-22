@@ -103,6 +103,8 @@ export function archivedLiasseRecordFromWorkspace(
     year: workspace.fiscalYear.year,
     stocksOuverture: workspace.fiscalYear.stocksOuverture,
     closures: workspace.fiscalYear.closures,
+    // Lot 5.3 — Opening externe pour la livraison serveur si EXTERNAL_HISTORY.
+    externalTakeoverOpening: workspace.fiscalYear.externalTakeoverOpening,
     declarationDraft: workspace.declarationDraft ?? null,
   };
 }

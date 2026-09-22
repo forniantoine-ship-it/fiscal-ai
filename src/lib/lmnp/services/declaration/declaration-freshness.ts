@@ -16,6 +16,7 @@
  * technique doit voir traduit simplement.
  */
 import { resolveDeclarationGenerationGate } from "./declaration-generation-gate";
+import { resolvePersistedExternalTakeoverOpening } from "./prior-history-eligibility";
 import { resolveImmobilisationsContinuityForGeneration } from "../dossier/fiscal-year-cycle";
 import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
 
@@ -48,6 +49,9 @@ export function resolveDeclarationOutOfDate(input: {
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
     }),
+    // Lot 5.3 — même Opening que la génération réelle (évite un faux « stale »
+    // après reprise externe). Appelant de dérive : pas de priorHistory ici.
+    fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
   });
 
   return gate.referenceGenerationStatus === "stale";
