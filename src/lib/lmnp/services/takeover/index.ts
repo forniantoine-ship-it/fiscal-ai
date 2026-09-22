@@ -90,3 +90,11 @@ export {
   type TaxPackageControlSourceCase,
   type ValidateTaxPackageControlFactResult,
 } from "./tax-package-control-facts";
+
+export {
+  extractTaxPackageControlFactsFromLiasse,
+  type ExtractTaxPackageControlFactsFromLiasseInput,
+  type ExtractTaxPackageControlFactsFromLiasseResult,
+  type TaxPackageControlFactSkip,
+  type TaxPackageLiasseCaseObservation,
+} from "./extract-tax-package-control-facts-from-liasse";
