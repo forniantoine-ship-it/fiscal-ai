@@ -121,6 +121,7 @@ function matchesAny(text: string, markers: RegExp[]): boolean {
 /**
  * Identifie le formulaire d'une page par marqueurs Cerfa forts (…-SD).
  * Ambigu A+C → null. Mention narrative sans -SD → null.
+ * Ne vérifie PAS le millésime — voir isTaxPackageLiasseFormYearCompatible.
  */
 export function identifyTaxPackageLiasseForm(
   pageText: string,
@@ -131,6 +132,54 @@ export function identifyTaxPackageLiasseForm(
   if (hasA) return "2033A";
   if (hasC) return "2033C";
   return null;
+}
+
+/**
+ * Millésime imprimé observé sur le Cerfa officiel 2026 via pdfjs-dist :
+ *   "DGFiP N° 2033-A-SD 2026" / "DGFiP N° 2033-C-SD 2026"
+ *
+ * Signal primaire : année collée au marqueur du formulaire demandé.
+ * Signal secondaire Cerfa 15948*08 → 2026 : UNIQUEMENT pour formType 2033A
+ * (observé sur la page officielle A, absent sur C). Jamais pour valider 2033C.
+ *
+ * Fail closed : si aucun signal fiable pour ce formType → null.
+ * Un millésime primaire explicite gagne toujours sur le fallback Cerfa.
+ */
+export function extractTaxPackageLiassePrintedFormYear(
+  pageText: string,
+  formType: TaxPackageLiasseFormType,
+): number | null {
+  const letter = formType === "2033A" ? "A" : "C";
+  const nearForm = pageText.match(
+    new RegExp(`2033\\s*[-–]?\\s*${letter}\\s*[-–]?\\s*SD\\s+(\\d{4})\\b`, "i"),
+  );
+  if (nearForm?.[1]) {
+    const year = Number.parseInt(nearForm[1], 10);
+    if (Number.isInteger(year) && year >= 1900 && year <= 2100) {
+      return year;
+    }
+  }
+
+  // Fallback Cerfa : 2033A seulement — jamais pour 2033C.
+  if (formType === "2033A" && /15948\s*\*\s*08\b/i.test(pageText)) {
+    return 2026;
+  }
+
+  return null;
+}
+
+/**
+ * Une page n'est compatible avec formYear que si le millésime/version
+ * attendu est établi de manière fiable pour ce formType.
+ */
+export function isTaxPackageLiasseFormYearCompatible(
+  pageText: string,
+  formType: TaxPackageLiasseFormType,
+  formYear: number,
+): boolean {
+  const printed = extractTaxPackageLiassePrintedFormYear(pageText, formType);
+  if (printed === null) return false;
+  return printed === formYear;
 }
 
 function caseTokenRegex(sourceCase: string): RegExp {
@@ -453,6 +502,8 @@ export async function extractTaxPackageLiasseObservations(
     "2033A": [],
     "2033C": [],
   };
+  /** Formulaire identifié mais millésime incompatible avec formYear. */
+  const incompatibleMillesimeForms = new Set<TaxPackageLiasseFormType>();
 
   for (const page of input.pages) {
     const form = identifyTaxPackageLiasseForm(page.text);
@@ -460,6 +511,13 @@ export async function extractTaxPackageLiasseObservations(
       if (page.text.trim()) {
         diagnostics.push(`page ${page.pageNumber}: formulaire non identifié`);
       }
+      continue;
+    }
+    if (!isTaxPackageLiasseFormYearCompatible(page.text, form, input.formYear)) {
+      incompatibleMillesimeForms.add(form);
+      diagnostics.push(
+        `page ${page.pageNumber}: millésime incompatible avec formYear=${input.formYear}`,
+      );
       continue;
     }
     pagesByForm[form].push(page);
@@ -483,12 +541,32 @@ export async function extractTaxPackageLiasseObservations(
     const formPages = pagesByForm[formType];
 
     if (formPages.length === 0) {
-      for (const sourceCase of cases) {
-        pending.push({
-          formType,
-          sourceCase,
-          native: null,
-        });
+      if (incompatibleMillesimeForms.has(formType)) {
+        // Formulaire présent mais mauvais millésime — pas document_absent,
+        // pas present(value). extraction_impossible explicite.
+        for (const sourceCase of cases) {
+          pending.push({
+            formType,
+            sourceCase,
+            native: extractionImpossibleCandidate(
+              `formulaire ${formType} présent mais millésime incompatible avec formYear=${input.formYear}`,
+              {
+                documentId: input.documentId,
+                documentRole,
+                fieldLabel: `${formType}:${sourceCase}`,
+                sourceRef: `${formType}:${sourceCase}`,
+              },
+            ),
+          });
+        }
+      } else {
+        for (const sourceCase of cases) {
+          pending.push({
+            formType,
+            sourceCase,
+            native: null,
+          });
+        }
       }
       continue;
     }

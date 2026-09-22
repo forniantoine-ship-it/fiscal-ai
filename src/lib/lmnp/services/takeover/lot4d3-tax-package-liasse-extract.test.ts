@@ -17,7 +17,9 @@ import {
 import { extractTaxPackageControlFactsFromLiasse } from "./extract-tax-package-control-facts-from-liasse";
 import {
   extractTaxPackageLiasseObservations,
+  extractTaxPackageLiassePrintedFormYear,
   identifyTaxPackageLiasseForm,
+  isTaxPackageLiasseFormYearCompatible,
   readNativeTaxPackageCase,
   type TaxPackageLiassePageText,
   type TaxPackageLiasseVisionFormPayload,
@@ -33,12 +35,20 @@ function page(pageNumber: number, text: string): TaxPackageLiassePageText {
   return { pageNumber, text };
 }
 
-function page2033A(body: string, pageNumber = 1): TaxPackageLiassePageText {
-  return page(pageNumber, `Cerfa N° 2033-A-SD\n${body}`);
+function page2033A(
+  body: string,
+  pageNumber = 1,
+  printedYear = FORM_YEAR,
+): TaxPackageLiassePageText {
+  return page(pageNumber, `Cerfa N° 2033-A-SD ${printedYear}\n${body}`);
 }
 
-function page2033C(body: string, pageNumber = 2): TaxPackageLiassePageText {
-  return page(pageNumber, `Cerfa N° 2033-C-SD\n${body}`);
+function page2033C(
+  body: string,
+  pageNumber = 2,
+  printedYear = FORM_YEAR,
+): TaxPackageLiassePageText {
+  return page(pageNumber, `Cerfa N° 2033-C-SD ${printedYear}\n${body}`);
 }
 
 async function extract(
@@ -545,8 +555,16 @@ describe("Lot 4D.3 — contre-audit probes (BLOCKERS + MAJOR)", () => {
 
   it("PROBE E — même ligne 028 150000 030 42000 → pas de mauvaise association", async () => {
     const line = "028 150000 030 42000";
-    const r028 = readNativeTaxPackageCase(`Cerfa N° 2033-A-SD\n${line}`, "028", 1);
-    const r030 = readNativeTaxPackageCase(`Cerfa N° 2033-A-SD\n${line}`, "030", 1);
+    const r028 = readNativeTaxPackageCase(
+      `Cerfa N° 2033-A-SD ${FORM_YEAR}\n${line}`,
+      "028",
+      1,
+    );
+    const r030 = readNativeTaxPackageCase(
+      `Cerfa N° 2033-A-SD ${FORM_YEAR}\n${line}`,
+      "030",
+      1,
+    );
     // Acceptable : extraction_impossible (Vision fallback). Interdit : croisement.
     if (r028.status === "present") {
       assert.notEqual(r028.value, 42_000);
@@ -564,5 +582,191 @@ describe("Lot 4D.3 — contre-audit probes (BLOCKERS + MAJOR)", () => {
     const o30 = obsFor(result.observations, "030")[0]!;
     assert.equal(o28.value.status, "extraction_impossible");
     assert.equal(o30.value.status, "extraction_impossible");
+  });
+});
+
+describe("Lot 4D.3.1 — garde millésime formYear", () => {
+  it("A — bon formulaire / bon millésime → nominal inchangé", async () => {
+    const result = await extract([
+      page2033A("028: 150000\n030: 42000"),
+      page2033C("426: 60000\n476: 12000\n496: 150000\n576: 42000"),
+    ]);
+    assert.ok(isCandidatePresent(obsFor(result.observations, "028")[0]!.value));
+    assert.equal(
+      (obsFor(result.observations, "028")[0]!.value as { value: number }).value,
+      150_000,
+    );
+  });
+
+  it("B/E — 2033-A mauvais millésime + 028: 150000 → aucun present", async () => {
+    const result = await extract(
+      [page2033A("028: 150000\n030: 42000", 1, 2025)],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    assert.equal(result.identifiedForms.includes("2033A"), false);
+    for (const sourceCase of ["028", "030"]) {
+      const o = obsFor(result.observations, sourceCase)[0]!;
+      assert.equal(o.value.status, "extraction_impossible");
+      assert.equal(isCandidatePresent(o.value), false);
+    }
+    assert.ok(
+      result.diagnostics.some((d) => d.includes("millésime incompatible")),
+    );
+  });
+
+  it("C/F — 2033-C mauvais millésime + 496: 150000 → aucun present", async () => {
+    const result = await extract(
+      [page2033C("426: 1\n476: 2\n496: 150000\n576: 3", 2, 2024)],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    assert.equal(result.identifiedForms.includes("2033C"), false);
+    const o496 = obsFor(result.observations, "496")[0]!;
+    assert.equal(o496.value.status, "extraction_impossible");
+    assert.equal(isCandidatePresent(o496.value), false);
+  });
+
+  it("D — formYear != fiscalYear toujours supporté", async () => {
+    const result = await extract(
+      [page2033A("028: 10\n030: 20", 1, 2026)],
+      { formYear: 2026, fiscalYear: 2024 },
+    );
+    const o = obsFor(result.observations, "028")[0]!;
+    assert.ok(isCandidatePresent(o.value));
+    assert.equal(o.formYear, 2026);
+    assert.equal(o.fiscalYear, 2024);
+    assert.notEqual(o.formYear, o.fiscalYear);
+  });
+
+  it("G — deux pages valides même formulaire → observations indépendantes, pas de dédup", async () => {
+    const result = await extract([
+      page2033A("028: 111\n030: 11", 1, 2026),
+      page2033A("028: 222\n030: 22", 5, 2026),
+    ]);
+    const o28 = obsFor(result.observations, "028");
+    assert.equal(o28.length, 2);
+    assert.ok(isCandidatePresent(o28[0]!.value));
+    assert.ok(isCandidatePresent(o28[1]!.value));
+    assert.deepEqual(
+      o28.map((o) => (isCandidatePresent(o.value) ? o.value.value : null)),
+      [111, 222],
+    );
+    assert.deepEqual(
+      o28.map((o) =>
+        isCandidatePresent(o.value) ? o.value.provenance.evidence?.page : null,
+      ),
+      [1, 5],
+    );
+  });
+
+  it("signal millésime : année après 2033-*-SD (pdfjs officiel)", () => {
+    assert.equal(
+      extractTaxPackageLiassePrintedFormYear(
+        "DGFiP N° 2033-A-SD 2026 N° 15948 * 08",
+        "2033A",
+      ),
+      2026,
+    );
+    assert.equal(
+      extractTaxPackageLiassePrintedFormYear(
+        "DGFiP N° 2033-C-SD 2026 Formulaire",
+        "2033C",
+      ),
+      2026,
+    );
+    assert.equal(
+      isTaxPackageLiasseFormYearCompatible("DGFiP N° 2033-A-SD 2026", "2033A", 2026),
+      true,
+    );
+    assert.equal(
+      isTaxPackageLiasseFormYearCompatible("DGFiP N° 2033-A-SD 2025", "2033A", 2026),
+      false,
+    );
+    assert.equal(
+      isTaxPackageLiasseFormYearCompatible(
+        "Cerfa N° 2033-A-SD\nsans année",
+        "2033A",
+        2026,
+      ),
+      false,
+    );
+  });
+
+  it("A11 — Cerfa 15948*08 ne valide jamais 2033-C seul", async () => {
+    const result = await extract(
+      [
+        page(
+          1,
+          ["2033-C-SD", "N° 15948 * 08", "496: 150000"].join("\n"),
+        ),
+      ],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    const o496 = obsFor(result.observations, "496")[0]!;
+    assert.equal(o496.value.status, "extraction_impossible");
+    assert.equal(isCandidatePresent(o496.value), false);
+    assert.equal(
+      extractTaxPackageLiassePrintedFormYear(
+        ["2033-C-SD", "N° 15948 * 08"].join("\n"),
+        "2033C",
+      ),
+      null,
+    );
+  });
+
+  it("yearless A via API publique → extraction_impossible, jamais present", async () => {
+    const result = await extract(
+      [page(1, ["2033-A-SD", "028: 150000"].join("\n"))],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    const o28 = obsFor(result.observations, "028")[0]!;
+    assert.equal(o28.value.status, "extraction_impossible");
+    assert.equal(isCandidatePresent(o28.value), false);
+  });
+
+  it("yearless C via API publique → extraction_impossible, jamais present", async () => {
+    const result = await extract(
+      [page(1, ["2033-C-SD", "496: 150000"].join("\n"))],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    const o496 = obsFor(result.observations, "496")[0]!;
+    assert.equal(o496.value.status, "extraction_impossible");
+    assert.equal(isCandidatePresent(o496.value), false);
+  });
+
+  it("Cerfa fallback A — 2033-A-SD + 15948*08 sans année → compatible 2026", async () => {
+    const result = await extract(
+      [
+        page(
+          1,
+          ["2033-A-SD", "N° 15948 * 08", "028: 150000", "030: 1"].join("\n"),
+        ),
+      ],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    const o28 = obsFor(result.observations, "028")[0]!;
+    assert.ok(isCandidatePresent(o28.value));
+    assert.equal(o28.value.value, 150_000);
+  });
+
+  it("conflit primaire 2025 + Cerfa 15948*08 → extraction_impossible", async () => {
+    const result = await extract(
+      [
+        page(
+          1,
+          ["2033-A-SD 2025", "N° 15948 * 08", "028: 150000", "030: 1"].join("\n"),
+        ),
+      ],
+      { formYear: 2026, fiscalYear: 2025 },
+    );
+    const o28 = obsFor(result.observations, "028")[0]!;
+    assert.equal(o28.value.status, "extraction_impossible");
+    assert.equal(isCandidatePresent(o28.value), false);
+    assert.equal(
+      extractTaxPackageLiassePrintedFormYear(
+        "2033-A-SD 2025\nN° 15948 * 08",
+        "2033A",
+      ),
+      2025,
+    );
   });
 });

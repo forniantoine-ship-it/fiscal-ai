@@ -102,7 +102,9 @@ export {
 export {
   buildTaxPackageLiasseVisionSystemPrompt,
   extractTaxPackageLiasseObservations,
+  extractTaxPackageLiassePrintedFormYear,
   identifyTaxPackageLiasseForm,
+  isTaxPackageLiasseFormYearCompatible,
   readNativeTaxPackageCase,
   TAX_PACKAGE_LIASSE_VISION_JSON_SCHEMA,
   type ExtractTaxPackageLiasseObservationsInput,
