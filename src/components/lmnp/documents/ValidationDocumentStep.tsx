@@ -96,7 +96,19 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   // P0 launch safety — antériorité LMNP au réel non reprise. Recalculée à
   // chaque changement de l'exercice (jamais mise en cache dans le draft) et
   // transmise à la porte : aucun paiement ni génération sans éligibilité.
-  const priorHistory = useMemo(() => resolvePriorHistoryEligibility(fiscalYear), [fiscalYear]);
+  // Lot 5.2 — si Opening externe validée persistée, la passer comme preuve 4F.2.
+  const priorHistory = useMemo(() => {
+    const opening = fiscalYear.externalTakeoverOpening?.opening;
+    return resolvePriorHistoryEligibility(
+      fiscalYear,
+      opening
+        ? {
+            fiscalYearOpening: opening,
+            requestedFiscalYear: fiscalYear.year,
+          }
+        : undefined,
+    );
+  }, [fiscalYear]);
   const priorHistoryBlocked = !priorHistory.eligible;
   const handleDeclarePriorHistory = useCallback(
     (status: PriorHistoryDeclarationStatus) => {

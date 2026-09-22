@@ -9,66 +9,19 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import type { PriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
+import { ExternalTakeoverFlow } from "./external-takeover/ExternalTakeoverFlow";
+import {
+  PRIOR_HISTORY_COPY,
+  resolvePriorHistoryCardView,
+} from "./prior-history-card-view";
+
+export { PRIOR_HISTORY_COPY, resolvePriorHistoryCardView } from "./prior-history-card-view";
+export type { PriorHistoryCardView } from "./prior-history-card-view";
 
 /**
- * P0 launch safety — antériorité LMNP au réel non reprise. Une seule question,
- * posée uniquement quand les données ne prouvent pas la situation (jamais
- * quand une continuité Fiscal AI réelle existe), puis persistée avec
- * l'exercice. Aucune décision ici : `resolvePriorHistoryEligibility()` reste
- * l'unique juge, ce composant reflète son résultat.
+ * P0 launch safety — antériorité LMNP au réel. Lot 5.2 : EXTERNAL_HISTORY
+ * ouvre le parcours de reprise (plus de hard-block « pas encore disponible »).
  */
-
-export const PRIOR_HISTORY_COPY = {
-  title: "Votre situation avant cette déclaration",
-  question: "Avez-vous déjà déclaré votre activité LMNP au régime réel les années précédentes ?",
-  options: [
-    { status: "FIRST_REAL_YEAR", label: "Non, c'est ma première déclaration LMNP au régime réel" },
-    { status: "FISCAL_AI_PREVIOUS", label: "Oui, l'année précédente a été réalisée avec Fiscal AI" },
-    { status: "EXTERNAL_HISTORY", label: "Oui, avec un autre comptable ou logiciel" },
-  ] satisfies { status: PriorHistoryDeclarationStatus; label: string }[],
-  confirmed: "Première déclaration LMNP au régime réel.",
-  change: "Modifier",
-  blocked: {
-    EXTERNAL_HISTORY_DECLARED:
-      "Pour établir correctement votre déclaration, nous devons reprendre certains éléments de votre comptabilité précédente, notamment les déficits et amortissements reportables. Cette reprise n'est pas encore disponible.",
-    FISCAL_AI_CLAIM_WITHOUT_CONTINUITY:
-      "Nous ne retrouvons pas votre déclaration de l'année précédente dans ce navigateur. Reconnectez-vous depuis l'appareil et le navigateur utilisés l'an dernier. Sans elle, nous ne pouvons pas reprendre vos déficits et amortissements reportables.",
-    NATIVE_CONTINUITY_MISSING:
-      "Les informations reportées de votre exercice précédent sont introuvables. Nous ne pouvons pas finaliser cette déclaration sans elles, afin d'éviter un calcul erroné. Contactez-nous à aide@fiscal-ai.fr : nous retrouverons votre dossier avec vous.",
-  },
-  technicalDetail: "Détail technique",
-  footer: "Vous ne pouvez pas finaliser votre déclaration pour le moment.",
-} as const;
-
-export type PriorHistoryCardView =
-  | { kind: "hidden" }
-  | { kind: "question" }
-  | { kind: "confirmed" }
-  | {
-      kind: "blocked";
-      message: string;
-      detail?: string;
-      /** true ⇒ le client peut corriger sa réponse. */
-      canChangeAnswer: boolean;
-    };
-
-/** Pure — testable sans DOM. */
-export function resolvePriorHistoryCardView(eligibility: PriorHistoryEligibility): PriorHistoryCardView {
-  if (eligibility.eligible) {
-    // Continuité native ou reprise externe prouvée par Opening : pas de question.
-    if (eligibility.status === "NATIVE_CONTINUITY" || eligibility.status === "EXTERNAL_HISTORY") {
-      return { kind: "hidden" };
-    }
-    return { kind: "confirmed" };
-  }
-  if (eligibility.reason === "ANSWER_REQUIRED") return { kind: "question" };
-  return {
-    kind: "blocked",
-    message: PRIOR_HISTORY_COPY.blocked[eligibility.reason],
-    detail: eligibility.detail,
-    canChangeAnswer: eligibility.needsAnswer,
-  };
-}
 
 type ValidationPriorHistoryCardProps = {
   cardStyle: React.CSSProperties;
@@ -88,13 +41,22 @@ export function ValidationPriorHistoryCard({
 
   if (view.kind === "hidden") return null;
 
-  const showOptions = view.kind === "question" || editing || (view.kind === "blocked" && view.canChangeAnswer);
+  const showOptions =
+    view.kind === "question" ||
+    editing ||
+    (view.kind === "blocked" && view.canChangeAnswer);
 
   return (
     <section
       aria-labelledby="prior-history-title"
       className="w-full space-y-4"
-      style={{ ...cardStyle, boxShadow: view.kind === "blocked" ? shadows.card.default : cardStyle.boxShadow }}
+      style={{
+        ...cardStyle,
+        boxShadow:
+          view.kind === "blocked" || view.kind === "external_takeover"
+            ? shadows.card.default
+            : cardStyle.boxShadow,
+      }}
     >
       <h2
         id="prior-history-title"
@@ -123,6 +85,10 @@ export function ValidationPriorHistoryCard({
           ) : null}
           <p style={{ ...typography.body.desktop, color: colors.text.primary }}>{PRIOR_HISTORY_COPY.footer}</p>
         </div>
+      ) : null}
+
+      {view.kind === "external_takeover" && !editing ? (
+        <ExternalTakeoverFlow onChangeAnswer={() => setEditing(true)} />
       ) : null}
 
       {view.kind === "confirmed" && !editing ? (

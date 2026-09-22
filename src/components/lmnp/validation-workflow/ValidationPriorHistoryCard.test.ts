@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-import { PRIOR_HISTORY_COPY, resolvePriorHistoryCardView } from "./ValidationPriorHistoryCard";
+import { PRIOR_HISTORY_COPY, resolvePriorHistoryCardView } from "./prior-history-card-view";
 import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 
 const NOW = "2026-09-04T00:00:00.000Z";
@@ -34,13 +34,11 @@ describe("carte antériorité — modèle d'affichage (management par exception)
     assert.deepEqual(view, { kind: "confirmed" });
   });
 
-  it("historique externe → message de reprise indisponible, réponse modifiable", () => {
+  it("historique externe → parcours de reprise (plus de hard-block « pas encore disponible »)", () => {
     const view = resolvePriorHistoryCardView(
       resolvePriorHistoryEligibility({ priorHistoryDeclaration: { status: "EXTERNAL_HISTORY", declaredAt: NOW } }),
     );
-    assert.equal(view.kind, "blocked");
-    assert.equal(view.kind === "blocked" && view.message, PRIOR_HISTORY_COPY.blocked.EXTERNAL_HISTORY_DECLARED);
-    assert.equal(view.kind === "blocked" && view.canChangeAnswer, true);
+    assert.equal(view.kind, "external_takeover");
   });
 
   it("« Fiscal AI » sans continuité → message dédié, réponse modifiable", () => {
@@ -71,11 +69,10 @@ describe("carte antériorité — wording simple", () => {
     assert.doesNotMatch(allText, /\bFEC\b|liasse|2033|\bRFS\b|\bCRD\b/i);
   });
 
-  it("le message de blocage externe exprime l'intention demandée", () => {
+  it("le message de blocage externe n'affirme plus que la reprise est indisponible", () => {
     const message = PRIOR_HISTORY_COPY.blocked.EXTERNAL_HISTORY_DECLARED;
     assert.match(message, /reprendre certains éléments de votre comptabilité précédente/);
-    assert.match(message, /déficits et amortissements reportables/);
-    assert.match(message, /pas encore disponible/);
+    assert.doesNotMatch(message, /pas encore disponible/);
   });
 
   it("propose exactement les trois situations", () => {

@@ -104,12 +104,15 @@ export type PrepareExternalTakeoverResult =
       status: "built";
       opening: FiscalYearOpening;
       controls: HistoricalTaxPackageControlsReconciliation;
+      /** Candidates après merge answers — pour affichage UI (valeurs présentes uniquement). */
+      assets: CandidateHistoricalAsset[];
       exceptions: [];
     }
   | {
       status: "incomplete";
       exceptions: TakeoverException[];
       controls?: HistoricalTaxPackageControlsReconciliation;
+      assets?: CandidateHistoricalAsset[];
       buildResult?: BuildExternalTakeoverFiscalYearOpeningResult;
     }
   | {
@@ -117,12 +120,14 @@ export type PrepareExternalTakeoverResult =
       opening: FiscalYearOpening;
       exceptions: TakeoverException[];
       controls: HistoricalTaxPackageControlsReconciliation;
+      assets: CandidateHistoricalAsset[];
       buildResult: BuildExternalTakeoverFiscalYearOpeningResult;
     }
   | {
       status: "blocked";
       exceptions: TakeoverException[];
       controls?: HistoricalTaxPackageControlsReconciliation;
+      assets?: CandidateHistoricalAsset[];
       buildResult?: BuildExternalTakeoverFiscalYearOpeningResult;
     };
 
@@ -397,6 +402,7 @@ export async function prepareExternalTakeover(
           },
         ],
         controls,
+        assets: merged.assets,
         buildResult,
       };
     }
@@ -404,6 +410,7 @@ export async function prepareExternalTakeover(
       status: "built",
       opening: selected.opening,
       controls,
+      assets: merged.assets,
       exceptions: [],
     };
   }
@@ -414,6 +421,7 @@ export async function prepareExternalTakeover(
       opening: buildResult.opening,
       exceptions: mapIssuesToTakeoverExceptions(buildResult.issues),
       controls,
+      assets: merged.assets,
       buildResult,
     };
   }
@@ -436,6 +444,7 @@ export async function prepareExternalTakeover(
       status: "blocked",
       exceptions: dedupeExceptions([...hardBlocks, ...clientExceptions, ...fromBuild]),
       controls,
+      assets: merged.assets,
       buildResult,
     };
   }
@@ -447,6 +456,7 @@ export async function prepareExternalTakeover(
       status: "incomplete",
       exceptions: dedupeExceptions([...clientExceptions, ...manualFromBuild]),
       controls,
+      assets: merged.assets,
       buildResult,
     };
   }
@@ -455,6 +465,7 @@ export async function prepareExternalTakeover(
     status: "blocked",
     exceptions: fromBuild,
     controls,
+    assets: merged.assets,
     buildResult,
   };
 }

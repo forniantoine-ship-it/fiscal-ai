@@ -599,6 +599,14 @@ export interface FiscalYear {
     sourceRef: string;
     opening: import("../services/fiscal-year-opening/types").FiscalYearOpening;
   };
+  /**
+   * Lot 5.2 — documentIds des pièces reprise (rôles logiques hors DocumentRole DB).
+   * Les blobs restent dans la persistence documentaire existante.
+   */
+  externalTakeoverDocuments?: {
+    priorTaxPackageDocumentId?: string;
+    priorDepreciationRegisterDocumentId?: string;
+  };
 }
 
 /**

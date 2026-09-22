@@ -116,6 +116,20 @@ export type LmnpAction =
   | { type: "VALIDATION_BULK_APPROVE_HIGH_CONFIDENCE" }
   | { type: "CONFIRM_REGIME"; regime: "micro-bic" | "reel" }
   | { type: "DECLARE_PRIOR_HISTORY"; status: PriorHistoryDeclarationStatus }
+  | {
+      type: "SET_EXTERNAL_TAKEOVER_DOCUMENTS";
+      documents: NonNullable<PersistedWorkspace["fiscalYear"]["externalTakeoverDocuments"]>;
+    }
+  | {
+      type: "SET_EXTERNAL_TAKEOVER_REVIEW_ANSWERS";
+      reviewAnswers: NonNullable<
+        PersistedWorkspace["fiscalYear"]["externalTakeoverReviewAnswers"]
+      >;
+    }
+  | {
+      type: "SET_EXTERNAL_TAKEOVER_OPENING";
+      opening: NonNullable<PersistedWorkspace["fiscalYear"]["externalTakeoverOpening"]>;
+    }
   | { type: "UPDATE_PROPERTY"; propertyId: string; patch: Partial<PersistedWorkspace["properties"][0]> }
   | {
       type: "LEDGER_UPDATE_VALUE";
@@ -1043,6 +1057,39 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
         fiscalYear: {
           ...touchFiscalYear(state.fiscalYear),
           priorHistoryDeclaration: { status: action.status, declaredAt: nowIso() },
+        },
+      });
+    }
+
+    case "SET_EXTERNAL_TAKEOVER_DOCUMENTS": {
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear),
+          externalTakeoverDocuments: {
+            ...state.fiscalYear.externalTakeoverDocuments,
+            ...action.documents,
+          },
+        },
+      });
+    }
+
+    case "SET_EXTERNAL_TAKEOVER_REVIEW_ANSWERS": {
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear),
+          externalTakeoverReviewAnswers: action.reviewAnswers,
+        },
+      });
+    }
+
+    case "SET_EXTERNAL_TAKEOVER_OPENING": {
+      return finalizeState({
+        ...state,
+        fiscalYear: {
+          ...touchFiscalYear(state.fiscalYear),
+          externalTakeoverOpening: action.opening,
         },
       });
     }
