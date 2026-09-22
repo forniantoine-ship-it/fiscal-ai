@@ -92,6 +92,21 @@ export {
 } from "./tax-package-control-facts";
 
 export {
+  createHistoricalControlReconciliation,
+  HISTORICAL_CONTROL_RECONCILIATION_V1_PAIRS,
+  isHistoricalControlReconciliationResult,
+  type CreateHistoricalControlReconciliationInput,
+  type CreateHistoricalControlReconciliationResult,
+  type HistoricalControlNotComparableReason,
+  type HistoricalControlReconciliationIssue,
+  type HistoricalControlReconciliationKind,
+  type HistoricalControlReconciliationResult,
+  type HistoricalControlReconciliationSide,
+  type HistoricalControlReconciliationSideSpec,
+  type HistoricalControlReconciliationStatus,
+} from "./historical-control-reconciliation";
+
+export {
   extractTaxPackageControlFactsFromLiasse,
   type ExtractTaxPackageControlFactsFromLiasseInput,
   type ExtractTaxPackageControlFactsFromLiasseResult,
