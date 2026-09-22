@@ -121,6 +121,11 @@ export {
 } from "./build-external-takeover-opening";
 
 export {
+  selectBuiltExternalTakeoverOpening,
+  type SelectBuiltExternalTakeoverOpeningResult,
+} from "./select-built-external-takeover-opening";
+
+export {
   extractTaxPackageControlFactsFromLiasse,
   type ExtractTaxPackageControlFactsFromLiasseInput,
   type ExtractTaxPackageControlFactsFromLiasseResult,

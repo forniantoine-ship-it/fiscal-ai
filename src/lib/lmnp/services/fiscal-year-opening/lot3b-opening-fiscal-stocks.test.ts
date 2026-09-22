@@ -598,16 +598,16 @@ describe("Lot 3B — génération bloque unavailable (garde amont, pas F006)", (
 });
 
 // ---------------------------------------------------------------------------
-describe("Lot 3B — EXTERNAL_HISTORY reste fermé (preuve source)", () => {
-  it("prior-history-eligibility.ts non modifié dans ce lot (EXTERNAL_HISTORY bloque toujours)", () => {
+describe("Lot 3B — EXTERNAL_HISTORY fermé sans Opening (Lot 4F.2)", () => {
+  it("sans preuve Opening : EXTERNAL_HISTORY reste bloqué", () => {
     const src = readFileSync(
       path.join(MODULE_DIR, "../declaration/prior-history-eligibility.ts"),
       "utf8",
     );
     assert.match(src, /EXTERNAL_HISTORY/);
     assert.match(src, /EXTERNAL_HISTORY_DECLARED/);
-    // Le bridge n'est pas importé ici — pas d'activation production.
-    assert.doesNotMatch(src, /resolveOpeningFiscalStocks|resolveCanonicalOpeningFiscalStocks/);
+    assert.match(src, /isUsableExternalTakeoverOpening/);
+    assert.match(src, /proven_by_validated_opening/);
   });
 
   it("apply-amortissement-stocks.ts non modifié (F006 intouchable)", () => {

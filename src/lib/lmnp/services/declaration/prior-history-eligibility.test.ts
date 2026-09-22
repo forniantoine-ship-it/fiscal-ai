@@ -64,7 +64,7 @@ describe("resolvePriorHistoryEligibility — première année réelle", () => {
 });
 
 describe("resolvePriorHistoryEligibility — historique externe", () => {
-  it("3 — comptabilité réelle externe déclarée → BLOQUÉ", () => {
+  it("3 — comptabilité réelle externe déclarée SANS Opening → BLOQUÉ", () => {
     const result = resolvePriorHistoryEligibility({
       priorHistoryDeclaration: { status: "EXTERNAL_HISTORY", declaredAt: NOW },
     });

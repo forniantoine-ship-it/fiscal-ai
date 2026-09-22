@@ -33,6 +33,11 @@ import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { enrichImmobilisationsRfs, reconcileImmobilisationsContinuity } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import { resolveCanonicalOpeningFiscalStocks } from "@/lib/lmnp/services/fiscal-year-opening/resolve-opening-fiscal-stocks";
+import { isAvailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
+import {
+  applyResolvedOpeningDepreciation,
+  resolveOpeningDepreciation,
+} from "@/lib/lmnp/services/fiscal-year-opening/resolve-opening-depreciation";
 
 /** Code anomalie stable — Blocker #3 Lot C (gate génération). */
 export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED";
@@ -174,9 +179,11 @@ export function runDeclarationGeneration(
     propertyId?: string;
   },
   /**
-   * Lot 3B — bridge optionnel `FiscalYearOpening.stocks` → mêmes inputs F006
-   * que `stocksOuverture`. Absent en production actuelle (EXTERNAL_HISTORY
-   * reste fermé). Convergence fail-closed avant `produceFiscalResult` :
+   * Lot 3B / 4F.2 — bridge optionnel `FiscalYearOpening` → stocks F006 +
+   * amortissement ancré (si actifs disponibles). Absent en production tant
+   * qu'aucune Opening n'est fournie. EXTERNAL_HISTORY n'autorise la génération
+   * que si une Opening external_takeover validée est passée ici (gate 4F.2).
+   * Convergence fail-closed avant `produceFiscalResult` :
    * unavailable ≠ 0/[] ; double source divergente → blocked.
    */
   fiscalYearOpening?: FiscalYearOpening,
@@ -205,6 +212,52 @@ export function runDeclarationGeneration(
   }
   const openingFiscalStocks = stocksResolution.stocks;
 
+  // Lot 4F.2 — si l'Opening porte un inventaire d'actifs disponible, le moteur
+  // existant (resolveOpeningDepreciation → continuePlanLine) calcule DN depuis
+  // les ancres C0. Jamais de reconstruction N-1. Assets unavailable (Lot 3B
+  // stocks-only) → chemin amortissement draft inchangé.
+  // Shape F006 uniquement (`AmortissementFiscalInput`) — jamais un objet
+  // AmortissementAssistantOutput inventé.
+  let amortissementAssistant = draft?.amortissementAssistant
+    ? {
+        exerciceFiscal: draft.amortissementAssistant.exerciceFiscal,
+        totalDotations: draft.amortissementAssistant.totalDotations,
+        status: draft.amortissementAssistant.status,
+      }
+    : undefined;
+  if (fiscalYearOpening && isAvailable(fiscalYearOpening.assets)) {
+    const depreciation = resolveOpeningDepreciation({
+      opening: fiscalYearOpening,
+      expectedExerciceFiscal: fiscalYear,
+    });
+    if (depreciation.status === "blocked") {
+      return {
+        status: "blocked",
+        anomalies: depreciation.issues.map((issue) => ({
+          severity: issue.severity === "warning" ? ("warning" as const) : ("error" as const),
+          message: `${issue.code}: ${issue.message}`,
+          field: issue.fieldPath ?? "fiscalYearOpening.assets",
+        })),
+      };
+    }
+    const applied = applyResolvedOpeningDepreciation({ resolved: depreciation });
+    if (!applied.ok) {
+      return {
+        status: "blocked",
+        anomalies: applied.issues.map((issue) => ({
+          severity: issue.severity === "warning" ? ("warning" as const) : ("error" as const),
+          message: `${issue.code}: ${issue.message}`,
+          field: issue.fieldPath ?? "fiscalYearOpening.assets",
+        })),
+      };
+    }
+    amortissementAssistant = {
+      exerciceFiscal: fiscalYear,
+      totalDotations: applied.plan.totalAnnuelExercice,
+      status: "validated",
+    };
+  }
+
   // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérivé en direct depuis
   // `creditFinancing.loans` (donnée source, toujours persistée) plutôt que
   // depuis un champ calculé au moment de la confirmation Tunnel A : protège
@@ -230,7 +283,7 @@ export function runDeclarationGeneration(
     financementCharges,
     chargesAssistant: draft?.chargesAssistant,
     revenusAssistant: draft?.revenusAssistant,
-    amortissementAssistant: draft?.amortissementAssistant,
+    amortissementAssistant,
     stockDeficitsAnterieurs: openingFiscalStocks?.deficits,
     stockAmortissementsReportes: openingFiscalStocks?.amortissementsReportes,
   });

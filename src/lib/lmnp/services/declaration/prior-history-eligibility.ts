@@ -5,9 +5,9 @@
  * déficits reportables et des amortissements réputés différés de l'exercice
  * précédent. Sans source d'ouverture valide, F-006 retombe sur `[]` / `0`
  * (`apply-amortissement-stocks.ts`) — un « zéro » silencieux qui peut produire
- * une déclaration fausse. La reprise d'une comptabilité externe n'existe pas
- * encore : ce résolveur ferme donc l'accès à la finalisation (paiement /
- * génération) tant que la situation n'est pas établie de façon sûre.
+ * une déclaration fausse. La reprise d'une comptabilité externe est autorisée
+ * uniquement lorsqu'une `FiscalYearOpening` external_takeover validée pour le
+ * bon exercice est fournie (Lot 4F.2) — jamais sur le statut seul.
  *
  * Pure, sans I/O, jamais de valeur fiscale. Aucune formule F-006 n'est lue ou
  * modifiée.
@@ -32,6 +32,8 @@
  */
 
 import type { FiscalYear, PriorHistoryDeclarationStatus } from "../../types/domain";
+import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
+import { isUsableExternalTakeoverOpening } from "@/lib/lmnp/services/fiscal-year-opening/is-usable-external-takeover-opening";
 
 export type PriorHistoryFiscalYearFacts = Pick<
   FiscalYear,
@@ -40,6 +42,16 @@ export type PriorHistoryFiscalYearFacts = Pick<
   | "stocksOuvertureUnavailableReason"
   | "priorHistoryDeclaration"
 >;
+
+/**
+ * Lot 4F.2 — preuve optionnelle pour débloquer EXTERNAL_HISTORY.
+ * Absent = comportement historique (EXTERNAL_HISTORY fermé).
+ */
+export type PriorHistoryExternalOpeningProof = {
+  fiscalYearOpening: FiscalYearOpening;
+  /** Exercice de la déclaration demandée — doit égaler opening.targetFiscalYear. */
+  requestedFiscalYear: number;
+};
 
 export type PriorHistoryBlockReason =
   /** Aucune réponse : la situation ne peut pas être prouvée par les données. */
@@ -54,9 +66,12 @@ export type PriorHistoryBlockReason =
 export type PriorHistoryEligibility =
   | {
       eligible: true;
-      status: "FIRST_REAL_YEAR" | "NATIVE_CONTINUITY";
-      /** NATIVE_CONTINUITY est toujours prouvée par les données ; FIRST_REAL_YEAR toujours déclarée. */
-      basis: "proven_by_data" | "declared_by_client";
+      status: "FIRST_REAL_YEAR" | "NATIVE_CONTINUITY" | "EXTERNAL_HISTORY";
+      /**
+       * NATIVE_CONTINUITY / EXTERNAL_HISTORY (Opening validée) : prouvées.
+       * FIRST_REAL_YEAR : toujours déclarée.
+       */
+      basis: "proven_by_data" | "declared_by_client" | "proven_by_validated_opening";
     }
   | {
       eligible: false;
@@ -92,11 +107,32 @@ function hasValidOpeningStocks(fy: PriorHistoryFiscalYearFacts): boolean {
   return validDeficits && Number.isFinite(stocks.amortissementsReportes) && stocks.amortissementsReportes >= 0;
 }
 
-export function resolvePriorHistoryEligibility(fiscalYear: PriorHistoryFiscalYearFacts): PriorHistoryEligibility {
-  // 0 — Une comptabilité réelle externe explicitement déclarée bloque toujours,
-  // même face à une continuité Fiscal AI : fail-closed, jamais un arbitrage
-  // silencieux entre une déclaration du client et un fait de production.
+export function resolvePriorHistoryEligibility(
+  fiscalYear: PriorHistoryFiscalYearFacts,
+  /**
+   * Lot 4F.2 — Opening externe déjà construite (4F.1) pour autoriser
+   * EXTERNAL_HISTORY. Jamais reconstruite ici. Absent = EXTERNAL_HISTORY fermé.
+   */
+  externalOpeningProof?: PriorHistoryExternalOpeningProof,
+): PriorHistoryEligibility {
+  // 0 — Comptabilité réelle externe déclarée :
+  //     - Opening externe validée (bon exercice, source external_takeover) → éligible ;
+  //     - sinon → bloqué (comportement historique, fail-closed).
+  // Même face à une continuité Fiscal AI : jamais d'arbitrage silencieux.
   if (fiscalYear.priorHistoryDeclaration?.status === "EXTERNAL_HISTORY") {
+    if (
+      externalOpeningProof &&
+      isUsableExternalTakeoverOpening(
+        externalOpeningProof.fiscalYearOpening,
+        externalOpeningProof.requestedFiscalYear,
+      )
+    ) {
+      return {
+        eligible: true,
+        status: "EXTERNAL_HISTORY",
+        basis: "proven_by_validated_opening",
+      };
+    }
     return resolveFromDeclaration("EXTERNAL_HISTORY");
   }
 

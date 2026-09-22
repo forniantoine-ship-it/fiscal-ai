@@ -348,6 +348,11 @@ export function resolveDeclarationGenerationGate(input: {
    * `canCloseFiscalYear`, `resolveDeclarationOutOfDate`).
    */
   priorHistory?: PriorHistoryEligibility;
+  /**
+   * Lot 4F.2 — même Opening que la génération réelle (7e argument de
+   * `runDeclarationGeneration`). Absent = chemins sans reprise externe.
+   */
+  fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
 }): DeclarationGenerationGate {
   const snapshot = buildValidationDossierSnapshot(input.draft, input.properties, input.fiscalYear);
 
@@ -403,6 +408,7 @@ export function resolveDeclarationGenerationGate(input: {
       input.draft?.bilanPatrimonial,
       input.draft?.dispense2033A,
       input.continuity,
+      input.fiscalYearOpening,
     );
     if (preview.status === "blocked") {
       return {
@@ -466,6 +472,7 @@ export function resolveDeclarationGenerationGate(input: {
   // G1-P0 — idem : même bilanPatrimonial que la génération réelle.
   // P0-1A — idem : même stocksOuverture que la génération réelle.
   // Lot 5 B2 — idem : même continuité immobilisations.
+  // Lot 4F.2 — idem : même fiscalYearOpening que la génération réelle.
   const preview = runDeclarationGeneration(
     input.draft,
     input.fiscalYear,
@@ -473,6 +480,7 @@ export function resolveDeclarationGenerationGate(input: {
     input.draft?.bilanPatrimonial,
     input.draft?.dispense2033A,
     input.continuity,
+    input.fiscalYearOpening,
   );
   if (preview.status === "blocked") {
     return {

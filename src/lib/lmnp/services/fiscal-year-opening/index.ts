@@ -41,6 +41,7 @@ export {
   openingContentForHash,
 } from "./content-hash";
 export { validateFiscalYearOpening } from "./validate-opening";
+export { isUsableExternalTakeoverOpening } from "./is-usable-external-takeover-opening";
 export {
   resolveOpeningDepreciation,
   applyResolvedOpeningDepreciation,

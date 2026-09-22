@@ -55,7 +55,11 @@ export type PriorHistoryCardView =
 /** Pure — testable sans DOM. */
 export function resolvePriorHistoryCardView(eligibility: PriorHistoryEligibility): PriorHistoryCardView {
   if (eligibility.eligible) {
-    return eligibility.status === "NATIVE_CONTINUITY" ? { kind: "hidden" } : { kind: "confirmed" };
+    // Continuité native ou reprise externe prouvée par Opening : pas de question.
+    if (eligibility.status === "NATIVE_CONTINUITY" || eligibility.status === "EXTERNAL_HISTORY") {
+      return { kind: "hidden" };
+    }
+    return { kind: "confirmed" };
   }
   if (eligibility.reason === "ANSWER_REQUIRED") return { kind: "question" };
   return {
