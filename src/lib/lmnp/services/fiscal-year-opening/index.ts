@@ -55,6 +55,17 @@ export {
   type PropagateAnchoredDepreciationResult,
 } from "./propagate-anchored-depreciation";
 export {
+  resolveOpeningFiscalStocks,
+  resolveCanonicalOpeningFiscalStocks,
+  fiscalStocksSemanticallyEqual,
+  type OpeningFiscalStocks,
+  type ResolveOpeningFiscalStocksInput,
+  type ResolveOpeningFiscalStocksResult,
+  type ResolveOpeningFiscalStocksReady,
+  type ResolveCanonicalOpeningFiscalStocksInput,
+  type ResolveCanonicalOpeningFiscalStocksResult,
+} from "./resolve-opening-fiscal-stocks";
+export {
   fixture1Simple,
   fixture2WithCarryforwardAndAssets,
   fixture3UnavailableFacts,

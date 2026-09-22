@@ -31,6 +31,8 @@ import type {
 } from "@/lib/lmnp/types/domain";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { enrichImmobilisationsRfs, reconcileImmobilisationsContinuity } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
+import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
+import { resolveCanonicalOpeningFiscalStocks } from "@/lib/lmnp/services/fiscal-year-opening/resolve-opening-fiscal-stocks";
 
 /** Code anomalie stable — Blocker #3 Lot C (gate génération). */
 export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED";
@@ -171,12 +173,37 @@ export function runDeclarationGeneration(
     immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
     propertyId?: string;
   },
+  /**
+   * Lot 3B — bridge optionnel `FiscalYearOpening.stocks` → mêmes inputs F006
+   * que `stocksOuverture`. Absent en production actuelle (EXTERNAL_HISTORY
+   * reste fermé). Convergence fail-closed avant `produceFiscalResult` :
+   * unavailable ≠ 0/[] ; double source divergente → blocked.
+   */
+  fiscalYearOpening?: FiscalYearOpening,
 ): DeclarationGenerationResult {
   // Blocker #3 Lot C — avant tout calcul fiscal : TF legacy unresolved bloque.
   const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
   if (integrityBlock) {
     return { status: "blocked", anomalies: [integrityBlock] };
   }
+
+  // Lot 3B — convergence stocks d'ouverture avant F006 (provenance effacée).
+  const stocksResolution = resolveCanonicalOpeningFiscalStocks({
+    opening: fiscalYearOpening,
+    stocksOuverture,
+    expectedExerciceFiscal: fiscalYearOpening ? fiscalYear : undefined,
+  });
+  if (stocksResolution.status === "blocked") {
+    return {
+      status: "blocked",
+      anomalies: stocksResolution.issues.map((issue) => ({
+        severity: issue.severity === "warning" ? ("warning" as const) : ("error" as const),
+        message: `${issue.code}: ${issue.message}`,
+        field: issue.fieldPath ?? "fiscalYearOpening.stocks",
+      })),
+    };
+  }
+  const openingFiscalStocks = stocksResolution.stocks;
 
   // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérivé en direct depuis
   // `creditFinancing.loans` (donnée source, toujours persistée) plutôt que
@@ -204,8 +231,8 @@ export function runDeclarationGeneration(
     chargesAssistant: draft?.chargesAssistant,
     revenusAssistant: draft?.revenusAssistant,
     amortissementAssistant: draft?.amortissementAssistant,
-    stockDeficitsAnterieurs: stocksOuverture?.deficits,
-    stockAmortissementsReportes: stocksOuverture?.amortissementsReportes,
+    stockDeficitsAnterieurs: openingFiscalStocks?.deficits,
+    stockAmortissementsReportes: openingFiscalStocks?.amortissementsReportes,
   });
 
   if (!fiscalComputation.result) {
