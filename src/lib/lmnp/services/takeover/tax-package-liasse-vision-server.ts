@@ -1,18 +1,29 @@
 /**
- * Lot 4D.4B — requester Vision serveur pour cases V1 liasse (contrat 4D.3).
- * Pattern aligné logement : OpenAI chat.completions + json_schema + temperature 0.
- * Aucune clé OpenAI côté client. Pas de log des montants fiscaux.
+ * Lot 4D.4B — requesters Vision serveur pour la liasse N-1 (classification de
+ * page + extraction structurée des cases, contrat 4D.3).
+ *
+ * Lot 5.5-A — garde `server-only` réelle ajoutée (pattern aligné
+ * depreciation-register-vision-server.ts) : ce module ne doit jamais être
+ * importé par un composant/bundle client — seules les routes API dédiées le
+ * font, via import dynamique (cf. request-tax-package-liasse-vision.ts /
+ * request-tax-package-liasse-page-classify.ts et leurs routes). Le parsing
+ * pur (schéma Zod, validation payload) vit désormais dans
+ * extract-tax-package-liasse-observations.ts — pas de logique testable sans
+ * réseau dans ce fichier.
+ *
+ * Pattern aligné logement / depreciation-register : OpenAI chat.completions
+ * + json_schema + temperature 0. Aucune clé OpenAI côté client. Pas de log
+ * des montants fiscaux.
  */
 
+import "server-only";
+
 import OpenAI from "openai";
-import { z } from "zod";
 
 import {
   buildTaxPackageLiasseVisionSystemPrompt,
+  parseTaxPackageLiasseVisionFormPayload,
   TAX_PACKAGE_LIASSE_VISION_JSON_SCHEMA,
-  type TaxPackageLiasseFormType,
-  type TaxPackageLiasseVisionCasePayload,
-  type TaxPackageLiasseVisionFormPayload,
   type TaxPackageLiasseVisionRequester,
 } from "./extract-tax-package-liasse-observations";
 import {
@@ -41,80 +52,6 @@ function getOpenAI(): OpenAI {
   return new OpenAI({ apiKey });
 }
 
-const VisionCaseZod = z.object({
-  sourceCase: z.string(),
-  status: z.enum(["present", "missing", "extraction_impossible"]),
-  value: z.number().nullable(),
-});
-
-export const TaxPackageLiasseVisionFormZodSchema = z.object({
-  formType: z.enum(["2033A", "2033C", "unknown"]),
-  cases: z.array(VisionCaseZod),
-});
-
-/**
- * Valide le payload Vision 4D.3. Échec → formType unknown + cases vides
- * (l'appelant 4D.3 mappe en extraction_impossible case par case).
- */
-export function parseTaxPackageLiasseVisionFormPayload(
-  raw: unknown,
-  expectedFormType: TaxPackageLiasseFormType,
-  expectedCases: readonly string[],
-): TaxPackageLiasseVisionFormPayload {
-  const parsed = TaxPackageLiasseVisionFormZodSchema.safeParse(raw);
-  if (!parsed.success) {
-    return {
-      formType: "unknown",
-      cases: expectedCases.map((sourceCase) => ({
-        sourceCase,
-        status: "extraction_impossible" as const,
-        value: null,
-      })),
-    };
-  }
-
-  const byCase = new Map(
-    parsed.data.cases.map((c) => [c.sourceCase, c] as const),
-  );
-  const cases: TaxPackageLiasseVisionCasePayload[] = expectedCases.map(
-    (sourceCase) => {
-      const hit = byCase.get(sourceCase);
-      if (!hit) {
-        return {
-          sourceCase,
-          status: "extraction_impossible",
-          value: null,
-        };
-      }
-      return {
-        sourceCase: hit.sourceCase,
-        status: hit.status,
-        value: hit.value,
-      };
-    },
-  );
-
-  // formType mismatch → fail closed on all cases
-  if (
-    parsed.data.formType !== expectedFormType &&
-    parsed.data.formType !== "unknown"
-  ) {
-    return {
-      formType: "unknown",
-      cases: expectedCases.map((sourceCase) => ({
-        sourceCase,
-        status: "extraction_impossible",
-        value: null,
-      })),
-    };
-  }
-
-  return {
-    formType: parsed.data.formType,
-    cases,
-  };
-}
-
 /**
  * Requester Vision injectable conforme à TaxPackageLiasseVisionRequester.
  * Serveur uniquement (OPENAI_API_KEY).
@@ -122,19 +59,12 @@ export function parseTaxPackageLiasseVisionFormPayload(
 export function createTaxPackageLiasseVisionRequester(): TaxPackageLiasseVisionRequester {
   return async (input) => {
     if (!input.pageImage?.base64) {
-      return parseTaxPackageLiasseVisionFormPayload(
-        null,
-        input.formType,
-        input.sourceCases,
-      );
+      return parseTaxPackageLiasseVisionFormPayload(null, input.formType, input.sourceCases);
     }
 
     const openai = getOpenAI();
     const model = getTaxPackageVisionModel();
-    const systemPrompt = buildTaxPackageLiasseVisionSystemPrompt(
-      input.formType,
-      input.sourceCases,
-    );
+    const systemPrompt = buildTaxPackageLiasseVisionSystemPrompt(input.formType, input.sourceCases);
 
     console.log("[tax-package-vision] request", {
       model,
@@ -173,29 +103,17 @@ export function createTaxPackageLiasseVisionRequester(): TaxPackageLiasseVisionR
 
     const content = completion.choices[0]?.message?.content?.trim() ?? "";
     if (!content) {
-      return parseTaxPackageLiasseVisionFormPayload(
-        null,
-        input.formType,
-        input.sourceCases,
-      );
+      return parseTaxPackageLiasseVisionFormPayload(null, input.formType, input.sourceCases);
     }
 
     let json: unknown;
     try {
       json = JSON.parse(content);
     } catch {
-      return parseTaxPackageLiasseVisionFormPayload(
-        null,
-        input.formType,
-        input.sourceCases,
-      );
+      return parseTaxPackageLiasseVisionFormPayload(null, input.formType, input.sourceCases);
     }
 
-    return parseTaxPackageLiasseVisionFormPayload(
-      json,
-      input.formType,
-      input.sourceCases,
-    );
+    return parseTaxPackageLiasseVisionFormPayload(json, input.formType, input.sourceCases);
   };
 }
 
@@ -205,11 +123,7 @@ export function createTaxPackageLiasseVisionRequester(): TaxPackageLiasseVisionR
 export function createTaxPackageLiassePageClassifier(): TaxPackageLiassePageClassifier {
   return async ({ pageImage }) => {
     if (!pageImage.base64) {
-      return {
-        pageNumber: pageImage.pageNumber,
-        formType: null,
-        formYear: null,
-      };
+      return { pageNumber: pageImage.pageNumber, formType: null, formYear: null };
     }
 
     const openai = getOpenAI();
@@ -231,10 +145,7 @@ export function createTaxPackageLiassePageClassifier(): TaxPackageLiassePageClas
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: `Classifie la page ${pageImage.pageNumber}.`,
-            },
+            { type: "text", text: `Classifie la page ${pageImage.pageNumber}.` },
             {
               type: "image_url",
               image_url: {
@@ -253,27 +164,16 @@ export function createTaxPackageLiassePageClassifier(): TaxPackageLiassePageClas
 
     const content = completion.choices[0]?.message?.content?.trim() ?? "";
     if (!content) {
-      return {
-        pageNumber: pageImage.pageNumber,
-        formType: null,
-        formYear: null,
-      };
+      return { pageNumber: pageImage.pageNumber, formType: null, formYear: null };
     }
 
     let json: unknown;
     try {
       json = JSON.parse(content);
     } catch {
-      return {
-        pageNumber: pageImage.pageNumber,
-        formType: null,
-        formYear: null,
-      };
+      return { pageNumber: pageImage.pageNumber, formType: null, formYear: null };
     }
 
-    return parseTaxPackageLiassePageClassifierPayload(
-      json,
-      pageImage.pageNumber,
-    );
+    return parseTaxPackageLiassePageClassifierPayload(json, pageImage.pageNumber);
   };
 }

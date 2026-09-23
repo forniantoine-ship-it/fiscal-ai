@@ -159,8 +159,10 @@ export {
   extractTaxPackageLiassePrintedFormYear,
   identifyTaxPackageLiasseForm,
   isTaxPackageLiasseFormYearCompatible,
+  parseTaxPackageLiasseVisionFormPayload,
   readNativeTaxPackageCase,
   TAX_PACKAGE_LIASSE_VISION_JSON_SCHEMA,
+  TaxPackageLiasseVisionFormZodSchema,
   type ExtractTaxPackageLiasseObservationsInput,
   type ExtractTaxPackageLiasseObservationsResult,
   type TaxPackageLiasseFormType,
@@ -193,12 +195,12 @@ export {
   type TaxPackageLiassePageClassifier,
 } from "./classify-tax-package-liasse-page";
 
-export {
-  createTaxPackageLiassePageClassifier,
-  createTaxPackageLiasseVisionRequester,
-  parseTaxPackageLiasseVisionFormPayload,
-  TaxPackageLiasseVisionFormZodSchema,
-} from "./tax-package-liasse-vision-server";
+// Lot 5.5-A — tax-package-liasse-vision-server.ts n'est plus barrel-exporté :
+// il porte désormais une garde `server-only` réelle (createTaxPackageLiasseVisionRequester
+// / createTaxPackageLiassePageClassifier appellent OpenAI) et ne doit jamais
+// être atteignable depuis un graphe client. Consommé uniquement via import
+// dynamique par les routes API dédiées — cf. request-tax-package-liasse-vision.ts
+// / request-tax-package-liasse-page-classify.ts.
 
 export {
   explicitAnswer,

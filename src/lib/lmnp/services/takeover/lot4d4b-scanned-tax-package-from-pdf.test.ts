@@ -18,13 +18,11 @@ import {
 import { extractScannedTaxPackageControlFactsFromPdf } from "./extract-scanned-tax-package-from-pdf";
 import {
   extractTaxPackageLiasseObservations,
+  parseTaxPackageLiasseVisionFormPayload,
+  TaxPackageLiasseVisionFormZodSchema,
   type TaxPackageLiasseVisionRequester,
 } from "./extract-tax-package-liasse-observations";
 import { extractNativeTaxPackageControlFactsFromPdf } from "./extract-native-tax-package-from-pdf";
-import {
-  parseTaxPackageLiasseVisionFormPayload,
-  TaxPackageLiasseVisionFormZodSchema,
-} from "./tax-package-liasse-vision-server";
 import { generateCerfaLiassePdf } from "@/lib/lmnp/services/liasse-pdf/generator/render-cerfa-liasse";
 import type { CerfaCase } from "@/lib/lmnp/services/liasse-pdf/types";
 import { isTaxPackageControlFact } from "./tax-package-control-facts";

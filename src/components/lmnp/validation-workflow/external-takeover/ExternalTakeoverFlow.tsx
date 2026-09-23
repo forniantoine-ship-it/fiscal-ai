@@ -15,6 +15,8 @@ import {
   type PrepareExternalTakeoverResult,
 } from "@/lib/lmnp/services/takeover";
 import { requestDepreciationRegisterVisionRows } from "@/lib/lmnp/services/takeover/request-depreciation-register-vision";
+import { requestTaxPackageLiasseVisionCases } from "@/lib/lmnp/services/takeover/request-tax-package-liasse-vision";
+import { requestTaxPackageLiassePageClassification } from "@/lib/lmnp/services/takeover/request-tax-package-liasse-page-classify";
 import type { OpeningProrataConvention } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { CandidateAssetClassification } from "@/lib/lmnp/services/takeover/asset-candidates";
 import type { OpeningDeficitRow } from "@/lib/lmnp/services/fiscal-year-opening/types";
@@ -141,6 +143,11 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
         validatedAt: new Date().toISOString(),
         validator: "lot5.2-external-takeover-ui",
         registerVisionRequester: requestDepreciationRegisterVisionRows,
+        // Lot 5.5-A — chemin scan/Vision liasse N-1 : sans ces deux requesters,
+        // resolveTaxPackageFacts bloque immédiatement (DOCUMENT_EXTRACTION_FAILED)
+        // toute liasse sans texte natif, même si l'extraction Vision existe.
+        pageClassifier: requestTaxPackageLiassePageClassification,
+        visionRequester: requestTaxPackageLiasseVisionCases,
       });
 
       if (runId !== runIdRef.current) return;

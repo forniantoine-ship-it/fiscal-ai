@@ -12,6 +12,8 @@
  * formYear / fiscalYear fournis par l'appelant — jamais détectés ici.
  */
 
+import { z } from "zod";
+
 import { createConfidenceScore } from "@/lib/documents/types/confidence-score";
 import { parseRegisterAmount } from "./extract-depreciation-register-spreadsheet";
 import {
@@ -535,6 +537,69 @@ export function buildTaxPackageLiasseVisionSystemPrompt(
     "Ne devine pas. N'utilise pas un montant d'une autre case.",
     "N'extrais aucune autre case.",
   ].join("\n");
+}
+
+const TaxPackageLiasseVisionCaseZod = z.object({
+  sourceCase: z.string(),
+  status: z.enum(["present", "missing", "extraction_impossible"]),
+  value: z.number().nullable(),
+});
+
+/**
+ * Lot 5.5-A — déplacé depuis tax-package-liasse-vision-server.ts : pure
+ * (aucun appel OpenAI, aucun `server-only`), co-localisée avec le schéma/
+ * prompt Vision qu'elle valide — même séparation que
+ * depreciation-register-vision-schema.ts (pur) vs
+ * depreciation-register-vision-server.ts (OpenAI + server-only).
+ */
+export const TaxPackageLiasseVisionFormZodSchema = z.object({
+  formType: z.enum(["2033A", "2033C", "unknown"]),
+  cases: z.array(TaxPackageLiasseVisionCaseZod),
+});
+
+/**
+ * Valide le payload Vision 4D.3. Échec → formType unknown + cases vides
+ * (l'appelant 4D.3 mappe en extraction_impossible case par case).
+ */
+export function parseTaxPackageLiasseVisionFormPayload(
+  raw: unknown,
+  expectedFormType: TaxPackageLiasseFormType,
+  expectedCases: readonly string[],
+): TaxPackageLiasseVisionFormPayload {
+  const parsed = TaxPackageLiasseVisionFormZodSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      formType: "unknown",
+      cases: expectedCases.map((sourceCase) => ({
+        sourceCase,
+        status: "extraction_impossible" as const,
+        value: null,
+      })),
+    };
+  }
+
+  const byCase = new Map(parsed.data.cases.map((c) => [c.sourceCase, c] as const));
+  const cases: TaxPackageLiasseVisionCasePayload[] = expectedCases.map((sourceCase) => {
+    const hit = byCase.get(sourceCase);
+    if (!hit) {
+      return { sourceCase, status: "extraction_impossible", value: null };
+    }
+    return { sourceCase: hit.sourceCase, status: hit.status, value: hit.value };
+  });
+
+  // formType mismatch → fail closed on all cases
+  if (parsed.data.formType !== expectedFormType && parsed.data.formType !== "unknown") {
+    return {
+      formType: "unknown",
+      cases: expectedCases.map((sourceCase) => ({
+        sourceCase,
+        status: "extraction_impossible" as const,
+        value: null,
+      })),
+    };
+  }
+
+  return { formType: parsed.data.formType, cases };
 }
 
 /**
