@@ -14,6 +14,7 @@ import {
   persistExternalTakeoverReviewAnswers,
   type PrepareExternalTakeoverResult,
 } from "@/lib/lmnp/services/takeover";
+import { requestDepreciationRegisterVisionRows } from "@/lib/lmnp/services/takeover/request-depreciation-register-vision";
 import type { OpeningProrataConvention } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { CandidateAssetClassification } from "@/lib/lmnp/services/takeover/asset-candidates";
 import type { OpeningDeficitRow } from "@/lib/lmnp/services/fiscal-year-opening/types";
@@ -139,6 +140,7 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
         reviewAnswers: fiscalYear.externalTakeoverReviewAnswers,
         validatedAt: new Date().toISOString(),
         validator: "lot5.2-external-takeover-ui",
+        registerVisionRequester: requestDepreciationRegisterVisionRows,
       });
 
       if (runId !== runIdRef.current) return;
