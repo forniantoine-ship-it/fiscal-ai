@@ -74,6 +74,26 @@ export {
 } from "./extract-depreciation-register-spreadsheet";
 
 export {
+  extractDepreciationRegisterFromPdf,
+  parseRegisterDurationAnMois,
+  type DepreciationRegisterPdfControlCheck,
+  type DepreciationRegisterPdfDiagnostic,
+  type DepreciationRegisterPdfDiagnosticCode,
+  type DepreciationRegisterPdfExtractionResult,
+  type DepreciationRegisterPdfExtractionStatus,
+  type ExtractDepreciationRegisterFromPdfInput,
+} from "./extract-depreciation-register-pdf";
+
+export type {
+  DepreciationRegisterPdfRow,
+  DepreciationRegisterPdfRowType,
+  DepreciationRegisterVisionPageImage,
+  DepreciationRegisterVisionPageInput,
+  DepreciationRegisterVisionPageResult,
+  DepreciationRegisterVisionRequester,
+} from "./depreciation-register-pdf-row";
+
+export {
   createTaxPackageControlFact,
   createTaxPackageControlFacts,
   isTaxPackageControlFact,

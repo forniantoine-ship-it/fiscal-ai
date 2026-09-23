@@ -9,6 +9,13 @@ import {
   extractDepreciationRegisterFromSpreadsheet,
   type DepreciationRegisterExtractionResult,
 } from "./extract-depreciation-register-spreadsheet";
+import { isPdfFile } from "@/lib/documents/ocr/pdf-native-text";
+import type { RasterPageImage } from "@/lib/documents/ocr/pdf-to-images";
+import {
+  extractDepreciationRegisterFromPdf,
+  type DepreciationRegisterPdfExtractionResult,
+} from "./extract-depreciation-register-pdf";
+import type { DepreciationRegisterVisionRequester } from "./depreciation-register-pdf-row";
 import {
   extractNativeTaxPackageControlFactsFromPdf,
   type ExtractNativeTaxPackageControlFactsFromPdfResult,
@@ -97,6 +104,9 @@ export type PrepareExternalTakeoverInput = {
   pageClassifier?: TaxPackageLiassePageClassifier;
   visionRequester?: TaxPackageLiasseVisionRequester;
   rasterizer?: TaxPackageScanRasterizer;
+  /** Requis uniquement si register.file est un PDF (Lot 5.4-A). */
+  registerVisionRequester?: DepreciationRegisterVisionRequester;
+  registerRasterizer?: (file: File) => Promise<RasterPageImage[]>;
 };
 
 export type PrepareExternalTakeoverResult =
@@ -220,12 +230,59 @@ function preBuildClientExceptions(
 async function resolveRegisterCandidates(
   register: ExternalTakeoverRegisterDocument,
   targetFiscalYear: number,
+  registerVisionRequester?: DepreciationRegisterVisionRequester,
+  registerRasterizer?: (file: File) => Promise<RasterPageImage[]>,
 ): Promise<
-  | { status: "ok"; candidates: CandidateHistoricalAsset[]; extraction?: DepreciationRegisterExtractionResult }
+  | {
+      status: "ok";
+      candidates: CandidateHistoricalAsset[];
+      extraction?: DepreciationRegisterExtractionResult;
+      pdfExtraction?: DepreciationRegisterPdfExtractionResult;
+    }
   | { status: "failed"; exceptions: TakeoverException[] }
 > {
   if ("candidates" in register) {
     return { status: "ok", candidates: [...register.candidates] };
+  }
+
+  if (isPdfFile(register.file)) {
+    if (!registerVisionRequester) {
+      return {
+        status: "failed",
+        exceptions: [
+          {
+            code: "DOCUMENT_EXTRACTION_FAILED",
+            message: "Registre d'amortissements PDF — registerVisionRequester requis (Lot 5.4-A).",
+            answerability: "blocked",
+            documentId: register.documentId,
+          },
+        ],
+      };
+    }
+
+    const pdfExtraction = await extractDepreciationRegisterFromPdf({
+      file: register.file,
+      documentId: register.documentId,
+      targetFiscalYear,
+      visionRequester: registerVisionRequester,
+      rasterizer: registerRasterizer,
+    });
+
+    if (pdfExtraction.status === "unsupported" || pdfExtraction.candidates.length === 0) {
+      return {
+        status: "failed",
+        exceptions: [
+          {
+            code: "DOCUMENT_EXTRACTION_FAILED",
+            message: `Registre d'amortissements PDF non extractible (${pdfExtraction.status}).`,
+            answerability: "blocked",
+            documentId: register.documentId,
+          },
+        ],
+      };
+    }
+
+    return { status: "ok", candidates: pdfExtraction.candidates, pdfExtraction };
   }
 
   const extraction = await extractDepreciationRegisterFromSpreadsheet({
@@ -345,6 +402,8 @@ export async function prepareExternalTakeover(
   const registerResult = await resolveRegisterCandidates(
     input.register,
     input.targetFiscalYear,
+    input.registerVisionRequester,
+    input.registerRasterizer,
   );
   if (registerResult.status === "failed") {
     return { status: "blocked", exceptions: registerResult.exceptions };
