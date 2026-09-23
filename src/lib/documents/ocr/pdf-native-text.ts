@@ -142,15 +142,24 @@ async function loadPdfDocument(file: File) {
  * Page-aware native PDF text — preserves 1-indexed pageNumber.
  * Reuses the same pdfjs / spatial reconstruction as extractNativePdfText.
  * Empty pages are kept (with empty text) so numbering stays aligned.
+ *
+ * `totalPageCount` is the PDF's real page count (pdf.numPages), never capped
+ * by MAX_NATIVE_PDF_PAGES — unlike `pageCount` (pages actually processed
+ * here). Callers that also cap elsewhere (e.g. a rasterizer's own page
+ * limit) need this uncapped value to detect truncation instead of silently
+ * treating "pages processed" as "pages that exist" — cf.
+ * .agents/skills/document-extraction.md (no silent fallback for an
+ * incomplete parser).
  */
 export async function extractNativePdfPages(
   file: File,
-): Promise<{ pages: NativePdfPageText[]; pageCount: number }> {
+): Promise<{ pages: NativePdfPageText[]; pageCount: number; totalPageCount: number }> {
   if (!isPdfFile(file)) {
-    return { pages: [], pageCount: 0 };
+    return { pages: [], pageCount: 0, totalPageCount: 0 };
   }
 
   const pdf = await loadPdfDocument(file);
+  const totalPageCount = pdf.numPages;
   const pageCount = Math.min(pdf.numPages, MAX_NATIVE_PDF_PAGES);
   const pages: NativePdfPageText[] = [];
   let totalRowCount = 0;
@@ -188,7 +197,7 @@ export async function extractNativePdfPages(
     pagesWithText: pages.filter((p) => p.text.trim().length > 0).length,
   });
 
-  return { pages, pageCount };
+  return { pages, pageCount, totalPageCount };
 }
 
 /**

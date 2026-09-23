@@ -56,7 +56,8 @@ export type DepreciationRegisterPdfDiagnosticCode =
   | "VISION_FAILED"
   | "EXITED_ASSET_ROW_SKIPPED"
   | "UNRECOGNIZED_ROW_SKIPPED"
-  | "NO_ASSET_ROWS_EXTRACTED";
+  | "NO_ASSET_ROWS_EXTRACTED"
+  | "PDF_TRUNCATED";
 
 export type DepreciationRegisterPdfDiagnostic = {
   code: DepreciationRegisterPdfDiagnosticCode;
@@ -91,6 +92,10 @@ export type DepreciationRegisterPdfExtractionResult = {
   hasNativeText: boolean;
   visionCalled: boolean;
   extractionMethod: typeof EXTRACTION_METHOD;
+  /** Nombre réel de pages du PDF (non plafonné) — null si illisible (PDF_READ_FAILED). */
+  totalPageCount: number | null;
+  /** Nombre de pages effectivement rasterisées/soumises à Vision. */
+  processedPageCount: number;
 };
 
 export type ExtractDepreciationRegisterFromPdfInput = {
@@ -525,13 +530,17 @@ export async function extractDepreciationRegisterFromPdf(
       hasNativeText: false,
       visionCalled: false,
       extractionMethod: EXTRACTION_METHOD,
+      totalPageCount: null,
+      processedPageCount: 0,
     };
   }
 
   let nativePages: { pageNumber: number; text: string }[] = [];
+  let totalPageCount: number | null = null;
   try {
     const native = await extractNativePdfPages(input.file);
     nativePages = native.pages;
+    totalPageCount = native.totalPageCount;
   } catch (error) {
     const message = error instanceof Error ? error.message : "pdf_read_failed";
     diagnostics.push({ code: "PDF_READ_FAILED", message: `Lecture PDF native échouée: ${message}` });
@@ -554,6 +563,8 @@ export async function extractDepreciationRegisterFromPdf(
       hasNativeText,
       visionCalled: false,
       extractionMethod: EXTRACTION_METHOD,
+      totalPageCount,
+      processedPageCount: 0,
     };
   }
 
@@ -567,7 +578,17 @@ export async function extractDepreciationRegisterFromPdf(
       hasNativeText,
       visionCalled: false,
       extractionMethod: EXTRACTION_METHOD,
+      totalPageCount,
+      processedPageCount: 0,
     };
+  }
+
+  const processedPageCount = images.length;
+  if (totalPageCount !== null && totalPageCount > processedPageCount) {
+    diagnostics.push({
+      code: "PDF_TRUNCATED",
+      message: `Document de ${totalPageCount} page(s) — seules ${processedPageCount} page(s) ont été rasterisées et soumises à Vision (limite de rasterisation) ; ${totalPageCount - processedPageCount} page(s) jamais traitées. Extraction non considérée complète.`,
+    });
   }
 
   const allRows: DepreciationRegisterPdfRow[] = [];
@@ -630,6 +651,8 @@ export async function extractDepreciationRegisterFromPdf(
       hasNativeText,
       visionCalled,
       extractionMethod: EXTRACTION_METHOD,
+      totalPageCount,
+      processedPageCount,
     };
   }
 
@@ -644,6 +667,7 @@ export async function extractDepreciationRegisterFromPdf(
           "CUMUL_EXCEEDS_COST",
           "UNSUPPORTED_METHOD_VALUE",
           "UNRECOGNIZED_ROW_SKIPPED",
+          "PDF_TRUNCATED",
         ] as DepreciationRegisterPdfDiagnosticCode[]
       ).includes(d.code),
     ) || controlChecks.some((c) => c.status === "CONFLICT");
@@ -654,6 +678,8 @@ export async function extractDepreciationRegisterFromPdf(
     excludedExitRows: exitRows,
     diagnostics,
     controlChecks,
+    totalPageCount,
+    processedPageCount,
     hasNativeText,
     visionCalled,
     extractionMethod: EXTRACTION_METHOD,

@@ -282,6 +282,25 @@ async function resolveRegisterCandidates(
       };
     }
 
+    // Lot 5.4-C — troncature de rasterisation (ex. PDF de 13 pages, limite à
+    // 12) : jamais construite comme une Opening "built" sur un sous-ensemble
+    // de pages sans le signaler — cf. .agents/skills/document-extraction.md
+    // (fallback jamais silencieux). Les candidates déjà extraites restent
+    // dans le diagnostic mais ne sont jamais utilisées pour construire.
+    if (pdfExtraction.diagnostics.some((d) => d.code === "PDF_TRUNCATED")) {
+      return {
+        status: "failed",
+        exceptions: [
+          {
+            code: "DOCUMENT_EXTRACTION_FAILED",
+            message: `Registre d'amortissements PDF tronqué : ${pdfExtraction.processedPageCount}/${pdfExtraction.totalPageCount} page(s) traitées — des immobilisations peuvent figurer sur les pages non traitées.`,
+            answerability: "blocked",
+            documentId: register.documentId,
+          },
+        ],
+      };
+    }
+
     return { status: "ok", candidates: pdfExtraction.candidates, pdfExtraction };
   }
 

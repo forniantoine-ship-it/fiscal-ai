@@ -11,8 +11,11 @@
  * Lot 5.4-A, établi avant exécution) — aucune donnée GEFFROY n'est injectée
  * comme résultat prêt-à-consommer dans l'extracteur, on rejoue seulement ce
  * qu'un appel Vision réel renverrait pour ce document. Le "registerRasterizer"
- * n'est PAS surchargé pour les cas nominal (aucune image réellement lue par
- * les doubles ci-dessous, seuls les numéros de page comptent).
+ * est un double (aucune image réellement rendue — seuls les numéros de page
+ * comptent) mais représente fidèlement les 6 pages réelles du PDF GEFFROY
+ * (cf. sixPageStubRasterizer, Lot 5.4-C) : produire moins de pages que le
+ * document n'en compte réellement simulerait une troncature de rasterisation
+ * qui n'existe pas en production sur ce fichier.
  */
 
 import { describe, it } from "node:test";
@@ -195,11 +198,26 @@ function scriptedVisionRequester(): DepreciationRegisterVisionRequester {
   };
 }
 
-function twoPageStubRasterizer(): (file: File) => Promise<RasterPageImage[]> {
-  return async () => [
-    { pageNumber: 1, mimeType: "image/png", base64: "AAAA" },
-    { pageNumber: 2, mimeType: "image/png", base64: "AAAA" },
-  ];
+/**
+ * Le vrai PDF GEFFROY compte 6 pages (Lot 5.4-C — vérifié via
+ * extractNativePdfPages sur le fichier réel). Le rasterizer de test doit
+ * donc représenter les 6 pages du document qu'il prétend rasteriser, pas
+ * seulement les 2 qui portent le registre transcrit dans l'oracle
+ * (PAGE1_ROWS/PAGE2_ROWS) — sinon le nouveau garde-fou anti-troncature
+ * (Lot 5.4-C) détecte à raison un écart totalPageCount(6) >
+ * processedPageCount(2) qui n'existe pas en production sur ce fichier (la
+ * vraie rasterisation, non plafonnée pour un document de 6 pages, couvrirait
+ * les 6 pages). Les pages 3-6 utilisent le même mécanisme de double neutre
+ * que scriptedVisionRequester leur applique déjà (`return { rows: [] }`) —
+ * aucune donnée comptable n'est inventée pour ces pages.
+ */
+function sixPageStubRasterizer(): (file: File) => Promise<RasterPageImage[]> {
+  return async () =>
+    Array.from({ length: 6 }, (_, i) => ({
+      pageNumber: i + 1,
+      mimeType: "image/png" as const,
+      base64: "AAAA",
+    }));
 }
 
 function baseInput(overrides: {
@@ -226,7 +244,7 @@ function baseInput(overrides: {
     validatedAt: "2026-01-15T10:00:00.000Z",
     validator: "lot5.4b-production-wiring-test",
     registerVisionRequester: overrides.registerVisionRequester ?? scriptedVisionRequester(),
-    registerRasterizer: overrides.registerRasterizer ?? twoPageStubRasterizer(),
+    registerRasterizer: overrides.registerRasterizer ?? sixPageStubRasterizer(),
   };
 }
 
