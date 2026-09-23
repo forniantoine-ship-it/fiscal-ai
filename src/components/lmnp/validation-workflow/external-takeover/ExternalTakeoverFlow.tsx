@@ -47,8 +47,12 @@ import {
   withAssetClassificationAnswer,
   withAssetPropertyAnswer,
   withAssetProrataAnswer,
+  withBulkClassificationAnswer,
+  withBulkPropertyAnswer,
+  withClassificationSuggestionsDeclined,
   withDeficitsNoneAnswer,
   withDeficitsRowsAnswer,
+  withPropertyBulkDeclined,
 } from "./external-takeover-view-model";
 
 type ExternalTakeoverFlowProps = {
@@ -239,7 +243,10 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
   const now = () => new Date().toISOString();
 
   const clientExceptions = clientExceptionsFromResult(result);
-  const questions = toClientQuestions(clientExceptions, result?.assets);
+  const questions = toClientQuestions(clientExceptions, result?.assets, {
+    properties: workspace.properties,
+    reviewAnswers: fiscalYear.externalTakeoverReviewAnswers,
+  });
   const autoRows = complete && persistedOpening
     ? buildAutoConfirmedRowsFromOpening(persistedOpening)
     : buildAutoConfirmedRows(result?.assets);
@@ -376,6 +383,21 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
               ),
             )
           }
+          onPropertyBulkYes={(candidateKeys, propertyId) =>
+            answerAndRerun(
+              withBulkPropertyAnswer(
+                fiscalYear.externalTakeoverReviewAnswers,
+                candidateKeys,
+                propertyId,
+                now(),
+              ),
+            )
+          }
+          onPropertyBulkNo={() =>
+            answerAndRerun(
+              withPropertyBulkDeclined(fiscalYear.externalTakeoverReviewAnswers, now()),
+            )
+          }
           onProrata={(candidateKey, value: OpeningProrataConvention) =>
             answerAndRerun(
               withAssetProrataAnswer(
@@ -392,6 +414,23 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
                 fiscalYear.externalTakeoverReviewAnswers,
                 candidateKey,
                 value,
+                now(),
+              ),
+            )
+          }
+          onClassificationSuggestionsConfirm={(items) =>
+            answerAndRerun(
+              withBulkClassificationAnswer(
+                fiscalYear.externalTakeoverReviewAnswers,
+                items,
+                now(),
+              ),
+            )
+          }
+          onClassificationSuggestionsDecline={() =>
+            answerAndRerun(
+              withClassificationSuggestionsDeclined(
+                fiscalYear.externalTakeoverReviewAnswers,
                 now(),
               ),
             )

@@ -9,10 +9,15 @@ import { isCandidatePresent } from "@/lib/lmnp/services/takeover/candidate-value
 import type { TakeoverException } from "@/lib/lmnp/services/takeover/exceptions";
 import type { PrepareExternalTakeoverResult } from "@/lib/lmnp/services/takeover/prepare-external-takeover";
 import type { TakeoverReviewAnswers } from "@/lib/lmnp/services/takeover/review-answers";
-import { explicitAnswer } from "@/lib/lmnp/services/takeover/review-answers";
+import { explicitAnswer, isExplicitAnswer } from "@/lib/lmnp/services/takeover/review-answers";
+import {
+  suggestRegisterAssetClassification,
+  type ClassificationSuggestion,
+} from "@/lib/lmnp/services/takeover/suggest-register-asset-classification";
 import type { OpeningDeficitRow } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { OpeningProrataConvention } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { CandidateAssetClassification } from "@/lib/lmnp/services/takeover/asset-candidates";
+import type { Property } from "@/lib/lmnp/types";
 
 export type ExternalTakeoverProgressStep = {
   id: "documents" | "analysis" | "exceptions" | "takeover";
@@ -30,6 +35,13 @@ export type AutoConfirmedAssetRow = {
 
 export type ClientExceptionQuestion =
   | {
+      code: "PROPERTY_BULK_CONFIRM";
+      candidateKeys: string[];
+      propertyId: string;
+      propertyLabel: string;
+      assetCount: number;
+    }
+  | {
       code: "PROPERTY_MATCH_REQUIRED";
       candidateKey: string;
       assetLabel: string;
@@ -39,6 +51,15 @@ export type ClientExceptionQuestion =
       code: "PRORATA_REQUIRED";
       candidateKey: string;
       assetLabel: string;
+    }
+  | {
+      code: "CLASSIFICATION_SUGGESTIONS_CONFIRM";
+      items: Array<{
+        candidateKey: string;
+        assetLabel: string;
+        suggested: CandidateAssetClassification;
+        proof: ClassificationSuggestion["proof"];
+      }>;
     }
   | {
       code: "CLASSIFICATION_REQUIRED";
@@ -153,13 +174,29 @@ export function hasExtractionFailure(
   return result.exceptions.some((e) => e.code === "DOCUMENT_EXTRACTION_FAILED");
 }
 
+export type ToClientQuestionsOptions = {
+  /** Biens du dossier — requis pour proposer une confirmation groupée mono-bien. */
+  properties?: readonly Property[];
+  /** Réponses déjà persistées — refuse bulk si propertyBulkDeclined. */
+  reviewAnswers?: TakeoverReviewAnswers;
+};
+
+/**
+ * Transforme les exceptions client en questions UX.
+ * Mono-bien + N property manquants → 1 PROPERTY_BULK_CONFIRM (sauf si refusé).
+ * Classifications suggérables → 1 CLASSIFICATION_SUGGESTIONS_CONFIRM + individuelles pour le reste.
+ */
 export function toClientQuestions(
   exceptions: readonly TakeoverException[],
   assets: readonly CandidateHistoricalAsset[] | undefined,
+  options?: ToClientQuestionsOptions,
 ): ClientExceptionQuestion[] {
   const byKey = new Map(
     (assets ?? []).map((a) => [a.candidateKey, a] as const),
   );
+  const stockQuestions: ClientExceptionQuestion[] = [];
+  const propertyKeys: string[] = [];
+  const classificationKeys: string[] = [];
   const questions: ClientExceptionQuestion[] = [];
   const seen = new Set<string>();
 
@@ -170,50 +207,117 @@ export function toClientQuestions(
     seen.add(key);
 
     if (ex.code === "DEFICITS_REQUIRED") {
-      questions.push({ code: "DEFICITS_REQUIRED" });
+      stockQuestions.push({ code: "DEFICITS_REQUIRED" });
       continue;
     }
     if (ex.code === "ARD_REQUIRED") {
-      questions.push({ code: "ARD_REQUIRED" });
+      stockQuestions.push({ code: "ARD_REQUIRED" });
       continue;
     }
 
     const candidateKey = ex.candidateKey;
     if (!candidateKey) continue;
-    const asset = byKey.get(candidateKey);
-    const assetLabel = asset && isCandidatePresent(asset.label)
-      ? asset.label.value
-      : candidateKey;
-    const hintParts: string[] = [];
-    if (asset && isCandidatePresent(asset.coutBrut)) {
-      hintParts.push(`valeur ${formatEuro(asset.coutBrut.value)}`);
-    }
-    if (asset && isCandidatePresent(asset.cumulOuverture)) {
-      hintParts.push(`amort. ${formatEuro(asset.cumulOuverture.value)}`);
-    }
 
     if (ex.code === "PROPERTY_MATCH_REQUIRED") {
+      propertyKeys.push(candidateKey);
+      continue;
+    }
+    if (ex.code === "CLASSIFICATION_REQUIRED") {
+      classificationKeys.push(candidateKey);
+      continue;
+    }
+    if (ex.code === "PRORATA_REQUIRED") {
+      const asset = byKey.get(candidateKey);
+      const assetLabel =
+        asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
+      questions.push({ code: "PRORATA_REQUIRED", candidateKey, assetLabel });
+    }
+  }
+
+  const bulkDeclined = isExplicitAnswer(options?.reviewAnswers?.propertyBulkDeclined);
+  const properties = options?.properties ?? [];
+  const monoProperty = properties.length === 1 ? properties[0] : undefined;
+
+  if (monoProperty && propertyKeys.length >= 2 && !bulkDeclined) {
+    questions.unshift({
+      code: "PROPERTY_BULK_CONFIRM",
+      candidateKeys: propertyKeys,
+      propertyId: monoProperty.id,
+      propertyLabel: monoProperty.label || monoProperty.address || monoProperty.id,
+      assetCount: propertyKeys.length,
+    });
+  } else {
+    for (const candidateKey of propertyKeys) {
+      const asset = byKey.get(candidateKey);
+      const assetLabel =
+        asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
+      const hintParts: string[] = [];
+      if (asset && isCandidatePresent(asset.coutBrut)) {
+        hintParts.push(`valeur ${formatEuro(asset.coutBrut.value)}`);
+      }
+      if (asset && isCandidatePresent(asset.cumulOuverture)) {
+        hintParts.push(`amort. ${formatEuro(asset.cumulOuverture.value)}`);
+      }
       questions.push({
         code: "PROPERTY_MATCH_REQUIRED",
         candidateKey,
         assetLabel,
         assetHint: hintParts.join(" · "),
       });
-    } else if (ex.code === "PRORATA_REQUIRED") {
-      questions.push({
-        code: "PRORATA_REQUIRED",
-        candidateKey,
-        assetLabel,
-      });
-    } else if (ex.code === "CLASSIFICATION_REQUIRED") {
-      questions.push({
-        code: "CLASSIFICATION_REQUIRED",
-        candidateKey,
-        assetLabel,
-      });
     }
   }
-  return questions;
+
+  const classSuggestDeclined = isExplicitAnswer(
+    options?.reviewAnswers?.classificationSuggestionsDeclined,
+  );
+
+  const suggestedItems: Extract<
+    ClientExceptionQuestion,
+    { code: "CLASSIFICATION_SUGGESTIONS_CONFIRM" }
+  >["items"] = [];
+  const unknownClassificationKeys: string[] = [];
+
+  for (const candidateKey of classificationKeys) {
+    const asset = byKey.get(candidateKey);
+    const assetLabel =
+      asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
+    const suggestion =
+      classSuggestDeclined
+        ? null
+        : suggestRegisterAssetClassification(
+            asset && isCandidatePresent(asset.label) ? asset.label.value : undefined,
+          );
+    if (suggestion) {
+      suggestedItems.push({
+        candidateKey,
+        assetLabel,
+        suggested: suggestion.classification,
+        proof: suggestion.proof,
+      });
+    } else {
+      unknownClassificationKeys.push(candidateKey);
+    }
+  }
+
+  if (suggestedItems.length >= 1) {
+    questions.push({
+      code: "CLASSIFICATION_SUGGESTIONS_CONFIRM",
+      items: suggestedItems,
+    });
+  }
+
+  for (const candidateKey of unknownClassificationKeys) {
+    const asset = byKey.get(candidateKey);
+    const assetLabel =
+      asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
+    questions.push({
+      code: "CLASSIFICATION_REQUIRED",
+      candidateKey,
+      assetLabel,
+    });
+  }
+
+  return [...questions, ...stockQuestions];
 }
 
 export function formatEuro(amount: number): string {
@@ -287,8 +391,58 @@ export function withAssetPropertyAnswer(
   answeredAt: string,
 ): TakeoverReviewAnswers {
   return mergeAssetAnswer(current, candidateKey, {
-    propertyId: explicitAnswer(propertyId, { answeredAt }),
+    propertyId: explicitAnswer(propertyId, {
+      answeredAt,
+      reason: "per_asset_property_assignment",
+    }),
   });
+}
+
+/**
+ * Confirmation groupée mono-bien — étend en N réponses par candidateKey.
+ * Jamais un singlePropertyId global silencieux.
+ */
+export function withBulkPropertyAnswer(
+  current: TakeoverReviewAnswers | undefined,
+  candidateKeys: readonly string[],
+  propertyId: string,
+  answeredAt: string,
+): TakeoverReviewAnswers {
+  let next: TakeoverReviewAnswers = {
+    ...current,
+    byCandidateKey: { ...current?.byCandidateKey },
+    propertyBulkDeclined: undefined,
+    deficits: current?.deficits,
+    amortissementsReportes: current?.amortissementsReportes,
+    amortissementsReportesSource: current?.amortissementsReportesSource,
+  };
+  for (const candidateKey of candidateKeys) {
+    next = mergeAssetAnswer(next, candidateKey, {
+      propertyId: explicitAnswer(propertyId, {
+        answeredAt,
+        reason: "bulk_property_confirmation",
+      }),
+    });
+  }
+  return next;
+}
+
+/** Client refuse le bulk → questions individuelles. */
+export function withPropertyBulkDeclined(
+  current: TakeoverReviewAnswers | undefined,
+  answeredAt: string,
+): TakeoverReviewAnswers {
+  return {
+    ...current,
+    byCandidateKey: current?.byCandidateKey,
+    propertyBulkDeclined: explicitAnswer(true, {
+      answeredAt,
+      reason: "property_bulk_declined",
+    }),
+    deficits: current?.deficits,
+    amortissementsReportes: current?.amortissementsReportes,
+    amortissementsReportesSource: current?.amortissementsReportesSource,
+  };
 }
 
 export function withAssetProrataAnswer(
@@ -307,10 +461,52 @@ export function withAssetClassificationAnswer(
   candidateKey: string,
   classification: CandidateAssetClassification,
   answeredAt: string,
+  reason = "per_asset_classification",
 ): TakeoverReviewAnswers {
   return mergeAssetAnswer(current, candidateKey, {
-    classification: explicitAnswer(classification, { answeredAt }),
+    classification: explicitAnswer(classification, { answeredAt, reason }),
   });
+}
+
+/** Confirme N suggestions documentaires — chaque réponse reste par candidateKey. */
+export function withBulkClassificationAnswer(
+  current: TakeoverReviewAnswers | undefined,
+  items: readonly { candidateKey: string; classification: CandidateAssetClassification }[],
+  answeredAt: string,
+): TakeoverReviewAnswers {
+  let next: TakeoverReviewAnswers | undefined = {
+    ...current,
+    classificationSuggestionsDeclined: undefined,
+  };
+  for (const item of items) {
+    next = withAssetClassificationAnswer(
+      next,
+      item.candidateKey,
+      item.classification,
+      answeredAt,
+      "bulk_classification_confirmation",
+    );
+  }
+  return next ?? { byCandidateKey: {} };
+}
+
+/** Refuse le groupe de suggestions → questions individuelles. */
+export function withClassificationSuggestionsDeclined(
+  current: TakeoverReviewAnswers | undefined,
+  answeredAt: string,
+): TakeoverReviewAnswers {
+  return {
+    ...current,
+    byCandidateKey: current?.byCandidateKey,
+    propertyBulkDeclined: current?.propertyBulkDeclined,
+    classificationSuggestionsDeclined: explicitAnswer(true, {
+      answeredAt,
+      reason: "classification_suggestions_declined",
+    }),
+    deficits: current?.deficits,
+    amortissementsReportes: current?.amortissementsReportes,
+    amortissementsReportesSource: current?.amortissementsReportesSource,
+  };
 }
 
 export function withDeficitsNoneAnswer(
@@ -379,6 +575,8 @@ function mergeAssetAnswer(
       ...current?.byCandidateKey,
       [candidateKey]: { ...prev, ...patch },
     },
+    propertyBulkDeclined: current?.propertyBulkDeclined,
+    classificationSuggestionsDeclined: current?.classificationSuggestionsDeclined,
     deficits: current?.deficits,
     amortissementsReportes: current?.amortissementsReportes,
     amortissementsReportesSource: current?.amortissementsReportesSource,

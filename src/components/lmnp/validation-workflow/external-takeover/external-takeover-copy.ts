@@ -21,6 +21,16 @@ export const EXTERNAL_TAKEOVER_COPY = {
   analyzing: "Nous analysons votre ancienne comptabilité…",
   controlsOk: "Les principaux totaux correspondent à votre dernière liasse fiscale.",
   propertyQuestion: "À quel logement correspond cet élément ?",
+  propertyBulkQuestion: (count: number, propertyLabel: string) =>
+    `Ces ${count} éléments concernent-ils tous le logement « ${propertyLabel} » ?`,
+  propertyBulkYes: "Oui, tous",
+  propertyBulkNo: "Non — je précise élément par élément",
+  classificationSuggestionsTitle: (count: number) =>
+    count === 1
+      ? "Nous proposons une classification pour 1 élément"
+      : `Nous proposons une classification pour ${count} éléments`,
+  classificationSuggestionsConfirm: "Confirmer ces propositions",
+  classificationSuggestionsCorrect: "Corriger élément par élément",
   prorataQuestion: "Quelle méthode d'amortissement était utilisée ?",
   prorataHelp:
     "Cette information permet de reprendre la même méthode d'amortissement que votre comptabilité précédente.",

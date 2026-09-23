@@ -211,6 +211,11 @@ export {
 } from "./review-answers";
 
 export {
+  suggestRegisterAssetClassification,
+  type ClassificationSuggestion,
+} from "./suggest-register-asset-classification";
+
+export {
   applyExplicitAnswerToCandidate,
   emptyDocumentaryFiscalStocks,
   mergeTakeoverReviewAnswers,

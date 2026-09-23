@@ -43,8 +43,22 @@ export type TakeoverAssetReviewAnswers = {
 export type TakeoverReviewAnswers = {
   /**
    * Mapping / overrides par candidateKey (jamais un singlePropertyId global).
+   * Une confirmation groupée mono-bien DOIT s'étendre en N réponses
+   * par candidateKey — jamais un fallback silencieux properties[0].
    */
   byCandidateKey?: Readonly<Record<CandidateAssetKey, TakeoverAssetReviewAnswers>>;
+  /**
+   * Client a refusé l'affectation groupée mono-bien.
+   * Absent = bulk encore proposable si éligible.
+   * Explicit true = questions propertyId individuelles.
+   */
+  propertyBulkDeclined?: ExplicitTakeoverAnswer<true>;
+  /**
+   * Client a refusé la confirmation groupée des suggestions de classification.
+   * Explicit true = questions classification individuelles (y compris pour les
+   * libellés qui auraient été suggérables).
+   */
+  classificationSuggestionsDeclined?: ExplicitTakeoverAnswer<true>;
   /**
    * undefined = unanswered (≠ []).
    * ExplicitTakeoverAnswer([]) = aucun déficit déclaré.

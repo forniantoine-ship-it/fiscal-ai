@@ -67,8 +67,12 @@ export function ExternalTakeoverExceptionForms({
   questions,
   properties,
   onProperty,
+  onPropertyBulkYes,
+  onPropertyBulkNo,
   onProrata,
   onClassification,
+  onClassificationSuggestionsConfirm,
+  onClassificationSuggestionsDecline,
   onDeficitsNone,
   onDeficitsRows,
   onArdNone,
@@ -77,8 +81,14 @@ export function ExternalTakeoverExceptionForms({
   questions: ClientExceptionQuestion[];
   properties: Property[];
   onProperty: (candidateKey: string, propertyId: string) => void;
+  onPropertyBulkYes: (candidateKeys: string[], propertyId: string) => void;
+  onPropertyBulkNo: () => void;
   onProrata: (candidateKey: string, value: OpeningProrataConvention) => void;
   onClassification: (candidateKey: string, value: CandidateAssetClassification) => void;
+  onClassificationSuggestionsConfirm: (
+    items: Array<{ candidateKey: string; classification: CandidateAssetClassification }>,
+  ) => void;
+  onClassificationSuggestionsDecline: () => void;
   onDeficitsNone: () => void;
   onDeficitsRows: (rows: OpeningDeficitRow[]) => void;
   onArdNone: () => void;
@@ -88,6 +98,33 @@ export function ExternalTakeoverExceptionForms({
   return (
     <div className="space-y-4" aria-label="Informations à confirmer">
       {questions.map((q) => {
+        if (q.code === "PROPERTY_BULK_CONFIRM") {
+          return (
+            <fieldset key={q.code} className="space-y-2" style={fieldStyle}>
+              <legend style={legendStyle}>
+                {EXTERNAL_TAKEOVER_COPY.propertyBulkQuestion(q.assetCount, q.propertyLabel)}
+              </legend>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  className="min-h-[40px]"
+                  style={optionStyle}
+                  onClick={() => onPropertyBulkYes(q.candidateKeys, q.propertyId)}
+                >
+                  {EXTERNAL_TAKEOVER_COPY.propertyBulkYes}
+                </button>
+                <button
+                  type="button"
+                  className="min-h-[40px]"
+                  style={optionStyle}
+                  onClick={onPropertyBulkNo}
+                >
+                  {EXTERNAL_TAKEOVER_COPY.propertyBulkNo}
+                </button>
+              </div>
+            </fieldset>
+          );
+        }
         if (q.code === "PROPERTY_MATCH_REQUIRED") {
           return (
             <PropertyQuestion
@@ -107,6 +144,52 @@ export function ExternalTakeoverExceptionForms({
               options={PRORATA_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
               onSelect={(value) => onProrata(q.candidateKey, value as OpeningProrataConvention)}
             />
+          );
+        }
+        if (q.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM") {
+          const optionLabel = (value: CandidateAssetClassification) =>
+            CLASSIFICATION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+          return (
+            <fieldset key={q.code} className="space-y-3" style={fieldStyle}>
+              <legend style={legendStyle}>
+                {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsTitle(q.items.length)}
+              </legend>
+              <ul className="space-y-1">
+                {q.items.map((item) => (
+                  <li
+                    key={item.candidateKey}
+                    style={{ ...typography.caption.desktop, color: colors.text.secondary }}
+                  >
+                    {item.assetLabel} → {optionLabel(item.suggested)}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  className="min-h-[40px]"
+                  style={optionStyle}
+                  onClick={() =>
+                    onClassificationSuggestionsConfirm(
+                      q.items.map((i) => ({
+                        candidateKey: i.candidateKey,
+                        classification: i.suggested,
+                      })),
+                    )
+                  }
+                >
+                  {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsConfirm}
+                </button>
+                <button
+                  type="button"
+                  className="min-h-[40px]"
+                  style={optionStyle}
+                  onClick={onClassificationSuggestionsDecline}
+                >
+                  {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsCorrect}
+                </button>
+              </div>
+            </fieldset>
           );
         }
         if (q.code === "CLASSIFICATION_REQUIRED") {
