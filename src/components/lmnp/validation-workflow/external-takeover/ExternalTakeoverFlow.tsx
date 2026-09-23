@@ -37,6 +37,7 @@ import {
   buildProgress,
   clientExceptionsFromResult,
   controlsLookConcordant,
+  countOpenClientQuestions,
   hasBothTakeoverDocuments,
   hasExtractionFailure,
   hasManualReviewState,
@@ -49,7 +50,6 @@ import {
   withAssetProrataAnswer,
   withBulkClassificationAnswer,
   withBulkPropertyAnswer,
-  withClassificationSuggestionsDeclined,
   withDeficitsNoneAnswer,
   withDeficitsRowsAnswer,
   withPropertyBulkDeclined,
@@ -260,11 +260,11 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
         documentsReady,
         analyzing,
         hasResult: Boolean(result),
-        clientExceptionCount: questions.length,
+        clientExceptionCount: countOpenClientQuestions(questions),
         complete,
         labels: EXTERNAL_TAKEOVER_COPY.progress,
       }),
-    [analyzing, complete, documentsReady, questions.length, result],
+    [analyzing, complete, documentsReady, questions, result],
   );
 
   if (complete) {
@@ -423,14 +423,6 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
               withBulkClassificationAnswer(
                 fiscalYear.externalTakeoverReviewAnswers,
                 items,
-                now(),
-              ),
-            )
-          }
-          onClassificationSuggestionsDecline={() =>
-            answerAndRerun(
-              withClassificationSuggestionsDeclined(
-                fiscalYear.externalTakeoverReviewAnswers,
                 now(),
               ),
             )

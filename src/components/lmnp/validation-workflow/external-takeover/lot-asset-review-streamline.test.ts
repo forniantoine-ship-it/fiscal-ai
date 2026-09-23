@@ -21,12 +21,15 @@ import { suggestRegisterAssetClassification } from "@/lib/lmnp/services/takeover
 import { isExplicitAnswer } from "@/lib/lmnp/services/takeover/review-answers";
 import type { Property } from "@/lib/lmnp/types";
 import {
+  countOpenClientQuestions,
   toClientQuestions,
+  withAssetClassificationAnswer,
   withBulkClassificationAnswer,
   withBulkPropertyAnswer,
   withClassificationSuggestionsDeclined,
   withPropertyBulkDeclined,
 } from "@/components/lmnp/validation-workflow/external-takeover/external-takeover-view-model";
+import { CLASSIFICATION_OPTIONS } from "@/components/lmnp/validation-workflow/external-takeover/external-takeover-copy";
 
 const NOW = "2026-01-15T00:00:00.000Z";
 const DOC = "doc-register";
@@ -122,11 +125,6 @@ describe("suggestRegisterAssetClassification — fail closed", () => {
   });
 
   it("E — libellé ambigu → UNKNOWN", () => {
-    for (const label of ["Travaux divers", "Installation", "Matériel", "Divers", "Agencement"]) {
-      // « Travaux divers » contains travaux keyword — wait, AMBIGUOUS_ONLY is whole-string only
-      // "Travaux divers" has keyword travaux → would suggest travaux. Mission says "Travaux" ambiguous.
-      // Exact token "travaux" is OK as exact. "Travaux divers" has travaux keyword.
-    }
     assert.equal(suggestRegisterAssetClassification("Installation"), null);
     assert.equal(suggestRegisterAssetClassification("Matériel"), null);
     assert.equal(suggestRegisterAssetClassification("Divers"), null);
@@ -211,8 +209,18 @@ describe("Property bulk confirmation", () => {
   });
 });
 
-describe("Classification suggestions + Opening safety", () => {
-  it("suggestions groupées pour libellés prouvés ; ambigu → individuel", () => {
+describe("Classification compact review", () => {
+  it("A — 1 actif → 1 CLASSIFICATION_COMPACT_REVIEW avec 1 ligne", () => {
+    const assets = [asset({ key: "u1", label: "MacBook Pro", classification: "missing" })];
+    const questions = toClientQuestions(classificationExceptions(["u1"]), assets);
+    assert.equal(questions.length, 1);
+    assert.equal(questions[0]!.code, "CLASSIFICATION_COMPACT_REVIEW");
+    if (questions[0]!.code !== "CLASSIFICATION_COMPACT_REVIEW") return;
+    assert.equal(questions[0].items.length, 1);
+    assert.equal(questions[0].items[0]!.suggested, undefined);
+  });
+
+  it("suggestions dans la section compacte ; unknown sans pré-sélection", () => {
     const assets = [
       asset({ key: "m1", label: "Canapé convertible", classification: "missing" }),
       asset({ key: "m2", label: "Lit double", classification: "missing" }),
@@ -223,21 +231,22 @@ describe("Classification suggestions + Opening safety", () => {
       classificationExceptions(assets.map((a) => a.candidateKey)),
       assets,
     );
-    const group = questions.find((q) => q.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM");
-    assert.ok(group && group.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM");
-    if (!group || group.code !== "CLASSIFICATION_SUGGESTIONS_CONFIRM") return;
-    assert.equal(group.items.length, 2);
-    assert.ok(group.items.every((i) => i.suggested === "mobilier"));
-
-    const individuals = questions.filter((q) => q.code === "CLASSIFICATION_REQUIRED");
-    assert.equal(individuals.length, 2);
+    assert.equal(questions.length, 1);
+    assert.equal(questions[0]!.code, "CLASSIFICATION_COMPACT_REVIEW");
+    if (questions[0]!.code !== "CLASSIFICATION_COMPACT_REVIEW") return;
+    assert.equal(questions[0].items.length, 4);
+    const suggested = questions[0].items.filter((i) => i.suggested);
+    const unknown = questions[0].items.filter((i) => !i.suggested);
+    assert.equal(suggested.length, 2);
+    assert.ok(suggested.every((i) => i.suggested === "mobilier"));
+    assert.equal(unknown.length, 2);
+    assert.equal(countOpenClientQuestions(questions), 4);
   });
 
   it("H — suggestion non confirmée ne devient pas present sur le candidate", () => {
     const assets = [
       asset({ key: "m1", label: "Canapé", classification: "missing" }),
     ];
-    // toClientQuestions ne mute pas les candidates
     toClientQuestions(classificationExceptions(["m1"]), assets);
     assert.ok(isCandidateAbsent(assets[0]!.classification));
   });
@@ -259,7 +268,27 @@ describe("Classification suggestions + Opening safety", () => {
     assert.ok(isExplicitAnswer(answers.byCandidateKey?.m1?.classification));
   });
 
-  it("decline suggestions → questions individuelles", () => {
+  it("F — modification manuelle gagne sur une suggestion confirmable", () => {
+    const answers = withAssetClassificationAnswer(
+      undefined,
+      "m1",
+      "autre",
+      NOW,
+      "per_asset_classification",
+    );
+    assert.equal(answers.byCandidateKey?.m1?.classification?.value, "autre");
+    assert.equal(answers.byCandidateKey?.m1?.classification?.reason, "per_asset_classification");
+  });
+
+  it("G — réponses partielles persistent dans byCandidateKey", () => {
+    let answers = withAssetClassificationAnswer(undefined, "a1", "mobilier", NOW);
+    answers = withAssetClassificationAnswer(answers, "a2", "autre", NOW);
+    assert.equal(answers.byCandidateKey?.a1?.classification?.value, "mobilier");
+    assert.equal(answers.byCandidateKey?.a2?.classification?.value, "autre");
+    assert.equal(answers.byCandidateKey?.a3?.classification, undefined);
+  });
+
+  it("decline suggestions → compact sans badge proposé", () => {
     const assets = [
       asset({ key: "m1", label: "Canapé", classification: "missing" }),
       asset({ key: "m2", label: "Lit", classification: "missing" }),
@@ -270,8 +299,64 @@ describe("Classification suggestions + Opening safety", () => {
       assets,
       { reviewAnswers: declined },
     );
-    assert.ok(questions.every((q) => q.code === "CLASSIFICATION_REQUIRED"));
-    assert.equal(questions.some((q) => q.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM"), false);
+    assert.equal(questions.length, 1);
+    assert.equal(questions[0]!.code, "CLASSIFICATION_COMPACT_REVIEW");
+    if (questions[0]!.code !== "CLASSIFICATION_COMPACT_REVIEW") return;
+    assert.equal(questions[0].items.length, 2);
+    assert.ok(questions[0].items.every((i) => i.suggested === undefined));
+  });
+
+  it("D — options copy : placeholder À vérifier, pas de pré-sélection domaine", () => {
+    assert.ok(CLASSIFICATION_OPTIONS.every((o) => o.value !== ("" as never)));
+    assert.equal(
+      CLASSIFICATION_OPTIONS.some((o) => o.label.toLowerCase() === "à vérifier"),
+      false,
+    );
+  });
+
+  it("I — merge de toutes les classifications → plus d'exception CLASSIFICATION_REQUIRED côté questions", () => {
+    const assets = [
+      asset({ key: "a1", label: "MacBook", classification: "missing" }),
+      asset({ key: "a2", label: "Ponceuse", classification: "missing" }),
+    ];
+    const answers = withBulkClassificationAnswer(
+      undefined,
+      [
+        { candidateKey: "a1", classification: "autre" },
+        { candidateKey: "a2", classification: "autre" },
+      ],
+      NOW,
+    );
+    const merged = mergeTakeoverReviewAnswers({
+      assets,
+      stocks: {
+        deficits: missingCandidate(),
+        amortissementsReportes: missingCandidate(),
+      },
+      reviewAnswers: answers,
+    });
+    assert.ok(merged.assets.every((a) => isCandidatePresent(a.classification)));
+    // Sans exceptions classification → pas de section compacte
+    const questions = toClientQuestions([], merged.assets);
+    assert.equal(
+      questions.filter((q) => q.code === "CLASSIFICATION_COMPACT_REVIEW").length,
+      0,
+    );
+  });
+
+  it("C — 50 actifs → une seule section compacte structurellement", () => {
+    const assets = Array.from({ length: 50 }, (_, i) =>
+      asset({ key: `k${i}`, label: `Actif ${i}`, classification: "missing" }),
+    );
+    const questions = toClientQuestions(
+      classificationExceptions(assets.map((a) => a.candidateKey)),
+      assets,
+    );
+    assert.equal(questions.length, 1);
+    assert.equal(questions[0]!.code, "CLASSIFICATION_COMPACT_REVIEW");
+    if (questions[0]!.code !== "CLASSIFICATION_COMPACT_REVIEW") return;
+    assert.equal(questions[0].items.length, 50);
+    assert.equal(countOpenClientQuestions(questions), 50);
   });
 });
 
@@ -317,31 +402,24 @@ describe("GEFFROY oracle — mesures questions (sans hardcode métier)", () => {
     assert.ok(!keys.includes("B71200"));
   });
 
-  it("K — B80400 cumulOuverture reste missing", () => {
+  it("K — B80400 cumulOuverture reste missing après classification", () => {
     const b80400 = assets.find((a) => a.candidateKey === "B80400");
     assert.ok(b80400);
     assert.ok(isCandidateAbsent(b80400!.cumulOuverture));
+    const answers = withAssetClassificationAnswer(undefined, "B80400", "autre", NOW);
+    const merged = mergeTakeoverReviewAnswers({
+      assets: [b80400!],
+      stocks: {
+        deficits: missingCandidate(),
+        amortissementsReportes: missingCandidate(),
+      },
+      reviewAnswers: answers,
+    });
+    assert.ok(isCandidatePresent(merged.assets[0]!.classification));
+    assert.ok(isCandidateAbsent(merged.assets[0]!.cumulOuverture));
   });
 
-  it("mesures BEFORE/AFTER property + classification", () => {
-    const propertyBefore = propertyExceptions(keys).length;
-    const classBefore = classificationExceptions(keys).length;
-
-    const beforeQuestions = [
-      ...toClientQuestions(propertyExceptions(keys), assets, { properties: [] }),
-      ...toClientQuestions(classificationExceptions(keys), assets, { properties: [] }),
-    ];
-    assert.equal(propertyBefore, 22);
-    assert.equal(classBefore, 22);
-    assert.equal(
-      beforeQuestions.filter((q) => q.code === "PROPERTY_MATCH_REQUIRED").length,
-      22,
-    );
-    assert.equal(
-      beforeQuestions.filter((q) => q.code === "CLASSIFICATION_REQUIRED").length,
-      22,
-    );
-
+  it("mesures compact review GEFFROY", () => {
     const afterProperty = toClientQuestions(propertyExceptions(keys), assets, {
       properties: [PROP_A],
     });
@@ -351,11 +429,15 @@ describe("GEFFROY oracle — mesures questions (sans hardcode métier)", () => {
     const afterClass = toClientQuestions(classificationExceptions(keys), assets, {
       properties: [PROP_A],
     });
-    const suggested = afterClass.find((q) => q.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM");
-    const unknown = afterClass.filter((q) => q.code === "CLASSIFICATION_REQUIRED");
-    // Aucun libellé GEFFROY n'est dans les règles prouvées → 0 suggestion, 22 unknown.
-    assert.equal(suggested, undefined);
+    assert.equal(afterClass.length, 1);
+    assert.equal(afterClass[0]!.code, "CLASSIFICATION_COMPACT_REVIEW");
+    if (afterClass[0]!.code !== "CLASSIFICATION_COMPACT_REVIEW") return;
+    assert.equal(afterClass[0].items.length, 22);
+    const suggested = afterClass[0].items.filter((i) => i.suggested);
+    const unknown = afterClass[0].items.filter((i) => !i.suggested);
+    assert.equal(suggested.length, 0);
     assert.equal(unknown.length, 22);
+    assert.equal(countOpenClientQuestions(afterClass), 22);
 
     // Après bulk YES property : 0 property questions
     const afterBulkYes = withBulkPropertyAnswer(undefined, keys, "prop-a", NOW);
@@ -373,15 +455,12 @@ describe("GEFFROY oracle — mesures questions (sans hardcode métier)", () => {
     console.log(
       JSON.stringify({
         ASSET_COUNT: 22,
-        PROPERTY_QUESTIONS_BEFORE: 22,
         PROPERTY_QUESTIONS_AFTER_BULK_UI: 1,
-        PROPERTY_QUESTIONS_AFTER_CLIENT_YES: 0,
-        CLASSIFICATION_QUESTIONS_BEFORE: 22,
+        CLASSIFICATION_ITEMS: 22,
+        CLASSIFICATION_SECTIONS: 1,
         CLASSIFICATION_AUTO_SUGGESTED: 0,
         CLASSIFICATION_STILL_UNKNOWN: 22,
-        QUESTIONS_REMOVED_BY_ASSUMPTION: 0,
-        QUESTIONS_REMOVED_BY_DOCUMENT_EVIDENCE: 0,
-        QUESTIONS_REMOVED_BY_CLIENT_BULK_CONFIRMATION: 22,
+        PRESELECTED_WITHOUT_PROOF: 0,
       }),
     );
   });

@@ -25,12 +25,20 @@ export const EXTERNAL_TAKEOVER_COPY = {
     `Ces ${count} éléments concernent-ils tous le logement « ${propertyLabel} » ?`,
   propertyBulkYes: "Oui, tous",
   propertyBulkNo: "Non — je précise élément par élément",
-  classificationSuggestionsTitle: (count: number) =>
+  classificationReviewTitle: "Vérifiez les éléments repris",
+  classificationReviewIntro: (count: number) =>
     count === 1
-      ? "Nous proposons une classification pour 1 élément"
-      : `Nous proposons une classification pour ${count} éléments`,
-  classificationSuggestionsConfirm: "Confirmer ces propositions",
-  classificationSuggestionsCorrect: "Corriger élément par élément",
+      ? "Nous avons retrouvé 1 élément dans votre ancienne comptabilité. Indiquez simplement son type."
+      : `Nous avons retrouvé ${count} éléments dans votre ancienne comptabilité. Indiquez simplement leur type.`,
+  classificationSelectPlaceholder: "À vérifier",
+  classificationProposed: (label: string) => `Proposé : ${label}`,
+  classificationSuggestionsConfirm: "Confirmer les propositions",
+  classificationSaveProgress: (filled: number, total: number) =>
+    filled === 0
+      ? `${total} à vérifier`
+      : filled === total
+        ? "Tous les types sont renseignés"
+        : `${filled} sur ${total} renseignés`,
   prorataQuestion: "Quelle méthode d'amortissement était utilisée ?",
   prorataHelp:
     "Cette information permet de reprendre la même méthode d'amortissement que votre comptabilité précédente.",
@@ -76,14 +84,18 @@ export const PRORATA_OPTIONS: {
   { value: "annuel_plein", label: "Année pleine" },
 ];
 
-/** Libellés classification — valeurs domaine exactes. */
+/**
+ * Libellés classification — valeurs domaine exactes inchangées.
+ * Copy orienté client (pas de jargon composant / PCG).
+ * mobilier = meubles (AX-003) — ne pas élargir à « équipements » (→ autre).
+ */
 export const CLASSIFICATION_OPTIONS: {
   value: CandidateAssetClassification;
   label: string;
 }[] = [
-  { value: "batiment", label: "Bien immobilier" },
+  { value: "batiment", label: "Bâtiment / logement" },
   { value: "mobilier", label: "Mobilier" },
   { value: "terrain", label: "Terrain" },
   { value: "travaux", label: "Travaux" },
-  { value: "autre", label: "Autre" },
+  { value: "autre", label: "Autre élément" },
 ];

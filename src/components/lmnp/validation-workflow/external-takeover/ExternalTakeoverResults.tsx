@@ -72,7 +72,6 @@ export function ExternalTakeoverExceptionForms({
   onProrata,
   onClassification,
   onClassificationSuggestionsConfirm,
-  onClassificationSuggestionsDecline,
   onDeficitsNone,
   onDeficitsRows,
   onArdNone,
@@ -88,7 +87,6 @@ export function ExternalTakeoverExceptionForms({
   onClassificationSuggestionsConfirm: (
     items: Array<{ candidateKey: string; classification: CandidateAssetClassification }>,
   ) => void;
-  onClassificationSuggestionsDecline: () => void;
   onDeficitsNone: () => void;
   onDeficitsRows: (rows: OpeningDeficitRow[]) => void;
   onArdNone: () => void;
@@ -146,61 +144,13 @@ export function ExternalTakeoverExceptionForms({
             />
           );
         }
-        if (q.code === "CLASSIFICATION_SUGGESTIONS_CONFIRM") {
-          const optionLabel = (value: CandidateAssetClassification) =>
-            CLASSIFICATION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+        if (q.code === "CLASSIFICATION_COMPACT_REVIEW") {
           return (
-            <fieldset key={q.code} className="space-y-3" style={fieldStyle}>
-              <legend style={legendStyle}>
-                {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsTitle(q.items.length)}
-              </legend>
-              <ul className="space-y-1">
-                {q.items.map((item) => (
-                  <li
-                    key={item.candidateKey}
-                    style={{ ...typography.caption.desktop, color: colors.text.secondary }}
-                  >
-                    {item.assetLabel} → {optionLabel(item.suggested)}
-                  </li>
-                ))}
-              </ul>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  className="min-h-[40px]"
-                  style={optionStyle}
-                  onClick={() =>
-                    onClassificationSuggestionsConfirm(
-                      q.items.map((i) => ({
-                        candidateKey: i.candidateKey,
-                        classification: i.suggested,
-                      })),
-                    )
-                  }
-                >
-                  {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsConfirm}
-                </button>
-                <button
-                  type="button"
-                  className="min-h-[40px]"
-                  style={optionStyle}
-                  onClick={onClassificationSuggestionsDecline}
-                >
-                  {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsCorrect}
-                </button>
-              </div>
-            </fieldset>
-          );
-        }
-        if (q.code === "CLASSIFICATION_REQUIRED") {
-          return (
-            <ChoiceQuestion
-              key={`${q.code}-${q.candidateKey}`}
-              title={`${EXTERNAL_TAKEOVER_COPY.classificationQuestion} (${q.assetLabel})`}
-              options={CLASSIFICATION_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              onSelect={(value) =>
-                onClassification(q.candidateKey, value as CandidateAssetClassification)
-              }
+            <ClassificationCompactReview
+              key={q.code}
+              items={q.items}
+              onClassification={onClassification}
+              onConfirmSuggestions={onClassificationSuggestionsConfirm}
             />
           );
         }
@@ -216,6 +166,108 @@ export function ExternalTakeoverExceptionForms({
         return <ArdQuestion key={q.code} onNone={onArdNone} onAmount={onArdAmount} />;
       })}
     </div>
+  );
+}
+
+function ClassificationCompactReview({
+  items,
+  onClassification,
+  onConfirmSuggestions,
+}: {
+  items: Extract<ClientExceptionQuestion, { code: "CLASSIFICATION_COMPACT_REVIEW" }>["items"];
+  onClassification: (candidateKey: string, value: CandidateAssetClassification) => void;
+  onConfirmSuggestions: (
+    items: Array<{ candidateKey: string; classification: CandidateAssetClassification }>,
+  ) => void;
+}) {
+  const suggestedItems = items.filter(
+    (item): item is typeof item & { suggested: CandidateAssetClassification } =>
+      Boolean(item.suggested),
+  );
+
+  return (
+    <fieldset className="space-y-3" style={fieldStyle}>
+      <legend style={legendStyle}>{EXTERNAL_TAKEOVER_COPY.classificationReviewTitle}</legend>
+      <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+        {EXTERNAL_TAKEOVER_COPY.classificationReviewIntro(items.length)}
+      </p>
+      <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+        {EXTERNAL_TAKEOVER_COPY.classificationSaveProgress(0, items.length)}
+      </p>
+
+      {suggestedItems.length >= 1 ? (
+        <button
+          type="button"
+          className="min-h-[40px]"
+          style={optionStyle}
+          onClick={() =>
+            onConfirmSuggestions(
+              suggestedItems.map((item) => ({
+                candidateKey: item.candidateKey,
+                classification: item.suggested,
+              })),
+            )
+          }
+        >
+          {EXTERNAL_TAKEOVER_COPY.classificationSuggestionsConfirm}
+        </button>
+      ) : null}
+
+      <ul className="space-y-3" aria-label="Éléments à classer">
+        {items.map((item) => {
+          const optionLabel = (value: CandidateAssetClassification) =>
+            CLASSIFICATION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+          const selectId = `classification-${item.candidateKey}`;
+          return (
+            <li
+              key={item.candidateKey}
+              className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+              style={{
+                borderTop: `1px solid ${colors.border.default}`,
+                paddingTop: spacing.scale[3],
+              }}
+            >
+              <div className="min-w-0 flex-1 space-y-1">
+                <label
+                  htmlFor={selectId}
+                  style={{ ...typography.body.desktop, color: colors.text.primary }}
+                >
+                  {item.assetLabel}
+                </label>
+                {item.assetHint ? (
+                  <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+                    {item.assetHint}
+                  </p>
+                ) : null}
+                {item.suggested ? (
+                  <p style={{ ...typography.caption.desktop, color: colors.text.accent }}>
+                    {EXTERNAL_TAKEOVER_COPY.classificationProposed(optionLabel(item.suggested))}
+                  </p>
+                ) : null}
+              </div>
+              <select
+                id={selectId}
+                className="min-h-[40px] w-full sm:w-[220px] shrink-0"
+                style={inputStyle}
+                defaultValue=""
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (!raw) return;
+                  onClassification(item.candidateKey, raw as CandidateAssetClassification);
+                }}
+              >
+                <option value="">{EXTERNAL_TAKEOVER_COPY.classificationSelectPlaceholder}</option>
+                {CLASSIFICATION_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </li>
+          );
+        })}
+      </ul>
+    </fieldset>
   );
 }
 

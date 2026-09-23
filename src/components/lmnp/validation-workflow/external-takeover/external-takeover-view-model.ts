@@ -53,18 +53,20 @@ export type ClientExceptionQuestion =
       assetLabel: string;
     }
   | {
-      code: "CLASSIFICATION_SUGGESTIONS_CONFIRM";
+      /**
+       * Une seule section de vérification — N lignes compactes.
+       * Remplace N× CLASSIFICATION_REQUIRED (+ ancien SUGGESTIONS_CONFIRM).
+       * Chaque ligne reste une réponse byCandidateKey via explicitAnswer.
+       */
+      code: "CLASSIFICATION_COMPACT_REVIEW";
       items: Array<{
         candidateKey: string;
         assetLabel: string;
-        suggested: CandidateAssetClassification;
-        proof: ClassificationSuggestion["proof"];
+        assetHint: string;
+        /** Suggestion documentaire prouvée — jamais une pré-sélection silencieuse. */
+        suggested?: CandidateAssetClassification;
+        proof?: ClassificationSuggestion["proof"];
       }>;
-    }
-  | {
-      code: "CLASSIFICATION_REQUIRED";
-      candidateKey: string;
-      assetLabel: string;
     }
   | { code: "DEFICITS_REQUIRED" }
   | { code: "ARD_REQUIRED" };
@@ -181,10 +183,22 @@ export type ToClientQuestionsOptions = {
   reviewAnswers?: TakeoverReviewAnswers;
 };
 
+function assetHintFor(asset: CandidateHistoricalAsset | undefined): string {
+  if (!asset) return "";
+  const hintParts: string[] = [];
+  if (isCandidatePresent(asset.coutBrut)) {
+    hintParts.push(`valeur ${formatEuro(asset.coutBrut.value)}`);
+  }
+  if (isCandidatePresent(asset.cumulOuverture)) {
+    hintParts.push(`amort. ${formatEuro(asset.cumulOuverture.value)}`);
+  }
+  return hintParts.join(" · ");
+}
+
 /**
  * Transforme les exceptions client en questions UX.
  * Mono-bien + N property manquants → 1 PROPERTY_BULK_CONFIRM (sauf si refusé).
- * Classifications suggérables → 1 CLASSIFICATION_SUGGESTIONS_CONFIRM + individuelles pour le reste.
+ * Classifications → 1 CLASSIFICATION_COMPACT_REVIEW (N lignes, pas N écrans).
  */
 export function toClientQuestions(
   exceptions: readonly TakeoverException[],
@@ -251,73 +265,69 @@ export function toClientQuestions(
       const asset = byKey.get(candidateKey);
       const assetLabel =
         asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
-      const hintParts: string[] = [];
-      if (asset && isCandidatePresent(asset.coutBrut)) {
-        hintParts.push(`valeur ${formatEuro(asset.coutBrut.value)}`);
-      }
-      if (asset && isCandidatePresent(asset.cumulOuverture)) {
-        hintParts.push(`amort. ${formatEuro(asset.cumulOuverture.value)}`);
-      }
       questions.push({
         code: "PROPERTY_MATCH_REQUIRED",
         candidateKey,
         assetLabel,
-        assetHint: hintParts.join(" · "),
+        assetHint: assetHintFor(asset),
       });
     }
   }
 
-  const classSuggestDeclined = isExplicitAnswer(
-    options?.reviewAnswers?.classificationSuggestionsDeclined,
-  );
+  if (classificationKeys.length >= 1) {
+    const classSuggestDeclined = isExplicitAnswer(
+      options?.reviewAnswers?.classificationSuggestionsDeclined,
+    );
+    const items: Extract<
+      ClientExceptionQuestion,
+      { code: "CLASSIFICATION_COMPACT_REVIEW" }
+    >["items"] = [];
 
-  const suggestedItems: Extract<
-    ClientExceptionQuestion,
-    { code: "CLASSIFICATION_SUGGESTIONS_CONFIRM" }
-  >["items"] = [];
-  const unknownClassificationKeys: string[] = [];
-
-  for (const candidateKey of classificationKeys) {
-    const asset = byKey.get(candidateKey);
-    const assetLabel =
-      asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
-    const suggestion =
-      classSuggestDeclined
-        ? null
-        : suggestRegisterAssetClassification(
-            asset && isCandidatePresent(asset.label) ? asset.label.value : undefined,
-          );
-    if (suggestion) {
-      suggestedItems.push({
+    for (const candidateKey of classificationKeys) {
+      const asset = byKey.get(candidateKey);
+      const assetLabel =
+        asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
+      const suggestion =
+        classSuggestDeclined
+          ? null
+          : suggestRegisterAssetClassification(
+              asset && isCandidatePresent(asset.label) ? asset.label.value : undefined,
+            );
+      items.push({
         candidateKey,
         assetLabel,
-        suggested: suggestion.classification,
-        proof: suggestion.proof,
+        assetHint: assetHintFor(asset),
+        ...(suggestion
+          ? { suggested: suggestion.classification, proof: suggestion.proof }
+          : {}),
       });
-    } else {
-      unknownClassificationKeys.push(candidateKey);
     }
-  }
 
-  if (suggestedItems.length >= 1) {
     questions.push({
-      code: "CLASSIFICATION_SUGGESTIONS_CONFIRM",
-      items: suggestedItems,
-    });
-  }
-
-  for (const candidateKey of unknownClassificationKeys) {
-    const asset = byKey.get(candidateKey);
-    const assetLabel =
-      asset && isCandidatePresent(asset.label) ? asset.label.value : candidateKey;
-    questions.push({
-      code: "CLASSIFICATION_REQUIRED",
-      candidateKey,
-      assetLabel,
+      code: "CLASSIFICATION_COMPACT_REVIEW",
+      items,
     });
   }
 
   return [...questions, ...stockQuestions];
+}
+
+/**
+ * Poids UX des questions ouvertes — une section compacte compte N lignes
+ * (reste à renseigner), pas 1 écran.
+ */
+export function countOpenClientQuestions(
+  questions: readonly ClientExceptionQuestion[],
+): number {
+  let total = 0;
+  for (const q of questions) {
+    if (q.code === "CLASSIFICATION_COMPACT_REVIEW") {
+      total += q.items.length;
+    } else {
+      total += 1;
+    }
+  }
+  return total;
 }
 
 export function formatEuro(amount: number): string {
