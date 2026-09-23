@@ -111,14 +111,23 @@ const V1_CASE_TOKEN_ALTERNATION = TAX_PACKAGE_CONTROL_V1_MATRIX.map(
 
 /**
  * Marqueurs FORTS uniquement — une mention narrative « 2033-A » ne suffit pas.
- * Exige le millésime Cerfa « …-SD » (ex. 2033-A-SD / 2033-C-SD).
+ * Deux formes Cerfa réelles observées :
+ *   1. « …-SD » (ex. 2033-A-SD, 2033-C-SD) — présent sur le Cerfa officiel vierge.
+ *   2. lettre directement suivie du millésime, sans « -SD » (ex. « 2033-C2024 »)
+ *      — observé sur une vraie liasse 2033-C tierce (logiciel comptable différent,
+ *      même gabarit officiel « Formulaire obligatoire… », juste sans le token -SD).
+ * Le millésime collé à la lettre est le signal structurel qui distingue un vrai
+ * en-tête Cerfa d'une mention narrative (« …votre 2033-C signée » n'a jamais de
+ * millésime immédiatement adjacent) — voir aussi extractTaxPackageLiassePrintedFormYear.
  */
 const FORM_A_MARKERS: RegExp[] = [
   /2033\s*[-–]?\s*A\s*[-–]?\s*SD\b/i,
+  /2033\s*[-–]?\s*A\s*[-–]?\s*\d{4}\b/i,
 ];
 
 const FORM_C_MARKERS: RegExp[] = [
   /2033\s*[-–]?\s*C\s*[-–]?\s*SD\b/i,
+  /2033\s*[-–]?\s*C\s*[-–]?\s*\d{4}\b/i,
 ];
 
 function v1CasesForForm(formType: TaxPackageLiasseFormType): string[] {
@@ -163,11 +172,25 @@ export function extractTaxPackageLiassePrintedFormYear(
   formType: TaxPackageLiasseFormType,
 ): number | null {
   const letter = formType === "2033A" ? "A" : "C";
-  const nearForm = pageText.match(
+
+  const nearFormSd = pageText.match(
     new RegExp(`2033\\s*[-–]?\\s*${letter}\\s*[-–]?\\s*SD\\s+(\\d{4})\\b`, "i"),
   );
-  if (nearForm?.[1]) {
-    const year = Number.parseInt(nearForm[1], 10);
+  if (nearFormSd?.[1]) {
+    const year = Number.parseInt(nearFormSd[1], 10);
+    if (Number.isInteger(year) && year >= 1900 && year <= 2100) {
+      return year;
+    }
+  }
+
+  // Variante Cerfa réelle sans « -SD » : millésime collé directement à la
+  // lettre (ex. « 2033-C2024 ») — même signal structurel que ci-dessus,
+  // juste sans le token -SD. Voir FORM_C_MARKERS.
+  const nearFormBare = pageText.match(
+    new RegExp(`2033\\s*[-–]?\\s*${letter}\\s*[-–]?\\s*(\\d{4})\\b`, "i"),
+  );
+  if (nearFormBare?.[1]) {
+    const year = Number.parseInt(nearFormBare[1], 10);
     if (Number.isInteger(year) && year >= 1900 && year <= 2100) {
       return year;
     }
