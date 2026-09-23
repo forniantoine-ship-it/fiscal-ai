@@ -73,27 +73,18 @@ function planForActif(
     return { plan: { kind: "non_amortizable" }, ambiguous: false };
   }
 
-  // Lot 2B — snapshot complet : date + durée + convention attestées.
-  if (actif.dureeAnnees && actif.dateDebut && actif.prorataConvention) {
+  // Snapshot déjà ancré : date + durée. La convention historique est
+  // transportée si elle est connue, et reste absente sinon.
+  // Absence ≠ jours_reels / mensuel / annuel_plein.
+  if (actif.dureeAnnees && actif.dateDebut) {
     return {
       plan: {
         kind: "amortizable",
         startDate: actif.dateDebut,
         durationYears: actif.dureeAnnees,
-        prorataConvention: actif.prorataConvention,
+        ...(actif.prorataConvention ? { prorataConvention: actif.prorataConvention } : {}),
       },
       ambiguous: false,
-    };
-  }
-
-  // Date/durée connues mais convention absente → INCONNU ≠ défaut
-  // (ni annuel_plein ni jours_reels inventés).
-  if (actif.dureeAnnees && actif.dateDebut && !actif.prorataConvention) {
-    return {
-      plan: undefined,
-      ambiguous: false,
-      unavailableReason:
-        "convention de prorata absente du snapshot — INCONNU ≠ annuel_plein/jours_reels",
     };
   }
 

@@ -253,6 +253,7 @@ function assertAnchoredAssetsReady(
         );
       }
       if (
+        plan.prorataConvention !== undefined &&
         plan.prorataConvention !== "annuel_plein" &&
         plan.prorataConvention !== "mensuel" &&
         plan.prorataConvention !== "jours_reels"
@@ -260,7 +261,7 @@ function assertAnchoredAssetsReady(
         issues.push(
           issue(
             "ASSET_PRORATA_REQUIRED",
-            `prorataConvention manquante/invalide pour « ${asset.id} ».`,
+            `prorataConvention invalide pour « ${asset.id} ».`,
             `${base}.plan.prorataConvention`,
           ),
         );

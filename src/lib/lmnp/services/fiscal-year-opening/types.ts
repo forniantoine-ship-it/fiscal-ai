@@ -61,7 +61,12 @@ export type OpeningAssetPlan =
       kind: "amortizable";
       startDate: string;
       durationYears: number;
-      prorataConvention: OpeningProrataConvention;
+      /**
+       * Convention historique de prorata, seulement si elle est connue.
+       * Sur une reprise externe ancrée par cumulOuverture, elle peut rester
+       * absente : le calcul courant ne la lit pas, et aucune valeur n'est inventée.
+       */
+      prorataConvention?: OpeningProrataConvention;
     }
   | {
       kind: "non_amortizable";

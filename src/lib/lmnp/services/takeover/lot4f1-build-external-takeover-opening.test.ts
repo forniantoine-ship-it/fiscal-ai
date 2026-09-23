@@ -332,7 +332,7 @@ describe("Lot 4F.1 — blockers A–J", () => {
     }
   });
 
-  it("B — prorataConvention missing → blocker", () => {
+  it("B — prorata absente sur reprise ancrée → Opening sans convention inventée", () => {
     const assets = [
       completeAsset({
         candidateKey: "cand-immeuble",
@@ -347,10 +347,15 @@ describe("Lot 4F.1 — blockers A–J", () => {
       }),
     ];
     const result = buildExternalTakeoverFiscalYearOpening(baseInput({ assets }));
-    assert.equal(result.status, "blocked");
-    if (result.status === "blocked") {
-      assert.ok(result.issues.some((i) => i.code === "ASSET_PLAN_UNAVAILABLE"));
-    }
+    assert.equal(result.status, "built");
+    if (result.status !== "built") return;
+    assert.ok(isAvailable(result.opening.assets));
+    const asset = result.opening.assets.value[0];
+    assert.ok(asset && isAvailable(asset.plan));
+    if (!asset || !isAvailable(asset.plan) || asset.plan.value.kind !== "amortizable") return;
+    assert.equal(asset.plan.value.prorataConvention, undefined);
+    assert.equal("prorataConvention" in asset.plan.value, false);
+    assert.equal(JSON.stringify(asset.plan.value).includes("jours_reels"), false);
   });
 
   it("C — classification missing → blocker", () => {

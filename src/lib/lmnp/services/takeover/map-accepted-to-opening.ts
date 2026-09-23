@@ -22,6 +22,7 @@ import type {
   OpeningProrataConvention,
 } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { ImmobilisationComptableActif } from "@/lib/lmnp/types/dossier";
+import { canOmitHistoricalProrata } from "./anchored-historical-prorata";
 import type {
   CandidateAssetClassification,
   CandidateHistoricalAsset,
@@ -262,25 +263,44 @@ function mapOneAsset(
       acceptInferredPaths,
       issues,
     );
-    const prorata = toOpeningFact(
-      asset.prorataConvention,
-      `${base}.prorataConvention`,
-      acceptInferredPaths,
-      issues,
-    );
-    if (startDate === undefined || durationYears === undefined || prorata === undefined) {
+    if (startDate === undefined || durationYears === undefined) {
       return { issues };
     }
+
+    const prorataPresent = isCandidatePresent(asset.prorataConvention);
+    let prorataFact: OpeningFact<OpeningProrataConvention> | undefined;
+    if (prorataPresent) {
+      const mappedProrata = toOpeningFact(
+        asset.prorataConvention,
+        `${base}.prorataConvention`,
+        acceptInferredPaths,
+        issues,
+      );
+      if (mappedProrata === undefined) return { issues };
+      prorataFact = mappedProrata;
+    }
+
     if (
       startDate.status === "available" &&
       durationYears.status === "available" &&
-      prorata.status === "available"
+      prorataFact?.status === "available"
     ) {
       plan = available({
         kind: "amortizable",
         startDate: startDate.value,
         durationYears: durationYears.value,
-        prorataConvention: prorata.value as OpeningProrataConvention,
+        prorataConvention: prorataFact.value,
+      });
+    } else if (
+      startDate.status === "available" &&
+      durationYears.status === "available" &&
+      !prorataPresent &&
+      canOmitHistoricalProrata(asset)
+    ) {
+      plan = available({
+        kind: "amortizable",
+        startDate: startDate.value,
+        durationYears: durationYears.value,
       });
     } else {
       plan = unavailable("plan amortissable incomplet — paramètres absents non inventés");

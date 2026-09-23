@@ -47,6 +47,7 @@ import {
   mapIssuesToTakeoverExceptions,
   type TakeoverException,
 } from "./exceptions";
+import { canOmitHistoricalProrata } from "./anchored-historical-prorata";
 import { isCandidateAbsent, isCandidatePresent } from "./candidate-value";
 import { selectBuiltExternalTakeoverOpening } from "./select-built-external-takeover-opening";
 
@@ -183,7 +184,11 @@ function preBuildClientExceptions(
         : isCandidatePresent(asset.classification) &&
           asset.classification.value !== "terrain";
 
-    if (amortizable && isCandidateAbsent(asset.prorataConvention)) {
+    if (
+      amortizable &&
+      isCandidateAbsent(asset.prorataConvention) &&
+      !canOmitHistoricalProrata(asset)
+    ) {
       exceptions.push({
         code: "PRORATA_REQUIRED",
         message: `prorataConvention manquante pour « ${asset.candidateKey} ».`,

@@ -32,7 +32,8 @@ export type ResolvedOpeningDepreciationEntry = {
   cumulOuverture: number;
   startDate: string;
   durationYears: number;
-  prorataConvention: OpeningProrataConvention;
+  /** Absente si la reprise ancrée n'a pas de convention historique connue. */
+  prorataConvention?: OpeningProrataConvention;
 };
 
 export type ResolvedOpeningTerrain = {
@@ -207,6 +208,7 @@ function resolveOneAmortizable(
     return undefined;
   }
   if (
+    plan.prorataConvention !== undefined &&
     plan.prorataConvention !== "annuel_plein" &&
     plan.prorataConvention !== "mensuel" &&
     plan.prorataConvention !== "jours_reels"
@@ -228,7 +230,7 @@ function resolveOneAmortizable(
     cumulOuverture: C0,
     startDate: plan.startDate,
     durationYears: plan.durationYears,
-    prorataConvention: plan.prorataConvention,
+    ...(plan.prorataConvention ? { prorataConvention: plan.prorataConvention } : {}),
   };
 }
 
@@ -438,9 +440,9 @@ export function applyResolvedOpeningDepreciation(input: {
 
     lignes.push({
       ...continued.ligne,
-      // Convention portée pour le snapshot / N+1 (pas de jours_reels silencieux).
-      prorataConvention: entry.prorataConvention,
       dateDebut: entry.startDate,
+      // Portée seulement si connue. Absence ≠ jours_reels.
+      ...(entry.prorataConvention ? { prorataConvention: entry.prorataConvention } : {}),
     });
   }
 

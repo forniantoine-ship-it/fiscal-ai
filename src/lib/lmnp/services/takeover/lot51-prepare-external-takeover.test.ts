@@ -236,7 +236,7 @@ describe("Lot 5.1 — reference case orchestration", () => {
 
     const codes = new Set(result.exceptions.map((e) => e.code));
     assert.ok(codes.has("PROPERTY_MATCH_REQUIRED"));
-    assert.ok(codes.has("PRORATA_REQUIRED"));
+    assert.equal(codes.has("PRORATA_REQUIRED"), false);
     assert.ok(codes.has("DEFICITS_REQUIRED"));
     assert.ok(codes.has("ARD_REQUIRED"));
 
@@ -292,6 +292,10 @@ describe("Lot 5.1 — reference case orchestration", () => {
     assert.equal(c30!.cumulOuverture.value, 30_000);
     assert.ok(isAvailable(c5!.cumulOuverture));
     assert.equal(c5!.cumulOuverture.value, 5_000);
+    assert.ok(isAvailable(c30!.plan) && c30!.plan.value.kind === "amortizable");
+    if (isAvailable(c30!.plan) && c30!.plan.value.kind === "amortizable") {
+      assert.equal(c30!.plan.value.prorataConvention, "annuel_plein");
+    }
 
     assert.ok(isAvailable(result.opening.stocks.deficits));
     assert.deepEqual(result.opening.stocks.deficits.value, []);
