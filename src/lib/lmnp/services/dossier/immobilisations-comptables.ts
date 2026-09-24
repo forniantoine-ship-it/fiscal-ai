@@ -93,6 +93,35 @@ export function provenanceForDateDebut(
 }
 
 /**
+ * P0-2B — ouverture comptable fiable (brut + cumul numériques).
+ * Quand présente, elle prouve un historique antérieur : la MES draft
+ * ne doit plus basculer en `premier_exercice`.
+ */
+export function hasReliableOpeningMouvements(
+  immo: Pick<ImmobilisationsRfs, "mouvements">,
+): boolean {
+  const m = immo.mouvements;
+  return (
+    m !== undefined &&
+    typeof m.valeurBruteOuverture === "number" &&
+    typeof m.amortissementsCumulesOuverture === "number"
+  );
+}
+
+/**
+ * Provenance des lignes de plan (F-010 / Opening) et du terrain.
+ * P0-2B : si des mouvements d'ouverture fiables existent, l'inventaire
+ * d'ouverture est historique — jamais reclassé en acquisition N via MES draft.
+ */
+export function provenanceForPlanInventory(
+  immo: Pick<ImmobilisationsRfs, "dateMiseEnService" | "mouvements">,
+  exerciceFiscal: number,
+): ProvenanceImmobilisation {
+  if (hasReliableOpeningMouvements(immo)) return "historique";
+  return provenanceForDateDebut(immo.dateMiseEnService, exerciceFiscal);
+}
+
+/**
  * Détail annuel des composants F-012 (historiques + nouveaux de l'exercice),
  * dédoublonnés par `id` (le plus frais gagne — même règle que mergeComposantsF012).
  */
@@ -176,11 +205,7 @@ export function snapshotImmobilisationsComptables(input: {
       coutBrut: ligne.montant,
       amortissementCumule: ligne.amortissementsCumules,
       vnc: ligne.vnc,
-      provenance:
-        immo.dateMiseEnService &&
-        new Date(immo.dateMiseEnService).getFullYear() === input.exerciceFiscal
-          ? "acquisition_exercice"
-          : "historique",
+      provenance: provenanceForPlanInventory(immo, input.exerciceFiscal),
       dateDebut: ligne.dateDebut ?? immo.dateMiseEnService,
       dureeAnnees: ligne.dureeAnnees,
       ...(prorataConvention ? { prorataConvention } : {}),
@@ -195,11 +220,7 @@ export function snapshotImmobilisationsComptables(input: {
     coutBrut: immo.valeurTerrain,
     amortissementCumule: 0,
     vnc: immo.valeurTerrain,
-    provenance:
-      immo.dateMiseEnService &&
-      new Date(immo.dateMiseEnService).getFullYear() === input.exerciceFiscal
-        ? "acquisition_exercice"
-        : "historique",
+    provenance: provenanceForPlanInventory(immo, input.exerciceFiscal),
   });
 
   for (const d of details) {
@@ -345,12 +366,15 @@ export type ImmobilisationsContinuityReconciliation =
     };
 
 /**
- * Réconciliation ouverture / clôture (Lot 5 B2).
+ * Réconciliation ouverture / clôture (Lot 5 B2 / P0-2B).
  *
  * - Une variation n'est pas une acquisition.
  * - expectedClosingGross = opening + acquisitions explicites (pas de cession V1).
  * - expectedClosingAmort = openingAmort + dotation exercice (pas de sortie V1).
  * - Ouverture absente sur exercice ultérieur → UNKNOWN (jamais 0 inventé).
+ * - P0-2B : mouvements d'ouverture fiables → jamais `premier_exercice`
+ *   (même si `dateMiseEnService` tombe dans l'exercice — MES draft ne
+ *   contredit pas un Opening historique).
  */
 export function reconcileImmobilisationsContinuity(input: {
   immobilisations: ImmobilisationsRfs;
@@ -370,6 +394,7 @@ export function reconcileImmobilisationsContinuity(input: {
   }
 
   const isPremierExercice =
+    !hasReliableOpeningMouvements(immo) &&
     immo.dateMiseEnService !== undefined &&
     new Date(immo.dateMiseEnService).getFullYear() === input.exercice;
 
@@ -392,11 +417,7 @@ export function reconcileImmobilisationsContinuity(input: {
   }
 
   const mouvements = immo.mouvements;
-  if (
-    !mouvements ||
-    typeof mouvements.valeurBruteOuverture !== "number" ||
-    typeof mouvements.amortissementsCumulesOuverture !== "number"
-  ) {
+  if (!hasReliableOpeningMouvements(immo) || !mouvements) {
     return {
       status: "unknown",
       code: IMMOBILISATIONS_OPENING_UNKNOWN,
