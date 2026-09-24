@@ -37,11 +37,18 @@ export type DepreciationRegisterPdfRow = {
   startDateRaw?: string;
   /** "Valeur entrée" / "Valeur brute" — coût brut. */
   grossCostRaw?: string;
-  /** "Amort. début" — cumul d'ouverture (seul champ cumul mappé vers le contrat 4C.1). */
+  /**
+   * "Amort. début" — cumul d'ouverture de l'exercice source du registre.
+   * Pour une reprise N depuis un registre N-1, ce n'est PAS le cumulOuverture(N)
+   * (cf. SAV-010) — conservé pour contrôle documentaire.
+   */
   openingCumulativeRaw?: string;
   /** "Dot. fiscale" — jamais mappée (DOTATION_IGNORED), conservée pour contrôle. */
   dotationRaw?: string;
-  /** "Amort. fin" — jamais mappée (CLOSING_CUMULATIVE_IGNORED), conservée pour contrôle. */
+  /**
+   * "Amort. fin" — cumul de clôture de l'exercice source.
+   * Pour reprise N depuis registre N-1 : source documentaire de cumulOuverture(N).
+   */
   closingCumulativeRaw?: string;
   /** "VNC" — jamais mappée (VNC_IGNORED), conservée pour contrôle. */
   vncRaw?: string;

@@ -48,6 +48,7 @@ export type DepreciationRegisterDiagnosticCode =
   | "EMPTY_ROW_SKIPPED"
   | "UNSUPPORTED_METHOD_VALUE"
   | "CLOSING_CUMULATIVE_IGNORED"
+  | "SOURCE_OPENING_CUMULATIVE_IGNORED"
   | "DOTATION_IGNORED"
   | "VNC_IGNORED";
 
@@ -78,9 +79,22 @@ export type DepreciationRegisterExtractionResult = {
 export type ExtractDepreciationRegisterInput = {
   file: File;
   documentId: string;
-  /** Exercice cible N — utilisé uniquement pour colonnes cumul datées explicites. */
+  /** Exercice cible N — utilisé pour colonnes cumul datées explicites. */
   targetFiscalYear: number;
+  /**
+   * Exercice couvert par le registre. Lorsque `sourceFiscalYear === targetFiscalYear - 1`
+   * et qu'une colonne cumul fin est présente : cumulOuverture ← cumul fin (SAV-010).
+   */
+  sourceFiscalYear?: number;
 };
+
+/** Reprise N depuis un registre d'exercice N-1 — alignement période SAV-010. */
+export function isNextYearRegisterTakeover(
+  sourceFiscalYear: number | undefined,
+  targetFiscalYear: number,
+): boolean {
+  return sourceFiscalYear !== undefined && sourceFiscalYear === targetFiscalYear - 1;
+}
 
 /** Rôles colonnes V1 — mapping déterministe borné, pas de fuzzy/LLM. */
 export type RegisterColumnRole =
@@ -545,6 +559,7 @@ function extractRows(
   selected: SheetCandidate,
   documentId: string,
   targetFiscalYear: number,
+  sourceFiscalYear: number | undefined,
 ): {
   candidates: CandidateHistoricalAsset[];
   diagnostics: DepreciationRegisterDiagnostic[];
@@ -554,8 +569,13 @@ function extractRows(
   let reviewRequired = false;
   const { mapping, headerRowIndex } = selected;
   const { roles } = mapping;
+  const nextYearTakeover = isNextYearRegisterTakeover(sourceFiscalYear, targetFiscalYear);
+  // Reprise N←N-1 : si les deux colonnes sont présentes, Amort. fin = source.
+  // Colonne fin seule absente → on ne devine pas (conserve ouverture source).
+  const useClosingForOpening =
+    nextYearTakeover && roles.has("closing_cumulative");
 
-  if (roles.has("ambiguous_cumulative") && !roles.has("opening_cumulative")) {
+  if (roles.has("ambiguous_cumulative") && !roles.has("opening_cumulative") && !useClosingForOpening) {
     const ambCol = colFor(mapping, "ambiguous_cumulative");
     diagnostics.push({
       code: "AMBIGUOUS_CUMULATIVE_COLUMN",
@@ -566,10 +586,18 @@ function extractRows(
     reviewRequired = true;
   }
 
-  if (roles.has("closing_cumulative")) {
+  if (roles.has("closing_cumulative") && !useClosingForOpening) {
     diagnostics.push({
       code: "CLOSING_CUMULATIVE_IGNORED",
       message: "Colonne cumul fin détectée — non mappée vers cumulOuverture.",
+      sheetName: sheet.sheetName,
+    });
+  }
+  if (useClosingForOpening && roles.has("opening_cumulative")) {
+    diagnostics.push({
+      code: "SOURCE_OPENING_CUMULATIVE_IGNORED",
+      message:
+        "Colonne cumul début N-1 détectée — non mappée vers cumulOuverture(N) ; source = cumul fin N-1.",
       sheetName: sheet.sheetName,
     });
   }
@@ -621,9 +649,10 @@ function extractRows(
     reviewRequired = true;
   }
 
-  // Dated opening cumul year check
+  // Dated opening cumul year check — only when that column maps to cumulOuverture.
   const openingCol = colFor(mapping, "opening_cumulative");
-  if (openingCol !== undefined) {
+  const closingCol = colFor(mapping, "closing_cumulative");
+  if (!useClosingForOpening && openingCol !== undefined) {
     const header = mapping.headerByCol.get(openingCol) ?? "";
     const year = extractDatedCumulYear(normalizeHeader(header));
     if (year !== null && year !== targetFiscalYear) {
@@ -639,7 +668,11 @@ function extractRows(
 
   const labelCol = colFor(mapping, "label");
   const grossCol = colFor(mapping, "gross_cost");
-  const cumulCol = roles.has("opening_cumulative") ? openingCol : undefined;
+  const cumulCol = useClosingForOpening
+    ? closingCol
+    : roles.has("opening_cumulative")
+      ? openingCol
+      : undefined;
   const startCol = colFor(mapping, "start_date");
   const durationCol = colFor(mapping, "duration");
   const methodCol = colFor(mapping, "method");
@@ -723,7 +756,9 @@ function extractRows(
       cumulOuverture = missingCandidate(
         roles.has("ambiguous_cumulative")
           ? "cumul ambigu — non mappé"
-          : "colonne cumul ouverture absente",
+          : useClosingForOpening
+            ? "colonne cumul fin absente"
+            : "colonne cumul ouverture absente",
         {
           documentId,
           documentRole: "depreciation_register",
@@ -734,7 +769,10 @@ function extractRows(
     } else {
       const cumulHeader = mapping.headerByCol.get(cumulCol);
       const year = extractDatedCumulYear(normalizeHeader(cumulHeader ?? ""));
-      if (year !== null && year !== targetFiscalYear) {
+      const expectedYear = useClosingForOpening
+        ? (sourceFiscalYear ?? targetFiscalYear - 1)
+        : targetFiscalYear;
+      if (year !== null && year !== expectedYear) {
         cumulOuverture = missingCandidate("année cumul incompatible avec exercice cible", {
           documentId,
           documentRole: "depreciation_register",
@@ -1084,6 +1122,7 @@ export async function extractDepreciationRegisterFromSpreadsheet(
     selection.selected,
     input.documentId,
     input.targetFiscalYear,
+    input.sourceFiscalYear,
   );
 
   const diagnostics = [...selection.diagnostics, ...extracted.diagnostics];

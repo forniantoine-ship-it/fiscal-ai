@@ -30,6 +30,7 @@ import { fileToRasterImages, OCR_RENDER_SCALE, type RasterPageImage } from "@/li
 import {
   parseRegisterAmount,
   parseRegisterStartDate,
+  isNextYearRegisterTakeover,
   type DepreciationRegisterDiagnosticCode,
 } from "./extract-depreciation-register-spreadsheet";
 import type { CandidateDepreciationMethod, CandidateHistoricalAsset } from "./asset-candidates";
@@ -69,7 +70,8 @@ export type DepreciationRegisterPdfDiagnosticCode =
   | "EXITED_ASSET_ROW_SKIPPED"
   | "UNRECOGNIZED_ROW_SKIPPED"
   | "NO_ASSET_ROWS_EXTRACTED"
-  | "PDF_TRUNCATED";
+  | "PDF_TRUNCATED"
+  | "SOURCE_OPENING_CUMULATIVE_IGNORED";
 
 export type DepreciationRegisterPdfDiagnostic = {
   code: DepreciationRegisterPdfDiagnosticCode;
@@ -113,8 +115,14 @@ export type DepreciationRegisterPdfExtractionResult = {
 export type ExtractDepreciationRegisterFromPdfInput = {
   file: File;
   documentId: string;
-  /** Exercice cible N — conservé pour cohérence de signature avec Lot 4C.1 (non utilisé pour filtrage colonne datée : PDF n'expose pas de colonnes "cumul au 01/01/N"). */
+  /** Exercice cible N (Opening). */
   targetFiscalYear: number;
+  /**
+   * Exercice couvert par le registre. Lorsque `sourceFiscalYear === targetFiscalYear - 1`
+   * (reprise N depuis registre N-1), cumulOuverture ← « Amort. fin » (SAV-010).
+   * Absent ou égal à targetFiscalYear → extraction same-year (Amort. début).
+   */
+  sourceFiscalYear?: number;
   visionRequester: DepreciationRegisterVisionRequester;
   /** Défaut : fileToRasterImages (browser). Injectable pour Node/tests. */
   rasterizer?: (file: File) => Promise<RasterPageImage[]>;
@@ -204,6 +212,7 @@ function rowToCandidate(
   row: DepreciationRegisterPdfRow,
   documentId: string,
   diagnostics: DepreciationRegisterPdfDiagnostic[],
+  nextYearTakeover: boolean,
   pcgAccountCodeRaw?: string | null,
 ): CandidateHistoricalAsset {
   const factors: string[] = [];
@@ -216,10 +225,21 @@ function rowToCandidate(
       rowRef: row.assetRef,
     });
   }
-  if (row.closingCumulativeRaw) {
+  if (nextYearTakeover) {
+    // SAV-010 : Amort. fin N-1 → cumulOuverture(N). Amort. début N-1 n'est pas l'ouverture N.
+    if (row.openingCumulativeRaw) {
+      diagnostics.push({
+        code: "SOURCE_OPENING_CUMULATIVE_IGNORED",
+        message:
+          "Amort. début N-1 détecté — non mappé vers cumulOuverture(N) ; source = Amort. fin N-1.",
+        pageNumber: row.pageNumber,
+        rowRef: row.assetRef,
+      });
+    }
+  } else if (row.closingCumulativeRaw) {
     diagnostics.push({
       code: "CLOSING_CUMULATIVE_IGNORED",
-      message: "Amort. fin détecté — non mappé vers cumulOuverture.",
+      message: "Amort. fin détecté — non mappé vers cumulOuverture (extraction same-year).",
       pageNumber: row.pageNumber,
       rowRef: row.assetRef,
     });
@@ -242,11 +262,15 @@ function rowToCandidate(
       });
 
   const coutBrut = presentOrMissingNumber(row.grossCostRaw, documentId, row, "grossCost", factors, diagnostics);
+  // Reprise N←N-1 : Amort. fin. Same-year / sans sourceFiscalYear : Amort. début.
+  // Jamais Amort. début + Dotation. Cellule Amort. fin vide → missing (fail closed).
+  const cumulRaw = nextYearTakeover ? row.closingCumulativeRaw : row.openingCumulativeRaw;
+  const cumulFieldLabel = nextYearTakeover ? "closingCumulative" : "openingCumulative";
   const cumulOuverture = presentOrMissingNumber(
-    row.openingCumulativeRaw,
+    cumulRaw,
     documentId,
     row,
-    "openingCumulative",
+    cumulFieldLabel,
     factors,
     diagnostics,
   );
@@ -418,33 +442,19 @@ function classifyGlobalScope(raw: string): GlobalScopeKind | null {
 type FieldSums = { grossCost: number; openingCumulative: number };
 type FieldMissing = { grossCost: boolean; openingCumulative: boolean };
 
-function sumCandidateField(
-  candidates: CandidateHistoricalAsset[],
+/**
+ * Somme documentaire (Valeur entrée / Amort. début) — indépendante du mapping
+ * Opening : pour reprise N←N-1, cumulOuverture vient d'Amort. fin (SAV-010),
+ * alors que ce contrôle reste sur la colonne Amort. début imprimée.
+ */
+function sumRowsDocumentaryField(
+  rows: DepreciationRegisterPdfRow[],
 ): { sums: FieldSums; missing: FieldMissing } {
   let grossCost = 0;
   let openingCumulative = 0;
   let grossCostMissing = false;
   let openingCumulativeMissing = false;
-  for (const c of candidates) {
-    if (c.coutBrut.status === "present") grossCost += c.coutBrut.value;
-    else grossCostMissing = true;
-    if (c.cumulOuverture.status === "present") openingCumulative += c.cumulOuverture.value;
-    else openingCumulativeMissing = true;
-  }
-  return {
-    sums: { grossCost, openingCumulative },
-    missing: { grossCost: grossCostMissing, openingCumulative: openingCumulativeMissing },
-  };
-}
-
-function sumExitRowsField(
-  exitRows: DepreciationRegisterPdfRow[],
-): { sums: FieldSums; missing: FieldMissing } {
-  let grossCost = 0;
-  let openingCumulative = 0;
-  let grossCostMissing = false;
-  let openingCumulativeMissing = false;
-  for (const row of exitRows) {
+  for (const row of rows) {
     const gross = row.grossCostRaw ? parseRegisterAmount(row.grossCostRaw) : null;
     if (gross === null) grossCostMissing = true;
     else grossCost += gross;
@@ -459,23 +469,18 @@ function sumExitRowsField(
 }
 
 /**
- * Contrôle de complétude — rapproche la somme extraite (candidates, périmètre
- * "hors sorties" par construction puisque les sorties sont exclues des
- * candidates) des totaux documentaires globaux imprimés (Total / Total
- * Sorties / Total Hors Sorties), lorsque le libellé de portée les identifie
- * sans ambiguïté. Une immobilisation présente dans le registre mais absente
- * des sous-totaux documentaires (cf. cas réel B80400 sur GEFFROY) produit un
- * écart honnête (CONFLICT) plutôt qu'une concordance forcée : jamais
- * d'égalité inventée entre deux périmètres qui ne coïncident pas.
+ * Contrôle de complétude — rapproche la somme documentaire des lignes
+ * (périmètre hors sorties / sorties) des totaux globaux imprimés.
+ * Champ « openingCumulative » = colonne Amort. début (pas le mapping Opening).
  */
 function buildControlChecks(
-  candidates: CandidateHistoricalAsset[],
+  assetRows: DepreciationRegisterPdfRow[],
   exitRows: DepreciationRegisterPdfRow[],
   totalRows: DepreciationRegisterPdfRow[],
 ): DepreciationRegisterPdfControlCheck[] {
   const checks: DepreciationRegisterPdfControlCheck[] = [];
-  const candidateAgg = sumCandidateField(candidates);
-  const exitAgg = sumExitRowsField(exitRows);
+  const candidateAgg = sumRowsDocumentaryField(assetRows);
+  const exitAgg = sumRowsDocumentaryField(exitRows);
 
   for (const totalRow of totalRows) {
     const scopeLabel = totalRow.scopeLabel?.trim();
@@ -656,7 +661,12 @@ export async function extractDepreciationRegisterFromPdf(
     });
   }
 
+  const nextYearTakeover = isNextYearRegisterTakeover(
+    input.sourceFiscalYear,
+    input.targetFiscalYear,
+  );
   const candidates: CandidateHistoricalAsset[] = [];
+  const assetRows: DepreciationRegisterPdfRow[] = [];
   let currentPcgAccount: string | null = null;
   for (const row of allRows) {
     if (row.rowType === "subtotal" || row.rowType === "unrecognized") {
@@ -673,9 +683,12 @@ export async function extractDepreciationRegisterFromPdf(
       }
     }
     if (row.rowType !== "asset") continue;
+    assetRows.push(row);
     const assetAccount =
       parsePcgAccountCode(row.accountCodeRaw) ?? currentPcgAccount;
-    candidates.push(rowToCandidate(row, input.documentId, diagnostics, assetAccount));
+    candidates.push(
+      rowToCandidate(row, input.documentId, diagnostics, nextYearTakeover, assetAccount),
+    );
   }
 
   if (candidates.length === 0) {
@@ -697,7 +710,7 @@ export async function extractDepreciationRegisterFromPdf(
     };
   }
 
-  const controlChecks = buildControlChecks(candidates, exitRows, totalRows);
+  const controlChecks = buildControlChecks(assetRows, exitRows, totalRows);
 
   const reviewRequired =
     diagnostics.some((d) =>

@@ -321,19 +321,29 @@ describe("Lot 4C.1 — sécurité sémantique", () => {
     assert.ok(hasDiag(result, "VNC_IGNORED"));
   });
 
-  it("cumul fin jamais → cumulOuverture", async () => {
+  it("cumul fin same-year : jamais → cumulOuverture ; N←N-1 : oui", async () => {
     const rows: (string | number)[][] = [
-      ["Libellé", "Valeur brute", "Amortissements cumulés fin"],
-      ["Bâtiment", 180_000, 40_000],
+      ["Libellé", "Valeur brute", "Amortissements cumulés fin", "Durée", "Méthode", "Date mise en service"],
+      ["Bâtiment", 180_000, 40_000, 40, "Linéaire", "01/01/2020"],
     ];
-    const result = await extract({ Registre: rows }, `${SYNTHETIC}-fin.xlsx`);
-    // eligible via label+gross+? need extra signal — only closing cumul, no opening/start/duration/ref
-    // Sheet may be unsupported. If somehow eligible, cumul must be missing.
-    if (result.candidates.length > 0) {
-      assert.ok(isCandidateAbsent(result.candidates[0]!.cumulOuverture));
+    const sameYear = await extract({ Registre: rows }, `${SYNTHETIC}-fin.xlsx`, 2026);
+    if (sameYear.candidates.length > 0) {
+      assert.ok(isCandidateAbsent(sameYear.candidates[0]!.cumulOuverture));
+      assert.ok(hasDiag(sameYear, "CLOSING_CUMULATIVE_IGNORED"));
     } else {
-      assert.equal(result.status, "unsupported");
+      assert.equal(sameYear.status, "unsupported");
     }
+
+    const nextYear = await extractDepreciationRegisterFromSpreadsheet({
+      file: workbookToFile(buildWorkbook({ Registre: rows }), `${SYNTHETIC}-fin-next.xlsx`),
+      documentId: "doc-fin-next",
+      sourceFiscalYear: 2025,
+      targetFiscalYear: 2026,
+    });
+    assert.equal(nextYear.candidates.length, 1);
+    assert.ok(isCandidatePresent(nextYear.candidates[0]!.cumulOuverture));
+    assert.equal(nextYear.candidates[0]!.cumulOuverture.value, 40_000);
+    assert.ok(!hasDiag(nextYear, "CLOSING_CUMULATIVE_IGNORED"));
   });
 
   it("headers bornés — pas de fuzzy", () => {

@@ -232,6 +232,7 @@ function preBuildClientExceptions(
 async function resolveRegisterCandidates(
   register: ExternalTakeoverRegisterDocument,
   targetFiscalYear: number,
+  sourceFiscalYear: number,
   registerVisionRequester?: DepreciationRegisterVisionRequester,
   registerRasterizer?: (file: File) => Promise<RasterPageImage[]>,
 ): Promise<
@@ -266,6 +267,7 @@ async function resolveRegisterCandidates(
       file: register.file,
       documentId: register.documentId,
       targetFiscalYear,
+      sourceFiscalYear,
       visionRequester: registerVisionRequester,
       rasterizer: registerRasterizer,
     });
@@ -310,6 +312,7 @@ async function resolveRegisterCandidates(
     file: register.file,
     documentId: register.documentId,
     targetFiscalYear,
+    sourceFiscalYear,
   });
 
   if (extraction.status === "unsupported" || extraction.candidates.length === 0) {
@@ -423,6 +426,7 @@ export async function prepareExternalTakeover(
   const registerResult = await resolveRegisterCandidates(
     input.register,
     input.targetFiscalYear,
+    input.sourceFiscalYear,
     input.registerVisionRequester,
     input.registerRasterizer,
   );
