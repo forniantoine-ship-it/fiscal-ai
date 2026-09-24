@@ -50,4 +50,10 @@ export type CandidateHistoricalAsset = {
    * Inconnu → status missing / document_absent — jamais properties[0].
    */
   propertyId: CandidateValue<string>;
+  /**
+   * Compte PCG documentaire (ex. « 21540000 ») lorsqu'il est imprimé
+   * sur le registre — jamais inventé. Sert uniquement à une classification
+   * déterministe fail-closed.
+   */
+  pcgAccountCode?: CandidateValue<string>;
 };

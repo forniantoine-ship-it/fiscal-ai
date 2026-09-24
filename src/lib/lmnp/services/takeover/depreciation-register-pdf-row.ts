@@ -55,6 +55,11 @@ export type DepreciationRegisterPdfRow = {
   exitLabelRaw?: string;
   /** Uniquement rowType = "subtotal" | "total" — libellé de portée (ex. "Total Hors Sorties"). */
   scopeLabel?: string;
+  /**
+   * Compte PCG tel qu'imprimé (ex. « 21540000 »), si la section / la ligne
+   * le porte. Jamais inventé. Optionnel — Vision peut le laisser absent.
+   */
+  accountCodeRaw?: string;
   /** Texte brut source de la ligne — provenance/evidence, jamais réinterprété. */
   rawSnippet: string;
 };

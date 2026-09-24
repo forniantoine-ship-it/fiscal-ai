@@ -212,8 +212,19 @@ export {
 
 export {
   suggestRegisterAssetClassification,
+  suggestClassificationFromPcgAccount,
+  tryFiscallyEquivalentAmortizableCollapse,
+  parsePcgAccountCode,
+  applyDeterministicDocumentaryClassifications,
+  applyFiscallyEquivalentAmortizableCollapses,
   type ClassificationSuggestion,
 } from "./suggest-register-asset-classification";
+
+export {
+  canOmitHistoricalProrata,
+  shouldAskClientForProrata,
+  hasProrataIndependentHardBlock,
+} from "./anchored-historical-prorata";
 
 export {
   applyExplicitAnswerToCandidate,

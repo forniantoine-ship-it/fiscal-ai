@@ -272,6 +272,7 @@ describe("Lot 5.2 — progression + wording client", () => {
     assert.match(text, /aucun déficit LMNP restant à reporter/);
     assert.match(text, /aucun amortissement non déduit restant à reporter/);
     assert.match(text, /encore nécessaire pour finaliser la reprise/);
+    assert.doesNotMatch(text, /vérification interne|Aucune action n'est attendue/i);
   });
 
   it("UNKNOWN laisse la question ouverte : pas 0 restante, reprise non terminée", () => {
@@ -297,6 +298,22 @@ describe("Lot 5.2 — progression + wording client", () => {
     assert.equal(steps[2]!.done, false);
     assert.equal(steps[3]!.done, false);
     assert.equal(isExternalTakeoverComplete(undefined), false);
+  });
+
+  it("état blocked à 0 question client : jamais faux vert / 0 restantes", () => {
+    const steps = buildProgress({
+      documentsReady: true,
+      analyzing: false,
+      hasResult: true,
+      clientExceptionCount: 0,
+      complete: false,
+      unresolvedBlock: true,
+      labels: EXTERNAL_TAKEOVER_COPY.progress,
+    });
+    assert.equal(steps[2]!.done, false);
+    assert.doesNotMatch(steps[2]!.detail, /0 restante/);
+    assert.match(steps[2]!.detail, /vérification nécessaire/);
+    assert.equal(steps[3]!.done, false);
   });
 });
 

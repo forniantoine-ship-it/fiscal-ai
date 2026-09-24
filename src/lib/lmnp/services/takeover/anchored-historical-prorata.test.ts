@@ -597,9 +597,12 @@ describe("GEFFROY — questions prorata après ancrage", () => {
     const questions = toClientQuestions(result.exceptions, result.assets).filter(
       (question) => question.code === "PRORATA_REQUIRED",
     );
-    assert.deepEqual(
-      questions.map((question) => question.candidateKey).sort(),
-      ["B80400", "C30300", "C31000", "C40200"],
+    // Les 4 actifs sans cumul / méthode non supportée ne doivent plus
+    // générer de question prorata leurre — la réponse ne lève pas le blocage.
+    assert.deepEqual(questions, []);
+    assert.equal(
+      result.exceptions.some((e) => e.code === "PRORATA_REQUIRED"),
+      false,
     );
 
     const missingC0 = ["C30300", "C31000", "C40200"].map((key) =>

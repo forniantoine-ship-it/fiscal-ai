@@ -123,10 +123,20 @@ function asset(
   };
 }
 
+function subtotal(scopeLabel: string, pageNumber: number): DepreciationRegisterPdfRow {
+  return {
+    rowType: "subtotal",
+    pageNumber,
+    scopeLabel,
+    rawSnippet: scopeLabel,
+  };
+}
+
 // Transcription manuelle du registre réel GEFFROY (oracle établi
 // indépendamment avant exécution — cf. Lot 5.4-A) — représente ce qu'un
 // appel Vision réel renverrait, pas une donnée injectée pour forcer un résultat.
 const PAGE1_ROWS: DepreciationRegisterPdfRow[] = [
+  subtotal("Compte 21540000", 1),
   asset("B70500", "Teletower telescopique Jefco", "31/05/2017", "1 292,81", "1 292,81", "L", "05 - 00", 1),
   asset("B80400", "JEFCO ponceuse", "30/04/2018", "1 559,91", undefined, "N", "00 - 00", 1),
   asset("B80700", "LA PLATEFORME karcher novipro", "19/07/2018", "529,00", "470,81", "L", "05 - 00", 1),
@@ -142,12 +152,14 @@ const PAGE1_ROWS: DepreciationRegisterPdfRow[] = [
   asset("C30300", "pONCEUSE EXCENTRIQUE ETS EC150", "23/03/2023", "507,38", undefined, "L", "05 - 00", 1),
   asset("C31000", "SCIE A ONGLET RADIALE KAPEX", "02/10/2023", "666,89", undefined, "L", "05 - 00", 1),
   asset("C40200", "PONCEUSE ROTO EXCENTRIQUE RO", "22/02/2023", "591,88", undefined, "L", "05 - 00", 1),
+  subtotal("Compte 21820000", 1),
   asset("B80200", "PEUGEOT EXPERT VU", "19/02/2018", "9 500,00", "9 246,66", "L", "05 - 00", 1),
   asset("B90800", "RENAULT TRAFIC EE-286-XG", "28/08/2019", "7 799,37", "5 212,56", "L", "05 - 00", 1),
   asset("C10200", "MASTER III EY-332-ND RENAULT", "08/02/2021", "15 668,24", "5 945,23", "L", "05 - 00", 1),
 ];
 
 const PAGE2_ROWS: DepreciationRegisterPdfRow[] = [
+  subtotal("Compte 21830000", 2),
   {
     rowType: "exit",
     pageNumber: 2,

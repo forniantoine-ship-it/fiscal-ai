@@ -67,6 +67,21 @@ export const EXTERNAL_TAKEOVER_COPY = {
   extractionFailed: "Nous n'avons pas réussi à lire ce document.",
   manualReview:
     "Nous devons vérifier une information de votre ancienne comptabilité avant de continuer.",
+  internalBlockTitle: "La reprise n'est pas encore terminée",
+  internalBlockIntro:
+    "Certaines informations de votre ancien tableau d'amortissement ne peuvent pas être reprises automatiquement. Nous ne pouvons pas encore finaliser automatiquement la reprise de ces lignes.",
+  internalBlockReasons: {
+    METHOD_UNSUPPORTED:
+      "Une immobilisation utilise une méthode d'amortissement que nous ne pouvons pas reprendre automatiquement.",
+    ASSET_CUMUL_OUVERTURE_UNAVAILABLE:
+      "Le cumul d'amortissements d'ouverture manque pour une immobilisation — nous ne pouvons pas le reconstruire.",
+    ASSET_COUT_BRUT_UNAVAILABLE:
+      "La valeur historique d'une immobilisation est absente du document.",
+    CONTROL_REVIEW_REQUIRED:
+      "Un contrôle de cohérence entre vos documents ne peut pas être tranché automatiquement.",
+    DEFAULT:
+      "Une information de votre ancienne comptabilité ne peut pas être reprise automatiquement.",
+  } as Record<string, string>,
   completedTitle: "Votre comptabilité précédente a bien été reprise.",
   completedBody: "Vous pouvez continuer votre déclaration.",
   progress: {
@@ -77,6 +92,7 @@ export const EXTERNAL_TAKEOVER_COPY = {
     received: "reçus",
     done: "terminée",
     remaining: (n: number) => (n === 1 ? "1 restante" : `${n} restantes`),
+    needsReview: "vérification nécessaire",
     waiting: "en attente",
   },
   historicalValue: "Valeur historique",

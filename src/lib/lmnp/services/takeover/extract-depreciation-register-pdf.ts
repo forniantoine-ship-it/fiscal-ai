@@ -44,8 +44,20 @@ import type {
   DepreciationRegisterPdfRow,
   DepreciationRegisterVisionRequester,
 } from "./depreciation-register-pdf-row";
+import { parsePcgAccountCode } from "./suggest-register-asset-classification";
 
 const EXTRACTION_METHOD = "pdf_depreciation_register_vision_v1" as const;
+
+/** En-tête de section compte/plan — même sans numéro PCG parseable. */
+function looksLikeAccountSectionHeader(row: DepreciationRegisterPdfRow): boolean {
+  const text = [row.scopeLabel, row.label, row.rawSnippet, row.accountCodeRaw]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" ");
+  if (!text) return false;
+  if (/compte/i.test(text)) return true;
+  if (row.rowType === "subtotal" && row.scopeLabel?.trim()) return true;
+  return false;
+}
 
 export type DepreciationRegisterPdfDiagnosticCode =
   | DepreciationRegisterDiagnosticCode
@@ -192,6 +204,7 @@ function rowToCandidate(
   row: DepreciationRegisterPdfRow,
   documentId: string,
   diagnostics: DepreciationRegisterPdfDiagnostic[],
+  pcgAccountCodeRaw?: string | null,
 ): CandidateHistoricalAsset {
   const factors: string[] = [];
 
@@ -359,6 +372,15 @@ function rowToCandidate(
       documentRole: "depreciation_register",
       sourceRef: `pdf:p${row.pageNumber}:${row.assetRef ?? "?"}`,
     }),
+    ...(pcgAccountCodeRaw
+      ? {
+          pcgAccountCode: presentCandidate(
+            pcgAccountCodeRaw,
+            "direct",
+            makeProv(documentId, row, "pcgAccountCode", pcgAccountCodeRaw, factors),
+          ),
+        }
+      : {}),
   };
 }
 
@@ -613,7 +635,6 @@ export async function extractDepreciationRegisterFromPdf(
     }
   }
 
-  const assetRows = allRows.filter((r) => r.rowType === "asset");
   const exitRows = allRows.filter((r) => r.rowType === "exit");
   const totalRows = allRows.filter((r) => r.rowType === "subtotal" || r.rowType === "total");
   const unrecognizedRows = allRows.filter((r) => r.rowType === "unrecognized");
@@ -635,7 +656,27 @@ export async function extractDepreciationRegisterFromPdf(
     });
   }
 
-  const candidates = assetRows.map((row) => rowToCandidate(row, input.documentId, diagnostics));
+  const candidates: CandidateHistoricalAsset[] = [];
+  let currentPcgAccount: string | null = null;
+  for (const row of allRows) {
+    if (row.rowType === "subtotal" || row.rowType === "unrecognized") {
+      const sectionAccount =
+        parsePcgAccountCode(row.accountCodeRaw) ??
+        parsePcgAccountCode(row.scopeLabel) ??
+        parsePcgAccountCode(row.rawSnippet) ??
+        parsePcgAccountCode(row.label);
+      if (sectionAccount) {
+        currentPcgAccount = sectionAccount;
+      } else if (looksLikeAccountSectionHeader(row)) {
+        // En-tête de section non mappable : ne pas laisser fuir le compte précédent.
+        currentPcgAccount = null;
+      }
+    }
+    if (row.rowType !== "asset") continue;
+    const assetAccount =
+      parsePcgAccountCode(row.accountCodeRaw) ?? currentPcgAccount;
+    candidates.push(rowToCandidate(row, input.documentId, diagnostics, assetAccount));
+  }
 
   if (candidates.length === 0) {
     diagnostics.push({

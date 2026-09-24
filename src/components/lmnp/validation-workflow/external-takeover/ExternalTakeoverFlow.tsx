@@ -36,11 +36,13 @@ import {
   buildAutoConfirmedRowsFromOpening,
   buildProgress,
   clientExceptionsFromResult,
+  clientVisibleBlockReasons,
   controlsLookConcordant,
   countOpenClientQuestions,
   hasBothTakeoverDocuments,
   hasExtractionFailure,
   hasManualReviewState,
+  hasUnresolvedInternalBlock,
   isExternalTakeoverComplete,
   toClientQuestions,
   withArdAmountAnswer,
@@ -255,7 +257,9 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
     : buildAutoConfirmedRows(result?.assets);
   const controlsOk = controlsLookConcordant(result);
   const manualReview = hasManualReviewState(result);
+  const unresolvedBlock = hasUnresolvedInternalBlock(result);
   const extractionFailed = hasExtractionFailure(result) || Boolean(runError);
+  const blockReasons = clientVisibleBlockReasons(result, EXTERNAL_TAKEOVER_COPY);
 
   const progress = useMemo(
     () =>
@@ -265,9 +269,10 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
         hasResult: Boolean(result),
         clientExceptionCount: countOpenClientQuestions(questions),
         complete,
+        unresolvedBlock: unresolvedBlock && !complete,
         labels: EXTERNAL_TAKEOVER_COPY.progress,
       }),
-    [analyzing, complete, documentsReady, questions, result],
+    [analyzing, complete, documentsReady, questions, result, unresolvedBlock],
   );
 
   if (complete) {
@@ -355,6 +360,7 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
       {manualReview && !extractionFailed ? (
         <div
           role="alert"
+          className="space-y-2"
           style={{
             borderRadius: radius.md,
             border: `1px solid ${colors.warning.border}`,
@@ -362,9 +368,52 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
             padding: spacing.scale[3],
           }}
         >
-          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-            {EXTERNAL_TAKEOVER_COPY.manualReview}
+          <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
+            {EXTERNAL_TAKEOVER_COPY.internalBlockTitle}
           </p>
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            {blockReasons.length > 0
+              ? EXTERNAL_TAKEOVER_COPY.internalBlockIntro
+              : EXTERNAL_TAKEOVER_COPY.manualReview}
+          </p>
+          {blockReasons.length > 0 ? (
+            <ul className="list-disc space-y-1 pl-5">
+              {blockReasons.map((reason) => (
+                <li key={reason} style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!analyzing && unresolvedBlock && !manualReview && !extractionFailed ? (
+        <div
+          role="alert"
+          className="space-y-2"
+          style={{
+            borderRadius: radius.md,
+            border: `1px solid ${colors.warning.border}`,
+            backgroundColor: colors.warning.surface,
+            padding: spacing.scale[3],
+          }}
+        >
+          <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
+            {EXTERNAL_TAKEOVER_COPY.internalBlockTitle}
+          </p>
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            {EXTERNAL_TAKEOVER_COPY.internalBlockIntro}
+          </p>
+          {blockReasons.length > 0 ? (
+            <ul className="list-disc space-y-1 pl-5">
+              {blockReasons.map((reason) => (
+                <li key={reason} style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
 

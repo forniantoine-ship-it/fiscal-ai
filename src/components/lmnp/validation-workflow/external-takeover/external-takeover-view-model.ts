@@ -169,6 +169,42 @@ export function hasManualReviewState(
   return result.exceptions.some((e) => e.answerability === "manual_review");
 }
 
+/**
+ * Opening non construite pour une raison non résolvable par le client
+ * (revue interne / blocage documentaire). Distinct d'une extraction failed.
+ */
+export function hasUnresolvedInternalBlock(
+  result: PrepareExternalTakeoverResult | undefined,
+): boolean {
+  if (!result || result.status === "built") return false;
+  if (result.status === "manual_review_required") return true;
+  if (result.status === "blocked") {
+    return result.exceptions.some(
+      (e) => e.answerability === "manual_review" || e.answerability === "blocked",
+    );
+  }
+  return result.exceptions.some((e) => e.answerability === "manual_review");
+}
+
+/** Messages client — jamais de code technique exposé. */
+export function clientVisibleBlockReasons(
+  result: PrepareExternalTakeoverResult | undefined,
+  copy: {
+    internalBlockReasons: Record<string, string>;
+  },
+): string[] {
+  if (!result || result.status === "built") return [];
+  const reasons = new Set<string>();
+  for (const ex of result.exceptions) {
+    if (ex.answerability === "client") continue;
+    if (ex.code === "DOCUMENT_EXTRACTION_FAILED") continue;
+    const mapped =
+      copy.internalBlockReasons[ex.code] ?? copy.internalBlockReasons.DEFAULT;
+    if (mapped) reasons.add(mapped);
+  }
+  return [...reasons];
+}
+
 export function hasExtractionFailure(
   result: PrepareExternalTakeoverResult | undefined,
 ): boolean {
@@ -292,6 +328,9 @@ export function toClientQuestions(
           ? null
           : suggestRegisterAssetClassification(
               asset && isCandidatePresent(asset.label) ? asset.label.value : undefined,
+              asset?.pcgAccountCode && isCandidatePresent(asset.pcgAccountCode)
+                ? asset.pcgAccountCode.value
+                : undefined,
             );
       items.push({
         candidateKey,
@@ -344,6 +383,8 @@ export function buildProgress(params: {
   hasResult: boolean;
   clientExceptionCount: number;
   complete: boolean;
+  /** Opening non construite : jamais « 0 restantes » / faux vert. */
+  unresolvedBlock?: boolean;
   labels: {
     documents: string;
     analysis: string;
@@ -352,11 +393,35 @@ export function buildProgress(params: {
     received: string;
     done: string;
     remaining: (n: number) => string;
+    needsReview?: string;
     waiting: string;
   };
 }): ExternalTakeoverProgressStep[] {
-  const { documentsReady, analyzing, hasResult, clientExceptionCount, complete, labels } =
-    params;
+  const {
+    documentsReady,
+    analyzing,
+    hasResult,
+    clientExceptionCount,
+    complete,
+    unresolvedBlock = false,
+    labels,
+  } = params;
+
+  let exceptionsDetail = labels.waiting;
+  let exceptionsDone = false;
+  if (complete) {
+    exceptionsDetail = `✓ ${labels.done}`;
+    exceptionsDone = true;
+  } else if (unresolvedBlock) {
+    exceptionsDetail = labels.needsReview ?? labels.waiting;
+    exceptionsDone = false;
+  } else if (hasResult) {
+    exceptionsDetail = labels.remaining(clientExceptionCount);
+    // Jamais « terminé » tant que l'Opening n'est pas construite,
+    // même si 0 question client reste ouverte.
+    exceptionsDone = false;
+  }
+
   return [
     {
       id: "documents",
@@ -377,12 +442,8 @@ export function buildProgress(params: {
     {
       id: "exceptions",
       label: labels.exceptions,
-      detail: complete
-        ? `✓ ${labels.done}`
-        : hasResult
-          ? labels.remaining(clientExceptionCount)
-          : labels.waiting,
-      done: complete || (hasResult && clientExceptionCount === 0),
+      detail: exceptionsDetail,
+      done: exceptionsDone,
     },
     {
       id: "takeover",

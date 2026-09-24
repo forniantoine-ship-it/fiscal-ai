@@ -45,6 +45,10 @@ const MANUAL_CODES = new Set([
   "CONTROL_TOTAL_GROSS_NOT_COMPARABLE",
   "CONTROL_CUMULATIVE_DEPRECIATION_NOT_COMPARABLE",
   "MANUAL_REVIEW_REQUIRED",
+  // Données historiques non reconstruisables par le client — revue interne.
+  "METHOD_UNSUPPORTED",
+  "ASSET_CUMUL_OUVERTURE_UNAVAILABLE",
+  "ASSET_COUT_BRUT_UNAVAILABLE",
 ]);
 
 const CODE_ALIASES: Record<string, string> = {

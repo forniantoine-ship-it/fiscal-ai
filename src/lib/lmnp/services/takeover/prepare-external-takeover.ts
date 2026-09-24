@@ -47,9 +47,10 @@ import {
   mapIssuesToTakeoverExceptions,
   type TakeoverException,
 } from "./exceptions";
-import { canOmitHistoricalProrata } from "./anchored-historical-prorata";
+import { shouldAskClientForProrata } from "./anchored-historical-prorata";
 import { isCandidateAbsent, isCandidatePresent } from "./candidate-value";
 import { selectBuiltExternalTakeoverOpening } from "./select-built-external-takeover-opening";
+import { applyDeterministicDocumentaryClassifications } from "./suggest-register-asset-classification";
 
 /** Rôles V1 explicites — distincts de DocumentRole DB (annual_evidence / durable_reference). */
 export type ExternalTakeoverOrchestrationRole =
@@ -184,11 +185,7 @@ function preBuildClientExceptions(
         : isCandidatePresent(asset.classification) &&
           asset.classification.value !== "terrain";
 
-    if (
-      amortizable &&
-      isCandidateAbsent(asset.prorataConvention) &&
-      !canOmitHistoricalProrata(asset)
-    ) {
+    if (amortizable && shouldAskClientForProrata(asset)) {
       exceptions.push({
         code: "PRORATA_REQUIRED",
         message: `prorataConvention manquante pour « ${asset.candidateKey} ».`,
@@ -448,7 +445,9 @@ export async function prepareExternalTakeover(
     reviewAnswers: input.reviewAnswers,
   });
 
-  const clientExceptions = preBuildClientExceptions(merged.assets, merged.stocks);
+  const assets = applyDeterministicDocumentaryClassifications(merged.assets);
+
+  const clientExceptions = preBuildClientExceptions(assets, merged.stocks);
 
   const controls = reconcileHistoricalTaxPackageControls(taxResult.package);
 
@@ -458,9 +457,9 @@ export async function prepareExternalTakeover(
     takeoverId: input.takeoverId,
     targetFiscalYear: input.targetFiscalYear,
     sourceFiscalYear: input.sourceFiscalYear,
-    assets: merged.assets,
+    assets,
     stableAssetIdByCandidateKey: defaultStableIds(
-      merged.assets,
+      assets,
       input.stableAssetIdByCandidateKey,
     ),
     stocks: merged.stocks,
@@ -485,7 +484,7 @@ export async function prepareExternalTakeover(
           },
         ],
         controls,
-        assets: merged.assets,
+        assets,
         buildResult,
       };
     }
@@ -493,7 +492,7 @@ export async function prepareExternalTakeover(
       status: "built",
       opening: selected.opening,
       controls,
-      assets: merged.assets,
+      assets,
       exceptions: [],
     };
   }
@@ -504,7 +503,7 @@ export async function prepareExternalTakeover(
       opening: buildResult.opening,
       exceptions: mapIssuesToTakeoverExceptions(buildResult.issues),
       controls,
-      assets: merged.assets,
+      assets,
       buildResult,
     };
   }
@@ -527,7 +526,7 @@ export async function prepareExternalTakeover(
       status: "blocked",
       exceptions: dedupeExceptions([...hardBlocks, ...clientExceptions, ...fromBuild]),
       controls,
-      assets: merged.assets,
+      assets,
       buildResult,
     };
   }
@@ -539,7 +538,19 @@ export async function prepareExternalTakeover(
       status: "incomplete",
       exceptions: dedupeExceptions([...clientExceptions, ...manualFromBuild]),
       controls,
-      assets: merged.assets,
+      assets,
+      buildResult,
+    };
+  }
+
+  // Plus de question client, mais Opening impossible → revue interne explicite
+  // (jamais un faux « terminé » / 0 restantes côté UI).
+  if (manualFromBuild.length > 0) {
+    return {
+      status: "blocked",
+      exceptions: manualFromBuild,
+      controls,
+      assets,
       buildResult,
     };
   }
@@ -548,7 +559,7 @@ export async function prepareExternalTakeover(
     status: "blocked",
     exceptions: fromBuild,
     controls,
-    assets: merged.assets,
+    assets,
     buildResult,
   };
 }

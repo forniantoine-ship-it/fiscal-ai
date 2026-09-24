@@ -106,6 +106,7 @@ export function buildDepreciationRegisterVisionSystemPrompt(): string {
     "rowType=asset pour une ligne immobilisation normale.",
     "rowType=exit uniquement si une sortie/cession/mise au rebut est explicitement indiquée sur cette ligne — jamais déduit.",
     "rowType=subtotal pour un sous-total par compte/section ; rowType=total pour un total global du document (ex. Total, Total Sorties, Total Hors Sorties).",
+    "Si un en-tête de compte PCG est imprimé (ex. « Compte 21540000 »), émets une ligne subtotal avec scopeLabel recopiant ce libellé — ne l'omets pas.",
     "rowType=unrecognized si une ligne contient des données mais ne correspond à aucun des cas ci-dessus — ne l'ignore pas, classe-la ainsi plutôt que de l'omettre.",
     "N'invente aucune ligne, aucun total, aucune valeur. En cas de doute sur une cellule, laisse-la null plutôt que de deviner.",
   ].join("\n");

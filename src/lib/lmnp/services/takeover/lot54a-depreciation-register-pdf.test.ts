@@ -302,6 +302,70 @@ describe("Lot 5.4-A — extractDepreciationRegisterFromPdf", () => {
     assert.equal(result.status, "unsupported");
     assert.ok(result.diagnostics.some((d) => d.code === "NOT_PDF"));
   });
+
+  it("PARSER CONTRACT — section Compte propage pcgAccountCode sur les assets suivants", async () => {
+    const result = await extractDepreciationRegisterFromPdf({
+      file: fakePdfFile(),
+      documentId: DOC,
+      targetFiscalYear: 2023,
+      rasterizer: fakeRasterizer(1),
+      visionRequester: visionReturning({
+        1: [
+          {
+            rowType: "subtotal",
+            pageNumber: 1,
+            scopeLabel: "Compte 21540000",
+            rawSnippet: "Compte 21540000",
+          },
+          assetRow({ assetRef: "A1", label: "Ponceuse" }),
+          assetRow({ assetRef: "A2", label: "Scie" }),
+        ],
+      }),
+    });
+    assert.equal(result.candidates.length, 2);
+    for (const c of result.candidates) {
+      assert.ok(c.pcgAccountCode && isCandidatePresent(c.pcgAccountCode));
+      assert.equal(c.pcgAccountCode!.value, "21540000");
+    }
+  });
+
+  it("PARSER CONTRACT — en-tête non reconnu après 2154 ne laisse pas fuir le compte", async () => {
+    const result = await extractDepreciationRegisterFromPdf({
+      file: fakePdfFile(),
+      documentId: DOC,
+      targetFiscalYear: 2023,
+      rasterizer: fakeRasterizer(1),
+      visionRequester: visionReturning({
+        1: [
+          {
+            rowType: "subtotal",
+            pageNumber: 1,
+            scopeLabel: "Compte 21540000",
+            rawSnippet: "Compte 21540000",
+          },
+          assetRow({ assetRef: "A1", label: "Ponceuse sous 2154" }),
+          {
+            rowType: "unrecognized",
+            pageNumber: 1,
+            label: "Compte divers non standard",
+            rawSnippet: "Compte divers non standard — section suivante",
+          },
+          assetRow({ assetRef: "A2", label: "Après section non reconnue" }),
+        ],
+      }),
+    });
+    assert.equal(result.candidates.length, 2);
+    const first = result.candidates.find((c) => c.sourceAssetRef === "A1");
+    const second = result.candidates.find((c) => c.sourceAssetRef === "A2");
+    assert.ok(first?.pcgAccountCode && isCandidatePresent(first.pcgAccountCode));
+    assert.equal(first!.pcgAccountCode!.value, "21540000");
+    assert.ok(second, "A2 extrait");
+    assert.equal(
+      Boolean(second!.pcgAccountCode && isCandidatePresent(second!.pcgAccountCode)),
+      false,
+      "A2 ne doit pas hériter de 2154 après section non mappable",
+    );
+  });
 });
 
 describe("Lot 5.4-A — parseRegisterDurationAnMois", () => {

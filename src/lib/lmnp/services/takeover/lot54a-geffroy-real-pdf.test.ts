@@ -64,10 +64,21 @@ function asset(
   };
 }
 
+function subtotal(scopeLabel: string, pageNumber: number): DepreciationRegisterPdfRow {
+  return {
+    rowType: "subtotal",
+    pageNumber,
+    scopeLabel,
+    rawSnippet: scopeLabel,
+  };
+}
+
 // Transcription manuelle du registre réel GEFFROY (pages "Edition des
 // dotations" p.2-3) — oracle établi indépendamment avant exécution.
+// Les en-têtes de compte PCG sont des subtotals documentaires réels.
 const PAGE1_ROWS: DepreciationRegisterPdfRow[] = [
   // Compte 21540000 — Matériels et outillages
+  subtotal("Compte 21540000", 1),
   asset("B70500", "Teletower telescopique Jefco", "31/05/2017", "1 292,81", "1 292,81", "L", "05 - 00", 1),
   asset("B80400", "JEFCO ponceuse", "30/04/2018", "1 559,91", undefined, "N", "00 - 00", 1),
   asset("B80700", "LA PLATEFORME karcher novipro", "19/07/2018", "529,00", "470,81", "L", "05 - 00", 1),
@@ -84,6 +95,7 @@ const PAGE1_ROWS: DepreciationRegisterPdfRow[] = [
   asset("C31000", "SCIE A ONGLET RADIALE KAPEX", "02/10/2023", "666,89", undefined, "L", "05 - 00", 1),
   asset("C40200", "PONCEUSE ROTO EXCENTRIQUE RO", "22/02/2023", "591,88", undefined, "L", "05 - 00", 1),
   // Compte 21820000 — Matériel de transport
+  subtotal("Compte 21820000", 1),
   asset("B80200", "PEUGEOT EXPERT VU", "19/02/2018", "9 500,00", "9 246,66", "L", "05 - 00", 1),
   asset("B90800", "RENAULT TRAFIC EE-286-XG", "28/08/2019", "7 799,37", "5 212,56", "L", "05 - 00", 1),
   asset("C10200", "MASTER III EY-332-ND RENAULT", "08/02/2021", "15 668,24", "5 945,23", "L", "05 - 00", 1),
@@ -91,6 +103,7 @@ const PAGE1_ROWS: DepreciationRegisterPdfRow[] = [
 
 const PAGE2_ROWS: DepreciationRegisterPdfRow[] = [
   // Compte 21830000 — Matériel de bureau et matériel
+  subtotal("Compte 21830000", 2),
   {
     rowType: "exit",
     pageNumber: 2,
@@ -150,6 +163,30 @@ function twoPageStubRasterizer(): (file: File) => Promise<RasterPageImage[]> {
 }
 
 describe("Lot 5.4-A — GEFFROY FRERES (PDF réel)", () => {
+  it("PARSER CONTRACT (Vision scriptée) — comptes PCG de section propagent pcgAccountCode", async () => {
+    // Ce test prouve le contrat de parsing après Vision, PAS un appel Vision live.
+    // Les subtotals « Compte 2154/2182/2183 » sont injectés dans l'oracle scripté
+    // (transcription documentaire), pas produits par un modèle OpenAI.
+    const result = await extractDepreciationRegisterFromPdf({
+      file: loadGeffroyFile(),
+      documentId: DOC,
+      targetFiscalYear: 2023,
+      rasterizer: twoPageStubRasterizer(),
+      visionRequester: scriptedVisionRequester(),
+    });
+
+    const byRef = (ref: string) => result.candidates.find((c) => c.sourceAssetRef === ref);
+    const materiel = byRef("B70500");
+    const transport = byRef("B80200");
+    const bureau = byRef("C00900");
+    assert.ok(materiel?.pcgAccountCode && isCandidatePresent(materiel.pcgAccountCode));
+    assert.equal(materiel!.pcgAccountCode!.value, "21540000");
+    assert.ok(transport?.pcgAccountCode && isCandidatePresent(transport.pcgAccountCode));
+    assert.equal(transport!.pcgAccountCode!.value, "21820000");
+    assert.ok(bureau?.pcgAccountCode && isCandidatePresent(bureau.pcgAccountCode));
+    assert.equal(bureau!.pcgAccountCode!.value, "21830000");
+  });
+
   it("détecte hasNativeText=true sur le PDF réel (extraction native pdfjs réelle)", async () => {
     const result = await extractDepreciationRegisterFromPdf({
       file: loadGeffroyFile(),
