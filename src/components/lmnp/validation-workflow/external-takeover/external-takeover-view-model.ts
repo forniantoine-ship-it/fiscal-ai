@@ -526,10 +526,57 @@ export function withDeficitsNoneAnswer(
   return {
     ...current,
     byCandidateKey: current?.byCandidateKey,
-    deficits: explicitAnswer([], { answeredAt }),
+    deficits: explicitAnswer([], {
+      answeredAt,
+      reason: "client_confirmed_no_remaining_deficit",
+    }),
     amortissementsReportes: current?.amortissementsReportes,
     amortissementsReportesSource: current?.amortissementsReportesSource,
   };
+}
+
+/**
+ * « Je ne sais pas » : retire toute déclaration précédente.
+ * L'absence de clé reste missing — jamais [].
+ */
+export function withDeficitsUnknownAnswer(
+  current: TakeoverReviewAnswers | undefined,
+): TakeoverReviewAnswers {
+  const next: TakeoverReviewAnswers = { ...current };
+  delete next.deficits;
+  return next;
+}
+
+export type DeficitAmountDraft = {
+  millesime: string;
+  montant: string;
+};
+
+/** Ligne vierge : le montant n'est pas prérempli à 0. */
+export function blankDeficitAmountDraft(referenceYear: number): DeficitAmountDraft {
+  return { millesime: String(referenceYear), montant: "" };
+}
+
+/**
+ * Une case montant vide n'est pas un zéro.
+ * Un « 0 » saisi explicitement reste une valeur consciente.
+ */
+export function parseDeficitAmountDrafts(
+  rows: readonly DeficitAmountDraft[],
+): OpeningDeficitRow[] | null {
+  if (rows.length === 0) return null;
+  const parsed: OpeningDeficitRow[] = [];
+  for (const row of rows) {
+    const millesimeText = row.millesime.trim();
+    const montantText = row.montant.trim();
+    if (millesimeText === "" || montantText === "") return null;
+    const millesime = Number(millesimeText);
+    const montant = Number(montantText);
+    if (!Number.isInteger(millesime) || millesime <= 1900) return null;
+    if (!Number.isFinite(montant) || montant < 0) return null;
+    parsed.push({ millesime, montant });
+  }
+  return parsed;
 }
 
 export function withDeficitsRowsAnswer(
@@ -554,9 +601,34 @@ export function withArdNoneAnswer(
     ...current,
     byCandidateKey: current?.byCandidateKey,
     deficits: current?.deficits,
-    amortissementsReportes: explicitAnswer(0, { answeredAt }),
+    amortissementsReportes: explicitAnswer(0, {
+      answeredAt,
+      reason: "client_confirmed_no_remaining_undeducted_depreciation",
+    }),
     amortissementsReportesSource: "manual_entry",
   };
+}
+
+/**
+ * « Je ne sais pas » : retire le montant et la source client.
+ * L'absence de clé reste missing — jamais 0.
+ */
+export function withArdUnknownAnswer(
+  current: TakeoverReviewAnswers | undefined,
+): TakeoverReviewAnswers {
+  const next: TakeoverReviewAnswers = { ...current };
+  delete next.amortissementsReportes;
+  delete next.amortissementsReportesSource;
+  return next;
+}
+
+/** Une saisie vide n'est pas un zéro. */
+export function parseExplicitArdAmount(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const amount = Number(text);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return amount;
 }
 
 export function withArdAmountAnswer(

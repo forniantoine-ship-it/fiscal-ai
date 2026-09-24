@@ -45,6 +45,7 @@ import {
   toClientQuestions,
   withArdAmountAnswer,
   withArdNoneAnswer,
+  withArdUnknownAnswer,
   withAssetClassificationAnswer,
   withAssetPropertyAnswer,
   withAssetProrataAnswer,
@@ -52,6 +53,7 @@ import {
   withBulkPropertyAnswer,
   withDeficitsNoneAnswer,
   withDeficitsRowsAnswer,
+  withDeficitsUnknownAnswer,
   withPropertyBulkDeclined,
 } from "./external-takeover-view-model";
 
@@ -69,6 +71,7 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<PrepareExternalTakeoverResult | undefined>();
   const [runError, setRunError] = useState<string | null>(null);
+  const [stockNotices, setStockNotices] = useState({ deficits: false, ard: false });
   const runIdRef = useRef(0);
 
   const taxDoc = workspace.documents.find(
@@ -427,24 +430,38 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
               ),
             )
           }
-          onDeficitsNone={() =>
+          onDeficitsNone={() => {
+            setStockNotices((current) => ({ ...current, deficits: false }));
             answerAndRerun(
               withDeficitsNoneAnswer(fiscalYear.externalTakeoverReviewAnswers, now()),
-            )
-          }
-          onDeficitsRows={(rows: OpeningDeficitRow[]) =>
+            );
+          }}
+          onDeficitsRows={(rows: OpeningDeficitRow[]) => {
+            setStockNotices((current) => ({ ...current, deficits: false }));
             answerAndRerun(
               withDeficitsRowsAnswer(fiscalYear.externalTakeoverReviewAnswers, rows, now()),
-            )
-          }
-          onArdNone={() =>
-            answerAndRerun(withArdNoneAnswer(fiscalYear.externalTakeoverReviewAnswers, now()))
-          }
-          onArdAmount={(amount) =>
+            );
+          }}
+          onDeficitsUnknown={() => {
+            setStockNotices((current) => ({ ...current, deficits: true }));
+            answerAndRerun(withDeficitsUnknownAnswer(fiscalYear.externalTakeoverReviewAnswers));
+          }}
+          onArdNone={() => {
+            setStockNotices((current) => ({ ...current, ard: false }));
+            answerAndRerun(withArdNoneAnswer(fiscalYear.externalTakeoverReviewAnswers, now()));
+          }}
+          onArdAmount={(amount) => {
+            setStockNotices((current) => ({ ...current, ard: false }));
             answerAndRerun(
               withArdAmountAnswer(fiscalYear.externalTakeoverReviewAnswers, amount, now()),
-            )
-          }
+            );
+          }}
+          onArdUnknown={() => {
+            setStockNotices((current) => ({ ...current, ard: true }));
+            answerAndRerun(withArdUnknownAnswer(fiscalYear.externalTakeoverReviewAnswers));
+          }}
+          reviewAnswers={fiscalYear.externalTakeoverReviewAnswers}
+          stockNotices={stockNotices}
         />
       ) : null}
 

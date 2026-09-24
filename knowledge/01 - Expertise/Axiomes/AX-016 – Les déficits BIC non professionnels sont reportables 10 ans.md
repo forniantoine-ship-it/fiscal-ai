@@ -5,12 +5,12 @@ type: axiome
 status: approved
 version: "1.0"
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-09-24
 owner: product-owner
-source: "CGI art. 156-I-1° bis"
+source: "CGI art. 156 I 1° ter"
 tags: [lmnp, déficit, report, 10-ans]
 portée: LMNP
-source_légale: "CGI art. 156-I-1° bis"
+source_légale: "CGI art. 156 I 1° ter"
 authority: loi
 confidence: certaine
 force: obligatoire

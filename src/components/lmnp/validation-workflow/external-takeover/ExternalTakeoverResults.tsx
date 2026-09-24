@@ -10,10 +10,15 @@ import {
   PRORATA_OPTIONS,
 } from "./external-takeover-copy";
 import {
+  blankDeficitAmountDraft,
   formatEuro,
+  parseDeficitAmountDrafts,
+  parseExplicitArdAmount,
   type AutoConfirmedAssetRow,
   type ClientExceptionQuestion,
+  type DeficitAmountDraft,
 } from "./external-takeover-view-model";
+import { isExplicitAnswer, type TakeoverReviewAnswers } from "@/lib/lmnp/services/takeover/review-answers";
 import type { Property } from "@/lib/lmnp/types";
 import type { OpeningProrataConvention } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { CandidateAssetClassification } from "@/lib/lmnp/services/takeover/asset-candidates";
@@ -74,8 +79,12 @@ export function ExternalTakeoverExceptionForms({
   onClassificationSuggestionsConfirm,
   onDeficitsNone,
   onDeficitsRows,
+  onDeficitsUnknown,
   onArdNone,
   onArdAmount,
+  onArdUnknown,
+  reviewAnswers,
+  stockNotices,
 }: {
   questions: ClientExceptionQuestion[];
   properties: Property[];
@@ -89,10 +98,20 @@ export function ExternalTakeoverExceptionForms({
   ) => void;
   onDeficitsNone: () => void;
   onDeficitsRows: (rows: OpeningDeficitRow[]) => void;
+  onDeficitsUnknown: () => void;
   onArdNone: () => void;
   onArdAmount: (amount: number) => void;
+  onArdUnknown: () => void;
+  reviewAnswers?: TakeoverReviewAnswers;
+  stockNotices?: { deficits: boolean; ard: boolean };
 }) {
-  if (questions.length === 0) return null;
+  const deficitsOpen = questions.some((q) => q.code === "DEFICITS_REQUIRED");
+  const ardOpen = questions.some((q) => q.code === "ARD_REQUIRED");
+  const showDeficitsRecap =
+    !deficitsOpen && isExplicitAnswer(reviewAnswers?.deficits);
+  const showArdRecap =
+    !ardOpen && isExplicitAnswer(reviewAnswers?.amortissementsReportes);
+  if (questions.length === 0 && !showDeficitsRecap && !showArdRecap) return null;
   return (
     <div className="space-y-4" aria-label="Informations à confirmer">
       {questions.map((q) => {
@@ -160,12 +179,80 @@ export function ExternalTakeoverExceptionForms({
               key={q.code}
               onNone={onDeficitsNone}
               onRows={onDeficitsRows}
+              onUnknown={onDeficitsUnknown}
+              stillNeeded={Boolean(stockNotices?.deficits)}
             />
           );
         }
-        return <ArdQuestion key={q.code} onNone={onArdNone} onAmount={onArdAmount} />;
+        if (q.code === "ARD_REQUIRED") {
+          return (
+            <ArdQuestion
+              key={q.code}
+              onNone={onArdNone}
+              onAmount={onArdAmount}
+              onUnknown={onArdUnknown}
+              stillNeeded={Boolean(stockNotices?.ard)}
+            />
+          );
+        }
+        return null;
       })}
+      {showDeficitsRecap && reviewAnswers?.deficits ? (
+        <StockAnswerRecap
+          key="deficits-recap"
+          title={EXTERNAL_TAKEOVER_COPY.deficitsQuestion}
+          summary={deficitAnswerSummary(reviewAnswers.deficits.value)}
+          onChange={onDeficitsUnknown}
+        />
+      ) : null}
+      {showArdRecap && reviewAnswers?.amortissementsReportes ? (
+        <StockAnswerRecap
+          key="ard-recap"
+          title={EXTERNAL_TAKEOVER_COPY.ardQuestion}
+          summary={ardAnswerSummary(reviewAnswers.amortissementsReportes.value)}
+          onChange={onArdUnknown}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function deficitAnswerSummary(rows: OpeningDeficitRow[]): string {
+  if (rows.length === 0) return EXTERNAL_TAKEOVER_COPY.deficitsNo;
+  return rows.map((row) => `${row.millesime} : ${formatEuro(row.montant)}`).join(" · ");
+}
+
+function ardAnswerSummary(amount: number): string {
+  if (amount === 0) return EXTERNAL_TAKEOVER_COPY.ardNo;
+  return formatEuro(amount);
+}
+
+function StockAnswerRecap({
+  title,
+  summary,
+  onChange,
+}: {
+  title: string;
+  summary: string;
+  onChange: () => void;
+}) {
+  return (
+    <fieldset className="space-y-2" style={fieldStyle}>
+      <legend style={legendStyle}>{title}</legend>
+      <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>{summary}</p>
+      <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onChange}>
+        {EXTERNAL_TAKEOVER_COPY.changeAnswer}
+      </button>
+    </fieldset>
+  );
+}
+
+function StockStillNeeded({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <p role="status" style={{ ...typography.body.desktop, color: colors.text.primary }}>
+      {EXTERNAL_TAKEOVER_COPY.stockStillNeeded}
+    </p>
   );
 }
 
@@ -341,24 +428,37 @@ function ChoiceQuestion({
 function DeficitsQuestion({
   onNone,
   onRows,
+  onUnknown,
+  stillNeeded,
 }: {
   onNone: () => void;
   onRows: (rows: OpeningDeficitRow[]) => void;
+  onUnknown: () => void;
+  stillNeeded: boolean;
 }) {
   const [mode, setMode] = useState<"ask" | "yes">("ask");
-  const [rows, setRows] = useState<OpeningDeficitRow[]>([{ millesime: new Date().getFullYear() - 1, montant: 0 }]);
+  const [rows, setRows] = useState<DeficitAmountDraft[]>([
+    blankDeficitAmountDraft(new Date().getFullYear() - 1),
+  ]);
   const [error, setError] = useState<string | null>(null);
 
   if (mode === "ask") {
     return (
       <fieldset className="space-y-2" style={fieldStyle}>
         <legend style={legendStyle}>{EXTERNAL_TAKEOVER_COPY.deficitsQuestion}</legend>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button type="button" className="min-h-[40px]" style={optionStyle} onClick={onNone}>
-            {EXTERNAL_TAKEOVER_COPY.no}
+        <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+          {EXTERNAL_TAKEOVER_COPY.deficitsUnknownHelp}
+        </p>
+        <StockStillNeeded show={stillNeeded} />
+        <div className="flex flex-col gap-2">
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={() => setMode("yes")}>
+            {EXTERNAL_TAKEOVER_COPY.deficitsYes}
           </button>
-          <button type="button" className="min-h-[40px]" style={optionStyle} onClick={() => setMode("yes")}>
-            {EXTERNAL_TAKEOVER_COPY.yes}
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onNone}>
+            {EXTERNAL_TAKEOVER_COPY.deficitsNo}
+          </button>
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onUnknown}>
+            {EXTERNAL_TAKEOVER_COPY.unknown}
           </button>
         </div>
       </fieldset>
@@ -368,6 +468,7 @@ function DeficitsQuestion({
   return (
     <fieldset className="space-y-3" style={fieldStyle}>
       <legend style={legendStyle}>{EXTERNAL_TAKEOVER_COPY.deficitsQuestion}</legend>
+      <StockStillNeeded show={stillNeeded} />
       {rows.map((row, index) => (
         <div key={index} className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1" style={typography.caption.desktop}>
@@ -375,11 +476,11 @@ function DeficitsQuestion({
             <input
               type="number"
               inputMode="numeric"
-              value={row.millesime || ""}
+              value={row.millesime}
               aria-invalid={Boolean(error)}
               onChange={(e) => {
                 const next = [...rows];
-                next[index] = { ...row, millesime: Number(e.target.value) };
+                next[index] = { ...row, millesime: e.target.value };
                 setRows(next);
               }}
               style={inputStyle}
@@ -392,11 +493,11 @@ function DeficitsQuestion({
               inputMode="decimal"
               min={0}
               step="1"
-              value={Number.isFinite(row.montant) ? row.montant : ""}
+              value={row.montant}
               aria-invalid={Boolean(error)}
               onChange={(e) => {
                 const next = [...rows];
-                next[index] = { ...row, montant: Number(e.target.value) };
+                next[index] = { ...row, montant: e.target.value };
                 setRows(next);
               }}
               style={inputStyle}
@@ -414,7 +515,7 @@ function DeficitsQuestion({
           type="button"
           style={optionStyle}
           onClick={() =>
-            setRows([...rows, { millesime: new Date().getFullYear() - 1, montant: 0 }])
+            setRows([...rows, blankDeficitAmountDraft(new Date().getFullYear() - 1)])
           }
         >
           {EXTERNAL_TAKEOVER_COPY.addDeficitLine}
@@ -423,22 +524,19 @@ function DeficitsQuestion({
           type="button"
           style={optionStyle}
           onClick={() => {
-            const valid = rows.every(
-              (r) =>
-                Number.isFinite(r.millesime) &&
-                r.millesime > 1900 &&
-                Number.isFinite(r.montant) &&
-                r.montant >= 0,
-            );
-            if (!valid || rows.length === 0) {
+            const parsed = parseDeficitAmountDrafts(rows);
+            if (!parsed) {
               setError("Indiquez une année et un montant valides pour chaque ligne.");
               return;
             }
             setError(null);
-            onRows(rows);
+            onRows(parsed);
           }}
         >
           {EXTERNAL_TAKEOVER_COPY.confirm}
+        </button>
+        <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onUnknown}>
+          {EXTERNAL_TAKEOVER_COPY.unknown}
         </button>
       </div>
     </fieldset>
@@ -448,9 +546,13 @@ function DeficitsQuestion({
 function ArdQuestion({
   onNone,
   onAmount,
+  onUnknown,
+  stillNeeded,
 }: {
   onNone: () => void;
   onAmount: (amount: number) => void;
+  onUnknown: () => void;
+  stillNeeded: boolean;
 }) {
   const [mode, setMode] = useState<"ask" | "yes">("ask");
   const [amount, setAmount] = useState("");
@@ -460,12 +562,19 @@ function ArdQuestion({
     return (
       <fieldset className="space-y-2" style={fieldStyle}>
         <legend style={legendStyle}>{EXTERNAL_TAKEOVER_COPY.ardQuestion}</legend>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <button type="button" className="min-h-[40px]" style={optionStyle} onClick={onNone}>
-            {EXTERNAL_TAKEOVER_COPY.no}
+        <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+          {EXTERNAL_TAKEOVER_COPY.ardUnknownHelp}
+        </p>
+        <StockStillNeeded show={stillNeeded} />
+        <div className="flex flex-col gap-2">
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={() => setMode("yes")}>
+            {EXTERNAL_TAKEOVER_COPY.ardYes}
           </button>
-          <button type="button" className="min-h-[40px]" style={optionStyle} onClick={() => setMode("yes")}>
-            {EXTERNAL_TAKEOVER_COPY.yes}
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onNone}>
+            {EXTERNAL_TAKEOVER_COPY.ardNo}
+          </button>
+          <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onUnknown}>
+            {EXTERNAL_TAKEOVER_COPY.unknown}
           </button>
         </div>
       </fieldset>
@@ -475,6 +584,7 @@ function ArdQuestion({
   return (
     <fieldset className="space-y-3" style={fieldStyle}>
       <legend style={legendStyle}>{EXTERNAL_TAKEOVER_COPY.ardQuestion}</legend>
+      <StockStillNeeded show={stillNeeded} />
       <label className="flex flex-col gap-1" style={typography.caption.desktop}>
         {EXTERNAL_TAKEOVER_COPY.montantLabel}
         <input
@@ -492,21 +602,26 @@ function ArdQuestion({
           {error}
         </p>
       ) : null}
-      <button
-        type="button"
-        style={optionStyle}
-        onClick={() => {
-          const n = Number(amount);
-          if (!Number.isFinite(n) || n < 0) {
-            setError("Indiquez un montant valide.");
-            return;
-          }
-          setError(null);
-          onAmount(n);
-        }}
-      >
-        {EXTERNAL_TAKEOVER_COPY.confirm}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          style={optionStyle}
+          onClick={() => {
+            const parsed = parseExplicitArdAmount(amount);
+            if (parsed === null) {
+              setError("Indiquez un montant valide.");
+              return;
+            }
+            setError(null);
+            onAmount(parsed);
+          }}
+        >
+          {EXTERNAL_TAKEOVER_COPY.confirm}
+        </button>
+        <button type="button" className="min-h-[40px] text-left" style={optionStyle} onClick={onUnknown}>
+          {EXTERNAL_TAKEOVER_COPY.unknown}
+        </button>
+      </div>
     </fieldset>
   );
 }

@@ -60,13 +60,15 @@ export type TakeoverReviewAnswers = {
    */
   classificationSuggestionsDeclined?: ExplicitTakeoverAnswer<true>;
   /**
-   * undefined = unanswered (≠ []).
-   * ExplicitTakeoverAnswer([]) = aucun déficit déclaré.
+   * Champ absent = inconnu / non répondu (≠ []).
+   * ExplicitTakeoverAnswer([]) = absence confirmée par le client.
+   * « Je ne sais pas » retire la clé : jamais un zéro implicite.
    */
   deficits?: ExplicitTakeoverAnswer<CandidateDeficitRow[]>;
   /**
-   * undefined = unanswered (≠ 0).
-   * ExplicitTakeoverAnswer(0) = aucun ARD.
+   * Champ absent = inconnu / non répondu (≠ 0).
+   * ExplicitTakeoverAnswer(0) = aucun ARD confirmé par le client.
+   * « Je ne sais pas » retire la clé : jamais un zéro implicite.
    */
   amortissementsReportes?: ExplicitTakeoverAnswer<number>;
   /**

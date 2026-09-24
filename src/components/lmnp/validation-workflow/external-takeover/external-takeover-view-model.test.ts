@@ -12,17 +12,24 @@ import type { TakeoverException } from "@/lib/lmnp/services/takeover/exceptions"
 import type { PrepareExternalTakeoverResult } from "@/lib/lmnp/services/takeover/prepare-external-takeover";
 import { isExplicitAnswer } from "@/lib/lmnp/services/takeover/review-answers";
 import {
+  blankDeficitAmountDraft,
   buildAutoConfirmedRows,
   buildProgress,
   clientExceptionsFromResult,
+  countOpenClientQuestions,
   hasBothTakeoverDocuments,
   hasExtractionFailure,
   hasManualReviewState,
   isExternalTakeoverComplete,
+  parseDeficitAmountDrafts,
+  parseExplicitArdAmount,
   toClientQuestions,
   withArdNoneAnswer,
+  withArdUnknownAnswer,
   withAssetPropertyAnswer,
   withDeficitsNoneAnswer,
+  withDeficitsRowsAnswer,
+  withDeficitsUnknownAnswer,
 } from "./external-takeover-view-model";
 import { EXTERNAL_TAKEOVER_COPY } from "./external-takeover-copy";
 import { resolvePriorHistoryCardView, PRIOR_HISTORY_COPY } from "../prior-history-card-view";
@@ -261,5 +268,88 @@ describe("Lot 5.2 — progression + wording client", () => {
   it("copy sans jargon technique interdit", () => {
     const text = JSON.stringify(EXTERNAL_TAKEOVER_COPY);
     assert.doesNotMatch(text, /\b4E\b|\b4F\b|CandidateValue|Opening\b|ARD\b|stock fiscal|not_comparable|control fact/i);
+    assert.match(text, /Je ne sais pas/);
+    assert.match(text, /aucun déficit LMNP restant à reporter/);
+    assert.match(text, /aucun amortissement non déduit restant à reporter/);
+    assert.match(text, /encore nécessaire pour finaliser la reprise/);
+  });
+
+  it("UNKNOWN laisse la question ouverte : pas 0 restante, reprise non terminée", () => {
+    const questions = toClientQuestions(
+      [
+        { code: "DEFICITS_REQUIRED", message: "d", answerability: "client" },
+        { code: "ARD_REQUIRED", message: "a", answerability: "client" },
+      ],
+      [],
+    );
+    const count = countOpenClientQuestions(questions);
+    assert.equal(count, 2);
+    const steps = buildProgress({
+      documentsReady: true,
+      analyzing: false,
+      hasResult: true,
+      clientExceptionCount: count,
+      complete: false,
+      labels: EXTERNAL_TAKEOVER_COPY.progress,
+    });
+    assert.match(steps[2]!.detail, /2 restantes/);
+    assert.doesNotMatch(steps[2]!.detail, /0 restante/);
+    assert.equal(steps[2]!.done, false);
+    assert.equal(steps[3]!.done, false);
+    assert.equal(isExternalTakeoverComplete(undefined), false);
+  });
+});
+
+describe("Stocks fiscaux — je ne sais pas", () => {
+  it("NON reste une déclaration explicite", () => {
+    const deficits = withDeficitsNoneAnswer(undefined, NOW);
+    assert.deepEqual(deficits.deficits?.value, []);
+    assert.equal(deficits.deficits?.reason, "client_confirmed_no_remaining_deficit");
+    const ard = withArdNoneAnswer(undefined, NOW);
+    assert.equal(ard.amortissementsReportes?.value, 0);
+    assert.equal(
+      ard.amortissementsReportes?.reason,
+      "client_confirmed_no_remaining_undeducted_depreciation",
+    );
+  });
+
+  it("UNKNOWN retire une déclaration précédente et survit au rechargement JSON", () => {
+    const none = withArdNoneAnswer(withDeficitsNoneAnswer(undefined, NOW), NOW);
+    const unknown = withArdUnknownAnswer(withDeficitsUnknownAnswer(none));
+    assert.equal("deficits" in unknown, false);
+    assert.equal("amortissementsReportes" in unknown, false);
+    const reloaded = JSON.parse(JSON.stringify(unknown)) as typeof unknown;
+    assert.equal(reloaded.deficits, undefined);
+    assert.equal(reloaded.amortissementsReportes, undefined);
+    assert.equal(isExplicitAnswer(reloaded.deficits), false);
+    assert.equal(isExplicitAnswer(reloaded.amortissementsReportes), false);
+  });
+
+  it("NO → UNKNOWN retire le zéro, YES → UNKNOWN retire la valeur, UNKNOWN → NO la réécrit", () => {
+    const noThenUnknown = withDeficitsUnknownAnswer(withDeficitsNoneAnswer(undefined, NOW));
+    assert.equal(noThenUnknown.deficits, undefined);
+    const yesThenUnknown = withDeficitsUnknownAnswer(
+      withDeficitsRowsAnswer(undefined, [{ millesime: 2022, montant: 400 }], NOW),
+    );
+    assert.equal(yesThenUnknown.deficits, undefined);
+    const unknownThenNo = withDeficitsNoneAnswer(yesThenUnknown, NOW);
+    assert.deepEqual(unknownThenNo.deficits?.value, []);
+
+    const ardNoThenUnknown = withArdUnknownAnswer(withArdNoneAnswer(undefined, NOW));
+    assert.equal(ardNoThenUnknown.amortissementsReportes, undefined);
+    assert.equal(ardNoThenUnknown.amortissementsReportesSource, undefined);
+  });
+
+  it("une ligne de déficit vide n'est pas un zéro, un 0 saisi reste conscient", () => {
+    assert.equal(parseDeficitAmountDrafts([blankDeficitAmountDraft(2024)]), null);
+    assert.equal(parseExplicitArdAmount(""), null);
+    assert.equal(parseExplicitArdAmount("   "), null);
+    assert.deepEqual(parseDeficitAmountDrafts([{ millesime: "2024", montant: "0" }]), [
+      { millesime: 2024, montant: 0 },
+    ]);
+    assert.deepEqual(parseDeficitAmountDrafts([{ millesime: "2022", montant: "1500" }]), [
+      { millesime: 2022, montant: 1500 },
+    ]);
+    assert.equal(parseExplicitArdAmount("250"), 250);
   });
 });

@@ -22,7 +22,7 @@ import {
   type OpeningAsset,
   type OpeningIssue,
 } from "@/lib/lmnp/services/fiscal-year-opening";
-import { isCandidatePresent } from "./candidate-value";
+import { isCandidatePresent, type CandidateValue } from "./candidate-value";
 import type { CandidateHistoricalAsset } from "./asset-candidates";
 import type { CandidateFiscalStocks } from "./fiscal-stocks-candidates";
 import {
@@ -272,13 +272,42 @@ function assertAnchoredAssetsReady(
   return issues;
 }
 
+const CLIENT_STOCK_DECLARATION_NOTE = "déclaration explicite du client";
+
+/**
+ * sourceKind reste « external » : l'union OpeningEvidence est partagée
+ * avec la clôture interne. La distinction document / déclaration client
+ * tient dans les champs déjà prévus (note + sourceRef), sans nouveau
+ * moteur de preuve.
+ */
+function stockFieldEvidence(
+  candidate: CandidateValue<unknown>,
+  fieldPath: string,
+  baseNote: string,
+): FiscalYearOpening["provenance"][string] {
+  if (isCandidatePresent(candidate) && candidate.provenance.fieldSource === "user_correction") {
+    return {
+      fieldPath,
+      sourceKind: "external",
+      sourceRef: candidate.provenance.documentId,
+      note: `${baseNote} — ${CLIENT_STOCK_DECLARATION_NOTE}`,
+    };
+  }
+  return {
+    fieldPath,
+    sourceKind: "external",
+    note: baseNote,
+  };
+}
+
 function assembleOpening(params: {
   input: BuildExternalTakeoverFiscalYearOpeningInput;
   assets: OpeningAsset[];
   stocks: FiscalYearOpening["stocks"];
+  stockCandidates: CandidateFiscalStocks;
   validation: FiscalYearOpening["validation"];
 }): FiscalYearOpening {
-  const { input, assets, stocks, validation } = params;
+  const { input, assets, stocks, stockCandidates, validation } = params;
   return {
     openingId: input.openingId,
     revision: 1,
@@ -306,16 +335,16 @@ function assembleOpening(params: {
         sourceRef: input.takeoverId,
         note: "external_takeover 4F.1 — preuves documentaires non réécrites",
       },
-      "stocks.deficits": {
-        fieldPath: "stocks.deficits",
-        sourceKind: "external",
-        note: "CandidateFiscalStocks explicitement présents (present y compris [] / 0)",
-      },
-      "stocks.amortissementsReportes": {
-        fieldPath: "stocks.amortissementsReportes",
-        sourceKind: "external",
-        note: "Stock ARD historique — jamais case 318",
-      },
+      "stocks.deficits": stockFieldEvidence(
+        stockCandidates.deficits,
+        "stocks.deficits",
+        "CandidateFiscalStocks explicitement présents (present y compris [] / 0)",
+      ),
+      "stocks.amortissementsReportes": stockFieldEvidence(
+        stockCandidates.amortissementsReportes,
+        "stocks.amortissementsReportes",
+        "Stock ARD historique — jamais case 318",
+      ),
     },
     validation,
   };
@@ -404,6 +433,7 @@ export function buildExternalTakeoverFiscalYearOpening(
     input,
     assets: mappedAssets.assets,
     stocks: mappedStocks.stocks,
+    stockCandidates: input.stocks,
     validation: { status: "pending" },
   });
 

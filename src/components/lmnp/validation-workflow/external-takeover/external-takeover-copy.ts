@@ -45,7 +45,17 @@ export const EXTERNAL_TAKEOVER_COPY = {
   classificationQuestion: "De quel type d'élément s'agit-il ?",
   deficitsQuestion:
     "Restait-il des déficits LMNP à reporter à la fin de votre dernière déclaration ?",
+  deficitsYes: "Oui, il me restait des déficits à reporter.",
+  deficitsNo: "Je confirme que je n'avais aucun déficit LMNP restant à reporter.",
+  deficitsUnknownHelp:
+    "Si vous n'êtes pas sûr, choisissez « Je ne sais pas ». Nous ne considérerons pas qu'il n'y avait aucun déficit.",
   ardQuestion: "Restait-il des amortissements que vous n'aviez pas encore pu déduire ?",
+  ardYes: "Oui, il me restait des amortissements que je n'avais pas pu déduire.",
+  ardNo: "Je confirme que je n'avais aucun amortissement non déduit restant à reporter.",
+  ardUnknownHelp:
+    "Si vous n'êtes pas sûr, choisissez « Je ne sais pas ». Nous ne considérerons pas le montant comme nul.",
+  unknown: "Je ne sais pas",
+  stockStillNeeded: "Cette information est encore nécessaire pour finaliser la reprise.",
   yes: "Oui",
   no: "Non",
   millesimeLabel: "Année",

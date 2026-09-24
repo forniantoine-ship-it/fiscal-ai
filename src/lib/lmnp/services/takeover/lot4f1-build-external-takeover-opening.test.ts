@@ -566,6 +566,61 @@ describe("Lot 4F.1 — zéros / totaux / no recalc", () => {
     }
   });
 
+  it("provenance documentaire reste external, sans marqueur de déclaration client", () => {
+    const result = buildExternalTakeoverFiscalYearOpening(baseInput());
+    assert.equal(result.status, "built");
+    if (result.status !== "built") return;
+    const deficits = result.opening.provenance["stocks.deficits"];
+    const ard = result.opening.provenance["stocks.amortissementsReportes"];
+    assert.equal(deficits?.sourceKind, "external");
+    assert.equal(ard?.sourceKind, "external");
+    assert.equal(deficits?.sourceRef, undefined);
+    assert.doesNotMatch(deficits?.note ?? "", /déclaration explicite du client/);
+    assert.doesNotMatch(ard?.note ?? "", /déclaration explicite du client/);
+  });
+
+  it("déclaration client explicite reste identifiable dans l'Opening", () => {
+    const client = (sourceRef: string): CandidateProvenance => ({
+      ...taxProv(sourceRef),
+      documentId: "takeover-review-answers",
+      documentRole: "other",
+      extractionMethod: "user_review_answer",
+      fieldSource: "user_correction",
+    });
+    const result = buildExternalTakeoverFiscalYearOpening(
+      baseInput({
+        stocks: {
+          deficits: presentCandidate([], "direct", client("stocks:deficits")),
+          amortissementsReportes: presentCandidate(0, "direct", client("stocks:ard")),
+          amortissementsReportesSource: "manual_entry",
+        },
+      }),
+    );
+    assert.equal(result.status, "built");
+    if (result.status !== "built") return;
+    assert.equal(result.opening.provenance["stocks.deficits"]?.sourceKind, "external");
+    assert.equal(
+      result.opening.provenance["stocks.deficits"]?.sourceRef,
+      "takeover-review-answers",
+    );
+    assert.match(
+      result.opening.provenance["stocks.deficits"]?.note ?? "",
+      /déclaration explicite du client/,
+    );
+    assert.match(
+      result.opening.provenance["stocks.amortissementsReportes"]?.note ?? "",
+      /déclaration explicite du client/,
+    );
+    assert.ok(isAvailable(result.opening.stocks.deficits));
+    if (isAvailable(result.opening.stocks.deficits)) {
+      assert.deepEqual(result.opening.stocks.deficits.value, []);
+    }
+    assert.ok(isAvailable(result.opening.stocks.amortissementsReportes));
+    if (isAvailable(result.opening.stocks.amortissementsReportes)) {
+      assert.equal(result.opening.stocks.amortissementsReportes.value, 0);
+    }
+  });
+
   it("missing stocks ≠ zero stocks", () => {
     const missing = buildExternalTakeoverFiscalYearOpening(
       baseInput({
