@@ -39,6 +39,7 @@ import {
 import {
   assertHistoricalInventoryMatchesApplied,
   composeExternalHistoryImmobilisationsRfs,
+  EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT,
   EXTERNAL_HISTORY_INVENTORY_MISMATCH,
   EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE,
   selectCurrentYearAcquisitions,
@@ -61,7 +62,11 @@ export const IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED =
   "IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED";
 
 /** P0-2A — inventaire historique RFS ≠ Opening appliqué (anti-S3). */
-export { EXTERNAL_HISTORY_INVENTORY_MISMATCH, EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE };
+export {
+  EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT,
+  EXTERNAL_HISTORY_INVENTORY_MISMATCH,
+  EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE,
+};
 
 /**
  * Blocker #3 — détection + validité marker uniquement (déterministe, offline).
@@ -277,11 +282,28 @@ export function runDeclarationGeneration(
         .map((l) => l.id)
         .filter((id): id is string => typeof id === "string" && id.length > 0),
     );
-    openingCurrentYearAcquisitions = selectCurrentYearAcquisitions({
+    const f012Partition = selectCurrentYearAcquisitions({
       composants: f012Source,
       exerciceFiscal: fiscalYear,
       historicalAssetIds: historicalIds,
     });
+    // P0-2A.1 — F-012 hors Opening et hors année N : fail-closed, jamais drop silencieux.
+    if (f012Partition.incoherent.length > 0) {
+      const ids = f012Partition.incoherent.map((c) => c.id).join(", ");
+      return {
+        status: "blocked",
+        anomalies: [
+          {
+            severity: "error",
+            field: "chargesAssistant.composantsNouveaux",
+            message:
+              `${EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT}: acquisition(s) F-012 ` +
+              `incohérente(s) avec l'exercice ${fiscalYear} (hors Opening) : ${ids}.`,
+          },
+        ],
+      };
+    }
+    openingCurrentYearAcquisitions = f012Partition.acquisitions;
     const f012Details = detailComposantsNouveaux(
       openingCurrentYearAcquisitions,
       fiscalYear,
@@ -314,6 +336,15 @@ export function runDeclarationGeneration(
   const financementBrut = effectiveFinancementCharges(draft);
   const financementCharges = financementBrut ? { ...financementBrut, excludedLoanIds } : financementBrut;
 
+  // P0-2A.1 — reprise EXTERNAL_HISTORY : fraisEnCharges du draft F-010 ne doit
+  // jamais contaminer F-006 (acquisition déjà traitée historiquement — JUG-001 /
+  // TRF-0001 hors exercice N). Source = Opening external_takeover, pas le draft.
+  const isExternalTakeoverOpening = fiscalYearOpening?.source.kind === "external_takeover";
+  const logementAmortissementForF006 =
+    draft?.logementAmortissement && isExternalTakeoverOpening
+      ? { ...draft.logementAmortissement, fraisEnCharges: 0 }
+      : draft?.logementAmortissement;
+
   const fiscalComputation = produceFiscalResult({
     exerciceFiscal: fiscalYear,
     activite: {
@@ -321,7 +352,7 @@ export function runDeclarationGeneration(
       dateMiseEnService: draft?.dateMiseEnService,
       activityType: draft?.activityType,
     },
-    logementAmortissement: draft?.logementAmortissement,
+    logementAmortissement: logementAmortissementForF006,
     financementCharges,
     chargesAssistant: draft?.chargesAssistant,
     revenusAssistant: draft?.revenusAssistant,

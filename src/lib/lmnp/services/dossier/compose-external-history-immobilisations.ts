@@ -24,26 +24,45 @@ export const EXTERNAL_HISTORY_INVENTORY_MISMATCH =
   "EXTERNAL_HISTORY_INVENTORY_MISMATCH";
 export const EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE =
   "EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE";
+/** P0-2A.1 — F-012 hors Opening et hors année N : fail-closed, jamais drop silencieux. */
+export const EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT =
+  "EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT";
+
+export type SelectCurrentYearAcquisitionsResult = {
+  /** Acquisitions de l'exercice N (hors ids déjà ancrés Opening). */
+  acquisitions: ComposantNouveau[];
+  /**
+   * Présents dans F-012, absents de l'Opening, mais `dateDebut` ≠ exercice N.
+   * Ne doivent jamais disparaître silencieusement de la RFS.
+   */
+  incoherent: ComposantNouveau[];
+};
 
 /**
  * Acquisitions de l'exercice N uniquement — jamais les historiques F-012
  * qui seraient déjà dans l'Opening (évite le double comptage).
+ * Les F-012 ni historiques ni N sont exposés dans `incoherent` (P0-2A.1).
  */
 export function selectCurrentYearAcquisitions(input: {
   composants: ComposantNouveau[] | undefined;
   exerciceFiscal: number;
   historicalAssetIds: ReadonlySet<string>;
-}): ComposantNouveau[] {
-  if (!input.composants?.length) return [];
-  const byId = new Map<string, ComposantNouveau>();
+}): SelectCurrentYearAcquisitionsResult {
+  if (!input.composants?.length) return { acquisitions: [], incoherent: [] };
+  const acquisitionsById = new Map<string, ComposantNouveau>();
+  const incoherentById = new Map<string, ComposantNouveau>();
   for (const c of input.composants) {
     if (input.historicalAssetIds.has(c.id)) continue;
-    if (provenanceForDateDebut(c.dateDebut, input.exerciceFiscal) !== "acquisition_exercice") {
-      continue;
+    if (provenanceForDateDebut(c.dateDebut, input.exerciceFiscal) === "acquisition_exercice") {
+      acquisitionsById.set(c.id, c);
+    } else {
+      incoherentById.set(c.id, c);
     }
-    byId.set(c.id, c);
   }
-  return [...byId.values()];
+  return {
+    acquisitions: [...acquisitionsById.values()],
+    incoherent: [...incoherentById.values()],
+  };
 }
 
 export function historicalCumulOuvertureFromAppliedPlan(plan: AmortissementPlan): number {
@@ -73,7 +92,7 @@ export function composeExternalHistoryImmobilisationsRfs(input: {
       .map((l) => l.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   );
-  const acquisitions = selectCurrentYearAcquisitions({
+  const { acquisitions } = selectCurrentYearAcquisitions({
     composants: input.currentYearAcquisitions,
     exerciceFiscal: input.exerciceFiscal,
     historicalAssetIds: historicalIds,

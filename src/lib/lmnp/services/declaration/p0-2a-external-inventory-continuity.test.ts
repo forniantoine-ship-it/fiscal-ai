@@ -21,6 +21,7 @@ import { available, unavailable } from "@/lib/lmnp/services/fiscal-year-opening/
 import {
   assertHistoricalInventoryMatchesApplied,
   composeExternalHistoryImmobilisationsRfs,
+  EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT,
   EXTERNAL_HISTORY_INVENTORY_MISMATCH,
 } from "@/lib/lmnp/services/dossier/compose-external-history-immobilisations";
 import { snapshotImmobilisationsFromGeneratedRfs } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
@@ -474,5 +475,82 @@ describe("P0-2A — garde anti-S3", () => {
     assert.equal(guard.ok, false);
     if (guard.ok) return;
     assert.equal(guard.code, EXTERNAL_HISTORY_INVENTORY_MISMATCH);
+  });
+});
+
+describe("P0-2A.1 — résidus contamination / silence", () => {
+  it("fraisEnCharges draft F-010 ne contamine pas F-006 sous EXTERNAL_HISTORY", () => {
+    const FRAIS_FUITE = 19_500;
+    const base = divergentDraft();
+    const gen = runDeclarationGeneration(
+      {
+        ...base,
+        logementAmortissement: {
+          ...base.logementAmortissement!,
+          fraisEnCharges: FRAIS_FUITE,
+        },
+      },
+      FY,
+      undefined,
+      undefined,
+      undefined,
+      { propertyId: PROP, composantsF012Merged: [ACQUISITION_C] },
+      openingAB(),
+    );
+    assert.equal(gen.status, "generated", JSON.stringify(gen));
+    if (gen.status !== "generated") return;
+
+    // Draft totalDeductible = 4000 ; sans fuite frais → chargesExploitation = 4000.
+    assert.equal(gen.rfs.fiscalResult.charges.fraisAcquisitionEnCharges, 0);
+    assert.equal(gen.rfs.fiscalResult.charges.chargesExploitation, 4_000);
+    assert.notEqual(
+      gen.rfs.fiscalResult.charges.chargesExploitation,
+      4_000 + FRAIS_FUITE,
+      "fraisEnCharges draft ne doit pas gonfler chargesExploitation",
+    );
+  });
+
+  it("acquisition F-012 incohérente avec l'exercice → blocked, jamais absente de la RFS", () => {
+    const INCOHERENT: ComposantNouveau = {
+      id: "asset-orphan-2023",
+      label: "Travaux année incohérente",
+      montant: 5_000,
+      dureeAnnees: 10,
+      dotationAnnuelle: 500,
+      nature: "amélioration",
+      // Exercice = 2025 ; dateDebut hors N et hors Opening → incohérent.
+      dateDebut: "2023-06-01",
+      origin: "f012_travaux",
+    };
+
+    const gen = runDeclarationGeneration(
+      divergentDraft({
+        chargesAssistant: {
+          exerciceFiscal: FY,
+          totalDeductible: 4_000,
+          totalPreExploitation: 0,
+          composantsNouveaux: [ACQUISITION_C, INCOHERENT],
+        },
+      }),
+      FY,
+      undefined,
+      undefined,
+      undefined,
+      { propertyId: PROP, composantsF012Merged: [ACQUISITION_C, INCOHERENT] },
+      openingAB(),
+    );
+
+    assert.equal(gen.status, "blocked");
+    if (gen.status !== "blocked") return;
+    assert.ok(
+      gen.anomalies.some((a) => a.message.includes(EXTERNAL_HISTORY_F012_ACQUISITION_INCOHERENT)),
+      JSON.stringify(gen.anomalies),
+    );
+    assert.ok(
+      gen.anomalies.some((a) => a.message.includes("asset-orphan-2023")),
+      "l'id incohérent doit être tracé — pas un silence",
+    );
+    // Aucune RFS publiée sans l'actif (pas de disparition silencieuse).
+    assert.equal("rfs" in gen && (gen as { rfs?: unknown }).rfs, false);
   });
 });
