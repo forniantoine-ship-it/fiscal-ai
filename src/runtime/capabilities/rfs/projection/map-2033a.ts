@@ -18,6 +18,7 @@ import {
 } from "../../bilan/ventilation-tiers";
 import { resolveTotalCapitauxPropres } from "../../bilan/total-capitaux-propres";
 import type { BilanEquilibreStatus, LignePatrimonialeResolution } from "../../bilan/types";
+import { computeClosingImmobilisationsTotals } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 
 /**
  * Projection Cerfa 2033-A-SD (bilan simplifié) — consomme UNIQUEMENT la RFS
@@ -316,8 +317,23 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   // non modifiée).
   const patrimoine = rfs.patrimoine;
 
+  // Lot 5 / P0-2A — avec `composantsDetail` enrichi, 028/030 alignent sur
+  // map-2033c (F-010 + F-012). Sans détail + composantsNouveaux : Cycle 37.
+  const f012Details = immo?.composantsDetail ?? [];
+  const f012SansDetail =
+    immo !== undefined &&
+    (immo.composantsNouveaux?.length ?? 0) > 0 &&
+    f012Details.length === 0;
+  const dotationF012 = round2(f012Details.reduce((acc, d) => acc + d.dotationExercice, 0));
+  const expectedDotation =
+    immo !== undefined && f012Details.length > 0
+      ? round2(immo.totalAnnuelExercice + dotationF012)
+      : immo?.totalAnnuelExercice;
   const amortissementDivergent =
-    immo !== undefined && Math.abs(round2(fr.amortCalcule - immo.totalAnnuelExercice)) > 0.01;
+    immo !== undefined &&
+    expectedDotation !== undefined &&
+    !f012SansDetail &&
+    Math.abs(round2(fr.amortCalcule - expectedDotation)) > 0.01;
 
   if (patrimoine !== undefined) {
     if (patrimoine.immobilisations.brutTotal !== undefined) {
@@ -350,31 +366,56 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         categorie: "incoherence_modele",
       });
     }
-  } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && !amortissementDivergent) {
-    const brut = round2(immo.totalBrut + immo.valeurTerrain);
-    const amortissementsCumules = round2(immo.lignes.reduce((acc, l) => acc + l.amortissementsCumules, 0));
-
-    cases.push({
-      caseId: "028",
-      label: "Immobilisations corporelles (brut)",
-      value: brut,
-      trace: {
-        source: "FiscalResult",
-        path: "rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain",
-        ksArtifacts: ["TRF-0032"],
-      },
-    });
-    cases.push({
-      caseId: "030",
-      label: "Immobilisations corporelles (amortissements-provisions)",
-      value: amortissementsCumules,
-      trace: {
-        source: "FiscalResult",
-        path: "Σ rfs.immobilisations.lignes[].amortissementsCumules",
-        ksArtifacts: ["TRF-0032"],
-      },
-    });
-  } else if (immo !== undefined && typeof immo.valeurTerrain === "number" && amortissementDivergent) {
+  } else if (
+    immo !== undefined &&
+    typeof immo.valeurTerrain === "number" &&
+    !amortissementDivergent &&
+    !f012SansDetail
+  ) {
+    const totals = computeClosingImmobilisationsTotals(immo);
+    if (!totals) {
+      for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
+        casesNonAlimentees.push({
+          caseId,
+          label: `Immobilisations corporelles (${suffixe})`,
+          raison:
+            "Totaux d'immobilisations non fiables (terrain absent ou composants F-012 sans détail enrichi).",
+          categorie: "donnee_absente",
+        });
+      }
+    } else {
+      cases.push({
+        caseId: "028",
+        label: "Immobilisations corporelles (brut)",
+        value: totals.brut,
+        trace: {
+          source: "FiscalResult",
+          path:
+            f012Details.length > 0
+              ? "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant"
+              : "rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain",
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+      cases.push({
+        caseId: "030",
+        label: "Immobilisations corporelles (amortissements-provisions)",
+        value: totals.amortissementsCumules,
+        trace: {
+          source: "FiscalResult",
+          path:
+            f012Details.length > 0
+              ? "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules"
+              : "Σ rfs.immobilisations.lignes[].amortissementsCumules",
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    }
+  } else if (
+    immo !== undefined &&
+    typeof immo.valeurTerrain === "number" &&
+    (amortissementDivergent || f012SansDetail)
+  ) {
     for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
       casesNonAlimentees.push({
         caseId,

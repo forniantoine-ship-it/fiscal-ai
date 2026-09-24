@@ -30,7 +30,19 @@ import type {
   LiasseEngineOutput,
 } from "@/lib/lmnp/types/domain";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
-import { enrichImmobilisationsRfs, reconcileImmobilisationsContinuity } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
+import {
+  enrichImmobilisationsRfs,
+  reconcileImmobilisationsContinuity,
+  detailComposantsNouveaux,
+  totalDotationComposantsDetail,
+} from "@/lib/lmnp/services/dossier/immobilisations-comptables";
+import {
+  assertHistoricalInventoryMatchesApplied,
+  composeExternalHistoryImmobilisationsRfs,
+  EXTERNAL_HISTORY_INVENTORY_MISMATCH,
+  EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE,
+  selectCurrentYearAcquisitions,
+} from "@/lib/lmnp/services/dossier/compose-external-history-immobilisations";
 import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import { resolveCanonicalOpeningFiscalStocks } from "@/lib/lmnp/services/fiscal-year-opening/resolve-opening-fiscal-stocks";
 import { isAvailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
@@ -38,6 +50,8 @@ import {
   applyResolvedOpeningDepreciation,
   resolveOpeningDepreciation,
 } from "@/lib/lmnp/services/fiscal-year-opening/resolve-opening-depreciation";
+import type { AmortissementPlan } from "@/runtime/capabilities/f010/types";
+import { round2 } from "@/runtime/capabilities/f010/types";
 
 /** Code anomalie stable — Blocker #3 Lot C (gate génération). */
 export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED";
@@ -45,6 +59,9 @@ export const TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED = "TAXE_FONCIERE_LEGACY_I
 /** Lot 5 B2 — réconciliation ouverture/clôture immobilisations échouée. */
 export const IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED =
   "IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED";
+
+/** P0-2A — inventaire historique RFS ≠ Opening appliqué (anti-S3). */
+export { EXTERNAL_HISTORY_INVENTORY_MISMATCH, EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE };
 
 /**
  * Blocker #3 — détection + validité marker uniquement (déterministe, offline).
@@ -212,12 +229,8 @@ export function runDeclarationGeneration(
   }
   const openingFiscalStocks = stocksResolution.stocks;
 
-  // Lot 4F.2 — si l'Opening porte un inventaire d'actifs disponible, le moteur
-  // existant (resolveOpeningDepreciation → continuePlanLine) calcule DN depuis
-  // les ancres C0. Jamais de reconstruction N-1. Assets unavailable (Lot 3B
-  // stocks-only) → chemin amortissement draft inchangé.
-  // Shape F006 uniquement (`AmortissementFiscalInput`) — jamais un objet
-  // AmortissementAssistantOutput inventé.
+  // Lot 4F.2 / P0-2A — Opening actifs disponibles → DN ancrée + inventaire
+  // historique conservé pour la RFS. Assets unavailable (stocks-only) → draft.
   let amortissementAssistant = draft?.amortissementAssistant
     ? {
         exerciceFiscal: draft.amortissementAssistant.exerciceFiscal,
@@ -225,10 +238,17 @@ export function runDeclarationGeneration(
         status: draft.amortissementAssistant.status,
       }
     : undefined;
+  let appliedOpeningPlan: AmortissementPlan | undefined;
+  let openingTerrainBrut = 0;
+  let openingCurrentYearAcquisitions: ComposantNouveau[] | undefined;
+
   if (fiscalYearOpening && isAvailable(fiscalYearOpening.assets)) {
+    const f012Source =
+      continuity?.composantsF012Merged ?? draft?.chargesAssistant?.composantsNouveaux;
     const depreciation = resolveOpeningDepreciation({
       opening: fiscalYearOpening,
       expectedExerciceFiscal: fiscalYear,
+      currentYearAcquisitionIds: f012Source?.map((c) => c.id),
     });
     if (depreciation.status === "blocked") {
       return {
@@ -251,9 +271,31 @@ export function runDeclarationGeneration(
         })),
       };
     }
+
+    const historicalIds = new Set(
+      applied.plan.lignes
+        .map((l) => l.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+    );
+    openingCurrentYearAcquisitions = selectCurrentYearAcquisitions({
+      composants: f012Source,
+      exerciceFiscal: fiscalYear,
+      historicalAssetIds: historicalIds,
+    });
+    const f012Details = detailComposantsNouveaux(
+      openingCurrentYearAcquisitions,
+      fiscalYear,
+      continuity?.propertyId,
+    );
+    appliedOpeningPlan = applied.plan;
+    openingTerrainBrut = round2(
+      depreciation.terrain.reduce((acc, t) => acc + t.coutBrut, 0),
+    );
     amortissementAssistant = {
       exerciceFiscal: fiscalYear,
-      totalDotations: applied.plan.totalAnnuelExercice,
+      totalDotations: round2(
+        applied.plan.totalAnnuelExercice + totalDotationComposantsDetail(f012Details),
+      ),
       status: "validated",
     };
   }
@@ -313,32 +355,75 @@ export function runDeclarationGeneration(
     generatedAt: liasse.trace.generatedAt,
   };
 
-  // RFS — assemblage pur, aucun second appel à produceFiscalResult() : le même
-  // `fiscalResult` (F-006, complet) calculé ci-dessus est injecté tel quel.
-  // Immobilisations : F-010 plan + F-012 fusionnés (Lot 5) + ouvertures N.
-  const immobilisations = draft?.logementAmortissement
-    ? enrichImmobilisationsRfs({
-        immobilisations: {
-          ...draft.logementAmortissement.plan,
-          valeurTerrain: draft.logementAmortissement.valeurTerrain,
-          montantMobilier: draft.logementAmortissement.montantMobilier,
-          dateMiseEnService: draft.dateMiseEnService,
-          composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
+  // RFS — assemblage pur. P0-2A EXTERNAL_HISTORY : inventaire = Opening appliqué
+  // + acquisitions N (F-012). Parcours natif : F-010 + F-012 inchangé.
+  const immobilisations =
+    appliedOpeningPlan !== undefined
+      ? composeExternalHistoryImmobilisationsRfs({
+          appliedPlan: appliedOpeningPlan,
+          terrainBrut: openingTerrainBrut,
+          exerciceFiscal: fiscalYear,
+          currentYearAcquisitions: openingCurrentYearAcquisitions,
+          propertyId: continuity?.propertyId,
+          dateMiseEnService: draft?.dateMiseEnService,
+        })
+      : draft?.logementAmortissement
+        ? enrichImmobilisationsRfs({
+            immobilisations: {
+              ...draft.logementAmortissement.plan,
+              valeurTerrain: draft.logementAmortissement.valeurTerrain,
+              montantMobilier: draft.logementAmortissement.montantMobilier,
+              dateMiseEnService: draft.dateMiseEnService,
+              composantsNouveaux: draft.chargesAssistant?.composantsNouveaux,
+            },
+            exerciceFiscal: fiscalYear,
+            composantsMerged:
+              continuity?.composantsF012Merged ?? draft.chargesAssistant?.composantsNouveaux,
+            propertyId: continuity?.propertyId,
+            ouverture: continuity?.immobilisationsOuverture
+              ? {
+                  valeurBruteOuverture: continuity.immobilisationsOuverture.brut,
+                  amortissementsCumulesOuverture:
+                    continuity.immobilisationsOuverture.amortissementsCumules,
+                  sourceClosureId: continuity.immobilisationsOuverture.sourceClosureId,
+                }
+              : undefined,
+          })
+        : undefined;
+
+  // P0-2A — Opening actifs présents mais projection impossible → pas de fallback F-010.
+  if (appliedOpeningPlan !== undefined && !immobilisations) {
+    return {
+      status: "blocked",
+      anomalies: [
+        {
+          severity: "error",
+          field: "fiscalYearOpening.assets",
+          message: `${EXTERNAL_HISTORY_INVENTORY_UNPROJECTABLE}: inventaire historique Opening non projectable en RFS.`,
         },
-        exerciceFiscal: fiscalYear,
-        composantsMerged:
-          continuity?.composantsF012Merged ?? draft.chargesAssistant?.composantsNouveaux,
-        propertyId: continuity?.propertyId,
-        ouverture: continuity?.immobilisationsOuverture
-          ? {
-              valeurBruteOuverture: continuity.immobilisationsOuverture.brut,
-              amortissementsCumulesOuverture:
-                continuity.immobilisationsOuverture.amortissementsCumules,
-              sourceClosureId: continuity.immobilisationsOuverture.sourceClosureId,
-            }
-          : undefined,
-      })
-    : undefined;
+      ],
+    };
+  }
+
+  // P0-2A anti-S3 — inventaire historique RFS doit matcher l'Opening appliqué.
+  if (appliedOpeningPlan !== undefined && immobilisations) {
+    const inventoryGuard = assertHistoricalInventoryMatchesApplied({
+      immobilisations,
+      appliedPlan: appliedOpeningPlan,
+    });
+    if (!inventoryGuard.ok) {
+      return {
+        status: "blocked",
+        anomalies: [
+          {
+            severity: "error",
+            field: "immobilisations",
+            message: `${inventoryGuard.code}: ${inventoryGuard.reason}`,
+          },
+        ],
+      };
+    }
+  }
 
   // Lot 5 B2 — fail-closed en amont de la liasse : une divergence
   // ouverture/clôture (fausse acquisition, 570+572≠576) bloque la génération.
