@@ -399,18 +399,27 @@ export function applyResolvedOpeningDepreciation(input: {
     }
 
     const da = round2(entry.baseAmortissable / entry.durationYears);
-    // Lot 2B AUTO : d1 = da (1re annuité entière / approximation stable).
-    // Divergence fuseau F010/F014 hors scope ancré — REVIEW V1.
-    const d1 = da;
+    const elapsed = input.resolved.exerciceFiscal - premiereAnnee;
+    const priorFullAnnuities = round2(da * (entry.durationYears - 1));
+    // TRF-0012 — année de complément. C0 attesté tient lieu de première
+    // annuité : on ne la reconstruit pas. Un C0 inférieur à (n−1) annuités
+    // pleines signalerait plusieurs années manquantes : pas de solde silencieux.
+    const attestedSingleComplement =
+      elapsed === entry.durationYears &&
+      entry.cumulOuverture >= priorFullAnnuities &&
+      entry.cumulOuverture < entry.baseAmortissable;
 
-    const normalDotation = computePlanDotationForYear({
-      montant: entry.baseAmortissable,
-      dureeAnnees: entry.durationYears,
-      dotationAnnuelle: da,
-      dotationAnnee1: d1,
-      premiereAnnee,
-      exerciceFiscal: input.resolved.exerciceFiscal,
-    });
+    const normalDotation = attestedSingleComplement
+      ? round2(entry.baseAmortissable - entry.cumulOuverture)
+      : computePlanDotationForYear({
+          montant: entry.baseAmortissable,
+          dureeAnnees: entry.durationYears,
+          dotationAnnuelle: da,
+          // Années courantes : d1 = da. La convention historique reste inconnue.
+          dotationAnnee1: da,
+          premiereAnnee,
+          exerciceFiscal: input.resolved.exerciceFiscal,
+        });
 
     const continued = continuePlanLine({
       label: entry.label,
