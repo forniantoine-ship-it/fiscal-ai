@@ -79,6 +79,8 @@ export type OpeningAsset = {
   propertyId?: string;
   label: string;
   categorie: ImmobilisationComptableActif["categorie"];
+  /** P0-2F — mobilier explicitement prouvé (classification de reprise). Absent = non prouvé. */
+  nature?: "mobilier";
   origin?: OpeningAssetOrigin;
   coutBrut: OpeningFact<number>;
   cumulOuverture: OpeningFact<number>;

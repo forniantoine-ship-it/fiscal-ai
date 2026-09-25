@@ -34,6 +34,8 @@ export type ResolvedOpeningDepreciationEntry = {
   durationYears: number;
   /** Absente si la reprise ancrée n'a pas de convention historique connue. */
   prorataConvention?: OpeningProrataConvention;
+  /** P0-2F — mobilier prouvé, reporté tel quel sur la ligne du plan. */
+  nature?: "mobilier";
 };
 
 export type ResolvedOpeningTerrain = {
@@ -231,6 +233,7 @@ function resolveOneAmortizable(
     startDate: plan.startDate,
     durationYears: plan.durationYears,
     ...(plan.prorataConvention ? { prorataConvention: plan.prorataConvention } : {}),
+    ...(asset.nature === "mobilier" ? { nature: "mobilier" as const } : {}),
   };
 }
 
@@ -452,6 +455,7 @@ export function applyResolvedOpeningDepreciation(input: {
       dateDebut: entry.startDate,
       // Portée seulement si connue. Absence ≠ jours_reels.
       ...(entry.prorataConvention ? { prorataConvention: entry.prorataConvention } : {}),
+      ...(entry.nature ? { nature: entry.nature } : {}),
     });
   }
 

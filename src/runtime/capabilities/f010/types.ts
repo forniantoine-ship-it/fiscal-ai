@@ -65,6 +65,11 @@ export interface PlanLigne {
   prorataConvention?: "annuel_plein" | "mensuel" | "jours_reels" | "mois" | "jours";
   /** Lot 2B — date de début du plan (pour snapshot / ouverture N+1). */
   dateDebut?: string;
+  /**
+   * P0-2F — mobilier PROUVÉ par la source de reprise (classification explicite).
+   * Jamais déduit d'un libellé ni de F-010 ; absent = non prouvé.
+   */
+  nature?: "mobilier";
 }
 
 /** Plan d'amortissement assemblé (TRF-0012). */

@@ -199,6 +199,8 @@ export type ImmobilisationComptableActif = {
    */
   dureeAnnees?: number;
   prorataConvention?: "jours_reels" | "mensuel" | "annuel_plein";
+  /** P0-2F — mobilier prouvé à la reprise, conservé jusqu'à N+1/N+2. Absent = non prouvé. */
+  nature?: "mobilier";
 };
 
 export type ImmobilisationsComptablesSnapshot = {

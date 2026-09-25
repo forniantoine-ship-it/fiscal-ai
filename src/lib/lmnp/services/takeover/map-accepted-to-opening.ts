@@ -339,6 +339,9 @@ function mapOneAsset(
       propertyId,
       label: labelFact.value,
       categorie,
+      // P0-2F — seule une classification explicite « mobilier » est conservée ;
+      // terrain/non-amortissable reste terrain (jamais mobilier).
+      ...(classificationPresent === "mobilier" && categorie === "composant" ? { nature: "mobilier" as const } : {}),
       coutBrut,
       cumulOuverture,
       plan,

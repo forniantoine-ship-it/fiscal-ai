@@ -169,6 +169,17 @@ export function totalAcquisitionsExercice(details: ComposantImmobilisationDetail
 }
 
 /**
+ * P0-2F — brut des lignes PROUVÉES mobilier (nature explicite issue de la
+ * reprise). `undefined` si aucune : l'absence de preuve n'est jamais 0.
+ */
+export function montantMobilierProuve(
+  lignes: readonly { montant: number; nature?: "mobilier" }[],
+): number | undefined {
+  const proven = lignes.filter((l) => l.nature === "mobilier");
+  return proven.length > 0 ? round2(proven.reduce((acc, l) => acc + l.montant, 0)) : undefined;
+}
+
+/**
  * Snapshot de clôture comptable — uniquement si brut + cumuls sont fiables
  * (tous les actifs ont un cumul numérique). Jamais de 0 inventé.
  */
@@ -209,6 +220,7 @@ export function snapshotImmobilisationsComptables(input: {
       dateDebut: ligne.dateDebut ?? immo.dateMiseEnService,
       dureeAnnees: ligne.dureeAnnees,
       ...(prorataConvention ? { prorataConvention } : {}),
+      ...(ligne.nature ? { nature: ligne.nature } : {}),
     });
   }
 

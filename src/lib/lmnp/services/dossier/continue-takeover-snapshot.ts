@@ -11,6 +11,7 @@ import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import { applyResolvedOpeningDepreciation, type ResolveOpeningDepreciationReady } from "../fiscal-year-opening/resolve-opening-depreciation";
 import {
   detailComposantsNouveaux,
+  montantMobilierProuve,
   type ComposantImmobilisationDetail,
 } from "./immobilisations-comptables";
 import { selectCurrentYearAcquisitions } from "./compose-external-history-immobilisations";
@@ -123,6 +124,7 @@ export function continueTakeoverSnapshot(input: {
       startDate: a.dateDebut!,
       durationYears: a.dureeAnnees!,
       ...(a.prorataConvention ? { prorataConvention: a.prorataConvention } : {}),
+      ...(a.nature === "mobilier" && a.categorie === "composant" ? { nature: a.nature } : {}),
     })),
     terrain: assets.filter((a) => a.categorie === "terrain").map((a) => ({
       assetId: a.id,
@@ -167,6 +169,7 @@ export function continueTakeoverSnapshot(input: {
   const immobilisations: ImmobilisationsRfs = {
     ...plan,
     valeurTerrain: sum(resolved.terrain.map((a) => a.coutBrut)),
+    ...(montantMobilierProuve(composants) !== undefined ? { montantMobilier: montantMobilierProuve(composants) } : {}),
     dateMiseEnService: input.dateMiseEnService,
     composantsNouveaux: partition.acquisitions,
     composantsDetail: [...travaux, ...acquisitions],

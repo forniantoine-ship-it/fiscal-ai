@@ -177,6 +177,7 @@ function mapAssets(
       propertyId: actif.propertyId,
       label: actif.label,
       categorie: actif.categorie,
+      ...(actif.nature ? { nature: actif.nature } : {}),
       origin: actif.origin ?? actif.provenance,
       coutBrut,
       cumulOuverture,

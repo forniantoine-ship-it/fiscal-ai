@@ -17,6 +17,7 @@ import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import {
   enrichImmobilisationsRfs,
+  montantMobilierProuve,
   provenanceForDateDebut,
 } from "./immobilisations-comptables";
 
@@ -106,6 +107,9 @@ export function composeExternalHistoryImmobilisationsRfs(input: {
     immobilisations: {
       ...input.appliedPlan,
       valeurTerrain: terrainBrut,
+      ...(montantMobilierProuve(input.appliedPlan.lignes) !== undefined
+        ? { montantMobilier: montantMobilierProuve(input.appliedPlan.lignes) }
+        : {}),
       dateMiseEnService: input.dateMiseEnService,
       composantsNouveaux: acquisitions,
     },
