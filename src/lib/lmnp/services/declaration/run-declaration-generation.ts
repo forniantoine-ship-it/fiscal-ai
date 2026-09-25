@@ -5,6 +5,7 @@ import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrim
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
 import {
+  isDispense2033AEnEffet,
   resolveCaReferenceN1Fact,
   resolveDispense2033AEligibilite,
   type Dispense2033ADecision,
@@ -552,6 +553,30 @@ export function runDeclarationGeneration(
     eligibilite: resolveDispense2033AEligibilite({ exercice: fiscalYear, caReferenceN1: caReferenceN1Fact }),
     decision: dispense2033AIntake?.decision,
   };
+
+  // R2 — défense en profondeur (brouillon hérité ou appelant hors formulaire) : une Opening externe validée
+  // pour CET exercice prouve une comptabilité antérieure ; une ouverture patrimoniale de « première
+  // activité » (RAN NATIF, compte de l'exploitant ouvert à 0) la contredit et fausserait 120 puis l'ouverture
+  // N+1. Seul cas détectable ici sans faux positif (en N+1 natif, NATIF est l'origine reportée). Sans objet si
+  // le 2033-A n'est pas produit (dispense en effet).
+  if (
+    fiscalYearOpening?.source.kind === "external_takeover" &&
+    fiscalYearOpening.targetFiscalYear === fiscalYear &&
+    bilanInputs?.ran.situation === "NATIF" &&
+    !isDispense2033AEnEffet(dispense2033A)
+  ) {
+    return {
+      status: "blocked",
+      anomalies: [
+        {
+          severity: "error",
+          field: "bilanPatrimonial.ran",
+          message:
+            "Ouverture du bilan incohérente : vous reprenez une comptabilité antérieure, le compte de l'exploitant et le report à nouveau d'ouverture doivent être ceux de votre dernière clôture.",
+        },
+      ],
+    };
+  }
 
   const rfsSansPatrimoine = buildFiscalRepresentation({
     fiscalResult,

@@ -9,7 +9,9 @@ import { typography } from "@/design-system/theme/typography";
 import {
   buildBilanPatrimonial,
   deriveIntakeStateFromBilanPatrimonial,
+  withDerivedRoutage,
   type PatrimoineContinuite,
+  type PatrimonialRoutage,
   type PatrimonialIntakeState,
 } from "@/lib/lmnp/services/declaration/patrimonial-intake";
 import { VentilationTiersIntakeCard } from "./VentilationTiersIntakeCard";
@@ -28,6 +30,11 @@ type PatrimonialIntakeCardProps = {
    * — dans tous ces cas, le comportement G1-P0 (Q0/Q_OUV) reste inchangé.
    */
   patrimoineOuverture?: PatrimoineContinuite;
+  /**
+   * R2 — routage NATIF/REPRISE DÉRIVÉ de l'antériorité déjà déclarée (`derivePatrimonialRoutage`), jamais
+   * redemandé ici. `undefined` tant que l'antériorité n'est pas établie.
+   */
+  routage: PatrimonialRoutage | undefined;
 };
 
 /**
@@ -43,13 +50,17 @@ type PatrimonialIntakeCardProps = {
  * résolue) — leurs changements ultérieurs ne réinitialisent jamais le
  * formulaire en cours de frappe, pour ne pas perdre une saisie locale.
  */
-export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOuverture }: PatrimonialIntakeCardProps) {
+export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOuverture, routage }: PatrimonialIntakeCardProps) {
   const [state, setState] = useState<PatrimonialIntakeState>(() => ({
     ...deriveIntakeStateFromBilanPatrimonial(value),
     continuite: patrimoineOuverture,
   }));
 
-  const built = useMemo(() => buildBilanPatrimonial(state), [state]);
+  // R2 — Q0 hérité ignoré : seul le routage dérivé de l'antériorité déclarée construit l'ouverture.
+  const built = useMemo(() => buildBilanPatrimonial(withDerivedRoutage(state, routage)), [state, routage]);
+  // R2 — antériorité pas encore établie (et pas de continuité) : on ne réécrit pas le brouillon, pour ne
+  // jamais effacer des réponses déjà saisies ; aucune génération n'est possible dans cet état.
+  const ouvertureEtablie = state.continuite !== undefined || routage !== undefined;
 
   // `onChange` via une ref pour ne notifier le parent QUE lorsque `built`
   // change réellement (dépendance de l'effet), jamais à chaque rendu du
@@ -58,9 +69,9 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   useEffect(() => {
-    onChangeRef.current(built);
+    if (ouvertureEtablie) onChangeRef.current(built);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [built]);
+  }, [built, ouvertureEtablie]);
 
   function patch(partial: Partial<PatrimonialIntakeState>) {
     setState((prev) => ({ ...prev, ...partial }));
@@ -99,22 +110,16 @@ export function PatrimonialIntakeCard({ cardStyle, value, onChange, patrimoineOu
         </div>
       ) : (
         <>
-          {/* Q0 — routage */}
-          <Question label="Ce dossier correspond-il à la première activité déclarée, ou reprenez-vous un suivi antérieur (comptable, autre outil) ?">
-            <ChoiceButton
-              selected={state.routage === "NATIF"}
-              onClick={() => patch({ routage: "NATIF" })}
-              label="Première activité — aucun exercice antérieur à reprendre"
-            />
-            <ChoiceButton
-              selected={state.routage === "REPRISE"}
-              onClick={() => patch({ routage: "REPRISE" })}
-              label="Je reprends un dossier déjà suivi ailleurs"
-            />
-          </Question>
+          {/* R2 — Q0 supprimée : dérivée de l'antériorité déjà déclarée (routage). */}
+          {routage === undefined ? (
+            <p style={{ ...typography.caption.desktop, color: colors.text.secondary }}>
+              Répondez d&apos;abord à la question sur l&apos;historique de votre activité : l&apos;ouverture de votre bilan en
+              dépend.
+            </p>
+          ) : null}
 
-          {/* Q_OUV — uniquement si reprise */}
-          {state.routage === "REPRISE" ? (
+          {/* Q_OUV — uniquement si reprise (antériorité externe ou continuité sans reprise automatique) */}
+          {routage === "REPRISE" ? (
             <Question label="Reprise du dossier — éléments de votre dernière clôture">
               <AmountField
                 label="Solde de votre compte de l'exploitant à la clôture de l'exercice précédent"

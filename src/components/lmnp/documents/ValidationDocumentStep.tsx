@@ -17,6 +17,7 @@ import { ValidationIncompleteCard } from "@/components/lmnp/validation-workflow/
 import { ValidationInpiBlock } from "@/components/lmnp/validation-workflow/ValidationInpiBlock";
 import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
 import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
+import { derivePatrimonialRoutage } from "@/lib/lmnp/services/declaration/patrimonial-intake";
 import { Dispense2033AIntakeCard, type Dispense2033AIntakeValue } from "@/components/lmnp/documents/Dispense2033AIntakeCard";
 import { ValidationPricingBlock } from "@/components/lmnp/validation-workflow/ValidationPricingBlock";
 import { ValidationPriorHistoryCard } from "@/components/lmnp/validation-workflow/ValidationPriorHistoryCard";
@@ -606,6 +607,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
             value={draft?.bilanPatrimonial}
             onChange={handleBilanPatrimonialChange}
             patrimoineOuverture={fiscalYear.patrimoineOuverture}
+            routage={derivePatrimonialRoutage(priorHistory)}
           />
 
           {/*

@@ -9,6 +9,7 @@ import type {
   TresorerieInputs,
 } from "@/runtime/capabilities/bilan/types";
 import { parseMontantSaisi } from "./parse-montant-saisi";
+import type { PriorHistoryEligibility } from "./prior-history-eligibility";
 import {
   EMPTY_VENTILATION_TIERS_INTAKE_STATE,
   buildVentilationTiersInputs,
@@ -34,6 +35,34 @@ export { parseMontantSaisi } from "./parse-montant-saisi";
  */
 
 export type PatrimonialRoutage = "NATIF" | "REPRISE";
+
+/**
+ * R2 — Q0 (NATIF/REPRISE) n'est plus une seconde question : c'est le même fait que l'antériorité déclarée
+ * une seule fois (`FiscalYear.priorHistoryDeclaration`, résolue par `resolvePriorHistoryEligibility()`).
+ * Avant R2, un dossier EXTERNAL_HISTORY pouvait répondre « première activité » ici : ouverture du compte de
+ * l'exploitant = 0 et RAN NATIF → 2033-A 120 faux, reporté en N+1 par la clôture.
+ *  - FIRST_REAL_YEAR (déclaré)                     → NATIF ;
+ *  - EXTERNAL_HISTORY (Opening validée ou en cours) → REPRISE (Q_OUV : valeurs de la dernière clôture externe) ;
+ *  - continuité Fiscal AI prouvée                  → REPRISE (activité antérieure : jamais 0 par défaut ;
+ *    la continuité N→N+1, quand elle existe, prime de toute façon dans `buildBilanPatrimonial`) ;
+ *  - antériorité non établie                       → `undefined` : aucune ouverture construite.
+ */
+export function derivePatrimonialRoutage(eligibility: PriorHistoryEligibility): PatrimonialRoutage | undefined {
+  if (eligibility.status === "FIRST_REAL_YEAR") return "NATIF";
+  if (eligibility.status === "EXTERNAL_HISTORY") return "REPRISE";
+  if (eligibility.eligible && eligibility.status === "NATIVE_CONTINUITY") return "REPRISE";
+  return undefined;
+}
+
+/**
+ * R2 — état effectif du formulaire : le routage dérivé remplace toujours un Q0 hérité (brouillon persisté
+ * avant R2, éventuellement contradictoire). Un routage NATIF hérité sous EXTERNAL_HISTORY devient REPRISE
+ * sans montant d'ouverture (case 120 non alimentée, jamais 0) ; un REPRISE hérité sous FIRST_REAL_YEAR
+ * redevient NATIF (aucune ouverture historique).
+ */
+export function withDerivedRoutage(state: PatrimonialIntakeState, routage: PatrimonialRoutage | undefined): PatrimonialIntakeState {
+  return { ...state, routage };
+}
 
 export type OuiNonReponse = "OUI" | "NON";
 
