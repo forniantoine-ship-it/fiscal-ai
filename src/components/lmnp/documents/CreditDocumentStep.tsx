@@ -49,6 +49,7 @@ import {
   hasCreditExtractionSession,
   hydrateCreditFormFromSession,
   mergeCreditExtractionSession,
+  mergeCreditPipelineResultIntoSession,
   mergeCreditUserValidatedFields,
   readCreditUserValidatedFields,
   type CreditExtractionSession,
@@ -1050,35 +1051,15 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         return;
       }
 
-      const nextSession = (() => {
-        let session = mergeCreditExtractionSession(
-          extractionSessionRef.current,
-          kind,
-          extraction,
-          { documentId: result.documentId },
-        );
-        if (
-          kind === "amortization" &&
-          result.loanOffer?.extraction &&
-          Object.keys(result.loanOffer.extraction).length > 0
-        ) {
-          console.log("[documentary-extraction-debug] merge_documentary_into_session", {
-            documentId: result.documentId,
-            documentarySuccess: result.loanOffer.success,
-            nominalRate: result.loanOffer.extraction.interestRate ?? null,
-            dossierFees: result.loanOffer.extraction.applicationFees ?? null,
-            guaranteeFees: result.loanOffer.extraction.guaranteeFees ?? null,
-            bankName: result.loanOffer.extraction.bankName ?? null,
-          });
-          session = mergeCreditExtractionSession(
-            session,
-            "loan_offer",
-            result.loanOffer.extraction,
-            { documentId: result.documentId },
-          );
-        }
-        return session;
-      })();
+      // R1.y — assemblage extrait (`mergeCreditPipelineResultIntoSession`) : le capital d'en-tête d'un
+      // tableau n'entre jamais dans `loanOffer.loanAmount`, seule preuve admise d'un capital d'origine.
+      const nextSession = mergeCreditPipelineResultIntoSession(
+        extractionSessionRef.current,
+        kind,
+        extraction,
+        result.loanOffer?.extraction,
+        { documentId: result.documentId },
+      );
       const prefill = commitCreditFormHydration(nextSession, {
         documentId: result.documentId,
         governedKind: kind,

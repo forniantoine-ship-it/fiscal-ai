@@ -651,6 +651,43 @@ export function mergeCreditExtractionSession(
   return merged;
 }
 
+/**
+ * R1.y — assemblage de session Tunnel A après analyse d'UN document (extrait de CreditDocumentStep pour être
+ * testable sur le chemin réel). Pour un tableau d'amortissement, ses métadonnées documentaires (schéma
+ * « offre », lues sur le MÊME document) rejoignent l'emplacement `loanOffer` — comportement conservé — mais
+ * jamais son `loanAmount` : l'emplacement `loanOffer.loanAmount` est la seule source de `capitalInitialOffre`
+ * (VER option 2 : capital d'origine prouvé par un document DISTINCT du tableau). Le capital d'une offre
+ * réellement importée auparavant est conservé tel quel ; un capital d'en-tête de tableau ne l'est jamais.
+ */
+export function mergeCreditPipelineResultIntoSession(
+  current: CreditExtractionSession,
+  kind: "amortization" | "loan_offer",
+  extraction: CreditAmortizationExtraction | CreditLoanOfferExtraction,
+  sameDocumentMetadata: CreditLoanOfferExtraction | undefined,
+  traceContext?: { documentId?: string },
+): CreditExtractionSession {
+  let session = mergeCreditExtractionSession(current, kind, extraction, traceContext);
+  if (kind === "amortization" && sameDocumentMetadata && Object.keys(sameDocumentMetadata).length > 0) {
+    console.log("[documentary-extraction-debug] merge_documentary_into_session", {
+      documentId: traceContext?.documentId,
+      nominalRate: sameDocumentMetadata.interestRate ?? null,
+      dossierFees: sameDocumentMetadata.applicationFees ?? null,
+      guaranteeFees: sameDocumentMetadata.guaranteeFees ?? null,
+      bankName: sameDocumentMetadata.bankName ?? null,
+    });
+    const metadata: CreditLoanOfferExtraction = { ...sameDocumentMetadata };
+    delete metadata.loanAmount;
+    const offerCapital = current.loanOffer?.loanAmount;
+    session = mergeCreditExtractionSession(
+      session,
+      "loan_offer",
+      offerCapital !== undefined ? { ...metadata, loanAmount: offerCapital } : metadata,
+      traceContext,
+    );
+  }
+  return session;
+}
+
 export function readCreditUserValidatedFields(
   draft?: DeclarationDraft,
 ): CreditUserValidatedFields {
