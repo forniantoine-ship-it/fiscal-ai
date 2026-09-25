@@ -37,6 +37,7 @@ import {
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
+import { isUsableExternalTakeoverOpening } from "../fiscal-year-opening/is-usable-external-takeover-opening";
 import {
   resolveExternalOpeningProofFromFiscalYear,
   resolvePersistedExternalTakeoverOpening,
@@ -772,9 +773,20 @@ export function extractDossierLevelDataFromWorkspace(workspace: PersistedWorkspa
   // sans elle, tout composant F-012 déjà accumulé sur un exercice précédent
   // serait perdu dès la transition suivante (remplacé plutôt qu'étendu).
   const existingBase = workspace.properties[0]?.amortissementBase;
+  // P0-2C — EXTERNAL_HISTORY validé : l'Opening est la vérité du passé
+  // comptable (inventaire porté par la RFS générée puis par
+  // `closure.immobilisationsComptables`). Le draft F-010 (lignes, terrain,
+  // mobilier) et sa date de mise en service ne doivent jamais être persistés
+  // comme base historique : ni relus, ni autorisés à contredire l'Opening en
+  // N+1. Seuls les composants F-012 de l'exercice (acquisitions N) et la base
+  // déjà reportée (`existingBase`) survivent. Parcours natif inchangé.
+  const isExternalTakeover = isUsableExternalTakeoverOpening(
+    workspace.fiscalYear.externalTakeoverOpening?.opening,
+    workspace.fiscalYear.year,
+  );
   const amortissementBase = extractAmortissementBase(
-    draft?.logementAmortissement,
-    draft?.dateMiseEnService,
+    isExternalTakeover ? undefined : draft?.logementAmortissement,
+    isExternalTakeover ? undefined : draft?.dateMiseEnService,
     draft?.chargesAssistant?.composantsNouveaux,
     existingBase,
   );
