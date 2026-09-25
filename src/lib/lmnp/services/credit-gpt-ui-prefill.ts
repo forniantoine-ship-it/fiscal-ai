@@ -688,6 +688,49 @@ export function mergeCreditPipelineResultIntoSession(
   return session;
 }
 
+/**
+ * BUSINESS RULE A (CreditDocumentStep) — extraite pour être testée telle quelle : une offre qui ne contredit
+ * pas l'offre de la session n'apporte « aucune nouveauté » (copie signée, ré-import) SEULEMENT si elle
+ * n'apporte non plus aucune valeur manquante. R1.z — après R1.y, un tableau importé en premier laisse dans
+ * `loanOffer` des métadonnées SANS capital : une vraie offre importée ensuite doit être fusionnée (son
+ * `loanAmount` est la seule preuve admise de `capitalInitialOffre`), jamais écartée comme « déjà connue ».
+ * Seuils de conflit inchangés.
+ */
+export function decideLoanOfferAgainstSession(
+  sessionOffer: CreditLoanOfferExtraction,
+  newOffer: CreditLoanOfferExtraction,
+) {
+  const newAmount = newOffer.loanAmount;
+  const existAmount = sessionOffer.loanAmount;
+  const newRate = newOffer.interestRate;
+  const existRate = sessionOffer.interestRate;
+  const newDuration = newOffer.loanDurationMonths;
+  const existDuration = sessionOffer.loanDurationMonths;
+
+  // Only flag as different if BOTH sides have the value AND it differs materially
+  const amountConflicts = newAmount != null && existAmount != null && Math.abs(newAmount - existAmount) > 500;
+  const rateConflicts = newRate != null && existRate != null && Math.abs(newRate - existRate) > 0.1;
+  const durationConflicts = newDuration != null && existDuration != null && Math.abs(newDuration - existDuration) > 3;
+  // Seule valeur manquante qui empêche « aucune nouveauté » : le capital (preuve de `capitalInitialOffre`).
+  // Taux / durée : règle A inchangée (la fusion remplace `loanOffer` en bloc — pas d'élargissement ici).
+  const bringsMissingCapital = newAmount != null && existAmount == null;
+  const noChange = !amountConflicts && !rateConflicts && !durationConflicts && !bringsMissingCapital;
+
+  return {
+    noChange,
+    newAmount,
+    existAmount,
+    newRate,
+    existRate,
+    newDuration,
+    existDuration,
+    amountConflicts,
+    rateConflicts,
+    durationConflicts,
+    bringsMissingCapital,
+  };
+}
+
 export function readCreditUserValidatedFields(
   draft?: DeclarationDraft,
 ): CreditUserValidatedFields {

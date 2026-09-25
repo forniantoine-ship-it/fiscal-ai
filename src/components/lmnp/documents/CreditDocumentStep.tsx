@@ -50,6 +50,7 @@ import {
   hydrateCreditFormFromSession,
   mergeCreditExtractionSession,
   mergeCreditPipelineResultIntoSession,
+  decideLoanOfferAgainstSession,
   mergeCreditUserValidatedFields,
   readCreditUserValidatedFields,
   type CreditExtractionSession,
@@ -754,30 +755,19 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       // Without this check, any re-upload of the offer creates a duplicate green card.
       if (kind === "loan_offer" && extractionSessionRef.current.loanOffer) {
         const sessionOffer = extractionSessionRef.current.loanOffer;
-        const newOffer = extraction as CreditLoanOfferExtraction;
-
-        const newAmount = newOffer.loanAmount;
-        const existAmount = sessionOffer.loanAmount;
-        const newRate = newOffer.interestRate;
-        const existRate = sessionOffer.interestRate;
-        const newDuration = newOffer.loanDurationMonths;
-        const existDuration = sessionOffer.loanDurationMonths;
-
-        // Only flag as different if BOTH sides have the value AND it differs materially
-        const amountConflicts = newAmount != null && existAmount != null && Math.abs(newAmount - existAmount) > 500;
-        const rateConflicts = newRate != null && existRate != null && Math.abs(newRate - existRate) > 0.1;
-        const durationConflicts = newDuration != null && existDuration != null && Math.abs(newDuration - existDuration) > 3;
+        // R1.z — règle extraite (`decideLoanOfferAgainstSession`) : une offre apportant une valeur absente de
+        // la session (ex. le capital, jamais repris d'un tableau depuis R1.y) n'est plus écartée.
+        const decision = decideLoanOfferAgainstSession(sessionOffer, extraction as CreditLoanOfferExtraction);
 
         console.log("[credit-decision]", {
           document: result.fileName,
           kind: "loan_offer",
-          decision: (!amountConflicts && !rateConflicts && !durationConflicts) ? "document_no_change" : "proceed_to_conflict_check",
+          decision: decision.noChange ? "document_no_change" : "proceed_to_conflict_check",
           reason: "session_comparison",
-          newAmount, existAmount, newRate, existRate, newDuration, existDuration,
-          amountConflicts, rateConflicts, durationConflicts,
+          ...decision,
         });
 
-        if (!amountConflicts && !rateConflicts && !durationConflicts) {
+        if (decision.noChange) {
           const entityLabel = sessionOffer.bankName ?? "Financement";
           const entityId = `credit-${entityLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
