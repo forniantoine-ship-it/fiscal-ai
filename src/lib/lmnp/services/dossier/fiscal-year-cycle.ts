@@ -136,9 +136,11 @@ export function resolveImmobilisationsContinuityForGeneration(input: {
   properties: Property[];
   propertyIds: string[];
   immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+  repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
 }): {
   composantsF012Merged?: ComposantNouveau[];
   immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+  repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
   propertyId?: string;
 } {
   const propertyId = input.propertyIds[0];
@@ -151,6 +153,7 @@ export function resolveImmobilisationsContinuityForGeneration(input: {
       property?.amortissementBase,
     ),
     immobilisationsOuverture: input.immobilisationsOuverture,
+    repriseHistoriqueEnContinuite: input.repriseHistoriqueEnContinuite,
     propertyId,
   };
 }
@@ -421,6 +424,7 @@ export function canCloseFiscalYear(input: {
       properties,
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+      repriseHistoriqueEnContinuite: fiscalYear.repriseHistoriqueEnContinuite,
     }),
     // Lot 5.3 — même Opening que la génération réelle.
     fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
@@ -708,6 +712,14 @@ export function buildNextExerciseFromClosedYear(input: {
   // Lot 5 — ouvertures comptables immobilisations (distinctes du stock fiscal).
   const closureN = latestClosure(input.closedFiscalYear);
   const immoSnap = closureN?.immobilisationsComptables;
+  const repriseHistoriqueEnContinuite =
+    isUsableExternalTakeoverOpening(
+      input.closedFiscalYear.externalTakeoverOpening?.opening,
+      input.closedFiscalYear.year,
+    ) || input.closedFiscalYear.repriseHistoriqueEnContinuite === true;
+  if (repriseHistoriqueEnContinuite) {
+    fiscalYear = { ...fiscalYear, repriseHistoriqueEnContinuite: true };
+  }
   if (
     closureN &&
     immoSnap &&
@@ -721,6 +733,7 @@ export function buildNextExerciseFromClosedYear(input: {
         brut: immoSnap.brutCloture,
         amortissementsCumules: immoSnap.amortissementsCumulesCloture,
         vnc: immoSnap.vncCloture,
+        ...(repriseHistoriqueEnContinuite ? { actifsReprise: immoSnap.actifs.map((a) => ({ ...a })) } : {}),
       },
     };
   }

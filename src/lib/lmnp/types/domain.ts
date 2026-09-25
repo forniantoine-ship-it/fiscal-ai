@@ -551,7 +551,11 @@ export interface FiscalYear {
     brut: number;
     amortissementsCumules: number;
     vnc: number;
+    /** Inventaire comptable de la clôture, seulement en continuité de reprise. */
+    actifsReprise?: import("./dossier").ImmobilisationComptableActif[];
   };
+  /** La continuité d'une reprise exige le snapshot comptable clôturé, y compris si celui-ci manque. */
+  repriseHistoriqueEnContinuite?: true;
   /**
    * G1-P1 — miroir exact de `stocksOuverture` ci-dessus, pour la continuité
    * patrimoniale (compte exploitant / RAN) plutôt que les stocks fiscaux.

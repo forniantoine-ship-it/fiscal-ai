@@ -14,6 +14,8 @@ export type BuildFiscalRepresentationInput = {
    * jamais recalculé ici.
    */
   immobilisations?: ImmobilisationsRfs;
+  /** Origine du bloc historique lorsqu'il provient d'une Opening ou d'une clôture. */
+  immobilisationsSource?: string;
   /** draft.financementCharges.prets (F-011) — déjà persisté, jamais recalculé ici. */
   emprunts?: PretFinancementExercice[];
   /**
@@ -64,7 +66,7 @@ export function buildFiscalRepresentation(
         identite: "IdentiteDeclarante (ENT-013)",
         fiscalResult: "FiscalResult (F-006)",
         immobilisations: input.immobilisations
-          ? "draft.logementAmortissement.plan (F-010)"
+          ? input.immobilisationsSource ?? "draft.logementAmortissement.plan (F-010)"
           : undefined,
         emprunts: input.emprunts ? "draft.financementCharges.prets (F-011)" : undefined,
         patrimoine: input.patrimoine

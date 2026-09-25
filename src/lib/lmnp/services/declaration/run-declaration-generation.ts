@@ -36,6 +36,7 @@ import {
   detailComposantsNouveaux,
   totalDotationComposantsDetail,
 } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
+import { continueTakeoverSnapshot } from "@/lib/lmnp/services/dossier/continue-takeover-snapshot";
 import {
   assertHistoricalInventoryMatchesApplied,
   composeExternalHistoryImmobilisationsRfs,
@@ -198,6 +199,7 @@ export function runDeclarationGeneration(
   continuity?: {
     composantsF012Merged?: ComposantNouveau[];
     immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
+    repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
     propertyId?: string;
   },
   /**
@@ -246,6 +248,39 @@ export function runDeclarationGeneration(
   let appliedOpeningPlan: AmortissementPlan | undefined;
   let openingTerrainBrut = 0;
   let openingCurrentYearAcquisitions: ComposantNouveau[] | undefined;
+  let continuedTakeover: Extract<ReturnType<typeof continueTakeoverSnapshot>, { status: "ready" }> | undefined;
+
+  if (
+    continuity?.repriseHistoriqueEnContinuite === true ||
+    continuity?.immobilisationsOuverture?.actifsReprise !== undefined
+  ) {
+    if (fiscalYearOpening && isAvailable(fiscalYearOpening.assets)) {
+      return {
+        status: "blocked",
+        anomalies: [{ severity: "error", field: "immobilisations", message: "Deux inventaires historiques concurrents." }],
+      };
+    }
+    const continued = continueTakeoverSnapshot({
+      opening: continuity.immobilisationsOuverture,
+      exerciceFiscal: fiscalYear,
+      composantsF012Merged:
+        continuity.composantsF012Merged ?? draft?.chargesAssistant?.composantsNouveaux,
+      propertyId: continuity.propertyId,
+      dateMiseEnService: draft?.dateMiseEnService,
+    });
+    if (continued.status === "blocked") {
+      return {
+        status: "blocked",
+        anomalies: [{ severity: "error", field: "immobilisationsOuverture", message: `${continued.code}: ${continued.reason}` }],
+      };
+    }
+    continuedTakeover = continued;
+    amortissementAssistant = {
+      exerciceFiscal: fiscalYear,
+      totalDotations: continued.totalDotations,
+      status: "validated",
+    };
+  }
 
   if (fiscalYearOpening && isAvailable(fiscalYearOpening.assets)) {
     const f012Source =
@@ -339,9 +374,10 @@ export function runDeclarationGeneration(
   // P0-2A.1 — reprise EXTERNAL_HISTORY : fraisEnCharges du draft F-010 ne doit
   // jamais contaminer F-006 (acquisition déjà traitée historiquement — JUG-001 /
   // TRF-0001 hors exercice N). Source = Opening external_takeover, pas le draft.
-  const isExternalTakeoverOpening = fiscalYearOpening?.source.kind === "external_takeover";
+  const usesTakeoverHistory =
+    fiscalYearOpening?.source.kind === "external_takeover" || continuedTakeover !== undefined;
   const logementAmortissementForF006 =
-    draft?.logementAmortissement && isExternalTakeoverOpening
+    draft?.logementAmortissement && usesTakeoverHistory
       ? { ...draft.logementAmortissement, fraisEnCharges: 0 }
       : draft?.logementAmortissement;
 
@@ -398,6 +434,8 @@ export function runDeclarationGeneration(
           propertyId: continuity?.propertyId,
           dateMiseEnService: draft?.dateMiseEnService,
         })
+      : continuedTakeover !== undefined
+        ? continuedTakeover.immobilisations
       : draft?.logementAmortissement
         ? enrichImmobilisationsRfs({
             immobilisations: {
@@ -482,6 +520,11 @@ export function runDeclarationGeneration(
   // explicitement déclaré ne pas avoir de crédit (`creditDeclaredNoneAt`) ; une
   // absence de réponse reste `undefined` (jamais transformée en « aucun crédit »).
   const emprunts = resolveEmpruntsForRfs(draft);
+  const immobilisationsSource = appliedOpeningPlan !== undefined
+    ? "FiscalYearOpening externe + acquisitions F-012 de l'exercice"
+    : continuedTakeover !== undefined
+      ? `Clôture comptable ${continuity?.immobilisationsOuverture?.sourceClosureId} + acquisitions F-012 de l'exercice`
+      : undefined;
 
   // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — correction audit
   // contradictoire : AUCUNE dérivation automatique depuis `dateMiseEnService`
@@ -503,6 +546,7 @@ export function runDeclarationGeneration(
     fiscalResult,
     identite,
     immobilisations,
+    immobilisationsSource,
     emprunts,
     dispense2033A,
   });
@@ -515,6 +559,7 @@ export function runDeclarationGeneration(
           fiscalResult,
           identite,
           immobilisations,
+          immobilisationsSource,
           emprunts,
           patrimoine: assemblePatrimoine(rfsSansPatrimoine, bilanInputs),
           dispense2033A,

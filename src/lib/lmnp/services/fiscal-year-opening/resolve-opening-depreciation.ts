@@ -379,7 +379,7 @@ export function resolveOpeningDepreciation(
  * Produit un `AmortissementPlan` avec IDs stables — jamais `f010-${index}`.
  */
 export function applyResolvedOpeningDepreciation(input: {
-  resolved: ResolveOpeningDepreciationReady;
+  resolved: Pick<ResolveOpeningDepreciationReady, "entries" | "exerciceFiscal">;
 }):
   | { ok: true; plan: AmortissementPlan; lignes: PlanLigne[] }
   | { ok: false; issues: OpeningIssue[] } {

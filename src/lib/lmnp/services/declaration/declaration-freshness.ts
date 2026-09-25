@@ -48,6 +48,7 @@ export function resolveDeclarationOutOfDate(input: {
       properties,
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
+      repriseHistoriqueEnContinuite: fiscalYear.repriseHistoriqueEnContinuite,
     }),
     // Lot 5.3 — même Opening que la génération réelle (évite un faux « stale »
     // après reprise externe). Appelant de dérive : pas de priorHistory ici.

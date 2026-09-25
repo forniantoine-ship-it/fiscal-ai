@@ -8,10 +8,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
+import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { adaptInternalOpening } from "@/lib/lmnp/services/fiscal-year-opening/adapt-internal-opening";
 import {
   extractDossierLevelDataFromWorkspace,
   mergeComposantsF012,
+  resolveImmobilisationsContinuityForGeneration,
 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { computeOpeningContentHash } from "@/lib/lmnp/services/fiscal-year-opening/content-hash";
 import { available, unavailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
@@ -169,8 +172,8 @@ function fiscalYear(op?: FiscalYearOpening): FiscalYear {
 
 const PROPERTY = { id: PROP, label: "Bien", address: "1 rue X", city: "Lyon", postalCode: "69000" };
 
-function takeoverWorkspace(): { ws: PersistedWorkspace; op: FiscalYearOpening } {
-  const op = opening([asset("asset-a", 100_000, 20_000, "2010-01-01", 20), asset("asset-b", 10_000, 4_000, "2021-01-01", 5)]);
+function takeoverWorkspace(extraAssets: OpeningAsset[] = []): { ws: PersistedWorkspace; op: FiscalYearOpening } {
+  const op = opening([asset("asset-a", 100_000, 20_000, "2010-01-01", 20), asset("asset-b", 10_000, 4_000, "2023-01-01", 5), ...extraAssets]);
   const draft = divergentDraft();
   const gen = runDeclarationGeneration(
     draft,
@@ -315,5 +318,263 @@ describe("P0-2C — takeover closing → amortissementBase → N+1", () => {
     assert.equal(base.valeurTerrain, 7_000);
     assert.equal(base.dateMiseEnService, "2012-02-02");
     assert.deepEqual(base.composants.map((c) => c.label), ["Reporté", "Acquisition C"]);
+  });
+});
+
+describe("P0-2E — production N → clôture → N+1", () => {
+  function nextDraft(
+    ws: PersistedWorkspace,
+    next: PersistedWorkspace,
+    options?: { logementAmortissement?: DeclarationDraft["logementAmortissement"]; newAcquisitions?: ComposantNouveau[]; dateMiseEnService?: string },
+  ): DeclarationDraft {
+    return {
+      ...ws.declarationDraft,
+      ...next.declarationDraft,
+      logementAmortissement: options?.logementAmortissement ?? divergentDraft().logementAmortissement,
+      dateMiseEnService: options?.dateMiseEnService ?? ws.declarationDraft?.dateMiseEnService,
+      revenusAssistant: { ...ws.declarationDraft?.revenusAssistant, exerciceFiscal: FY + 1 },
+      chargesAssistant: { ...ws.declarationDraft?.chargesAssistant, exerciceFiscal: FY + 1, composantsNouveaux: options?.newAcquisitions ?? [] },
+      amortissementAssistant: { exerciceFiscal: FY + 1, totalDotations: 7_000, status: "validated" },
+    } as DeclarationDraft;
+  }
+
+  function generationN1(ws: PersistedWorkspace, next: PersistedWorkspace, draft: DeclarationDraft) {
+    const continuity = resolveImmobilisationsContinuityForGeneration({
+      draft,
+      properties: next.properties,
+      propertyIds: next.fiscalYear.propertyIds,
+      immobilisationsOuverture: next.fiscalYear.immobilisationsOuverture,
+      repriseHistoriqueEnContinuite: next.fiscalYear.repriseHistoriqueEnContinuite,
+    });
+    return runDeclarationGeneration(
+      draft,
+      FY + 1,
+      next.fiscalYear.stocksOuverture?.stocks,
+      undefined,
+      undefined,
+      continuity,
+    );
+  }
+
+  it("reprend A+B+C depuis la clôture malgré F-010 N+1 divergent", () => {
+    const { ws } = takeoverWorkspace();
+    const prepared = prepareFiscalYearTransitionCandidate({
+      workspace: ws,
+      dossierId: DOSSIER,
+      now: NOW,
+      nextFiscalYearId: "fy-p0-2e-next",
+    });
+    assert.equal(prepared.ok, true, JSON.stringify(prepared));
+    if (!prepared.ok) return;
+
+    const next = prepared.nextWorkspace;
+    const draft = nextDraft(ws, next);
+    const gate = resolveDeclarationGenerationGate({
+      draft,
+      properties: next.properties,
+      fiscalYear: FY + 1,
+      paid: false,
+      generated: false,
+      stocksOuverture: next.fiscalYear.stocksOuverture?.stocks,
+      priorHistory: resolvePriorHistoryEligibility(next.fiscalYear),
+      continuity: resolveImmobilisationsContinuityForGeneration({
+        draft,
+        properties: next.properties,
+        propertyIds: next.fiscalYear.propertyIds,
+        immobilisationsOuverture: next.fiscalYear.immobilisationsOuverture,
+        repriseHistoriqueEnContinuite: next.fiscalYear.repriseHistoriqueEnContinuite,
+      }),
+    });
+    assert.equal(gate.canGenerate, true, JSON.stringify(gate.snapshot.missing));
+    const result = generationN1(ws, next, draft);
+    assert.equal(result.status, "generated", result.status === "blocked" ? JSON.stringify(result.anomalies) : undefined);
+    if (result.status !== "generated") return;
+    const immo = result.rfs.immobilisations;
+    assert.ok(immo);
+    assert.equal(next.fiscalYear.repriseHistoriqueEnContinuite, true);
+    assert.equal(next.fiscalYear.immobilisationsOuverture?.brut, 122_000);
+    assert.equal(next.fiscalYear.immobilisationsOuverture?.amortissementsCumules, 32_000);
+    assert.deepEqual(immo.lignes.map((l) => l.id), ["asset-a", "asset-b"]);
+    assert.deepEqual(immo.composantsDetail?.map((l) => l.id), ["asset-c"]);
+    assert.equal(immo.composantsDetail?.[0]?.provenance, "historique");
+    assert.equal(immo.composantsDetail?.[0]?.origin, "f012_travaux");
+    assert.equal(immo.mouvements?.sourceClosureId, prepared.closedFiscalYear.closures.at(-1)?.id);
+    assert.match(result.rfs.trace.sources.immobilisations ?? "", /Clôture comptable/);
+    assert.match(result.rfs.trace.sources.immobilisations ?? "", new RegExp(prepared.closedFiscalYear.closures.at(-1)!.id));
+    assert.equal(result.rfs.fiscalResult.amortCalcule, 8_000);
+    const caseC = (id: string) => result.liasseRfs.form2033C.cases.find((c) => c.caseId === id)?.value;
+    const caseA = (id: string) => result.liasseRfs.form2033A.cases.find((c) => c.caseId === id)?.value;
+    assert.equal(caseC("490"), 122_000);
+    assert.equal(caseC("570"), 32_000);
+    assert.equal(caseC("492"), 0);
+    assert.equal(caseC("496"), 122_000);
+    assert.equal(caseC("576"), 40_000);
+    assert.equal(caseA("028"), 122_000);
+    assert.equal(caseA("030"), 40_000);
+  });
+
+  it("attaque 1/5 — totaux F-010 identiques mais lignes et dates divergentes", () => {
+    const { ws } = takeoverWorkspace();
+    const prepared = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    const fake = structuredClone(divergentDraft().logementAmortissement)!;
+    fake.plan = {
+      lignes: [{ label: "Substitut F-010", id: "f010-0", montant: 122_000, dureeAnnees: 30, dotationExercice: 7_000, amortissementsCumules: 32_000, vnc: 90_000 }],
+      totalBrut: 122_000,
+      totalAnnuelExercice: 7_000,
+    };
+    fake.prixRevient = 122_000;
+    fake.valeurTerrain = 0;
+    fake.montantMobilier = 55_000;
+    const draft = nextDraft(ws, prepared.nextWorkspace, { logementAmortissement: fake, dateMiseEnService: "2026-12-31" });
+    draft.logementAssistantState = {
+      ...draft.logementAssistantState,
+      prixAcquisition: 500_000,
+      ratioTerrain: 0.45,
+      montantMobilier: 55_000,
+    };
+    const result = generationN1(ws, prepared.nextWorkspace, draft);
+    assert.equal(result.status, "generated", result.status === "blocked" ? JSON.stringify(result.anomalies) : undefined);
+    if (result.status !== "generated") return;
+    assert.deepEqual(result.rfs.immobilisations?.lignes.map((l) => l.id), ["asset-a", "asset-b"]);
+    assert.equal(result.rfs.immobilisations?.lignes.some((l) => l.label === "Substitut F-010"), false);
+    assert.equal(result.rfs.immobilisations?.montantMobilier, undefined);
+    assert.equal(result.rfs.immobilisations?.valeurTerrain, 0);
+    assert.equal(result.rfs.fiscalResult.amortCalcule, 8_000);
+  });
+
+  it("attaque 2 — terrain distinct conservé et non amorti", () => {
+    const land: OpeningAsset = {
+      id: "land-1", propertyId: PROP, label: "Terrain historique", categorie: "terrain", origin: "historique",
+      coutBrut: available(8_000), cumulOuverture: available(0), plan: available({ kind: "non_amortizable" }),
+    };
+    const { ws } = takeoverWorkspace([land]);
+    const prepared = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(prepared.ok, true, JSON.stringify(prepared));
+    if (!prepared.ok) return;
+    const result = generationN1(ws, prepared.nextWorkspace, nextDraft(ws, prepared.nextWorkspace));
+    assert.equal(result.status, "generated", result.status === "blocked" ? JSON.stringify(result.anomalies) : undefined);
+    if (result.status !== "generated") return;
+    assert.equal(result.rfs.immobilisations?.valeurTerrain, 8_000);
+    assert.equal(result.rfs.immobilisations?.lignes.some((l) => l.id === "land-1"), false);
+    assert.equal(result.liasseRfs.form2033C.cases.find((c) => c.caseId === "490")?.value, 130_000);
+  });
+
+  it("attaques 3/4 — C devient historique ; D est acquisition N+1 une seule fois", () => {
+    const { ws } = takeoverWorkspace();
+    const prepared = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    const D: ComposantNouveau = {
+      id: "asset-d", label: "Acquisition D", montant: 6_000, dureeAnnees: 6,
+      dotationAnnuelle: 1_000, nature: "amélioration", dateDebut: "2026-01-01", origin: "f012_travaux",
+    };
+    const result = generationN1(ws, prepared.nextWorkspace, nextDraft(ws, prepared.nextWorkspace, { newAcquisitions: [D] }));
+    assert.equal(result.status, "generated", result.status === "blocked" ? JSON.stringify(result.anomalies) : undefined);
+    if (result.status !== "generated") return;
+    const immo = result.rfs.immobilisations!;
+    assert.deepEqual(immo.composantsDetail?.map((l) => [l.id, l.provenance]), [
+      ["asset-c", "historique"], ["asset-d", "acquisition_exercice"],
+    ]);
+    assert.equal(result.rfs.fiscalResult.amortCalcule, 9_000);
+    assert.equal(result.liasseRfs.form2033C.cases.find((c) => c.caseId === "490")?.value, 122_000);
+    assert.equal(result.liasseRfs.form2033C.cases.find((c) => c.caseId === "492")?.value, 6_000);
+    assert.equal(result.liasseRfs.form2033C.cases.find((c) => c.caseId === "496")?.value, 128_000);
+  });
+
+  it("attaque 6 / oracle D — dossier natif sans reprise garde le plan F-010", () => {
+    const draft = divergentDraft();
+    const result = runDeclarationGeneration(draft, FY);
+    assert.equal(result.status, "generated", result.status === "blocked" ? JSON.stringify(result.anomalies) : undefined);
+    if (result.status !== "generated") return;
+    assert.equal(result.rfs.immobilisations?.lignes[0]?.id, "f010-0");
+    assert.equal(result.rfs.immobilisations?.valeurTerrain, 40_000);
+  });
+
+  it("oracle E — snapshot absent ou plan incomplet bloque sans repli F-010", () => {
+    const { ws } = takeoverWorkspace();
+    const prepared = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+    const next = prepared.nextWorkspace;
+    const draft = nextDraft(ws, next);
+    const noSnapshot: PersistedWorkspace = { ...next, fiscalYear: { ...next.fiscalYear, immobilisationsOuverture: undefined } };
+    const absent = generationN1(ws, noSnapshot, draft);
+    assert.equal(absent.status, "blocked");
+    if (absent.status === "blocked") assert.match(absent.anomalies[0]?.message ?? "", /TAKEOVER_SNAPSHOT_UNAVAILABLE/);
+    const damaged: PersistedWorkspace = structuredClone(next);
+    damaged.fiscalYear.immobilisationsOuverture!.actifsReprise![0].dureeAnnees = undefined;
+    const incomplete = generationN1(ws, damaged, draft);
+    assert.equal(incomplete.status, "blocked");
+    if (incomplete.status === "blocked") assert.match(incomplete.anomalies[0]?.message ?? "", /TAKEOVER_SNAPSHOT_INCOHERENT/);
+    damaged.fiscalYear.immobilisationsOuverture!.actifsReprise![0].dureeAnnees = 20;
+    damaged.fiscalYear.immobilisationsOuverture!.actifsReprise![0].dateDebut = "2010-02-31";
+    const invalidDate = generationN1(ws, damaged, draft);
+    assert.equal(invalidDate.status, "blocked");
+    if (invalidDate.status === "blocked") assert.match(invalidDate.anomalies[0]?.message ?? "", /TAKEOVER_SNAPSHOT_INCOHERENT/);
+  });
+
+  it("attaque 7 — la clôture N+1 transmet naturellement A+B+C à N+2", () => {
+    const { ws } = takeoverWorkspace();
+    const first = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const draftN1 = nextDraft(ws, first.nextWorkspace);
+    const genN1 = generationN1(ws, first.nextWorkspace, draftN1);
+    assert.equal(genN1.status, "generated", genN1.status === "blocked" ? JSON.stringify(genN1.anomalies) : undefined);
+    if (genN1.status !== "generated") return;
+
+    const wsN1: PersistedWorkspace = {
+      ...first.nextWorkspace,
+      fiscalYear: {
+        ...first.nextWorkspace.fiscalYear,
+        status: "ready_to_close",
+        declarationGeneratedAt: NOW,
+      },
+      declarationDraft: {
+        ...draftN1,
+        fiscalResult: genN1.fiscalResult,
+        liasseResult: genN1.liasseResult,
+        rfs: genN1.rfs,
+        liasseRfs: genN1.liasseRfs,
+      },
+    };
+    const second = prepareFiscalYearTransitionCandidate({ workspace: wsN1, dossierId: DOSSIER, now: "2027-01-15T00:00:00.000Z" });
+    assert.equal(second.ok, true, JSON.stringify(second));
+    if (!second.ok) return;
+    assert.equal(second.nextWorkspace.fiscalYear.repriseHistoriqueEnContinuite, true);
+    assert.equal(second.nextWorkspace.fiscalYear.immobilisationsOuverture?.brut, 122_000);
+    assert.equal(second.nextWorkspace.fiscalYear.immobilisationsOuverture?.amortissementsCumules, 40_000);
+    assert.deepEqual(
+      second.nextWorkspace.fiscalYear.immobilisationsOuverture?.actifsReprise?.map((a) => a.id),
+      ["asset-a", "asset-b", "terrain", "asset-c"],
+    );
+
+    const draftN2 = {
+      ...wsN1.declarationDraft,
+      ...second.nextWorkspace.declarationDraft,
+      revenusAssistant: { ...wsN1.declarationDraft?.revenusAssistant, exerciceFiscal: FY + 2 },
+      chargesAssistant: { ...wsN1.declarationDraft?.chargesAssistant, exerciceFiscal: FY + 2, composantsNouveaux: [] },
+      amortissementAssistant: { exerciceFiscal: FY + 2, totalDotations: 777, status: "validated" },
+      logementAmortissement: divergentDraft().logementAmortissement,
+    } as DeclarationDraft;
+    const continuityN2 = resolveImmobilisationsContinuityForGeneration({
+      draft: draftN2,
+      properties: second.nextWorkspace.properties,
+      propertyIds: second.nextWorkspace.fiscalYear.propertyIds,
+      immobilisationsOuverture: second.nextWorkspace.fiscalYear.immobilisationsOuverture,
+      repriseHistoriqueEnContinuite: second.nextWorkspace.fiscalYear.repriseHistoriqueEnContinuite,
+    });
+    const genN2 = runDeclarationGeneration(
+      draftN2, FY + 2, second.nextWorkspace.fiscalYear.stocksOuverture?.stocks,
+      undefined, undefined, continuityN2,
+    );
+    assert.equal(genN2.status, "generated", genN2.status === "blocked" ? JSON.stringify(genN2.anomalies) : undefined);
+    if (genN2.status !== "generated") return;
+    assert.deepEqual(genN2.rfs.immobilisations?.lignes.map((l) => l.id), ["asset-a", "asset-b"]);
+    assert.deepEqual(genN2.rfs.immobilisations?.composantsDetail?.map((l) => l.id), ["asset-c"]);
+    assert.equal(genN2.liasseRfs.form2033C.cases.find((c) => c.caseId === "490")?.value, 122_000);
+    assert.equal(genN2.liasseRfs.form2033C.cases.find((c) => c.caseId === "570")?.value, 40_000);
   });
 });
