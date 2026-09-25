@@ -556,6 +556,8 @@ export interface FiscalYear {
   };
   /** La continuité d'une reprise exige le snapshot comptable clôturé, y compris si celui-ci manque. */
   repriseHistoriqueEnContinuite?: true;
+  /** Ouverture scalaire native prouvée par la clôture précédente. */
+  continuiteNativeVerifiee?: true;
   /**
    * G1-P1 — miroir exact de `stocksOuverture` ci-dessus, pour la continuité
    * patrimoniale (compte exploitant / RAN) plutôt que les stocks fiscaux.

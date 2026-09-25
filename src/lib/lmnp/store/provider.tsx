@@ -35,6 +35,8 @@ import {
 import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
+import { loadArchivedWorkspaceFromServer } from "./fiscal-year-archive";
+import { repairLegacyTakeoverContinuity } from "@/lib/lmnp/services/dossier/repair-legacy-takeover-continuity";
 import { loadDossierInpiStatus, saveDossierInpiStatus, type DossierInpiStatusMirror } from "./dossier-db";
 import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
 import type { DeclarationDraft } from "../types";
@@ -211,6 +213,26 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           baseWorkspace = {
             ...baseWorkspace,
             fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
+          };
+        }
+
+        // Pre-P0-2E successors stored only scalar opening totals. Recover the
+        // per-asset inventory exclusively from the closed server archive.
+        if (dossier && baseWorkspace.fiscalYear.immobilisationsOuverture &&
+            baseWorkspace.fiscalYear.previousFiscalYearId &&
+            !baseWorkspace.fiscalYear.repriseHistoriqueEnContinuite &&
+            !baseWorkspace.fiscalYear.continuiteNativeVerifiee &&
+            baseWorkspace.fiscalYear.immobilisationsOuverture.actifsReprise === undefined) {
+          const archived = await loadArchivedWorkspaceFromServer({
+            dossierId: dossier.id,
+            fiscalYear: baseWorkspace.fiscalYear.year - 1,
+          });
+          baseWorkspace = {
+            ...baseWorkspace,
+            fiscalYear: repairLegacyTakeoverContinuity(
+              baseWorkspace.fiscalYear,
+              archived.status === "ok" ? archived.workspace.fiscalYear : undefined,
+            ),
           };
         }
 

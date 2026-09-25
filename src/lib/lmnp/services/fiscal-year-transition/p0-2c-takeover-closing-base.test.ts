@@ -12,14 +12,18 @@ import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaratio
 import { resolvePriorHistoryEligibility } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { adaptInternalOpening } from "@/lib/lmnp/services/fiscal-year-opening/adapt-internal-opening";
 import {
+  applyStocksOuvertureResult,
+  createNextFiscalYear,
   extractDossierLevelDataFromWorkspace,
   mergeComposantsF012,
+  resolveStocksOuverture,
   resolveImmobilisationsContinuityForGeneration,
 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { computeOpeningContentHash } from "@/lib/lmnp/services/fiscal-year-opening/content-hash";
 import { available, unavailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
 import type { FiscalYearOpening, OpeningAsset } from "@/lib/lmnp/services/fiscal-year-opening";
 import { prepareFiscalYearTransitionCandidate } from "@/lib/lmnp/services/fiscal-year-transition/prepare-transition";
+import { repairLegacyTakeoverContinuity } from "@/lib/lmnp/services/dossier/repair-legacy-takeover-continuity";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { DeclarationDraft, FiscalYear } from "@/lib/lmnp/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
@@ -576,5 +580,171 @@ describe("P0-2E — production N → clôture → N+1", () => {
     assert.deepEqual(genN2.rfs.immobilisations?.composantsDetail?.map((l) => l.id), ["asset-c"]);
     assert.equal(genN2.liasseRfs.form2033C.cases.find((c) => c.caseId === "490")?.value, 122_000);
     assert.equal(genN2.liasseRfs.form2033C.cases.find((c) => c.caseId === "570")?.value, 40_000);
+  });
+});
+
+describe("P0-2E.1 — N+1 créé avant le transport des actifs", () => {
+  it("oracles A/B/C et attaques 1-7 — ancienne ouverture reprise depuis la clôture ou bloquée", () => {
+    const { ws } = takeoverWorkspace();
+    const prepared = prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW });
+    assert.equal(prepared.ok, true);
+    if (!prepared.ok) return;
+
+    // Forme produite par buildNextExerciseFromClosedYear à 0b355ce : base,
+    // stocks et seuls totaux comptables de clôture, sans marqueur ni actifs.
+    const closed = prepared.closedFiscalYear;
+    const legacyBase = createNextFiscalYear(closed, DOSSIER, NOW, "fy-legacy-p0-2e1");
+    const closure = closed.closures.at(-1)!;
+    const snap = closure.immobilisationsComptables!;
+    const legacyFiscalYear: FiscalYear = {
+      ...applyStocksOuvertureResult(legacyBase, resolveStocksOuverture(legacyBase, closed)),
+      immobilisationsOuverture: {
+        sourceClosureId: closure.id,
+        brut: snap.brutCloture,
+        amortissementsCumules: snap.amortissementsCumulesCloture,
+        vnc: snap.vncCloture,
+      },
+    };
+    const draft: DeclarationDraft = {
+      ...ws.declarationDraft,
+      ...prepared.nextWorkspace.declarationDraft,
+      dateMiseEnService: ws.declarationDraft!.dateMiseEnService,
+      logementAmortissement: {
+        ...divergentDraft().logementAmortissement!,
+        valeurTerrain: 0,
+        plan: {
+          lignes: [
+            { id: "f010-0", label: "X", montant: 60_000, dureeAnnees: 20, dotationExercice: 3_000, amortissementsCumules: 20_000, vnc: 40_000 },
+            { id: "f010-1", label: "Y", montant: 50_000, dureeAnnees: 12, dotationExercice: 4_000, amortissementsCumules: 18_000, vnc: 32_000 },
+          ],
+          totalBrut: 110_000,
+          totalAnnuelExercice: 7_000,
+        },
+      },
+      revenusAssistant: { ...ws.declarationDraft!.revenusAssistant!, exerciceFiscal: FY + 1 },
+      chargesAssistant: { ...ws.declarationDraft!.chargesAssistant!, exerciceFiscal: FY + 1, composantsNouveaux: [] },
+      amortissementAssistant: { exerciceFiscal: FY + 1, totalDotations: 8_000, status: "validated" },
+    } as DeclarationDraft;
+    const continuity = resolveImmobilisationsContinuityForGeneration({
+      draft,
+      properties: prepared.nextWorkspace.properties,
+      propertyIds: legacyFiscalYear.propertyIds,
+      immobilisationsOuverture: legacyFiscalYear.immobilisationsOuverture,
+      previousFiscalYearId: legacyFiscalYear.previousFiscalYearId,
+    });
+    const result = runDeclarationGeneration(draft, FY + 1, legacyFiscalYear.stocksOuverture?.stocks, undefined, undefined, continuity);
+    assert.equal(legacyFiscalYear.immobilisationsOuverture?.brut, 122_000);
+    assert.equal(legacyFiscalYear.immobilisationsOuverture?.amortissementsCumules, 32_000);
+    assert.equal(legacyFiscalYear.immobilisationsOuverture?.vnc, 90_000);
+    assert.equal(legacyFiscalYear.immobilisationsOuverture?.actifsReprise, undefined);
+    assert.equal(result.status, "blocked", "X/Y ne doivent jamais devenir l'inventaire historique d'un ancien N+1 non vérifié");
+    if (result.status === "blocked") assert.match(result.anomalies[0]?.message ?? "", /Provenance/);
+
+    const repaired = repairLegacyTakeoverContinuity(legacyFiscalYear, closed);
+    assert.equal(repaired.repriseHistoriqueEnContinuite, true);
+    assert.deepEqual(repaired.immobilisationsOuverture?.actifsReprise?.map((a) => a.id), ["asset-a", "asset-b", "terrain", "asset-c"]);
+    const recovered = runDeclarationGeneration(draft, FY + 1, repaired.stocksOuverture?.stocks, undefined, undefined,
+      resolveImmobilisationsContinuityForGeneration({
+        draft, properties: prepared.nextWorkspace.properties, propertyIds: repaired.propertyIds,
+        immobilisationsOuverture: repaired.immobilisationsOuverture,
+        repriseHistoriqueEnContinuite: repaired.repriseHistoriqueEnContinuite,
+        previousFiscalYearId: repaired.previousFiscalYearId,
+      }));
+    assert.equal(recovered.status, "generated", recovered.status === "blocked" ? JSON.stringify(recovered.anomalies) : undefined);
+    if (recovered.status !== "generated") return;
+    assert.deepEqual(recovered.rfs.immobilisations?.lignes.map((l) => l.id), ["asset-a", "asset-b"]);
+    assert.deepEqual(recovered.rfs.immobilisations?.composantsDetail?.map((l) => l.id), ["asset-c"]);
+    assert.equal(recovered.liasseRfs.form2033C.cases.find((c) => c.caseId === "490")?.value, 122_000);
+    assert.equal(recovered.liasseRfs.form2033C.cases.find((c) => c.caseId === "570")?.value, 32_000);
+    const repairedWorkspace: PersistedWorkspace = {
+      ...prepared.nextWorkspace,
+      fiscalYear: { ...repaired, status: "ready_to_close", declarationGeneratedAt: NOW },
+      declarationDraft: {
+        ...draft,
+        fiscalResult: recovered.fiscalResult,
+        liasseResult: recovered.liasseResult,
+        rfs: recovered.rfs,
+        liasseRfs: recovered.liasseRfs,
+      },
+    };
+    const transition = prepareFiscalYearTransitionCandidate({ workspace: repairedWorkspace, dossierId: DOSSIER, now: "2027-01-15T00:00:00.000Z" });
+    assert.equal(transition.ok, true, JSON.stringify(transition));
+    if (transition.ok) {
+      assert.deepEqual(transition.nextWorkspace.fiscalYear.immobilisationsOuverture?.actifsReprise?.map((a) => a.id),
+        ["asset-a", "asset-b", "terrain", "asset-c"]);
+      const draftN2: DeclarationDraft = {
+        ...draft,
+        ...transition.nextWorkspace.declarationDraft,
+        logementAmortissement: draft.logementAmortissement,
+        revenusAssistant: { ...draft.revenusAssistant!, exerciceFiscal: FY + 2 },
+        chargesAssistant: { ...draft.chargesAssistant!, exerciceFiscal: FY + 2, composantsNouveaux: [] },
+        amortissementAssistant: { exerciceFiscal: FY + 2, totalDotations: 8_000, status: "validated" },
+      } as DeclarationDraft;
+      const n2 = runDeclarationGeneration(draftN2, FY + 2,
+        transition.nextWorkspace.fiscalYear.stocksOuverture?.stocks, undefined, undefined,
+        resolveImmobilisationsContinuityForGeneration({
+          draft: draftN2, properties: transition.nextWorkspace.properties,
+          propertyIds: transition.nextWorkspace.fiscalYear.propertyIds,
+          immobilisationsOuverture: transition.nextWorkspace.fiscalYear.immobilisationsOuverture,
+          repriseHistoriqueEnContinuite: transition.nextWorkspace.fiscalYear.repriseHistoriqueEnContinuite,
+          previousFiscalYearId: transition.nextWorkspace.fiscalYear.previousFiscalYearId,
+        }));
+      assert.equal(n2.status, "generated", n2.status === "blocked" ? JSON.stringify(n2.anomalies) : undefined);
+      if (n2.status === "generated") {
+        assert.deepEqual(n2.rfs.immobilisations?.lignes.map((l) => l.id), ["asset-a", "asset-b"]);
+        assert.deepEqual(n2.rfs.immobilisations?.composantsDetail?.map((l) => l.id), ["asset-c"]);
+      }
+    }
+
+    const missing = repairLegacyTakeoverContinuity({ ...legacyFiscalYear, declarationGeneratedAt: NOW });
+    assert.equal(missing.declarationGeneratedAt, undefined);
+    const wrongDossier = repairLegacyTakeoverContinuity(legacyFiscalYear, { ...closed, dossierId: "other" });
+    assert.equal(wrongDossier.repriseHistoriqueEnContinuite, undefined);
+    const wrongYear = repairLegacyTakeoverContinuity(legacyFiscalYear, { ...closed, year: FY - 1 });
+    assert.equal(wrongYear.repriseHistoriqueEnContinuite, undefined);
+    const wrongClosure = repairLegacyTakeoverContinuity(legacyFiscalYear, {
+      ...closed, closures: closed.closures?.map((c) => ({ ...c, id: "different" })),
+    });
+    assert.equal(wrongClosure.repriseHistoriqueEnContinuite, undefined);
+    const wrongTotals = repairLegacyTakeoverContinuity(legacyFiscalYear, {
+      ...closed, closures: closed.closures?.map((c) => ({
+        ...c,
+        immobilisationsComptables: c.immobilisationsComptables
+          ? { ...c.immobilisationsComptables, brutCloture: c.immobilisationsComptables.brutCloture + 1 }
+          : undefined,
+      })),
+    });
+    assert.equal(wrongTotals.repriseHistoriqueEnContinuite, true);
+    assert.equal(wrongTotals.immobilisationsOuverture?.actifsReprise, undefined);
+    const noSnapshot = repairLegacyTakeoverContinuity(legacyFiscalYear, {
+      ...closed, closures: closed.closures?.map((c) => ({ ...c, immobilisationsComptables: undefined })),
+    });
+    assert.equal(noSnapshot.repriseHistoriqueEnContinuite, true);
+    assert.equal(noSnapshot.immobilisationsOuverture?.actifsReprise, undefined);
+    const noSnapshotGeneration = runDeclarationGeneration(draft, FY + 1, noSnapshot.stocksOuverture?.stocks, undefined, undefined,
+      resolveImmobilisationsContinuityForGeneration({
+        draft, properties: prepared.nextWorkspace.properties, propertyIds: noSnapshot.propertyIds,
+        immobilisationsOuverture: noSnapshot.immobilisationsOuverture,
+        repriseHistoriqueEnContinuite: noSnapshot.repriseHistoriqueEnContinuite,
+      }));
+    assert.equal(noSnapshotGeneration.status, "blocked");
+    if (noSnapshotGeneration.status === "blocked") assert.match(noSnapshotGeneration.anomalies[0]?.message ?? "", /TAKEOVER_SNAPSHOT_UNAVAILABLE/);
+
+    const nativePrevious: FiscalYear = { ...closed, externalTakeoverOpening: undefined, repriseHistoriqueEnContinuite: undefined };
+    const native = repairLegacyTakeoverContinuity(legacyFiscalYear, nativePrevious);
+    assert.equal(native.repriseHistoriqueEnContinuite, undefined);
+    assert.equal(native.continuiteNativeVerifiee, true);
+    const nativeGeneration = runDeclarationGeneration(draft, FY + 1, native.stocksOuverture?.stocks, undefined, undefined,
+      resolveImmobilisationsContinuityForGeneration({
+        draft, properties: prepared.nextWorkspace.properties, propertyIds: native.propertyIds,
+        immobilisationsOuverture: native.immobilisationsOuverture,
+        previousFiscalYearId: native.previousFiscalYearId,
+        continuiteNativeVerifiee: native.continuiteNativeVerifiee,
+      }));
+    assert.equal(nativeGeneration.status, "generated");
+    if (nativeGeneration.status === "generated") {
+      assert.deepEqual(nativeGeneration.rfs.immobilisations?.lignes.map((l) => l.id), ["f010-0", "f010-1"]);
+    }
+    assert.equal(repairLegacyTakeoverContinuity(prepared.nextWorkspace.fiscalYear, closed), prepared.nextWorkspace.fiscalYear);
   });
 });

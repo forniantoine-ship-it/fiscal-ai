@@ -137,10 +137,14 @@ export function resolveImmobilisationsContinuityForGeneration(input: {
   propertyIds: string[];
   immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
   repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
+  previousFiscalYearId?: FiscalYear["previousFiscalYearId"];
+  continuiteNativeVerifiee?: FiscalYear["continuiteNativeVerifiee"];
 }): {
   composantsF012Merged?: ComposantNouveau[];
   immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
   repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
+  previousFiscalYearId?: FiscalYear["previousFiscalYearId"];
+  continuiteNativeVerifiee?: FiscalYear["continuiteNativeVerifiee"];
   propertyId?: string;
 } {
   const propertyId = input.propertyIds[0];
@@ -154,6 +158,8 @@ export function resolveImmobilisationsContinuityForGeneration(input: {
     ),
     immobilisationsOuverture: input.immobilisationsOuverture,
     repriseHistoriqueEnContinuite: input.repriseHistoriqueEnContinuite,
+    previousFiscalYearId: input.previousFiscalYearId,
+    continuiteNativeVerifiee: input.continuiteNativeVerifiee,
     propertyId,
   };
 }
@@ -377,6 +383,12 @@ export function canCloseFiscalYear(input: {
   if (!fiscalYear.declarationGeneratedAt) {
     return { ok: false, reason: "La déclaration n'a pas encore été générée pour cet exercice." };
   }
+  if (fiscalYear.previousFiscalYearId && fiscalYear.immobilisationsOuverture &&
+      !fiscalYear.repriseHistoriqueEnContinuite &&
+      fiscalYear.immobilisationsOuverture.actifsReprise === undefined &&
+      !fiscalYear.continuiteNativeVerifiee) {
+    return { ok: false, reason: "L'ouverture des immobilisations doit être vérifiée depuis la clôture précédente avant de clôturer cet exercice." };
+  }
 
   // P0 launch safety — clôturer figerait des stocks issus d'un exercice dont
   // l'antériorité n'est pas établie et les présenterait ensuite comme une
@@ -425,6 +437,8 @@ export function canCloseFiscalYear(input: {
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
       repriseHistoriqueEnContinuite: fiscalYear.repriseHistoriqueEnContinuite,
+      previousFiscalYearId: fiscalYear.previousFiscalYearId,
+      continuiteNativeVerifiee: fiscalYear.continuiteNativeVerifiee,
     }),
     // Lot 5.3 — même Opening que la génération réelle.
     fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
@@ -719,6 +733,8 @@ export function buildNextExerciseFromClosedYear(input: {
     ) || input.closedFiscalYear.repriseHistoriqueEnContinuite === true;
   if (repriseHistoriqueEnContinuite) {
     fiscalYear = { ...fiscalYear, repriseHistoriqueEnContinuite: true };
+  } else {
+    fiscalYear = { ...fiscalYear, continuiteNativeVerifiee: true };
   }
   if (
     closureN &&

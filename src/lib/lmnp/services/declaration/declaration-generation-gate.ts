@@ -337,6 +337,8 @@ export function resolveDeclarationGenerationGate(input: {
     composantsF012Merged?: import("@/runtime/capabilities/f012/types").ComposantNouveau[];
     immobilisationsOuverture?: import("../../types/domain").FiscalYear["immobilisationsOuverture"];
     repriseHistoriqueEnContinuite?: import("../../types/domain").FiscalYear["repriseHistoriqueEnContinuite"];
+    previousFiscalYearId?: import("../../types/domain").FiscalYear["previousFiscalYearId"];
+    continuiteNativeVerifiee?: import("../../types/domain").FiscalYear["continuiteNativeVerifiee"];
     propertyId?: string;
   };
   /**

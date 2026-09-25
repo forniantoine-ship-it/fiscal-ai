@@ -144,6 +144,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           propertyIds: fiscalYear.propertyIds,
           immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
           repriseHistoriqueEnContinuite: fiscalYear.repriseHistoriqueEnContinuite,
+          previousFiscalYearId: fiscalYear.previousFiscalYearId,
+          continuiteNativeVerifiee: fiscalYear.continuiteNativeVerifiee,
         }),
         priorHistory,
         // Lot 5.3 — même Opening que runDeclarationGeneration (7e argument).
@@ -153,6 +155,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       draft,
       fiscalYear.immobilisationsOuverture,
       fiscalYear.repriseHistoriqueEnContinuite,
+      fiscalYear.previousFiscalYearId,
+      fiscalYear.continuiteNativeVerifiee,
       fiscalYear.propertyIds,
       fiscalYear.stocksOuverture,
       fiscalYear.year,
@@ -330,6 +334,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       propertyIds: fiscalYear.propertyIds,
       immobilisationsOuverture: fiscalYear.immobilisationsOuverture,
       repriseHistoriqueEnContinuite: fiscalYear.repriseHistoriqueEnContinuite,
+      previousFiscalYearId: fiscalYear.previousFiscalYearId,
+      continuiteNativeVerifiee: fiscalYear.continuiteNativeVerifiee,
     });
     const outcome = runDeclarationGeneration(
       draft,

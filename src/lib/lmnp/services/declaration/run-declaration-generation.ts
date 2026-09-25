@@ -200,6 +200,8 @@ export function runDeclarationGeneration(
     composantsF012Merged?: ComposantNouveau[];
     immobilisationsOuverture?: FiscalYear["immobilisationsOuverture"];
     repriseHistoriqueEnContinuite?: FiscalYear["repriseHistoriqueEnContinuite"];
+    previousFiscalYearId?: FiscalYear["previousFiscalYearId"];
+    continuiteNativeVerifiee?: FiscalYear["continuiteNativeVerifiee"];
     propertyId?: string;
   },
   /**
@@ -249,6 +251,16 @@ export function runDeclarationGeneration(
   let openingTerrainBrut = 0;
   let openingCurrentYearAcquisitions: ComposantNouveau[] | undefined;
   let continuedTakeover: Extract<ReturnType<typeof continueTakeoverSnapshot>, { status: "ready" }> | undefined;
+
+  if (continuity?.previousFiscalYearId && continuity.immobilisationsOuverture &&
+      !continuity.repriseHistoriqueEnContinuite &&
+      continuity.immobilisationsOuverture.actifsReprise === undefined &&
+      !continuity.continuiteNativeVerifiee) {
+    return {
+      status: "blocked",
+      anomalies: [{ severity: "error", field: "immobilisationsOuverture", message: "Provenance de l'ouverture des immobilisations non vérifiée : archive de clôture précédente indisponible ou incohérente." }],
+    };
+  }
 
   if (
     continuity?.repriseHistoriqueEnContinuite === true ||
