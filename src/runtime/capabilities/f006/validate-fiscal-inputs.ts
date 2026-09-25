@@ -58,7 +58,9 @@ export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalI
     anomalies.push({
       severity: "error",
       message:
-        "Un ou plusieurs prêts sont exclus du calcul des intérêts faute de date de première échéance connue.",
+        // R1 — même liste pour : date de première échéance inconnue, frais sans réponse « souscrit cette
+        // année ? », tableau d'amortissement importé inexploitable ou non attribuable à un prêt.
+        "Un ou plusieurs prêts ne peuvent pas être calculés : date de première échéance, frais du prêt ou tableau d'amortissement importé à vérifier.",
       field: "financementCharges.excludedLoanIds",
     });
   }

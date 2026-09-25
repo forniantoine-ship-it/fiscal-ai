@@ -86,7 +86,7 @@ export function F006FiscalEnginePanel() {
     // les dossiers confirmés avant le correctif UI.
     // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : voir
     // commentaire miroir dans run-declaration-generation.ts.
-    const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
+    const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing, fiscalYear);
     // Latence « prêt saisi puis aucun crédit » — miroir de run-declaration-generation.ts.
     const financementBrut = effectiveFinancementCharges(draft);
     const financementCharges = financementBrut ? { ...financementBrut, excludedLoanIds } : financementBrut;

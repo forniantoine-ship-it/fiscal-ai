@@ -14,6 +14,12 @@
  *  ⇒ 2025 : intérêts 3 480,00 ; assurance 300,00 (12 × 25) ; CRD 98 500 − 6 120 = 92 380,00
  *  ⇒ assurance annuelle transmise à F-011 : 25 × 12 = 300,00 (2025) contre 30 × 12 = 360,00 (2024)
  *
+ * R1 (tableau documentaire prioritaire) — chaque ligne porte le CRD imprimé (colonne lue par le parseur
+ * spatial, 100 000 − capital cumulé). Le tableau étant exploitable, F-011 lit intérêts ET assurance de
+ * l'exercice dans le tableau : la contamination d'année du PRÉREMPLISSAGE (contre-épreuve 2024) ne peut
+ * plus atteindre F-011. Avant R1, ces tests figeaient la reconstruction « depuis les termes du prêt »
+ * malgré le tableau présent — la substitution silencieuse corrigée par R1.
+ *
  * Run: npx tsx --test src/lib/lmnp/services/f011/f011-revenue-year-model.test.ts
  */
 import { describe, it } from "node:test";
@@ -27,20 +33,21 @@ import { mapCreditFinancingToFinancementCharges } from "./credit-financing-to-fi
 
 const EXERCICE = 2025;
 
-const row = (date: string, interest: number, principal: number, insurance: number) => ({
+const row = (date: string, interest: number, principal: number, insurance: number, remainingCapital: number) => ({
   date,
   interest,
   principal,
   insurance,
   fees: 0,
   totalPayment: interest + principal + insurance,
+  remainingCapital,
 });
 
 const INSTALLMENTS = [
-  row("2024-10-05", 300, 500, 30),
-  row("2024-11-05", 300, 500, 30),
-  row("2024-12-05", 300, 500, 30),
-  ...Array.from({ length: 12 }, (_, i) => row(`2025-${String(i + 1).padStart(2, "0")}-05`, 290, 510, 25)),
+  row("2024-10-05", 300, 500, 30, 99500),
+  row("2024-11-05", 300, 500, 30, 99000),
+  row("2024-12-05", 300, 500, 30, 98500),
+  ...Array.from({ length: 12 }, (_, i) => row(`2025-${String(i + 1).padStart(2, "0")}-05`, 290, 510, 25, 98500 - 510 * (i + 1))),
 ];
 
 const SESSION = {
@@ -99,24 +106,21 @@ describe("revenueYear = exercice (modèle d'années)", () => {
     assert.equal(financing.loans[0]?.insurance, 360);
   });
 
-  it("CONTRE-ÉPREUVE revenueYear = 2024 : F-011 surestime l'assurance déductible 2025 de 60,00 € (360,00 au lieu de 300,00)", () => {
+  it("CONTRE-ÉPREUVE revenueYear = 2024 : l'assurance 2024 du préremplissage (360,00) n'atteint plus F-011 — le tableau 2025 fait foi (300,00)", () => {
     const correct = creditChain(revenueYearForExercice(EXERCICE)).charges;
-    const wrong = creditChain(2024).charges;
-    assert.equal(wrong.totalAssurance, 360);
+    const wrong = creditChain(2024);
+    assert.equal(wrong.financing.loans[0]?.insurance, 360, "le préremplissage reste contaminé (ancien modèle -1)");
     assert.equal(correct.totalAssurance, 300);
-    assert.equal(wrong.totalAssurance - correct.totalAssurance, 60);
-    assert.equal(
-      Math.round((wrong.totalChargesFinancementExercice - correct.totalChargesFinancementExercice) * 100) / 100,
-      60,
-      "l'écart de charges de financement de l'exercice est exactement l'écart d'assurance",
-    );
+    assert.equal(wrong.charges.totalAssurance, 300, "R1 — assurance lue dans les lignes 2025 du tableau, jamais le montant saisi");
+    assert.equal(wrong.charges.totalChargesFinancementExercice, correct.totalChargesFinancementExercice);
   });
 
-  it("les intérêts F-011 de l'exercice ne dépendent pas de revenueYear (calculés depuis les termes du prêt) — seule l'assurance est contaminée", () => {
+  it("les intérêts F-011 de l'exercice ne dépendent pas de revenueYear : lus dans le tableau documentaire (12 × 290,00 = 3 480,00), CRD 92 380,00", () => {
     const correct = creditChain(2025).charges;
     const wrong = creditChain(2024).charges;
     assert.equal(wrong.totalInteretsEmprunt, correct.totalInteretsEmprunt);
-    assert.ok(correct.totalInteretsEmprunt > 0);
+    assert.equal(correct.totalInteretsEmprunt, 3480);
+    assert.equal(correct.prets[0]?.capitalRestantDu31_12, 92380);
   });
 });
 

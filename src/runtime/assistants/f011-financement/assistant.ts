@@ -1,4 +1,6 @@
 import { computeFinancementExercice } from "../../capabilities/f011/compute-financement-exercice";
+import { resolveDocumentaryEcheances } from "../../capabilities/f011/resolve-documentary-echeances";
+import type { Anomaly } from "../../contracts/Anomaly";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import type { FieldSource } from "../../contracts/FieldSource";
 import { explainFinancement } from "../../presentation/explain-financement";
@@ -534,7 +536,13 @@ export class F011FinancementAssistant {
 
       case "analysis_success": {
         const application = applyCreditPrefillToLoan(state.pendingLoan, action.prefill);
-        const mergedPendingLoan = { ...state.pendingLoan, ...application.patch };
+        // R1 — le tableau importé pour CE prêt est conservé avec lui (source prioritaire au calcul) ;
+        // un second document sans tableau (offre) n'efface jamais un tableau déjà importé.
+        const mergedPendingLoan = {
+          ...state.pendingLoan,
+          ...application.patch,
+          ...(action.prefill.installments ? { echeancesDocument: action.prefill.installments } : {}),
+        };
         // Chaque champ effectivement appliqué (jamais un champ en conflit, qui
         // reste sous la provenance de la valeur déjà là tant qu'il n'est pas résolu).
         const mergedFieldSources: Partial<Record<string, FieldSource>> = { ...state.fieldSources };
@@ -557,7 +565,9 @@ export class F011FinancementAssistant {
             {
               pendingLoan: mergedPendingLoan,
               fieldSources: mergedFieldSources,
-              pendingExtraction: { documentId: action.documentId, prefill: action.prefill },
+              // R1 — les lignes du tableau vivent sur `pendingLoan.echeancesDocument` : jamais une seconde copie
+              // persistée ici (chaque instantané d'historique la re-sérialiserait).
+              pendingExtraction: { documentId: action.documentId, prefill: { ...action.prefill, installments: undefined } },
               extractionConflicts: application.conflicts,
               analyzingDocumentId: undefined,
               detectedGuaranteeFees: nextDetectedGuaranteeFees,
@@ -1045,6 +1055,7 @@ export class F011FinancementAssistant {
       fraisDossier: state.pendingLoan?.fraisDossier,
       remboursementAnticipeCetExercice: remboursementAnticipe,
       iraMontant: remboursementAnticipe ? iraMontant : undefined,
+      ...(state.pendingLoan?.echeancesDocument ? { echeancesDocument: state.pendingLoan.echeancesDocument } : {}),
     };
   }
 
@@ -1052,6 +1063,7 @@ export class F011FinancementAssistant {
   private buildLoanPreviewMessage(loans: F011LoanDraft[], draft: F011LoanDraft): F011Message {
     const preview = this.computeForLoans([...loans, draft]);
     const pretPreview = preview.charges.prets.at(-1);
+    const documentaryWarnings = documentaryWarningLines(preview.anomalies);
     // F011-3 (audit KS AX-011/JUG-011) — les intérêts/assurance
     // pré-exploitation sont deux montants DISTINCTS (siblings de
     // `interetsEmpruntExercice`/`assuranceEmpruntExercice`, jamais un
@@ -1073,6 +1085,7 @@ export class F011FinancementAssistant {
     return {
       role: "assistant",
       content:
+        documentaryWarnings +
         `Intérêts déductibles de l'exercice : ${Math.round(pretPreview?.interetsEmpruntExercice ?? 0).toLocaleString("fr-FR")} €\n` +
         preExploitationLines.join("") +
         `Assurance déductible : ${Math.round(pretPreview?.assuranceEmpruntExercice ?? 0).toLocaleString("fr-FR")} €\n` +
@@ -1099,7 +1112,7 @@ export class F011FinancementAssistant {
     return {
       result,
       messages: [
-        { role: "assistant", content: result.explanation },
+        { role: "assistant", content: documentaryWarningLines(result.anomalies) + result.explanation },
         {
           role: "assistant",
           content: "Ces montants vous conviennent-ils ?",
@@ -1225,17 +1238,29 @@ export class F011FinancementAssistant {
         "F011: dateMiseEnService requis pour calculer les charges de financement — précondition F-009 non satisfaite.",
       );
     }
-    return computeFinancementExercice({
+    // R1 — même contrat que Tunnel A (`resolveDocumentaryEcheances`) : tableau exploitable → prioritaire ;
+    // absent → reconstruction ; inexploitable → reconstruction affichée comme telle + anomalie bloquante,
+    // le `creditFinancing` persisté portant le tableau, le gate F-006 bloque la déclaration.
+    const documentary = loans.map((loan) =>
+      resolveDocumentaryEcheances({
+        rows: loan.echeancesDocument,
+        exerciceFiscal: this.ctx.fiscalYear,
+        datePremiereMensualite: loan.datePremiereMensualite,
+        assuranceExterneDeclaree: loan.assuranceType === "externe",
+      }),
+    );
+    const computed = computeFinancementExercice({
       exerciceFiscal: this.ctx.fiscalYear,
       dateMiseEnService,
       prixRevient: this.deps.prixRevient,
-      prets: loans.map((loan) => ({
+      prets: loans.map((loan, index) => ({
         pretId: loan.pretId,
         typePret: loan.typePret,
         capitalInitial: loan.capitalInitial,
         tauxNominal: loan.tauxNominal,
         dureeMois: loan.dureeMois,
         datePremiereMensualite: loan.datePremiereMensualite,
+        echeances: documentary[index]!.status === "exploitable" ? documentary[index].echeances : undefined,
         assuranceAnnuelle: loan.assuranceAnnuelle,
         assuranceType: loan.assuranceType,
         fraisDossier: loan.fraisDossier,
@@ -1244,6 +1269,28 @@ export class F011FinancementAssistant {
         anneeSouscription: loan.souscritCetExercice ? this.ctx.fiscalYear : undefined,
       })),
     });
+    const documentaryAnomalies: Anomaly[] = [];
+    documentary.forEach((resolution, index) => {
+      if (resolution.status !== "non_exploitable") return;
+      documentaryAnomalies.push({
+        severity: "error",
+        field: DOCUMENTARY_ANOMALY_FIELD,
+        message:
+          `Prêt ${index + 1} : le tableau d'amortissement importé n'est pas exploitable (${resolution.reason}). ` +
+          "Les montants sont reconstitués depuis les caractéristiques du prêt et la déclaration restera bloquée " +
+          "tant que le tableau n'est pas remplacé.",
+      });
+    });
+    if (loans.length > 1 && loans.some((loan) => loan.echeancesDocument?.length)) {
+      documentaryAnomalies.push({
+        severity: "error",
+        field: DOCUMENTARY_ANOMALY_FIELD,
+        message:
+          "Un tableau d'amortissement a été importé alors que le financement compte plusieurs prêts : " +
+          "il ne peut pas encore être rattaché à un prêt précis dans votre dossier, la déclaration restera bloquée.",
+      });
+    }
+    return { ...computed, anomalies: [...computed.anomalies, ...documentaryAnomalies] };
   }
 
   private buildResult(loans: F011LoanDraft[]): F011Result {
@@ -1256,6 +1303,17 @@ export class F011FinancementAssistant {
       skipped: false,
     };
   }
+}
+
+/** R1 — même champ que le gate F-006 des prêts non calculables (`validateFiscalInputs`). */
+const DOCUMENTARY_ANOMALY_FIELD = "financementCharges.excludedLoanIds";
+
+/** R1 — jamais un montant reconstruit présenté sans dire que le tableau importé n'a pas pu servir. */
+function documentaryWarningLines(anomalies: Anomaly[]): string {
+  return anomalies
+    .filter((anomaly) => anomaly.field === DOCUMENTARY_ANOMALY_FIELD)
+    .map((anomaly) => `⚠ ${anomaly.message}\n`)
+    .join("");
 }
 
 function emptyCharges(exerciceFiscal: number) {

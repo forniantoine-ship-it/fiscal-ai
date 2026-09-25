@@ -21,6 +21,7 @@ import {
   type LoanIdentity,
 } from "@/lib/lmnp/services/f011/f011-loan-form-state";
 import { buildFinancementCharges } from "@/lib/lmnp/services/f011/f011-build-financement-charges";
+import { documentaryInstallmentsForCreditFinancing } from "@/lib/lmnp/services/f011/f011-documentary-installments";
 import { shouldInvalidateCreditConfirmation } from "@/lib/lmnp/services/f011/f011-credit-confirmation-invalidation";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { supabase } from "@/lib/supabase";
@@ -602,6 +603,7 @@ export function F011FinancementAssistantPanel() {
           durationMonths: loan.dureeMois,
           monthlyPayment: 0,
           insurance: loan.assuranceAnnuelle ?? 0,
+          ...(loan.assuranceType ? { assuranceType: loan.assuranceType } : {}),
           fees: 0,
           // F011 fees/guarantee V1 fix — transport pur des mêmes valeurs déjà
           // résolues et utilisées pour `financementCharges` ci-dessus
@@ -625,7 +627,9 @@ export function F011FinancementAssistantPanel() {
           annualInsurance: result.charges.totalAssurance,
           remainingCapital: result.charges.prets[0]?.capitalRestantDu31_12 ?? 0,
         },
-        installments: [],
+        // R1 — l'échéancier importé est transporté vers le `creditFinancing` canonique (jamais `[]` en dur) :
+        // une reconfirmation Tunnel A applique alors le même contrat documentaire au lieu de reconstruire.
+        installments: documentaryInstallmentsForCreditFinancing(finalState.loans),
       };
 
       dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { financementCharges } });

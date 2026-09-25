@@ -6,6 +6,7 @@ import type {
   F011PrefillConflict,
   F011PrefillFieldKey,
 } from "@/lib/lmnp/services/f011/credit-bridge";
+import type { LoanInstallment } from "@/lib/lmnp/types";
 
 export type F011Step =
   | "presence_emprunt"
@@ -48,6 +49,11 @@ export interface F011LoanDraft {
   souscritCetExercice?: boolean;
   remboursementAnticipeCetExercice?: boolean;
   iraMontant?: number;
+  /**
+   * R1 — échéancier du tableau d'amortissement importé POUR CE PRÊT (upload dans la boucle par prêt,
+   * donc attribuable sans deviner). Source prioritaire sur la reconstruction (`resolveDocumentaryEcheances`).
+   */
+  echeancesDocument?: LoanInstallment[];
 }
 
 export interface F011Result {

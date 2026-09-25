@@ -107,7 +107,10 @@ function isLogementComplete(draft?: DeclarationDraft, fiscalYear?: number): bool
  */
 function isCreditComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
   if (!draft?.creditConfirmedAt && !draft?.creditDeclaredNoneAt) return false;
-  if (excludedLoanIdsFromFinancing(draft?.creditFinancing).length > 0) return false;
+  // R1 — l'échéancier documentaire s'évalue pour un exercice : celui du dossier, sinon celui du calcul
+  // persisté (le gate F-006, qui connaît toujours l'exercice, reste la frontière dure).
+  const exercice = fiscalYear ?? draft?.financementCharges?.exerciceFiscal;
+  if (excludedLoanIdsFromFinancing(draft?.creditFinancing, exercice).length > 0) return false;
   if (draft?.financementCharges && fiscalYear !== undefined) {
     return isAnnualOutputForActiveYear(draft.financementCharges, fiscalYear);
   }

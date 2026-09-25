@@ -80,6 +80,15 @@ function applyLoanInsurance(
 
 function resolveEcheances(pret: PretInput, exerciceFiscal: number): EcheanceMensuelle[] {
   if (pret.echeances?.length) {
+    // R1 — KS F-011 « Type d'assurance » : bancaire (dans le tableau) → extraite du tableau ;
+    // externe (délégation) → montant annuel saisi. Le montant saisi ne s'ajoute donc que si le
+    // tableau ne porte aucune assurance sur l'exercice — jamais tableau + saisie (double compte).
+    const tableauPorteAssurance = pret.echeances.some(
+      (row) => yearOf(row.date) === exerciceFiscal && row.assurance > 0,
+    );
+    if (pret.assuranceAnnuelle && !tableauPorteAssurance) {
+      return applyLoanInsurance(pret.echeances, pret.assuranceAnnuelle, exerciceFiscal);
+    }
     return pret.echeances;
   }
 

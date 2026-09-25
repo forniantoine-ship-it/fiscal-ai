@@ -47,6 +47,7 @@ import { computeFinancementExercice } from "@/runtime";
 import type { ComputeFinancementExerciceInput, PretInput, TypePret } from "@/runtime";
 import type { CreditFinancingData } from "@/lib/lmnp/types";
 import type { FinancementChargesOutput } from "@/lib/lmnp/types/domain";
+import { resolveCreditFinancingLoanEcheances } from "./f011-documentary-installments";
 
 /**
  * NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — prédicat unique de complétude
@@ -91,10 +92,26 @@ export function loanHasKnownSubscriptionYearIfFeesExist(
  * manquante), mais doit tout de même apparaître ici pour bloquer la
  * complétude/génération tant que le client n'a pas répondu — même sévérité
  * que `firstPaymentDate` manquant, volontairement.
+ *
+ * R1 — étend encore cette même liste avec les prêts dont l'échéancier documentaire est présent mais
+ * inexploitable ou non attribuable (`resolveCreditFinancingLoanEcheances`) : le mapper ne les calcule
+ * pas (jamais de reconstruction substituée au document), le gate F-006 bloque. La couverture du
+ * tableau s'évalue pour un exercice : `exerciceFiscal` est un paramètre obligatoire ; `undefined`
+ * (exercice réellement inconnu de l'appelant) n'évalue que les règles précédentes — le gate F-006
+ * (`run-declaration-generation`, panneau F-006) passe toujours l'exercice.
  */
-export function excludedLoanIdsFromFinancing(financing: CreditFinancingData | undefined): string[] {
+export function excludedLoanIdsFromFinancing(
+  financing: CreditFinancingData | undefined,
+  exerciceFiscal: number | undefined,
+): string[] {
   return (financing?.loans ?? [])
-    .filter((loan) => !loanHasFirstPaymentDate(loan) || !loanHasKnownSubscriptionYearIfFeesExist(loan))
+    .filter(
+      (loan) =>
+        !loanHasFirstPaymentDate(loan) ||
+        !loanHasKnownSubscriptionYearIfFeesExist(loan) ||
+        (exerciceFiscal !== undefined &&
+          resolveCreditFinancingLoanEcheances(financing!, loan, exerciceFiscal).status === "non_exploitable"),
+    )
     .map((loan) => loan.id);
 }
 
@@ -116,7 +133,7 @@ export type MapCreditFinancingParams = {
 
 export type MapCreditFinancingResult = {
   financementCharges: FinancementChargesOutput;
-  /** Prêts exclus du calcul faute de date de première mensualité connue. */
+  /** Prêts exclus du calcul : date de première mensualité inconnue, ou échéancier documentaire inexploitable (R1). */
   excludedLoanIds: string[];
 };
 
@@ -138,13 +155,24 @@ export function mapCreditFinancingToFinancementCharges(
       if (!hasDate) excludedLoanIds.push(loan.id);
       return hasDate;
     })
-    .map((loan) => ({
+    .flatMap((loan) => {
+      // R1 — tableau documentaire exploitable → échéances prioritaires (chemin déjà prévu par le moteur) ;
+      // absent → reconstruction ; présent mais inexploitable/non attribuable → exclu (bloquant), jamais reconstruit.
+      const documentary = resolveCreditFinancingLoanEcheances(params.financing, loan, params.exerciceFiscal);
+      if (documentary.status === "non_exploitable") {
+        excludedLoanIds.push(loan.id);
+        return [];
+      }
+      return [{ loan, echeances: documentary.status === "exploitable" ? documentary.echeances : undefined }];
+    })
+    .map(({ loan, echeances }) => ({
       pretId: loan.id,
       typePret: inferTypePretFromFreeText(loan.loanType),
       capitalInitial: loan.borrowedAmount,
       tauxNominal: loan.rate / 100,
       dureeMois: loan.durationMonths,
       datePremiereMensualite: loan.firstPaymentDate,
+      echeances,
       // NEXT-3 (blocker fix) — `loan.insurance` est déjà l'unité canonique
       // ANNUELLE (normalisée à l'écriture, voir doc-comment ci-dessus) :
       // transport pur, AUCUNE conversion ici. `undefined` si aucune assurance

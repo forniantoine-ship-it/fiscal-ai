@@ -136,7 +136,10 @@ export function spatialRowsToVisibleLoanInstallments(
             : undefined,
     });
 
-    installments.push(loanRow);
+    // R1 — le CRD imprimé est la vérité documentaire de la case 156 : transporté tel quel, jamais recalculé.
+    installments.push(
+      row.remainingCapital !== undefined ? { ...loanRow, remainingCapital: row.remainingCapital } : loanRow,
+    );
   }
 
   installments.sort((a, b) => a.date.localeCompare(b.date));

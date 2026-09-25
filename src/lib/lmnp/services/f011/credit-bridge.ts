@@ -20,6 +20,7 @@ import type { CreditLoanOfferExtraction } from "@/lib/documents/gpt/schemas/cred
 import { AMORTIZATION_OWNED_FIELDS } from "@/lib/lmnp/services/credit-field-ownership";
 import type { GovernedFieldMetadata, FieldWriteDecision } from "@/lib/documents/types/governed-field";
 import type { F011LoanDraft, TypePret } from "@/runtime";
+import type { LoanInstallment } from "@/lib/lmnp/types";
 
 /**
  * Champs F-011 que ce pont sait alimenter depuis un document. Volontairement
@@ -69,6 +70,11 @@ export type F011CreditPrefill = {
   fields: Partial<Record<F011PrefillFieldKey, F011LoanDraft[keyof F011LoanDraft]>>;
   provenance: Partial<Record<F011PrefillFieldKey, GovernedFieldMetadata>>;
   unmapped: F011UnmappedField[];
+  /**
+   * R1 — lignes du tableau d'amortissement (avec CRD imprimé quand lu). Autrefois ignorées sans même
+   * figurer dans `unmapped` : l'assistant reconstruisait silencieusement un échéancier théorique.
+   */
+  installments?: LoanInstallment[];
 };
 
 export type F011PrefillConflict = {
@@ -244,7 +250,11 @@ export function mapCreditExtractionToF011Prefill(
   // IRA — aucun schéma actuel ne porte d'indemnité de remboursement anticipé.
   // Rien à faire : l'absence reste une absence, sans entrée `unmapped` (rien vu).
 
-  return { fields, provenance, unmapped };
+  // R1 — l'échéancier lui-même : transporté tel quel, son exploitabilité est jugée au calcul
+  // (`resolveDocumentaryEcheances`), jamais ici.
+  const installments = amortization?.installments?.length ? amortization.installments : undefined;
+
+  return { fields, provenance, unmapped, ...(installments ? { installments } : {}) };
 }
 
 /**

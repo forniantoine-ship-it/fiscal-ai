@@ -377,7 +377,7 @@ export function runDeclarationGeneration(
   // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : la dérivation
   // fraîche reste la seule vérité, jamais une ancienne valeur persistée
   // (potentiellement stale) qui survivrait parce que le tableau frais est vide.
-  const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing);
+  const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing, fiscalYear);
   // Latence « prêt saisi puis aucun crédit » — `effectiveFinancementCharges` écarte d'anciennes charges de
   // financement dès que « aucun crédit » est établi (voir credit-state.ts) ; sinon `draft.financementCharges`.
   const financementBrut = effectiveFinancementCharges(draft);

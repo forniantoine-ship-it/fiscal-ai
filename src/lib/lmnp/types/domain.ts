@@ -98,6 +98,12 @@ export interface LoanProfile {
   durationMonths: number;
   monthlyPayment: number;
   insurance: number;
+  /**
+   * R1 — type d'assurance répondu dans l'assistant F-011 (absent côté Tunnel A). Persisté pour que le
+   * gate F-006 reproduise le blocage « assurance externe déclarée + tableau portant une assurance
+   * bancaire » (KS F-011 : deux assurances la même année = montants pro-ratisés, non calculables ici).
+   */
+  assuranceType?: "bancaire" | "externe";
   deferralType?: LoanDeferralType;
   deferralMonths?: number;
   fees: number;
@@ -130,6 +136,11 @@ export interface LoanInstallment {
   insurance: number;
   fees: number;
   comment?: string;
+  /**
+   * R1 — capital restant dû IMPRIMÉ sur la ligne du tableau (colonne CRD lue par le parseur spatial).
+   * Absent si non lu : jamais recalculé ni inventé. Source de la case 156 quand l'échéancier est exploitable.
+   */
+  remainingCapital?: number;
 }
 
 export interface CreditFinancingSummary {

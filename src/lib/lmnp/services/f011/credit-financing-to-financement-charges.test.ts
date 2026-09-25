@@ -287,40 +287,41 @@ describe("F-011 — Cycle 4 §11 : le trou financementCharges côté Tunnel A", 
 
 describe("F011 fees/guarantee V1 fix — excludedLoanIdsFromFinancing() étendu (complétude)", () => {
   it("Case A — fees = 0, souscritCetExercice jamais répondu → jamais exclu (le fait est hors-sujet)", () => {
-    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 0, loanGuaranteeFees: 0 }]));
+    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 0, loanGuaranteeFees: 0 }]), 2022);
     assert.deepEqual(ids, []);
   });
 
   it("Case F/G — fees > 0 + souscritCetExercice absent (dossier ancien ou jamais répondu) → exclu/incomplet", () => {
-    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 800 }]));
+    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 800 }]), 2022);
     assert.deepEqual(ids, ["loan-1"]);
   });
 
   it("Case B/D — fees > 0 + souscritCetExercice: true → complet, jamais exclu", () => {
     const ids = excludedLoanIdsFromFinancing(
       financingWith([{ ...BASE_LOAN, loanApplicationFees: 800, loanGuaranteeFees: 500, souscritCetExercice: true }]),
+      2022,
     );
     assert.deepEqual(ids, []);
   });
 
   it("Case E — fees > 0 + souscritCetExercice: false (répondu) → complet, jamais exclu", () => {
-    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 800, souscritCetExercice: false }]));
+    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, loanApplicationFees: 800, souscritCetExercice: false }]), 2022);
     assert.deepEqual(ids, []);
   });
 
   it("préserve intégralement l'exclusion NEXT-2 (firstPaymentDate manquante), jamais remplacée", () => {
-    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, firstPaymentDate: "" }]));
+    const ids = excludedLoanIdsFromFinancing(financingWith([{ ...BASE_LOAN, firstPaymentDate: "" }]), 2022);
     assert.deepEqual(ids, ["loan-1"], "toujours exclu pour date manquante, indépendamment des frais");
   });
 
   it("Case J — multi-prêts : isolation complète entre un prêt complet et un prêt incomplet", () => {
     const loanA = { ...BASE_LOAN, id: "loan-A", loanApplicationFees: 800, souscritCetExercice: true };
     const loanB = { ...BASE_LOAN, id: "loan-B", loanApplicationFees: 600, souscritCetExercice: undefined };
-    assert.deepEqual(excludedLoanIdsFromFinancing(financingWith([loanA, loanB])), ["loan-B"]);
+    assert.deepEqual(excludedLoanIdsFromFinancing(financingWith([loanA, loanB]), 2022), ["loan-B"]);
 
     const loanBAnswered = { ...loanB, souscritCetExercice: false };
     assert.deepEqual(
-      excludedLoanIdsFromFinancing(financingWith([loanA, loanBAnswered])),
+      excludedLoanIdsFromFinancing(financingWith([loanA, loanBAnswered]), 2022),
       [],
       "répondre false à loan-B le rend complet, loan-A reste inchangé",
     );

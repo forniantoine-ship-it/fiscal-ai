@@ -166,6 +166,12 @@ export type {
   ValidateFinancementOutput,
 } from "./capabilities/f011/validate-financement";
 export { validateFinancement } from "./capabilities/f011/validate-financement";
+export type {
+  DocumentaryInstallment,
+  DocumentaryEcheancesResolution,
+  ResolveDocumentaryEcheancesInput,
+} from "./capabilities/f011/resolve-documentary-echeances";
+export { resolveDocumentaryEcheances } from "./capabilities/f011/resolve-documentary-echeances";
 
 // F-011 — présentation
 export type {
