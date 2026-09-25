@@ -137,9 +137,12 @@ export function spatialRowsToVisibleLoanInstallments(
     });
 
     // R1 — le CRD imprimé est la vérité documentaire de la case 156 : transporté tel quel, jamais recalculé.
-    installments.push(
-      row.remainingCapital !== undefined ? { ...loanRow, remainingCapital: row.remainingCapital } : loanRow,
-    );
+    // R1.x — le rang imprimé idem : seule preuve de l'origine d'un tableau commençant en cours d'exercice.
+    installments.push({
+      ...loanRow,
+      ...(row.remainingCapital !== undefined ? { remainingCapital: row.remainingCapital } : {}),
+      ...(row.rank !== undefined ? { rank: row.rank } : {}),
+    });
   }
 
   installments.sort((a, b) => a.date.localeCompare(b.date));

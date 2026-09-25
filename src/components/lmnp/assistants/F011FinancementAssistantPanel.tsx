@@ -604,6 +604,7 @@ export function F011FinancementAssistantPanel() {
           monthlyPayment: 0,
           insurance: loan.assuranceAnnuelle ?? 0,
           ...(loan.assuranceType ? { assuranceType: loan.assuranceType } : {}),
+          ...(loan.capitalInitialOffre !== undefined ? { capitalInitialOffre: loan.capitalInitialOffre } : {}),
           fees: 0,
           // F011 fees/guarantee V1 fix — transport pur des mêmes valeurs déjà
           // résolues et utilisées pour `financementCharges` ci-dessus

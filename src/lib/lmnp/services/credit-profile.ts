@@ -29,6 +29,10 @@ export type CreditLoanFormValues = {
   loanApplicationFees: string;
   /** Tri-état, jamais collapsé à false — voir LoanProfile.souscritCetExercice. */
   souscritCetExercice?: boolean;
+  /** R1.x — type d'assurance répondu dans F-011, transporté tel quel (voir LoanProfile.assuranceType). */
+  assuranceType?: "bancaire" | "externe";
+  /** R1.x — capital lu sur l'offre de prêt (document distinct du tableau), transporté tel quel. */
+  capitalInitialOffre?: number;
   startDate: string;
   firstPaymentDate: string;
   remainingCapital: string;
@@ -137,6 +141,10 @@ function loanToFormValues(loan: CreditFinancingData["loans"][0]): CreditLoanForm
     // Transport pur, jamais Boolean(...) : true/false/undefined doivent
     // rester distincts (undefined ≠ false — voir doc-comment LoanProfile).
     souscritCetExercice: loan.souscritCetExercice,
+    // R1.x (P0-C) — sans ce transport, une reconfirmation Tunnel A levait silencieusement le blocage
+    // « assurance externe + assurance bancaire dans le tableau ».
+    ...(loan.assuranceType ? { assuranceType: loan.assuranceType } : {}),
+    ...(loan.capitalInitialOffre !== undefined ? { capitalInitialOffre: loan.capitalInitialOffre } : {}),
     startDate: loan.startDate,
     firstPaymentDate: loan.firstPaymentDate,
     remainingCapital: String(loan.remainingCapital),
@@ -225,6 +233,8 @@ export function formValuesToFinancing(values: CreditFormValues, revenueYear: num
     // Transport pur, jamais Boolean(...) : true/false/undefined doivent
     // rester distincts.
     souscritCetExercice: loan.souscritCetExercice,
+    ...(loan.assuranceType ? { assuranceType: loan.assuranceType } : {}),
+    ...(loan.capitalInitialOffre !== undefined ? { capitalInitialOffre: loan.capitalInitialOffre } : {}),
     startDate: loan.startDate.trim(),
     firstPaymentDate: loan.firstPaymentDate.trim(),
     remainingCapital: parseNumber(loan.remainingCapital),

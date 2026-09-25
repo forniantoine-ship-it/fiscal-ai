@@ -77,7 +77,8 @@ function isLocked(
 
 function readManualLoanField(
   overrides: CreditFormValues | undefined,
-  key: keyof CreditLoanFormValues,
+  // R1.x — le capital de l'offre (nombre) n'est jamais lu comme saisie manuelle : il ne vient que de `loanOffer`.
+  key: Exclude<keyof CreditLoanFormValues, "capitalInitialOffre">,
 ): string | boolean | undefined {
   return overrides?.loans[0]?.[key];
 }
@@ -525,6 +526,12 @@ export function hydrateCreditFormFromSession(input: CreditGptPrefillInput): Cred
     firstPaymentDate: firstPaymentDate.value,
     remainingCapital: remainingCapitalLoan.value,
     isWorksLoan: Boolean(readManualLoanField(manual, "isWorksLoan") ?? false),
+    // R1.x (P0-C) — une réanalyse documentaire ne répond pas à la question « type d'assurance » : la réponse
+    // déjà connue est conservée, jamais effacée.
+    ...(manual?.loans[0]?.assuranceType ? { assuranceType: manual.loans[0].assuranceType } : {}),
+    // R1.x (VER option 2) — capital de l'OFFRE seule (emplacement `loanOffer` de la session, rempli par un
+    // document classé offre, distinct du tableau) : jamais `borrowedAmount`, prérempli depuis le tableau.
+    ...(offerMeta.borrowedAmount !== undefined ? { capitalInitialOffre: offerMeta.borrowedAmount } : {}),
   };
 
   const summary = {

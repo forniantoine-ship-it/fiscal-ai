@@ -45,8 +45,9 @@
  */
 import { computeFinancementExercice } from "@/runtime";
 import type { ComputeFinancementExerciceInput, PretInput, TypePret } from "@/runtime";
-import type { CreditFinancingData } from "@/lib/lmnp/types";
+import type { CreditFinancingData, DeclarationDraft } from "@/lib/lmnp/types";
 import type { FinancementChargesOutput } from "@/lib/lmnp/types/domain";
+import { effectiveFinancementCharges, resolveCreditState } from "../declaration/credit-state";
 import { resolveCreditFinancingLoanEcheances } from "./f011-documentary-installments";
 
 /**
@@ -215,6 +216,86 @@ export function mapCreditFinancingToFinancementCharges(
       fieldSources: {},
       computedAt: now,
     },
+    excludedLoanIds,
+  };
+}
+
+/** R1.x (P0-B) — grandeurs d'un prêt que l'échéancier documentaire détermine seul (294 / 156). */
+const DOCUMENTARY_PRET_FIELDS = [
+  "interetsEmpruntExercice",
+  "interetsPreExploitation",
+  "assuranceEmpruntExercice",
+  "assurancePreExploitation",
+  "capitalRembourseExercice",
+  "capitalRestantDu31_12",
+] as const;
+
+/**
+ * R1.x (P0-B) — prêts dont l'échéancier documentaire COURANT est exploitable mais dont les
+ * `financementCharges` persistées (calculées à une confirmation antérieure) ne le reflètent pas :
+ * absentes, sans ce prêt, ou différentes de la dérivation courante par le MÊME moteur
+ * (`mapCreditFinancingToFinancementCharges`, mêmes entrées → égalité exacte attendue, aucune tolérance).
+ * Un instantané dérivé périmé ne doit jamais l'emporter sur l'entrée canonique courante.
+ */
+function documentaryDesyncLoanIds(
+  draft: DeclarationDraft | undefined,
+  persisted: FinancementChargesOutput | undefined,
+  exerciceFiscal: number,
+): string[] {
+  const financing = draft?.creditFinancing;
+  if (!financing) return [];
+  const documented = financing.loans.filter(
+    (loan) => resolveCreditFinancingLoanEcheances(financing, loan, exerciceFiscal).status === "exploitable",
+  );
+  if (documented.length === 0) return [];
+  const current = draft?.dateMiseEnService
+    ? mapCreditFinancingToFinancementCharges({ financing, exerciceFiscal, dateMiseEnService: draft.dateMiseEnService })
+        .financementCharges
+    : undefined;
+  return documented
+    .filter((loan) => {
+      const expected = current?.prets.find((pret) => pret.pretId === loan.id);
+      const actual = persisted?.prets.find((pret) => pret.pretId === loan.id);
+      return !expected || !actual || DOCUMENTARY_PRET_FIELDS.some((field) => expected[field] !== actual[field]);
+    })
+    .map((loan) => loan.id);
+}
+
+/**
+ * R1.x (P0-B) — SEULE source des `financementCharges` transmises à la génération : F-006 (→ 294) et,
+ * par le même blocage, la RFS (→ 156, `resolveEmpruntsForRfs` n'est atteint que si F-006 produit un
+ * résultat). Utilisée par `runDeclarationGeneration` et par le panneau F-006 — jamais deux compositions.
+ *
+ * `excludedLoanIds` (écrasement inconditionnel, NEXT-3 P2-A) = prêts non calculables
+ * (`excludedLoanIdsFromFinancing`) + prêts documentés désynchronisés. Si les charges persistées sont
+ * ABSENTES alors qu'un prêt bloque, un porteur minimal (aucun montant, `prets: []`) transporte le
+ * blocage jusqu'au gate F-006 (`validateFiscalInputs`) au lieu de laisser générer 294 = 0 / 156 absent.
+ * « Aucun crédit établi » reste hors de ce contrôle (aucune charge, comme avant).
+ */
+export function financementChargesForGeneration(
+  draft: DeclarationDraft | undefined,
+  exerciceFiscal: number,
+): FinancementChargesOutput | undefined {
+  const persisted = effectiveFinancementCharges(draft);
+  if (resolveCreditState(draft).etat === "AUCUN_CREDIT_ETABLI") return persisted;
+  const excludedLoanIds = [
+    ...new Set([
+      ...excludedLoanIdsFromFinancing(draft?.creditFinancing, exerciceFiscal),
+      ...documentaryDesyncLoanIds(draft, persisted, exerciceFiscal),
+    ]),
+  ];
+  if (persisted) return { ...persisted, excludedLoanIds };
+  if (excludedLoanIds.length === 0) return undefined;
+  return {
+    exerciceFiscal,
+    totalInteretsEmprunt: 0,
+    totalInteretsPreExploitation: 0,
+    totalAssurance: 0,
+    totalCapitalRembourse: 0,
+    totalChargesFinancementExercice: 0,
+    prets: [],
+    fieldSources: {},
+    computedAt: "",
     excludedLoanIds,
   };
 }

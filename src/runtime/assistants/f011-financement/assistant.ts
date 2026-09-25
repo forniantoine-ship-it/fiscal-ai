@@ -542,6 +542,7 @@ export class F011FinancementAssistant {
           ...state.pendingLoan,
           ...application.patch,
           ...(action.prefill.installments ? { echeancesDocument: action.prefill.installments } : {}),
+          ...(action.prefill.capitalInitialOffre !== undefined ? { capitalInitialOffre: action.prefill.capitalInitialOffre } : {}),
         };
         // Chaque champ effectivement appliqué (jamais un champ en conflit, qui
         // reste sous la provenance de la valeur déjà là tant qu'il n'est pas résolu).
@@ -1056,6 +1057,7 @@ export class F011FinancementAssistant {
       remboursementAnticipeCetExercice: remboursementAnticipe,
       iraMontant: remboursementAnticipe ? iraMontant : undefined,
       ...(state.pendingLoan?.echeancesDocument ? { echeancesDocument: state.pendingLoan.echeancesDocument } : {}),
+      ...(state.pendingLoan?.capitalInitialOffre !== undefined ? { capitalInitialOffre: state.pendingLoan.capitalInitialOffre } : {}),
     };
   }
 
@@ -1245,7 +1247,7 @@ export class F011FinancementAssistant {
       resolveDocumentaryEcheances({
         rows: loan.echeancesDocument,
         exerciceFiscal: this.ctx.fiscalYear,
-        datePremiereMensualite: loan.datePremiereMensualite,
+        capitalInitialIndependant: loan.capitalInitialOffre,
         assuranceExterneDeclaree: loan.assuranceType === "externe",
       }),
     );

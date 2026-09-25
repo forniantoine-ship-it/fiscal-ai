@@ -11,7 +11,7 @@ import type { CreditFinancingData, LoanInstallment } from "@/lib/lmnp/types";
 
 export function resolveCreditFinancingLoanEcheances(
   financing: Pick<CreditFinancingData, "loans" | "installments">,
-  loan: Pick<CreditFinancingData["loans"][number], "firstPaymentDate" | "assuranceType">,
+  loan: Pick<CreditFinancingData["loans"][number], "assuranceType" | "capitalInitialOffre">,
   exerciceFiscal: number,
 ): DocumentaryEcheancesResolution {
   const rows = financing.installments ?? [];
@@ -22,7 +22,7 @@ export function resolveCreditFinancingLoanEcheances(
   return resolveDocumentaryEcheances({
     rows,
     exerciceFiscal,
-    datePremiereMensualite: loan.firstPaymentDate,
+    capitalInitialIndependant: loan.capitalInitialOffre,
     assuranceExterneDeclaree: loan.assuranceType === "externe",
   });
 }

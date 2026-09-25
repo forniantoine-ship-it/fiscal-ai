@@ -54,6 +54,8 @@ export interface F011LoanDraft {
    * donc attribuable sans deviner). Source prioritaire sur la reconstruction (`resolveDocumentaryEcheances`).
    */
   echeancesDocument?: LoanInstallment[];
+  /** R1.x — capital lu sur une offre / un contrat importé (upload sans tableau), jamais sur le tableau. */
+  capitalInitialOffre?: number;
 }
 
 export interface F011Result {

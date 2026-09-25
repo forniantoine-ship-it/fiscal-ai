@@ -75,6 +75,11 @@ export type F011CreditPrefill = {
    * figurer dans `unmapped` : l'assistant reconstruisait silencieusement un échéancier théorique.
    */
   installments?: LoanInstallment[];
+  /**
+   * R1.x (VER option 2) — capital lu sur l'offre, uniquement si CE document n'a produit aucun tableau
+   * (document distinct du tableau) : preuve indépendante du capital d'origine.
+   */
+  capitalInitialOffre?: number;
 };
 
 export type F011PrefillConflict = {
@@ -254,7 +259,15 @@ export function mapCreditExtractionToF011Prefill(
   // (`resolveDocumentaryEcheances`), jamais ici.
   const installments = amortization?.installments?.length ? amortization.installments : undefined;
 
-  return { fields, provenance, unmapped, ...(installments ? { installments } : {}) };
+  const capitalInitialOffre = !amortization && loanOffer?.loanAmount !== undefined ? loanOffer.loanAmount : undefined;
+
+  return {
+    fields,
+    provenance,
+    unmapped,
+    ...(installments ? { installments } : {}),
+    ...(capitalInitialOffre !== undefined ? { capitalInitialOffre } : {}),
+  };
 }
 
 /**

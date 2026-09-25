@@ -15,8 +15,11 @@ import { round2 } from "./types";
  * Contrôles purement structurels, sans aucune tolérance chiffrée :
  * - chaque ligne est datée (AAAA-MM-JJ) et porte des montants finis et positifs ;
  * - une échéance par mois, sans trou ni doublon (le moteur de reconstruction est lui aussi mensuel) ;
- * - l'exercice est couvert : le tableau ne commence en cours d'exercice que s'il commence à l'origine
- *   du prêt, et ne s'arrête en cours d'exercice que si le CRD imprimé y est nul (prêt soldé) ;
+ * - l'exercice est couvert : le tableau ne commence en cours d'exercice que si (R1.x, VER option 2) sa
+ *   première ligne est IMPRIMÉE comme échéance n° 1 ET que le capital d'origine qu'elle implique (CRD
+ *   imprimé + capital remboursé) égale le capital lu sur un document DISTINCT (offre / contrat de prêt) —
+ *   la date de 1re échéance et le capital préremplis depuis le tableau ne prouvent rien ; il ne s'arrête
+ *   en cours d'exercice que si le CRD imprimé y est nul ;
  * - le CRD imprimé sur la dernière échéance ≤ 31/12 est lu (case 156) — jamais recalculé.
  */
 export type DocumentaryInstallment = {
@@ -26,6 +29,8 @@ export type DocumentaryInstallment = {
   insurance: number;
   /** CRD imprimé sur la ligne du tableau — absent si la colonne n'a pas été lue. */
   remainingCapital?: number;
+  /** Numéro d'échéance imprimé — absent si la colonne n'a pas été lue. */
+  rank?: number;
 };
 
 export type DocumentaryEcheancesResolution =
@@ -36,8 +41,11 @@ export type DocumentaryEcheancesResolution =
 export type ResolveDocumentaryEcheancesInput = {
   rows: readonly DocumentaryInstallment[] | undefined;
   exerciceFiscal: number;
-  /** Date de première mensualité du prêt — l'origine du prêt, pour distinguer « prêt démarrant en N » de « tableau tronqué ». */
-  datePremiereMensualite: string;
+  /**
+   * R1.x (VER option 2) — capital d'origine lu sur un document distinct du tableau (offre / contrat de prêt).
+   * Jamais une valeur préremplie ou dérivée du tableau lui-même.
+   */
+  capitalInitialIndependant?: number;
   /** Assurance déclarée externe (délégation) : le tableau bancaire ne doit alors porter aucune assurance. */
   assuranceExterneDeclaree?: boolean;
 };
@@ -92,10 +100,19 @@ export function resolveDocumentaryEcheances(input: ResolveDocumentaryEcheancesIn
   if (anchor.month < janN && anchor.row.remainingCapital !== 0) {
     return nonExploitable("le tableau ne couvre pas l'exercice");
   }
+  // R1.x (P0-A, VER option 2) — « prêt démarrant en N » vs « tableau tronqué / renuméroté après
+  // renégociation » : le n° 1 imprimé est nécessaire mais pas suffisant ; le capital d'origine doit être
+  // confirmé par un document distinct. Égalité au centime (montants en euros-centimes), aucune tolérance.
   if (first.month > janN && first.month <= decN) {
-    const origin = monthIndex(input.datePremiereMensualite);
-    if (origin === null || first.month > origin) {
-      return nonExploitable("tableau partiel : il commence en cours d'exercice sans être l'origine du prêt");
+    if (first.row.rank !== 1) {
+      return nonExploitable("début du tableau non démontré : la première ligne n'est pas l'échéance n° 1");
+    }
+    const capital = input.capitalInitialIndependant;
+    if (capital === undefined || !isAmount(capital) || capital === 0 || first.row.remainingCapital === undefined) {
+      return nonExploitable("capital d'origine non prouvé par un document distinct du tableau (offre ou contrat de prêt)");
+    }
+    if (round2(first.row.remainingCapital + first.row.principal) !== round2(capital)) {
+      return nonExploitable("capital d'origine du tableau contredit par l'offre ou le contrat de prêt");
     }
   }
   if (last.month >= janN && last.month < decN && last.row.remainingCapital !== 0) {

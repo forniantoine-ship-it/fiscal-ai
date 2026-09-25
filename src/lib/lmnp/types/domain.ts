@@ -104,6 +104,12 @@ export interface LoanProfile {
    * bancaire » (KS F-011 : deux assurances la même année = montants pro-ratisés, non calculables ici).
    */
   assuranceType?: "bancaire" | "externe";
+  /**
+   * R1.x (VER option 2) — capital emprunté lu sur l'OFFRE / le contrat de prêt, document distinct du tableau
+   * d'amortissement. Jamais prérempli depuis le tableau (≠ `borrowedAmount`, qui l'est). Seule preuve admise
+   * qu'un tableau commençant en cours d'exercice couvre le prêt depuis son origine. Absent si non lu.
+   */
+  capitalInitialOffre?: number;
   deferralType?: LoanDeferralType;
   deferralMonths?: number;
   fees: number;
@@ -141,6 +147,11 @@ export interface LoanInstallment {
    * Absent si non lu : jamais recalculé ni inventé. Source de la case 156 quand l'échéancier est exploitable.
    */
   remainingCapital?: number;
+  /**
+   * R1.x — numéro d'échéance IMPRIMÉ sur la ligne (colonne « N° » lue par le parseur spatial). Seule preuve
+   * documentaire qu'un tableau commençant en cours d'exercice commence bien à l'origine du prêt. Absent si non lu.
+   */
+  rank?: number;
 }
 
 export interface CreditFinancingSummary {

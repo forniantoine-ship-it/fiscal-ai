@@ -15,9 +15,8 @@ import {
   type LiasseFromRfs,
 } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
-import { excludedLoanIdsFromFinancing } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
+import { financementChargesForGeneration } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import { resolveEmpruntsForRfs } from "./resolve-emprunts-for-rfs";
-import { effectiveFinancementCharges } from "./credit-state";
 import {
   TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
   detectTaxeFonciereLegacyRisk,
@@ -377,11 +376,11 @@ export function runDeclarationGeneration(
   // NEXT-3 (P2-A) — écrasement INCONDITIONNEL, y compris `[]` : la dérivation
   // fraîche reste la seule vérité, jamais une ancienne valeur persistée
   // (potentiellement stale) qui survivrait parce que le tableau frais est vide.
-  const excludedLoanIds = excludedLoanIdsFromFinancing(draft?.creditFinancing, fiscalYear);
   // Latence « prêt saisi puis aucun crédit » — `effectiveFinancementCharges` écarte d'anciennes charges de
   // financement dès que « aucun crédit » est établi (voir credit-state.ts) ; sinon `draft.financementCharges`.
-  const financementBrut = effectiveFinancementCharges(draft);
-  const financementCharges = financementBrut ? { ...financementBrut, excludedLoanIds } : financementBrut;
+  // R1.x (P0-B) — composition unique partagée avec le panneau F-006 : bloque aussi un échéancier
+  // documentaire courant que les charges persistées (périmées ou absentes) ne reflètent pas.
+  const financementCharges = financementChargesForGeneration(draft, fiscalYear);
 
   // P0-2A.1 — reprise EXTERNAL_HISTORY : fraisEnCharges du draft F-010 ne doit
   // jamais contaminer F-006 (acquisition déjà traitée historiquement — JUG-001 /

@@ -381,7 +381,7 @@ describe("R1 — Tunnel B (assistant F-011) : même contrat", () => {
 describe("R1 — contrat documentaire (resolveDocumentaryEcheances) : cas limites", () => {
   it("prêt soldé avant l'exercice (dernier CRD imprimé = 0) : exploitable, 0 € d'intérêts, CRD 0", () => {
     const table = earlyRepaymentTable().slice(0, 2).map((r, i) => ({ ...r, date: `2024-${i === 0 ? "11" : "12"}-05`, remainingCapital: i === 0 ? 50 : 0 }));
-    const res = resolveDocumentaryEcheances({ rows: table, exerciceFiscal: EX, datePremiereMensualite: "2024-11-05" });
+    const res = resolveDocumentaryEcheances({ rows: table, exerciceFiscal: EX });
     assert.equal(res.status, "exploitable");
     const charges = computeFinancementExercice({ exerciceFiscal: EX, dateMiseEnService: MES, prets: [{ pretId: "s", typePret: "amortissable", capitalInitial: CAPITAL, tauxNominal: TAUX, dureeMois: DUREE, datePremiereMensualite: "2024-11-05", echeances: res.status === "exploitable" ? res.echeances : undefined }] }).charges.prets[0]!;
     assert.equal(charges.interetsEmpruntExercice, 0);
@@ -391,15 +391,15 @@ describe("R1 — contrat documentaire (resolveDocumentaryEcheances) : cas limite
   it("ATTAQUE 4 — remboursement anticipé saisi comme 2e ligne du même mois : jamais additionné à l'aveugle (doublon possible), non exploitable", () => {
     const table = earlyRepaymentTable();
     const extra = { ...table[5]!, principal: 1000, interest: 0, insurance: 0 };
-    const res = resolveDocumentaryEcheances({ rows: [...table, extra], exerciceFiscal: EX, datePremiereMensualite: FIRST });
+    const res = resolveDocumentaryEcheances({ rows: [...table, extra], exerciceFiscal: EX });
     assert.equal(res.status, "non_exploitable");
   });
 
   it("aucun tableau → absent (fallback reconstruction) ; montant négatif → non exploitable", () => {
-    assert.equal(resolveDocumentaryEcheances({ rows: [], exerciceFiscal: EX, datePremiereMensualite: FIRST }).status, "absent");
+    assert.equal(resolveDocumentaryEcheances({ rows: [], exerciceFiscal: EX }).status, "absent");
     const table = earlyRepaymentTable();
     table[2] = { ...table[2]!, interest: -1 };
-    assert.equal(resolveDocumentaryEcheances({ rows: table, exerciceFiscal: EX, datePremiereMensualite: FIRST }).status, "non_exploitable");
+    assert.equal(resolveDocumentaryEcheances({ rows: table, exerciceFiscal: EX }).status, "non_exploitable");
   });
 
   it("extraction spatiale : le CRD imprimé de chaque ligne est transporté jusqu'à LoanInstallment (jamais perdu)", () => {
