@@ -5,6 +5,7 @@ import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } f
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
 import type { PriorHistoryEligibility } from "./prior-history-eligibility";
 import type { PatrimonialState } from "@/runtime/capabilities/bilan/types";
+import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import {
   buildValidationDossierSnapshot,
   type MissingDossierItem,
@@ -301,6 +302,56 @@ function patrimoineChanged(
 }
 
 /**
+ * P0-2E.2 — l'état d'immobilisations (`rfs.immobilisations`) alimente 2033-A
+ * (028/030...), 2033-C (490/570/572/576...) et le snapshot de clôture, sans
+ * nécessairement changer `FiscalEngineOutput` (ex. terrain non amorti, cumul
+ * historique à dotation constante) : l'égalité du résultat fiscal ne prouve
+ * pas que la RFS est inchangée. Compare l'inventaire stocké à celui recalculé
+ * par le même preview, sur la seule projection déclarative :
+ * - exclus : `label` (descriptif) et `mouvements.sourceClosureId`
+ *   (provenance) ;
+ * - ordre des lignes/composants non significatif (tri canonique) ;
+ * - absent ≡ tableau vide.
+ */
+function immobilisationsSemanticProjection(immo: ImmobilisationsRfs | undefined) {
+  if (!immo) return undefined;
+  const rows = (items: readonly object[] | undefined) =>
+    (items ?? [])
+      .map((item) =>
+        JSON.stringify(
+          Object.entries(item)
+            .filter(([key]) => key !== "label")
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+        ),
+      )
+      .sort();
+  return {
+    totalBrut: immo.totalBrut,
+    totalAnnuelExercice: immo.totalAnnuelExercice,
+    valeurTerrain: immo.valeurTerrain,
+    montantMobilier: immo.montantMobilier,
+    dateMiseEnService: immo.dateMiseEnService,
+    lignes: rows(immo.lignes),
+    composantsDetail: rows(immo.composantsDetail),
+    composantsNouveaux: rows(immo.composantsNouveaux),
+    mouvements: immo.mouvements && {
+      valeurBruteOuverture: immo.mouvements.valeurBruteOuverture,
+      amortissementsCumulesOuverture: immo.mouvements.amortissementsCumulesOuverture,
+    },
+  };
+}
+
+function immobilisationsChanged(
+  stored: ImmobilisationsRfs | undefined,
+  preview: ImmobilisationsRfs | undefined,
+): boolean {
+  return !isDeepEqualPlainValue(
+    immobilisationsSemanticProjection(stored),
+    immobilisationsSemanticProjection(preview),
+  );
+}
+
+/**
  * Porte unique entre l'écran de validation et F-006/F-007.
  * Ne change aucune règle fiscale : elle refuse le paiement si la génération
  * serait bloquée, et autorise un nouvel essai si le paiement a déjà été
@@ -428,7 +479,10 @@ export function resolveDeclarationGenerationGate(input: {
     const drifted =
       fiscalEngineOutputChanged(stored, preview.fiscalResult) ||
       identiteChanged(input.draft, input.fiscalYear) ||
-      patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine);
+      patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine) ||
+      // Comme `identiteChanged` : sans RFS stockée, aucun inventaire à comparer.
+      (input.draft?.rfs !== undefined &&
+        immobilisationsChanged(input.draft.rfs.immobilisations, preview.rfs.immobilisations));
 
     if (drifted) {
       return {
