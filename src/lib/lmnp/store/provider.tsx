@@ -114,6 +114,7 @@ function toPersisted(state: LmnpState) {
 
 export function LmnpProvider({ children }: { children: ReactNode }) {
   const [isReady, setIsReady] = useState(false);
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
   const [isHydratingWorkspace, setIsHydratingWorkspace] = useState(true);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("idle");
   const [persistenceUserId, setPersistenceUserId] = useState<string | null>(null);
@@ -143,15 +144,19 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
 
   const authUserIdRef = useRef<string | null>(null);
+  const hydrationBlockedRef = useRef(false);
   const pendingFileLoadsRef = useRef(new Set<string>());
 
   useEffect(() => {
     return subscribeAuthBoundary(async ({ userId, previousUserId, userChanged }) => {
+      let blocked = false;
       try {
-        if (userChanged && previousUserId) {
+        if (userChanged && previousUserId && !hydrationBlockedRef.current) {
           await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
         }
 
+        hydrationBlockedRef.current = false;
+        setHydrationError(null);
         beginWorkspaceSnapshotHydration();
         authUserIdRef.current = userId;
         setPersistenceUserId(userId);
@@ -169,22 +174,38 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         const { workspace, fileRegistry, lastSyncedServerRevision } = await hydrateLmnpStore(userId);
         const dossier = await ensureActiveDossier(userId);
         if (dossier) setCurrentDossierId(dossier.id, userId);
+        const localWorkspace = dossier && workspace?.fiscalYear.dossierId && workspace.fiscalYear.dossierId !== dossier.id
+          ? null : workspace;
+        const localFileRegistry = localWorkspace === workspace ? fileRegistry : new Map<string, File>();
 
-        let baseWorkspace = workspace;
+        let baseWorkspace = localWorkspace;
         if (dossier) {
           const listed = await listWorkspaceSnapshots(dossier.id);
           if (listed.status === "error") {
-            baseWorkspace = workspace ?? createDefaultWorkspace();
+            blocked = true;
+            hydrationBlockedRef.current = true;
+            setHydrationError("Les exercices de ce dossier ne peuvent pas être vérifiés pour le moment.");
+            return;
           } else {
+            const snapshots = listed.snapshots.filter(row => row.dossierId === dossier.id);
             const decision = await reconcileLocalWorkspaceWithSnapshots({
               userId,
-              local: workspace,
+              local: localWorkspace,
               lastSyncedServerRevision,
-              snapshots: listed.snapshots,
+              snapshots,
               fallbackYear: lastClosedFiscalYear(),
               // Lot 3 — server active year wins over civil fallback / stale local N.
               activeFiscalYear: dossier.active_fiscal_year,
             });
+            if (decision.blockWrites ||
+                (decision.source === "none" && (snapshots.length > 0 || localWorkspace?.fiscalYear.status === "closed"))) {
+              blocked = true;
+              hydrationBlockedRef.current = true;
+              setHydrationError(decision.source === "blocked" && decision.reason === "ambiguous_fiscal_year"
+                ? "Nous ne pouvons pas déterminer automatiquement l’exercice actif de ce dossier."
+                : "L’exercice actif de ce dossier ne peut pas être restauré en sécurité.");
+              return;
+            }
             baseWorkspace = decision.workspace ?? createDefaultWorkspace();
             if (!baseWorkspace.fiscalYear.dossierId) {
               baseWorkspace = {
@@ -197,16 +218,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
               dossierId: dossier.id,
               fiscalYear: baseWorkspace.fiscalYear.year,
             });
-            if (decision.source === "blocked") {
-              console.warn("[workspace] snapshot hydration blocked — server writes disabled", {
-                userId,
-                reason: decision.reason,
-                schemaVersion: decision.schemaVersion,
-              });
-            }
           }
         } else {
-          baseWorkspace = workspace ?? createDefaultWorkspace();
+          baseWorkspace = localWorkspace ?? createDefaultWorkspace();
         }
 
         if (dossier && !baseWorkspace.fiscalYear.dossierId) {
@@ -247,7 +261,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           fiscalYearId: baseWorkspace.fiscalYear.id,
           fiscalYear: baseWorkspace.fiscalYear.year,
           propertyId: baseWorkspace.fiscalYear.propertyIds[0],
-          localBlobDocumentIds: new Set(fileRegistry.keys()),
+          localBlobDocumentIds: new Set(localFileRegistry.keys()),
           localExtractedDocumentIds: new Set(baseWorkspace.extractions.map((e) => e.documentId)),
         });
 
@@ -271,13 +285,13 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         // TEMPORARY AUDIT LOG — remove after root-cause is confirmed
         console.log("[charges-hydration-debug]", {
           indexedDbDocCount: baseWorkspace.documents.length,
-          fileRegistryKeys: [...fileRegistry.keys()],
+          fileRegistryKeys: [...localFileRegistry.keys()],
           workspaceDocuments: baseWorkspace.documents.map((doc) => ({
             id: doc.id,
             fileName: doc.fileName,
             category: doc.category,
             status: doc.status,
-            hasLocalBlob: fileRegistry.has(doc.id),
+            hasLocalBlob: localFileRegistry.has(doc.id),
             hasExtractions: baseWorkspace.extractions.some((e) => e.documentId === doc.id),
           })),
           reconciledDocuments: reconciliation.documents.map((doc) => ({
@@ -285,7 +299,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
             fileName: doc.fileName,
             category: doc.category,
             status: doc.status,
-            hasLocalBlob: fileRegistry.has(doc.id),
+            hasLocalBlob: localFileRegistry.has(doc.id),
             hasExtractions: baseWorkspace.extractions.some((e) => e.documentId === doc.id),
           })),
         });
@@ -313,7 +327,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           return finalStatus !== previousStatus ? { ...doc, status: finalStatus } : doc;
         });
 
-        if (workspace) {
+        if (localWorkspace) {
           console.log("[workspace] restored existing workspace", { userId });
         } else {
           console.log("[workspace] initialized fresh workspace", { userId });
@@ -325,7 +339,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
             ...baseWorkspace,
             documents: promotedDocuments,
           },
-          files: fileRegistry,
+          files: localFileRegistry,
         });
 
         markAutosaveSaved();
@@ -333,7 +347,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         logWorkspaceHydrationComplete();
         setIsHydratingWorkspace(false);
         console.log("[workspace] hydration completed", { userId: authUserIdRef.current });
-        setIsReady(true);
+        setIsReady(!blocked);
       }
     });
   }, []);
@@ -620,6 +634,12 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       inpiStatusUpdating,
     ],
   );
+
+  if (hydrationError) {
+    return <main className="mx-auto max-w-2xl p-8" role="alert">
+      <h1>Dossier indisponible</h1><p>{hydrationError}</p>
+    </main>;
+  }
 
   if (!isReady) {
     return (

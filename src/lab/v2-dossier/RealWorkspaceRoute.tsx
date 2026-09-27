@@ -18,6 +18,7 @@ const YEAR_MESSAGES = {
   snapshot_missing: "Le dossier ne possède pas de snapshot pour son exercice actif.",
   closed: "L’exercice indiqué comme actif est déjà clôturé.",
   mismatch: "Les données de l’exercice actif ne correspondent pas au dossier.",
+  ambiguous: "Nous ne pouvons pas déterminer automatiquement l’exercice à afficher.",
 } as const;
 
 export function RealWorkspaceRoute() {

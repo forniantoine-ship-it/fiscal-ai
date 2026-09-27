@@ -521,7 +521,7 @@ describe("Lot 3 COLD RESTORE", () => {
     const { store } = await prepareAndCommit({ nextFiscalYearId: "fy-cold" });
     const snapshots = [...store.snapshots.values()].map(toSnapshotRecord);
     const dossier = await store.getDossier(DOSSIER_ID);
-    assert.equal(pickTargetYear(null, snapshots, FROM_YEAR, dossier?.activeFiscalYear), NEXT_YEAR);
+    assert.deepEqual(pickTargetYear(null, snapshots, FROM_YEAR, dossier?.activeFiscalYear), { status: "resolved", year: NEXT_YEAR });
 
     const decision = resolveWorkspaceHydration({
       local: null,
@@ -565,17 +565,17 @@ describe("Lot 3 COLD RESTORE", () => {
       local: null,
       snapshots,
       fallbackYear: FROM_YEAR,
-      // Force target to closed N (no active pointer — local null, fallbackYear = N).
-      activeFiscalYear: null,
+      // Explicit archive target: a closed year remains readable but never editable.
+      activeFiscalYear: FROM_YEAR,
     });
-    // With active absent and fallbackYear = N, we hydrate closed N as archive.
+    // Explicit archive access remains read-only.
     assert.equal(decision.source, "server");
     if (decision.source !== "server") throw new Error("unreachable");
     assert.equal(decision.workspace.fiscalYear.year, FROM_YEAR);
     assert.equal(decision.blockWrites, true);
   });
 
-  it("17. fallback old behavior only when active pointer absent", () => {
+  it("17. absent pointer selects the sole open successor, never a closed fallback", () => {
     const nPayload = minimalEnvelope(FROM_YEAR, "fy-1");
     const nextPayload = minimalEnvelope(NEXT_YEAR, "fy-2");
     const snapshots: WorkspaceSnapshotRecord[] = [
@@ -601,12 +601,10 @@ describe("Lot 3 COLD RESTORE", () => {
       },
     ];
 
-    assert.equal(pickTargetYear(null, snapshots, FROM_YEAR, NEXT_YEAR), NEXT_YEAR);
-    // Absent active → legacy: fallbackYear if present.
-    assert.equal(pickTargetYear(null, snapshots, FROM_YEAR, null), FROM_YEAR);
-    assert.equal(pickTargetYear(null, snapshots, FROM_YEAR, undefined), FROM_YEAR);
-    // Absent active + no fallback match → most recently updated.
-    assert.equal(pickTargetYear(null, snapshots, 2099, null), NEXT_YEAR);
+    assert.deepEqual(pickTargetYear(null, snapshots, FROM_YEAR, NEXT_YEAR), { status: "resolved", year: NEXT_YEAR });
+    assert.deepEqual(pickTargetYear(null, snapshots, FROM_YEAR, null), { status: "resolved", year: NEXT_YEAR });
+    assert.deepEqual(pickTargetYear(null, snapshots, FROM_YEAR, undefined), { status: "resolved", year: NEXT_YEAR });
+    assert.deepEqual(pickTargetYear(null, snapshots, 2099, null), { status: "resolved", year: NEXT_YEAR });
   });
 });
 

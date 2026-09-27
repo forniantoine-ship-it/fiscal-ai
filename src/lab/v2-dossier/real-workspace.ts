@@ -7,7 +7,7 @@ import { pickTargetYear, resolveWorkspaceHydration, type WorkspaceSnapshotRecord
 export type RealWorkspaceLoad =
   | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; fiscalYear: number; source: "server" | "local" }
   | { status: "no_dossier" | "error" }
-  | { status: "year_unavailable"; reason: "not_selected" | "snapshot_missing" | "closed" | "mismatch" };
+  | { status: "year_unavailable"; reason: "not_selected" | "snapshot_missing" | "closed" | "mismatch" | "ambiguous" };
 
 type ReadServices = {
   fetchDossier(userId: string): Promise<
@@ -43,9 +43,15 @@ export async function loadRealWorkspace(
     const local = localRecord.workspace?.fiscalYear.dossierId && localRecord.workspace.fiscalYear.dossierId !== dossier.id
       ? null : localRecord.workspace;
     const activeYear = dossier.active_fiscal_year;
-    const year = pickTargetYear(local, snapshots, readers.fallbackYear, activeYear);
-    if (year === null) return { status: "year_unavailable", reason: activeYear === null ? "not_selected" : "snapshot_missing" };
-    if (activeYear !== null && year !== activeYear) return { status: "year_unavailable", reason: "snapshot_missing" };
+    const target = pickTargetYear(local, snapshots, readers.fallbackYear, activeYear);
+    if (target.status === "ambiguous") {
+      return { status: "year_unavailable", reason: target.reason === "multiple_candidates" ? "ambiguous" : "snapshot_missing" };
+    }
+    if (target.status === "no_year") {
+      return { status: "year_unavailable", reason: localRecord.workspace?.fiscalYear.status === "closed" || snapshots.some(row => row.closedAt != null)
+        ? "closed" : "not_selected" };
+    }
+    const year = target.year;
 
     const decision = resolveWorkspaceHydration({
       local,

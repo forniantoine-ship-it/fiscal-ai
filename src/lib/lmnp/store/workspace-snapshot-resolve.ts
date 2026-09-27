@@ -41,7 +41,7 @@ export type WorkspaceHydrationDecision =
       source: "blocked";
       workspace: PersistedWorkspace | null;
       blockWrites: true;
-      reason: "unsupported_schema_version" | "invalid_snapshot" | "closed_archive";
+      reason: "unsupported_schema_version" | "invalid_snapshot" | "closed_archive" | "ambiguous_fiscal_year" | "active_snapshot_missing";
       schemaVersion?: number;
     };
 
@@ -60,33 +60,40 @@ function workspacesAreEquivalent(
   return JSON.stringify(a.envelope.workspace) === JSON.stringify(b.envelope.workspace);
 }
 
+export type TargetFiscalYear =
+  | { status: "resolved"; year: number }
+  | { status: "no_year" }
+  | { status: "ambiguous"; reason: "multiple_candidates" | "active_snapshot_missing" };
+
+/** A closed server year is an archive, even when an older local cache calls it open. */
+function activeLocalCandidate(local: PersistedWorkspace | null, snapshots: WorkspaceSnapshotRecord[]): PersistedWorkspace | null {
+  if (!local || local.fiscalYear.status === "closed") return null;
+  if (snapshots.some(row => row.fiscalYear === local.fiscalYear.year && row.closedAt != null)) return null;
+  return local;
+}
+
 /**
- * Lot 3 — year selection for hydrate.
- * Priority: server active fiscal year (when snapshot exists) → local cache →
- * civil fallbackYear → most recently updated snapshot.
- * `activeFiscalYear` absent/null keeps legacy Lot 1/P0 behaviour.
+ * One shared active-year decision for product hydration and V3 REAL. A pointer
+ * requires its snapshot; without a pointer, only distinct open years are
+ * candidates. Closed snapshots remain available through the archive route.
  */
 export function pickTargetYear(
   local: PersistedWorkspace | null,
   snapshots: WorkspaceSnapshotRecord[],
-  fallbackYear: number,
+  _fallbackYear: number,
   activeFiscalYear?: number | null,
-): number | null {
-  if (
-    typeof activeFiscalYear === "number" &&
-    Number.isInteger(activeFiscalYear) &&
-    snapshots.some((row) => row.fiscalYear === activeFiscalYear)
-  ) {
-    return activeFiscalYear;
+): TargetFiscalYear {
+  if (activeFiscalYear != null) {
+    return snapshots.some(row => row.fiscalYear === activeFiscalYear)
+      ? { status: "resolved", year: activeFiscalYear }
+      : { status: "ambiguous", reason: "active_snapshot_missing" };
   }
-  if (local) return local.fiscalYear.year;
-  if (snapshots.some((row) => row.fiscalYear === fallbackYear)) return fallbackYear;
-  if (snapshots.length === 0) return null;
-  return [...snapshots].sort((a, b) => {
-    const byTime = b.updatedAt.localeCompare(a.updatedAt);
-    if (byTime !== 0) return byTime;
-    return b.fiscalYear - a.fiscalYear;
-  })[0].fiscalYear;
+  const candidates = new Set(snapshots.filter(row => row.closedAt == null).map(row => row.fiscalYear));
+  const localCandidate = activeLocalCandidate(local, snapshots);
+  if (localCandidate) candidates.add(localCandidate.fiscalYear.year);
+  if (candidates.size === 0) return { status: "no_year" };
+  if (candidates.size > 1) return { status: "ambiguous", reason: "multiple_candidates" };
+  return { status: "resolved", year: candidates.values().next().value as number };
 }
 
 /** Archive primitive: closed server snapshot may be loaded read-only. */
@@ -110,9 +117,16 @@ export function resolveWorkspaceHydration(input: {
 }): WorkspaceHydrationDecision {
   const { local, snapshots, fallbackYear } = input;
   const lastSynced = normalizeLastSyncedServerRevision(input.lastSyncedServerRevision);
-  const year = pickTargetYear(local, snapshots, fallbackYear, input.activeFiscalYear);
-  const snapshot = year == null ? undefined : snapshots.find((row) => row.fiscalYear === year);
+  const target = pickTargetYear(local, snapshots, fallbackYear, input.activeFiscalYear);
+  if (target.status === "ambiguous") {
+    return { source: "blocked", workspace: null, blockWrites: true,
+      reason: target.reason === "multiple_candidates" ? "ambiguous_fiscal_year" : "active_snapshot_missing" };
+  }
+  if (target.status === "no_year") return { source: "none", workspace: null, blockWrites: false };
+  const year = target.year;
+  const snapshot = snapshots.find((row) => row.fiscalYear === year);
   const isClosedArchive = snapshot?.closedAt != null;
+  const activeLocal = activeLocalCandidate(local, snapshots);
 
   if (snapshot) {
     const parsed = parseWorkspaceSnapshot(snapshot.payload);
@@ -137,10 +151,10 @@ export function resolveWorkspaceHydration(input: {
         // Closed N must never autosave — even if a stale local cache differs.
         return serverDecision;
       }
-      if (local && lastSynced != null && local.fiscalYear.year === year) {
+      if (activeLocal && lastSynced != null && activeLocal.fiscalYear.year === year) {
         if (snapshot.revision > lastSynced) return serverDecision;
-        if (!workspacesAreEquivalent(local, serverWorkspace)) {
-          return { source: "local", workspace: local, blockWrites: false, uploadLocal: true };
+        if (!workspacesAreEquivalent(activeLocal, serverWorkspace)) {
+          return { source: "local", workspace: activeLocal, blockWrites: false, uploadLocal: true };
         }
       }
       return serverDecision;
@@ -154,8 +168,8 @@ export function resolveWorkspaceHydration(input: {
     };
   }
 
-  if (local) {
-    return { source: "local", workspace: local, blockWrites: false, uploadLocal: true };
+  if (activeLocal) {
+    return { source: "local", workspace: activeLocal, blockWrites: false, uploadLocal: true };
   }
   return { source: "none", workspace: null, blockWrites: false };
 }

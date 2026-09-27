@@ -305,11 +305,13 @@ describe("F — isolation exercice", () => {
       local: workspace({ fiscalYear: { ...workspace().fiscalYear, year: 2025 } }),
       snapshots,
       fallbackYear: 2025,
+      activeFiscalYear: 2025,
     });
     const d2026 = resolveWorkspaceHydration({
       local: workspace({ fiscalYear: { ...workspace().fiscalYear, year: 2026, id: "fy-2026" } }),
       snapshots,
       fallbackYear: 2025,
+      activeFiscalYear: 2026,
     });
     assert.equal(d2025.source, "server");
     assert.equal(d2026.source, "server");

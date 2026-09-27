@@ -108,6 +108,35 @@ test("R8 — dossier legacy : le repli canonique lit le workspace local sans éc
   if (result.status === "ready") assert.equal(result.source, "local");
 });
 
+test("R8.2 — NULL avec un seul snapshot 2025 reste lisible", async () => {
+  const ws = workspace(); ws.fiscalYear.year = 2025; ws.fiscalYear.id = "year-2025";
+  const row = { ...snapshot(ws), fiscalYear: 2025 };
+  const io = services({ dossier: { ...dossier, active_fiscal_year: null }, snapshots: [row] });
+  const result = await loadRealWorkspace(dossier.user_id, io);
+  assert.equal(result.status, "ready");
+  assert.equal(io.reads, 3);
+  if (result.status === "ready") {
+    assert.equal(result.fiscalYear, 2025);
+    assert.equal(result.source, "server");
+  }
+});
+
+test("R8.2 — V3 REAL refuse deux années ouvertes sans exposer de workspace ni de fixture", async () => {
+  const ws2025 = workspace(); ws2025.fiscalYear.year = 2025; ws2025.fiscalYear.id = "year-2025";
+  const row2025 = { ...snapshot(ws2025), fiscalYear: 2025 };
+  const io = services({ dossier: { ...dossier, active_fiscal_year: null }, snapshots: [row2025, snapshot()] });
+  const result = await loadRealWorkspace(dossier.user_id, io);
+  assert.deepEqual(result, { status: "year_unavailable", reason: "ambiguous" });
+  assert.equal(io.reads, 3);
+  assert.equal("workspace" in result, false);
+});
+
+test("R8.2 — V3 REAL refuse un pointeur sans snapshot même avec un cache local", async () => {
+  const ws2025 = workspace(); ws2025.fiscalYear.year = 2025; ws2025.fiscalYear.id = "year-2025";
+  const io = services({ snapshots: [], local: ws2025 });
+  assert.deepEqual(await loadRealWorkspace(dossier.user_id, io), { status: "year_unavailable", reason: "snapshot_missing" });
+});
+
 test("R8 — workspace partiel et sans fiscalResult : six projections stables, aucun zéro inventé", async () => {
   const result = await loadRealWorkspace(dossier.user_id, services());
   assert.equal(result.status, "ready");

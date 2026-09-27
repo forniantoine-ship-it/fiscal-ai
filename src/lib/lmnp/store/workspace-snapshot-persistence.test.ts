@@ -117,6 +117,26 @@ describe("persistence/provider — local newer than server after failed save", (
     modules.setWorkspaceSnapshotSyncGate("ready", { dossierId: "dossier-A", fiscalYear: 2025 });
   });
 
+  it("R8.2 L — ambiguous reconciliation leaves IndexedDB and server unchanged", async () => {
+    const userId = uid("ambiguous-user");
+    const local = workspace();
+    await putWorkspaceRecord(userId, local, { lastSyncedServerRevision: 1 });
+    const before = await getWorkspaceRecord(userId);
+    const serverWorkspace = workspace({ fiscalYear: { ...local.fiscalYear, id: "fy-2026", year: 2026 } });
+    const serialized = serializeWorkspaceSnapshot(serverWorkspace);
+    assert.equal(serialized.ok, true);
+    if (!serialized.ok) return;
+    const server = snapshotRecord(serialized.envelope, 1, 2026);
+    memory.set("dossier-A:2026", server);
+
+    const decision = await modules.reconcileLocalWorkspaceWithSnapshots({
+      userId, local, lastSyncedServerRevision: 1, snapshots: [server], fallbackYear: 2025, activeFiscalYear: null,
+    });
+    assert.deepEqual(decision, { source: "blocked", workspace: null, blockWrites: true, reason: "ambiguous_fiscal_year" });
+    assert.deepEqual(await getWorkspaceRecord(userId), before);
+    assert.equal(memory.get("dossier-A:2026"), server);
+  });
+
   it("BLOCKER + 10. mutation → IDB ok → server fail → reload hydrate conserve le local", async () => {
     const userId = uid("user");
     const serverWs = workspace({

@@ -192,7 +192,7 @@ describe("Lot 6A — cold IDB vide : liste + charge archive serveur", () => {
 
   it("D/E — activeFiscalYear cold restore reste N+1 ; snapshot N+1 inchangé", async () => {
     const active = pickTargetYear(null, snapshots, 2025, 2026);
-    assert.equal(active, 2026, "cold restore préfère active N+1");
+    assert.deepEqual(active, { status: "resolved", year: 2026 }, "cold restore préfère active N+1");
 
     const before = JSON.stringify(snapshots.find((s) => s.fiscalYear === 2026)?.payload);
     await loadArchivedWorkspaceFromServer({ dossierId: DOSSIER, fiscalYear: 2025 });

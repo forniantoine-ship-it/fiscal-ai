@@ -10,7 +10,7 @@ import {
   resolveWorkspaceHydration,
   type WorkspaceSnapshotRecord,
 } from "./workspace-snapshot-resolve";
-import { serializeWorkspaceSnapshot } from "./workspace-snapshot";
+import { parseWorkspaceSnapshot, serializeWorkspaceSnapshot } from "./workspace-snapshot";
 import type { PersistedWorkspace } from "./persistence";
 
 const NOW = "2026-09-01T00:00:00.000Z";
@@ -60,37 +60,44 @@ function row(
   };
 }
 
+function local(year: number, status: "draft" | "closed" = "draft"): PersistedWorkspace {
+  const parsed = parseWorkspaceSnapshot(envelope(year, `fy-${year}`));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) throw new Error("invalid test workspace");
+  return { ...parsed.envelope.workspace, fiscalYear: { ...parsed.envelope.workspace.fiscalYear, status } };
+}
+
 describe("Lot 3 pickTargetYear — cold restore", () => {
   it("prefers server activeFiscalYear when a snapshot exists for that year", () => {
     const snapshots = [row(2025, { closedAt: NOW, successorFiscalYear: 2026 }), row(2026)];
-    assert.equal(pickTargetYear(null, snapshots, 2025, 2026), 2026);
+    assert.deepEqual(pickTargetYear(null, snapshots, 2025, 2026), { status: "resolved", year: 2026 });
   });
 
-  it("ignores activeFiscalYear when no snapshot exists for it", () => {
+  it("blocks an activeFiscalYear with no matching snapshot", () => {
     const snapshots = [row(2025)];
-    assert.equal(pickTargetYear(null, snapshots, 2025, 2099), 2025);
+    assert.deepEqual(pickTargetYear(null, snapshots, 2025, 2099), { status: "ambiguous", reason: "active_snapshot_missing" });
   });
 
-  it("falls back to local year when active pointer is absent", () => {
+  it("blocks multiple plausible years when active pointer is absent", () => {
     const local = {
       fiscalYear: { year: 2024 },
     } as PersistedWorkspace;
     const snapshots = [row(2025), row(2026)];
-    assert.equal(pickTargetYear(local, snapshots, 2025, null), 2024);
-    assert.equal(pickTargetYear(local, snapshots, 2025, undefined), 2024);
+    assert.deepEqual(pickTargetYear(local, snapshots, 2025, null), { status: "ambiguous", reason: "multiple_candidates" });
+    assert.deepEqual(pickTargetYear(local, snapshots, 2025, undefined), { status: "ambiguous", reason: "multiple_candidates" });
   });
 
-  it("falls back to fallbackYear then most recently updated when local and active are absent", () => {
+  it("does not choose by civil year or update date when multiple open years remain", () => {
     const snapshots = [
       row(2025, { updatedAt: "2026-01-01T00:00:00.000Z" }),
       row(2026, { updatedAt: "2026-02-01T00:00:00.000Z" }),
     ];
-    assert.equal(pickTargetYear(null, snapshots, 2025, null), 2025);
-    assert.equal(pickTargetYear(null, snapshots, 2099, null), 2026);
+    assert.deepEqual(pickTargetYear(null, snapshots, 2025, null), { status: "ambiguous", reason: "multiple_candidates" });
+    assert.deepEqual(pickTargetYear(null, snapshots, 2099, null), { status: "ambiguous", reason: "multiple_candidates" });
   });
 
-  it("returns null when no local and no snapshots", () => {
-    assert.equal(pickTargetYear(null, [], 2025, null), null);
+  it("returns no_year when no local and no snapshots", () => {
+    assert.deepEqual(pickTargetYear(null, [], 2025, null), { status: "no_year" });
   });
 
   it("resolveWorkspaceHydration uses active year for empty local cold restore", () => {
@@ -110,7 +117,7 @@ describe("Lot 3 pickTargetYear — cold restore", () => {
     assert.equal(decision.blockWrites, false);
   });
 
-  it("closed archive targeted via fallbackYear gets blockWrites true", () => {
+  it("a closed archive alone is not an active-year candidate", () => {
     const snapshots = [row(2025, { closedAt: NOW, successorFiscalYear: 2026 })];
     const decision = resolveWorkspaceHydration({
       local: null,
@@ -118,8 +125,46 @@ describe("Lot 3 pickTargetYear — cold restore", () => {
       fallbackYear: 2025,
       activeFiscalYear: null,
     });
-    assert.equal(decision.source, "server");
-    if (decision.source !== "server") throw new Error("unreachable");
-    assert.equal(decision.blockWrites, true);
+    assert.deepEqual(decision, { source: "none", workspace: null, blockWrites: false });
+  });
+});
+
+describe("R8.2 — canonical active-year matrix", () => {
+  const resolved = (year: number) => ({ status: "resolved", year });
+  const ambiguous = { status: "ambiguous", reason: "multiple_candidates" };
+
+  it("A/J — a valid pointer wins over an open peer and multiple archives", () => {
+    assert.deepEqual(pickTargetYear(null, [row(2025), row(2026)], 2025, 2026), resolved(2026));
+    assert.deepEqual(pickTargetYear(null, [row(2023, { closedAt: NOW }), row(2024, { closedAt: NOW }), row(2025)], 2026, 2025), resolved(2025));
+  });
+
+  it("B/C/G — only open server years are candidates without a pointer", () => {
+    assert.deepEqual(pickTargetYear(null, [row(2025)], 2026, null), resolved(2025));
+    assert.deepEqual(pickTargetYear(null, [row(2025), row(2026)], 2025, null), ambiguous);
+    assert.deepEqual(pickTargetYear(null, [row(2024, { closedAt: NOW }), row(2025)], 2024, null), resolved(2025));
+  });
+
+  it("D/E — a valid pointer beats a newer local year; a missing target blocks", () => {
+    assert.deepEqual(pickTargetYear(local(2026), [row(2025)], 2026, 2025), resolved(2025));
+    assert.deepEqual(pickTargetYear(local(2025), [row(2025)], 2025, 2026),
+      { status: "ambiguous", reason: "active_snapshot_missing" });
+  });
+
+  it("F/H/I — distinct local year conflicts, the same year coalesces, no year stays empty", () => {
+    assert.deepEqual(pickTargetYear(local(2025), [row(2026)], 2025, null), ambiguous);
+    assert.deepEqual(pickTargetYear(local(2025), [row(2025)], 2026, null), resolved(2025));
+    assert.deepEqual(pickTargetYear(null, [], 2025, null), { status: "no_year" });
+  });
+
+  it("K — ambiguous resolution hydrates no workspace and blocks writes", () => {
+    assert.deepEqual(resolveWorkspaceHydration({ local: local(2025), snapshots: [row(2026)], fallbackYear: 2025, activeFiscalYear: null }),
+      { source: "blocked", workspace: null, blockWrites: true, reason: "ambiguous_fiscal_year" });
+    assert.deepEqual(resolveWorkspaceHydration({ local: local(2025), snapshots: [row(2025)], fallbackYear: 2025, activeFiscalYear: 2026 }),
+      { source: "blocked", workspace: null, blockWrites: true, reason: "active_snapshot_missing" });
+  });
+
+  it("closed local/server copies cannot turn an archive into an active candidate", () => {
+    assert.deepEqual(pickTargetYear(local(2024), [row(2024, { closedAt: NOW }), row(2025)], 2024, null), resolved(2025));
+    assert.deepEqual(pickTargetYear(local(2024, "closed"), [row(2025)], 2024, null), resolved(2025));
   });
 });
