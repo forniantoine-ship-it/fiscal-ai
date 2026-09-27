@@ -47,7 +47,7 @@ export const DOCUMENTS: DemoDocument[] = [
 
 export const DOMAIN_LABELS: Record<DomainId, string> = {
   activity: "Activité", home: "Logement", loan: "Financement",
-  income: "Loyers", expenses: "Dépenses", history: "Historique / reprise",
+  income: "Loyers", expenses: "Dépenses", amortization: "Amortissements", history: "Historique / reprise",
 };
 
 export const ANALYSIS_STEPS = [

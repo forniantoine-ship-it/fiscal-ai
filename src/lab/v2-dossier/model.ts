@@ -3,7 +3,7 @@ export type View = "dossier" | "documents" | "declaration";
 export type EntryStage = "question" | "unsure" | "confirm" | "organize" | "invite" | "done";
 export type ProcessingStep = 0 | 1 | 2 | 3 | 4;
 export type Resolution = "date" | "conflict" | "tax";
-export type DomainId = "activity" | "home" | "loan" | "income" | "expenses" | "history";
+export type DomainId = "activity" | "home" | "loan" | "income" | "expenses" | "amortization" | "history";
 
 export type DemoDocument = {
   id: string;

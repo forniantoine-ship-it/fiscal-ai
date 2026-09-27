@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import type { ChargesAssistantOutput, FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
+import type { AmortissementAssistantOutput, ChargesAssistantOutput, FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
-import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Charges, resolveV3Financing, resolveV3Property, resolveV3Revenue } from "./read-model";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3PrototypeSource } from "./read-model";
 
 function workspace(): PersistedWorkspace {
   return {
@@ -75,6 +75,18 @@ function composantNouveau(overrides: Partial<ComposantNouveau> = {}): ComposantN
   return {
     id: "travaux-1", label: "Réfection toiture", montant: 8000, dureeAnnees: 15,
     dotationAnnuelle: 533.33, nature: "amélioration", dateDebut: "2026-06-01", origin: "f012_travaux",
+    ...overrides,
+  };
+}
+
+function amortizationFact(data: ReturnType<typeof buildV3DossierDetailReadModel>, id: string) {
+  return data.amortization.facts.find(item => item.id === id);
+}
+
+function amortissementOutput(overrides: Partial<AmortissementAssistantOutput> = {}): AmortissementAssistantOutput {
+  return {
+    exerciceFiscal: 2026, totalDotations: 1500, status: "validated", planVersion: "f014-2026-2026-02-10",
+    profil: "PROF-001", validatedAt: "2026-02-10T10:00:00Z",
     ...overrides,
   };
 }
@@ -791,4 +803,122 @@ test("Charges M — REAL sans données : aucune fixture de dépenses ne fuit", (
   const serialized = JSON.stringify(charges);
   assert.equal(serialized.includes("2 350"), false);
   assert.equal(serialized.includes("1 250"), false);
+});
+
+test("Amortization A — validé : projection exacte, statut complete depuis l'autorité canonique", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const before = structuredClone(input);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.status, "complete");
+  assert.equal(model.amortization.owner, "F014");
+  assert.equal(amortizationFact(model, "totalDotations")?.value, money(1500));
+  assert.equal(amortizationFact(model, "profil")?.value, "Première année d’amortissement");
+  assert.deepEqual(input, before);
+});
+
+test("Amortization B — contested : montant conservé, domaine incomplete, jamais présenté comme validé", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput({ status: "contested" }) };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.status, "incomplete");
+  assert.equal(amortizationFact(model, "totalDotations")?.value, money(1500));
+  assert.doesNotMatch(model.amortization.summary, /^Amortissements calculés$/);
+  assert.match(model.amortization.summary, /vérifier/i);
+});
+
+test("Amortization C — zéro réel validé : 0 € conservé, statut complete", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput({ totalDotations: 0 }) };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(amortizationFact(model, "totalDotations")?.value, money(0));
+  assert.equal(model.amortization.status, "complete");
+});
+
+test("Amortization D — absence : aucun 0 € inventé, incomplete", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(amortizationFact(model, "totalDotations")?.value, null);
+  assert.equal(model.amortization.status, "incomplete");
+});
+
+test("Amortization E — l'output F014 d'un exercice différent n'est pas utilisé (year-safety)", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput({ exerciceFiscal: 2025 }) };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(amortizationFact(model, "totalDotations")?.value, null);
+  assert.equal(model.amortization.status, "incomplete");
+});
+
+test("Amortization F — provenance : F014 n'a pas de fieldSources, aucune évidence inventée", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.provenance, "unavailable");
+  assert.ok(model.amortization.facts.every(f => f.evidence === undefined));
+});
+
+test("Amortization G — aucune reprojection des composants F010", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.facts.some(f => f.id.startsWith("composant-") || f.id === "valeurTerrain" || f.id === "montantMobilier"), false);
+});
+
+test("Amortization H — aucune reprojection des composantsNouveaux F012", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.facts.some(f => f.id.startsWith("component-") || f.id.startsWith("category-")), false);
+});
+
+test("Amortization I — aucun déficit / report fiscal (propriété de F006, pas F014)", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  const serialized = JSON.stringify(model.amortization).toLowerCase();
+  assert.equal(serialized.includes("déficit") || serialized.includes("report") || serialized.includes("resultatfiscal"), false);
+});
+
+test("Amortization J — multi-biens : garde identique aux autres domaines", () => {
+  const input = workspace();
+  input.properties.push({ id: "home-2", label: "Second bien", address: "2 rue Test", city: "Lyon", postalCode: "69002" });
+  input.fiscalYear.propertyIds.push("home-2");
+  input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.amortization.status, "unsupported");
+  assert.deepEqual(model.amortization.facts, []);
+  assert.match(model.amortization.summary, /multi-biens/);
+});
+
+test("Amortization K — REAL sans données : aucune fixture d'amortissement ne fuit", () => {
+  const input = workspace();
+  input.declarationDraft = undefined;
+  assert.equal(resolveV3Amortization({ mode: "demo" }), undefined);
+  const amortization = resolveV3Amortization({ mode: "real", workspace: input });
+  assert.equal(amortization?.status, "incomplete");
+  assert.ok(amortization?.facts.every(item => item.value === null));
+  assert.deepEqual(amortization?.sources, []);
+});
+
+test("Contract L — les six domaines réels ne retombent jamais sur une fixture démo", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const source: V3PrototypeSource = { mode: "real", workspace: input };
+  const resolvers: [string, (s: V3PrototypeSource) => unknown][] = [
+    ["activity", resolveV3Activity], ["property", resolveV3Property], ["financing", resolveV3Financing],
+    ["revenue", resolveV3Revenue], ["charges", resolveV3Charges], ["amortization", resolveV3Amortization],
+  ];
+  const demoFixtureStrings = [
+    "Antoine Martin", "Bordeaux", "140 000", "14 400", "2 350", "1 250", "3,45",
+    "Extrait d’activité", "Acte d’acquisition", "Offre de prêt", "Bail de location", "Relevé de gestion", "Échéancier bancaire",
+  ];
+  for (const [name, resolve] of resolvers) {
+    assert.equal(resolve({ mode: "demo" }), undefined, `${name}: doit rester undefined en mode demo`);
+    const serialized = JSON.stringify(resolve(source));
+    for (const fixture of demoFixtureStrings) {
+      assert.equal(serialized?.includes(fixture) ?? false, false, `${name}: fuite de la fixture démo "${fixture}"`);
+    }
+  }
 });

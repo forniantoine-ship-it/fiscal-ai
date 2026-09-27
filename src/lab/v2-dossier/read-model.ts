@@ -34,7 +34,7 @@ export interface V3DossierDetailReadModel {
   financing: V3DomainReadModel;
   revenue: V3DomainReadModel;
   charges: V3DomainReadModel;
-  // F014 deliberately has no projection in V3-R5.
+  amortization: V3DomainReadModel;
 }
 
 export type V3PrototypeSource = { mode: "demo" } | { mode: "real"; workspace: PersistedWorkspace };
@@ -57,6 +57,10 @@ export function resolveV3Revenue(source: V3PrototypeSource): V3DomainReadModel |
 
 export function resolveV3Charges(source: V3PrototypeSource): V3DomainReadModel | undefined {
   return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).charges : undefined;
+}
+
+export function resolveV3Amortization(source: V3PrototypeSource): V3DomainReadModel | undefined {
+  return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).amortization : undefined;
 }
 
 function known(value: string | undefined): string | null {
@@ -412,6 +416,55 @@ function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadMod
   };
 }
 
+const AMORTISSEMENT_PROFIL_LABELS: Record<string, string> = {
+  "PROF-001": "Première année d’amortissement",
+  "PROF-002": "Plan repris sans nouvel élément",
+  "PROF-003": "Plan repris avec de nouveaux éléments",
+};
+
+function buildV3AmortizationReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+  // Same mono-property contract as the other domains: never a partial aggregate.
+  if (isMultiProperty(workspace)) {
+    return {
+      id: "depreciation", label: "Amortissements", owner: "F014", status: "unsupported",
+      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      facts: [], sources: [], provenance: "unavailable", missing: [],
+    };
+  }
+
+  const draft = workspace.declarationDraft;
+  // Exercise-scoped F014 output: only trusted for the active fiscal year, same guard as isAmortissementComplete.
+  const amortissement = isAnnualOutputForActiveYear(draft?.amortissementAssistant, workspace.fiscalYear.year)
+    ? draft?.amortissementAssistant : undefined;
+
+  // F014 shows its own annual RESULT only — never F010's base/plan or F012's composantsNouveaux
+  // again (already shown under Logement/Dépenses), and never F006's deficits/reports (owned by F006).
+  const facts: V3Fact[] = [
+    { id: "totalDotations", label: "Amortissements calculés pour l’exercice", value: money(amortissement?.totalDotations) },
+    // planVersion is an internal technical identifier (f014-{exercice}-{date}) — never shown.
+    { id: "profil", label: "Profil du plan",
+      value: amortissement ? AMORTISSEMENT_PROFIL_LABELS[amortissement.profil] ?? amortissement.profil : null },
+  ];
+
+  const status = buildDossierSteps(draft, workspace.fiscalYear.year)
+    .find(step => step.id === "amortissement")?.status ?? "incomplete";
+  // Presentational only: a contested plan keeps its computed amount visible (never hidden as
+  // "no data"), but the domain status stays incomplete and the summary never claims it validated.
+  const summary = status === "complete" ? "Amortissements calculés"
+    : amortissement?.status === "contested" ? "Amortissements calculés, à vérifier"
+    : "Amortissements à compléter";
+  return {
+    id: "depreciation", label: "Amortissements", owner: "F014", status,
+    summary,
+    facts,
+    sources: [],
+    // AmortissementAssistantOutput carries no fieldSources: F014 is a computed result, never a
+    // document-traced fact — never borrow F010's or F012's provenance to imply otherwise.
+    provenance: "unavailable",
+    missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
+  };
+}
+
 export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3DossierDetailReadModel {
   return {
     activity: buildV3ActivityReadModel(workspace),
@@ -419,5 +472,6 @@ export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3
     financing: buildV3FinancingReadModel(workspace),
     revenue: buildV3RevenueReadModel(workspace),
     charges: buildV3ChargesReadModel(workspace),
+    amortization: buildV3AmortizationReadModel(workspace),
   };
 }
