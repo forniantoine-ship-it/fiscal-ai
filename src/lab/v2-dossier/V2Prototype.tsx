@@ -6,7 +6,8 @@ import {
   INITIAL_STATE, illustrativeResult, motionDelay, nextAction, pendingCount, reduceDemo,
   type DemoDocument, type DemoState, type DomainId, type EntryStage, type ProcessingStep, type Resolution, type Scenario, type View,
 } from "./model";
-import { resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DeclarationReadModel, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DeclarationReadModel, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
+import type { V3DomainId } from "./read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -481,7 +482,50 @@ function Inpi({ state, onShow, onSiret }: { state: DemoState; onShow: (show: boo
   </>;
 }
 
+function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mode: "real" }> }) {
+  const [view, setView] = useState<View>("dossier");
+  const [selectedDomain, setSelectedDomain] = useState<V3DomainId | null>(null);
+  const detail = buildV3DossierDetailReadModel(source.workspace);
+  const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
+  const declaration = resolveV3Declaration(source);
+  const selected = domains.find(domain => domain.id === selectedDomain);
+  const year = source.workspace.fiscalYear.year;
+
+  return <div className={styles.root}>
+    <div className={styles.labBar}><div><span className={styles.labDot} /> LABORATOIRE UX V3.1 <span className={styles.labDivider}>/</span> Dossier réel · lecture seule · exercice {year}</div></div>
+    <header className={styles.header}><div className={styles.brand}><span className={styles.brandMark}>✳</span><span>L’Assistant du Réel<small>VOTRE COMPTABILITÉ LMNP</small></span></div>
+      <nav aria-label="Navigation principale" className={styles.nav}>
+        <button aria-current={view === "dossier" ? "page" : undefined} onClick={() => setView("dossier")}>Mon dossier</button>
+        <button aria-current={view === "documents" ? "page" : undefined} onClick={() => setView("documents")}>Mes documents</button>
+        <button aria-current={view === "declaration" ? "page" : undefined} onClick={() => setView("declaration")}>Ma déclaration</button>
+      </nav><div className={styles.headerRight}><span>Dossier réel</span><span className={styles.avatar}>✳</span></div></header>
+    <main className={styles.main}>
+      {view === "dossier" ? <>
+        <Heading eyebrow={`MON DOSSIER · ${year}`} title={`Votre dossier ${year}`} description="Les informations ci-dessous proviennent du dossier enregistré." />
+        <div className={styles.emptyCard}><h2>Besoin de vous</h2><p>Les interventions guidées ne sont pas encore disponibles dans cette lecture du dossier.</p></div>
+        <section className={styles.domainSection}>
+          <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>VOTRE DOSSIER EN DÉTAIL</p><h2>Les six rubriques</h2></div></div>
+          <div className={styles.domainList}>{domains.map(domain => <button key={domain.id} className={styles.domainRow} onClick={() => setSelectedDomain(domain.id)}>
+            <span className={`${styles.domainMark} ${domain.status === "complete" ? styles.domainMarkDone : styles.domainMarkPending}`}>{domain.status === "complete" ? "✓" : "·"}</span>
+            <span className={styles.domainName}>{domain.label}</span><span className={styles.domainStatus}>{domain.summary}</span><span className={styles.rowArrow} aria-hidden="true">↗</span>
+          </button>)}</div>
+        </section>
+      </> : view === "documents" ? <>
+        <Heading eyebrow={`MES DOCUMENTS · ${year}`} title="Vos documents" description="Cette vue ne présente pas encore les documents du dossier réel." />
+        <div className={styles.emptyCard}><h2>Documents indisponibles dans cette vue</h2><p>Les sources vérifiées restent indiquées dans le détail des rubriques du dossier.</p></div>
+      </> : declaration ? <RealDeclarationView declaration={declaration} /> : null}
+    </main>
+    <footer className={styles.footer}><span>Lecture seule · aucune modification du dossier</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
+    {selected ? <DetailPanel title={selected.label} subtitle="Comprendre et vérifier" onClose={() => setSelectedDomain(null)}><RealDomainDetail domain={selected} /></DetailPanel> : null}
+  </div>;
+}
+
 export function V2Prototype({ source = { mode: "demo" } }: { source?: V3PrototypeSource }) {
+  if (source.mode === "real") return <RealPrototypeView source={source} />;
+  return <DemoPrototypeView source={source} />;
+}
+
+function DemoPrototypeView({ source }: { source: V3PrototypeSource }) {
   const [state, dispatch] = useReducer(reduceDemo, INITIAL_STATE);
   const activity = resolveV3Activity(source);
   const property = resolveV3Property(source);

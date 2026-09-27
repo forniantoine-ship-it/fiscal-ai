@@ -52,7 +52,9 @@ function logSupabaseError(
   });
 }
 
-export async function fetchActiveDossierForUser(userId: string): Promise<LmnpDossier | null> {
+export async function fetchActiveDossierForUserResult(userId: string): Promise<
+  { status: "ok"; dossier: LmnpDossier } | { status: "not_found" } | { status: "error" }
+> {
   const { data, error } = await supabase
     .from("lmnp_dossiers")
     .select(DOSSIER_SELECT)
@@ -63,18 +65,23 @@ export async function fetchActiveDossierForUser(userId: string): Promise<LmnpDos
 
   if (error) {
     logSupabaseError("fetch active failed", { userId }, error);
-    return null;
+    return { status: "error" };
   }
 
-  if (!data) return null;
+  if (!data) return { status: "not_found" };
 
-  return {
+  return { status: "ok", dossier: {
     ...(data as Omit<LmnpDossier, "active_fiscal_year">),
     active_fiscal_year:
       typeof (data as { active_fiscal_year?: unknown }).active_fiscal_year === "number"
         ? ((data as { active_fiscal_year: number }).active_fiscal_year)
         : null,
-  };
+  } };
+}
+
+export async function fetchActiveDossierForUser(userId: string): Promise<LmnpDossier | null> {
+  const result = await fetchActiveDossierForUserResult(userId);
+  return result.status === "ok" ? result.dossier : null;
 }
 
 export async function createLmnpDossier(
