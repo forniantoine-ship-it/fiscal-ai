@@ -8,6 +8,7 @@ import {
 } from "./model";
 import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DeclarationReadModel, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
 import type { V3DomainId } from "./read-model";
+import { buildV3UserActionReadModel } from "./user-action-read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -488,6 +489,7 @@ function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mo
   const detail = buildV3DossierDetailReadModel(source.workspace);
   const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
   const declaration = resolveV3Declaration(source);
+  const userActions = buildV3UserActionReadModel(source.workspace);
   const selected = domains.find(domain => domain.id === selectedDomain);
   const year = source.workspace.fiscalYear.year;
 
@@ -502,7 +504,19 @@ function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mo
     <main className={styles.main}>
       {view === "dossier" ? <>
         <Heading eyebrow={`MON DOSSIER · ${year}`} title={`Votre dossier ${year}`} description="Les informations ci-dessous proviennent du dossier enregistré." />
-        <div className={styles.emptyCard}><h2>Besoin de vous</h2><p>Les interventions guidées ne sont pas encore disponibles dans cette lecture du dossier.</p></div>
+        <section className={styles.realActions} aria-label="Besoin de vous">
+          <h2>Besoin de vous</h2>
+          {userActions.state === "unknown" ?
+            <p>Nous vérifions les prochaines étapes de votre dossier.</p> :
+            userActions.actions.length === 0 ?
+              <p>Rien à faire pour le moment. Votre dossier n’attend aucune action de votre part.</p> :
+              <div className={styles.realActionList}>{userActions.actions.map(action =>
+                <div className={styles.realActionCard} key={action.id}>
+                  <h3>{action.label}</h3>
+                  <a className={styles.primaryButton} href={action.href}>Continuer <Arrow /></a>
+                </div>,
+              )}</div>}
+        </section>
         <section className={styles.domainSection}>
           <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>VOTRE DOSSIER EN DÉTAIL</p><h2>Les six rubriques</h2></div></div>
           <div className={styles.domainList}>{domains.map(domain => <button key={domain.id} className={styles.domainRow} onClick={() => setSelectedDomain(domain.id)}>
