@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import type { LogementAmortissementOutput } from "@/lib/lmnp/types/domain";
-import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Property } from "./read-model";
+import type { FinancementChargesOutput, LoanProfile, LogementAmortissementOutput } from "@/lib/lmnp/types/domain";
+import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Financing, resolveV3Property } from "./read-model";
 
 function workspace(): PersistedWorkspace {
   return {
@@ -35,6 +36,37 @@ function logementOutput(overrides: Partial<LogementAmortissementOutput> = {}): L
     dureeMoyenneAnnees: 27, prorataRatio: 1,
     plan: { lignes: [], totalAnnuelExercice: 0, totalBrut: 0 },
     fieldSources: {}, computedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function financingFact(data: ReturnType<typeof buildV3DossierDetailReadModel>, id: string) {
+  return data.financing.facts.find(item => item.id === id);
+}
+
+function loan(overrides: Partial<LoanProfile> = {}): LoanProfile {
+  return {
+    id: "loan-1", bank: "Banque Test", loanType: "amortissable", borrowedAmount: 140000,
+    rate: 3.45, durationMonths: 240, monthlyPayment: 800, insurance: 350, fees: 500,
+    startDate: "2024-03-15", firstPaymentDate: "2024-04-05", remainingCapital: 130000,
+    ...overrides,
+  };
+}
+
+function pretExercice(overrides: Partial<PretFinancementExercice> = {}): PretFinancementExercice {
+  return {
+    pretId: "loan-1", typePret: "amortissable", interetsEmpruntExercice: 4500, interetsPreExploitation: 0,
+    assuranceEmpruntExercice: 350, assurancePreExploitation: 0, capitalRembourseExercice: 5200,
+    capitalRestantDu31_12: 130000, fraisDossierDeductibles: 0, garantieDeductible: 0, iraDeductible: 0,
+    ...overrides,
+  };
+}
+
+function financementChargesOutput(overrides: Partial<FinancementChargesOutput> = {}): FinancementChargesOutput {
+  return {
+    exerciceFiscal: 2026, totalInteretsEmprunt: 4500, totalInteretsPreExploitation: 0, totalAssurance: 350,
+    totalCapitalRembourse: 5200, totalChargesFinancementExercice: 4850,
+    prets: [pretExercice()], fieldSources: {}, computedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -247,4 +279,149 @@ test("Property — l'output F010 d'un exercice différent n'est pas utilisé (ye
   const model = buildV3DossierDetailReadModel(input);
   assert.equal(propertyFact(model, "prixRevient")?.value, null);
   assert.equal(model.property.status, "incomplete");
+});
+
+test("Financing A — financement complet : contrat et exercice projetés fidèlement", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [], creditConfirmedAt: "2026-02-10T10:00:00Z",
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 4500, annualInsurance: 350, remainingCapital: 130000 }, installments: [] },
+    financementCharges: financementChargesOutput(),
+  };
+  const before = structuredClone(input);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.financing.status, "complete");
+  assert.equal(model.financing.owner, "F011");
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.value, money(140000));
+  assert.equal(financingFact(model, "loan-0-rate")?.value, "3,45 %");
+  assert.equal(financingFact(model, "loan-0-durationMonths")?.value, "240 mois");
+  assert.equal(financingFact(model, "loan-0-startDate")?.value, "2024-03-15");
+  assert.equal(financingFact(model, "loan-0-firstPaymentDate")?.value, "2024-04-05");
+  assert.equal(financingFact(model, "loan-0-interetsExercice")?.value, money(4500));
+  assert.equal(financingFact(model, "loan-0-capitalRestantDu")?.value, money(130000));
+  assert.deepEqual(input, before);
+});
+
+test("Financing B — financement partiel : taux et durée absents, aucun fallback", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [{ ...loan(), rate: undefined as unknown as number, durationMonths: undefined as unknown as number }], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.value, money(140000));
+  assert.equal(financingFact(model, "loan-0-rate")?.value, null);
+  assert.equal(financingFact(model, "loan-0-durationMonths")?.value, null);
+  assert.equal(model.financing.missing.includes(`${loanLabelFor(0, "Banque Test")} · Taux`), true);
+});
+
+function loanLabelFor(index: number, bank: string | null) {
+  return bank ? `Prêt ${index + 1} (${bank})` : `Prêt ${index + 1}`;
+}
+
+test("Financing C — contrat durable et exercice annuel restent deux sections distinctes", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 4500, annualInsurance: 350, remainingCapital: 130000 }, installments: [] },
+    financementCharges: financementChargesOutput(),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  // Contract fact: unaffected by the exercise.
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.value, money(140000));
+  // Exercise fact: a distinct fact, distinctly labelled, never the same value as the contract's capital.
+  assert.equal(financingFact(model, "loan-0-capitalRembourseExercice")?.value, money(5200));
+  assert.notEqual(financingFact(model, "loan-0-borrowedAmount")?.value, financingFact(model, "loan-0-capitalRembourseExercice")?.value);
+});
+
+test("Financing D — l'output F011 d'un exercice différent n'apparaît pas comme celui de l'exercice actif", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2025", annualInterest: 4500, annualInsurance: 350, remainingCapital: 130000 }, installments: [] },
+    financementCharges: financementChargesOutput({ exerciceFiscal: 2025 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-interetsExercice"), undefined);
+  assert.equal(financingFact(model, "loan-0-capitalRestantDu"), undefined);
+  // Contract facts (durable) remain visible — their continuity is legitimate.
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.value, money(140000));
+});
+
+test("Financing E — REAL sans données : aucune fixture financement ne fuit", () => {
+  const input = workspace();
+  input.declarationDraft = undefined;
+  assert.equal(resolveV3Financing({ mode: "demo" }), undefined);
+  const financing = resolveV3Financing({ mode: "real", workspace: input });
+  assert.equal(financing?.facts.length, 0);
+  assert.deepEqual(financing?.sources, []);
+  const serialized = JSON.stringify(financing);
+  assert.equal(serialized.includes("140 000"), false);
+  assert.equal(serialized.includes("3,45"), false);
+  assert.equal(serialized.includes("20 ans") || serialized.includes("240 mois"), false);
+  assert.equal(serialized.includes("0,25"), false);
+});
+
+test("Financing F — provenance : document connu, sans maillon inventé", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], creditDocumentId: "doc-offer", creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 4500, annualInsurance: 350, remainingCapital: 130000 }, installments: [] } };
+  input.documents = [{
+    id: "doc-offer", fiscalYearId: input.fiscalYear.id, fileName: "Offre réelle.pdf",
+    mimeType: "application/pdf", sizeBytes: 100, category: "autre", documentType: "unknown",
+    status: "analyzed", uploadedAt: "2026-01-01",
+  }];
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.financing.provenance, "partial");
+  assert.deepEqual(model.financing.sources, [{ id: "doc-offer", label: "Offre réelle.pdf" }]);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, undefined);
+});
+
+test("Financing G — plusieurs prêts : deux prêts distincts, jamais fusionnés ni moyennés", () => {
+  const input = workspace();
+  const loanA = loan({ id: "loan-1", bank: "Banque A", borrowedAmount: 100000, rate: 2 });
+  const loanB = loan({ id: "loan-2", bank: "Banque B", borrowedAmount: 60000, rate: 4 });
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loanA, loanB], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [pretExercice({ pretId: "loan-1" }), pretExercice({ pretId: "loan-2", capitalRestantDu31_12: 55000 })] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.value, money(100000));
+  assert.equal(financingFact(model, "loan-1-borrowedAmount")?.value, money(60000));
+  assert.equal(financingFact(model, "loan-0-capitalRestantDu")?.value, money(130000));
+  assert.equal(financingFact(model, "loan-1-capitalRestantDu")?.value, money(55000));
+  // No aggregate/averaged fact exists anywhere in the model.
+  assert.equal(model.financing.facts.some(f => f.id.includes("total") || f.id.includes("average")), false);
+});
+
+test("Financing H — zéro prêt : pas de crash, aucun prêt inventé", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], creditDeclaredNoneAt: "2026-02-10T10:00:00Z" };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.deepEqual(model.financing.facts, []);
+  assert.deepEqual(model.financing.sources, []);
+  assert.match(model.financing.summary, /Aucun financement déclaré/);
+});
+
+test("Financing I — multi-biens : garde identique à Activité/Logement", () => {
+  const input = workspace();
+  input.properties.push({ id: "home-2", label: "Second bien", address: "2 rue Test", city: "Lyon", postalCode: "69002" });
+  input.fiscalYear.propertyIds.push("home-2");
+  input.declarationDraft = { completedSteps: [], creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] } };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.financing.status, "unsupported");
+  assert.deepEqual(model.financing.facts, []);
+  assert.match(model.financing.summary, /multi-biens/);
+});
+
+test("Financing — un prêt exclu du calcul de l'exercice l'indique explicitement, sans être masqué", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [], excludedLoanIds: ["loan-1"] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (date de première mensualité inconnue)");
+  assert.equal(financingFact(model, "loan-0-interetsExercice"), undefined);
 });

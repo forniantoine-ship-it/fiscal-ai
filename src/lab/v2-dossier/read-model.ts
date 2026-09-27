@@ -31,7 +31,8 @@ export interface V3DomainReadModel {
 export interface V3DossierDetailReadModel {
   activity: V3DomainReadModel;
   property: V3DomainReadModel;
-  // F011–F014 deliberately have no projection in V3-R2.
+  financing: V3DomainReadModel;
+  // F012–F014 deliberately have no projection in V3-R3.
 }
 
 export type V3PrototypeSource = { mode: "demo" } | { mode: "real"; workspace: PersistedWorkspace };
@@ -44,12 +45,20 @@ export function resolveV3Property(source: V3PrototypeSource): V3DomainReadModel 
   return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).property : undefined;
 }
 
+export function resolveV3Financing(source: V3PrototypeSource): V3DomainReadModel | undefined {
+  return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).financing : undefined;
+}
+
 function known(value: string | undefined): string | null {
   return value?.trim() || null;
 }
 
 function money(value: number | undefined): string | null {
   return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €` : null;
+}
+
+function percent(value: number | undefined): string | null {
+  return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} %` : null;
 }
 
 const PROPERTY_TYPE_LABELS: Record<string, string> = {
@@ -204,9 +213,84 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadMo
   };
 }
 
+function loanLabel(index: number, bank: string | null): string {
+  return bank ? `Prêt ${index + 1} (${bank})` : `Prêt ${index + 1}`;
+}
+
+function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+  // Same mono-property contract as Activity/Property: the whole dossier stays unsupported, never partial.
+  if (isMultiProperty(workspace)) {
+    return {
+      id: "financing", label: "Financement", owner: "F011", status: "unsupported",
+      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      facts: [], sources: [], provenance: "unavailable", missing: [],
+    };
+  }
+
+  const draft = workspace.declarationDraft;
+  const loans = draft?.creditFinancing?.loans ?? [];
+  // Exercise-scoped F011 output: only trusted for the active fiscal year, same guard as isCreditComplete.
+  const financementCharges = isAnnualOutputForActiveYear(draft?.financementCharges, workspace.fiscalYear.year)
+    ? draft?.financementCharges : undefined;
+  const excludedLoanIds = new Set(financementCharges?.excludedLoanIds ?? []);
+  const fieldSources = financementCharges?.fieldSources ?? {};
+  const sourceDocument = workspace.documents.find(doc => doc.id === draft?.creditDocumentId);
+
+  // Never merge, average, or pick loans[0]: every declared loan is projected on its own, matched by id.
+  const facts: V3Fact[] = loans.flatMap((loan, index): V3Fact[] => {
+    const label = loanLabel(index, known(loan.bank));
+    const contractFacts: V3Fact[] = [
+      { id: `loan-${index}-loanType`, label: `${label} · Type de prêt`, value: known(loan.loanType) },
+      { id: `loan-${index}-borrowedAmount`, label: `${label} · Capital emprunté`, value: money(loan.borrowedAmount),
+        evidence: fieldSourceLabel(fieldSources.borrowedAmount) },
+      // Distinct from borrowedAmount: capital read on the loan OFFER document, never derived from it.
+      { id: `loan-${index}-capitalInitialOffre`, label: `${label} · Capital initial (offre)`, value: money(loan.capitalInitialOffre) },
+      { id: `loan-${index}-rate`, label: `${label} · Taux`, value: percent(loan.rate),
+        evidence: fieldSourceLabel(fieldSources.rate) },
+      { id: `loan-${index}-durationMonths`, label: `${label} · Durée`,
+        value: typeof loan.durationMonths === "number" ? `${loan.durationMonths} mois` : null },
+      { id: `loan-${index}-startDate`, label: `${label} · Date du prêt`, value: known(loan.startDate) },
+      // Deliberately distinct from startDate — never conflated with the first-payment date.
+      { id: `loan-${index}-firstPaymentDate`, label: `${label} · Date de première mensualité`, value: known(loan.firstPaymentDate) },
+      { id: `loan-${index}-insurance`, label: `${label} · Assurance contractuelle (annuelle)`, value: money(loan.insurance) },
+    ];
+
+    const pret = financementCharges?.prets.find(p => p.pretId === loan.id);
+    const exerciseYear = financementCharges?.exerciceFiscal ?? workspace.fiscalYear.year;
+    const exerciseFacts: V3Fact[] = pret ? [
+      { id: `loan-${index}-interetsExercice`, label: `${label} · Intérêts déductibles (exercice ${exerciseYear})`, value: money(pret.interetsEmpruntExercice) },
+      { id: `loan-${index}-assuranceExercice`, label: `${label} · Assurance déductible (exercice ${exerciseYear})`, value: money(pret.assuranceEmpruntExercice) },
+      { id: `loan-${index}-capitalRembourseExercice`, label: `${label} · Capital remboursé (exercice ${exerciseYear})`, value: money(pret.capitalRembourseExercice) },
+      // Computed by F011's own engine for this exercise — never recalculated here.
+      { id: `loan-${index}-capitalRestantDu`, label: `${label} · Capital restant dû au 31/12/${exerciseYear} (F011)`, value: money(pret.capitalRestantDu31_12) },
+    ] : excludedLoanIds.has(loan.id) ? [
+      { id: `loan-${index}-exerciseStatus`, label: `${label} · Situation exercice ${exerciseYear}`,
+        value: "Exclu du calcul (date de première mensualité inconnue)" },
+    ] : [];
+
+    return [...contractFacts, ...exerciseFacts];
+  });
+
+  const status = buildDossierSteps(draft, workspace.fiscalYear.year)
+    .find(step => step.id === "credit")?.status ?? "incomplete";
+  const summary = loans.length === 0
+    ? draft?.creditDeclaredNoneAt ? "Aucun financement déclaré" : "Aucun financement enregistré"
+    : status === "complete" ? "Financement analysé" : "Financement à compléter";
+  const hasFieldSourceEvidence = Object.keys(fieldSources).length > 0;
+  return {
+    id: "financing", label: "Financement", owner: "F011", status,
+    summary,
+    facts,
+    sources: sourceDocument ? [{ id: sourceDocument.id, label: sourceDocument.fileName }] : [],
+    provenance: sourceDocument || hasFieldSourceEvidence ? "partial" : "unavailable",
+    missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
+  };
+}
+
 export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3DossierDetailReadModel {
   return {
     activity: buildV3ActivityReadModel(workspace),
     property: buildV3PropertyReadModel(workspace),
+    financing: buildV3FinancingReadModel(workspace),
   };
 }
