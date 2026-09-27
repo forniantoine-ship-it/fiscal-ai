@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import type { FinancementChargesOutput, LoanProfile, LogementAmortissementOutput } from "@/lib/lmnp/types/domain";
+import type { FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
-import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Financing, resolveV3Property } from "./read-model";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Financing, resolveV3Property, resolveV3Revenue } from "./read-model";
 
 function workspace(): PersistedWorkspace {
   return {
@@ -42,6 +42,19 @@ function logementOutput(overrides: Partial<LogementAmortissementOutput> = {}): L
 
 function financingFact(data: ReturnType<typeof buildV3DossierDetailReadModel>, id: string) {
   return data.financing.facts.find(item => item.id === id);
+}
+
+function revenueFact(data: ReturnType<typeof buildV3DossierDetailReadModel>, id: string) {
+  return data.revenue.facts.find(item => item.id === id);
+}
+
+function revenusOutput(overrides: Partial<RevenusAssistantOutput> = {}): RevenusAssistantOutput {
+  return {
+    exerciceFiscal: 2026, totalRecettes: 14400, loyersEncaisses: 14400, indemnitesAssurance: 0,
+    recettesPlateforme: 0, ajustementsJanDec: 0, moisLocationEffectifs: 12,
+    fieldSources: {}, computedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
 }
 
 function loan(overrides: Partial<LoanProfile> = {}): LoanProfile {
@@ -462,4 +475,136 @@ test("Financing R3.6 — aucune provenance champ-par-champ F011 n'est affichée 
   assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, undefined);
   assert.equal(financingFact(model, "loan-0-rate")?.evidence, undefined);
   assert.ok(model.financing.facts.every(f => f.evidence === undefined));
+});
+
+test("Revenue A — revenu complet : statut confirmé (isRevenusComplete), projection exacte", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [], revenusConfirmedAt: "2026-02-10T10:00:00Z",
+    revenusAssistant: revenusOutput({ revenuTheorique: 14000, fieldSources: { revenu_declare: "manual", loyer_mensuel: "extracted" } }),
+  };
+  const before = structuredClone(input);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.status, "complete");
+  assert.equal(model.revenue.owner, "F013");
+  assert.equal(revenueFact(model, "totalRecettes")?.value, money(14400));
+  assert.equal(revenueFact(model, "totalRecettes")?.evidence, "Saisi");
+  assert.equal(revenueFact(model, "loyersEncaisses")?.value, money(14400));
+  assert.equal(revenueFact(model, "revenuTheorique")?.value, money(14000));
+  assert.equal(revenueFact(model, "revenuTheorique")?.evidence, "Extrait");
+  assert.deepEqual(input, before);
+});
+
+test("Revenue B — revenu partiel (mode déclaratif direct) : revenuTheorique non calculé reste absent, aucun fallback", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    revenusAssistant: revenusOutput({ revenuTheorique: undefined }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.status, "incomplete");
+  assert.equal(revenueFact(model, "totalRecettes")?.value, money(14400));
+  assert.equal(revenueFact(model, "revenuTheorique")?.value, null);
+  assert.ok(model.revenue.missing.includes("Loyer prévu au bail (théorique, F013)"));
+});
+
+test("Revenue C — l'output F013 d'un exercice différent n'est pas utilisé (year-safety)", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [], revenusConfirmedAt: "2025-12-01T00:00:00Z",
+    revenusAssistant: revenusOutput({ exerciceFiscal: 2025 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(revenueFact(model, "totalRecettes")?.value, null);
+  assert.equal(revenueFact(model, "loyersEncaisses")?.value, null);
+  assert.equal(model.revenue.status, "incomplete");
+});
+
+test("Revenue D — unknown vs zéro : aucune donnée diffère d'un zéro réellement confirmé, le statut ne suit pas le montant", () => {
+  const noData = workspace();
+  const noDataModel = buildV3DossierDetailReadModel(noData);
+  assert.equal(revenueFact(noDataModel, "totalRecettes")?.value, null);
+  assert.equal(noDataModel.revenue.status, "incomplete");
+
+  const zeroConfirmed = workspace();
+  zeroConfirmed.declarationDraft = {
+    completedSteps: [], revenusConfirmedAt: "2026-03-01T00:00:00Z",
+    revenusAssistant: revenusOutput({ totalRecettes: 0, loyersEncaisses: 0 }),
+  };
+  const zeroModel = buildV3DossierDetailReadModel(zeroConfirmed);
+  assert.equal(revenueFact(zeroModel, "totalRecettes")?.value, money(0));
+  assert.equal(zeroModel.revenue.status, "complete");
+});
+
+test("Revenue E — jamais de loyer mensuel × 12 fabriqué : les deux montants restent indépendants tels que persistés", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    revenusAssistant: revenusOutput({ totalRecettes: 3000, loyersEncaisses: 3000, revenuTheorique: 6000 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(revenueFact(model, "totalRecettes")?.value, money(3000));
+  assert.equal(revenueFact(model, "revenuTheorique")?.value, money(6000));
+  assert.notEqual(revenueFact(model, "totalRecettes")?.value, revenueFact(model, "revenuTheorique")?.value);
+});
+
+test("Revenue F — aucune réconciliation recalculée : F013 ne persiste pas d'écart durable, V3 n'en invente aucun", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    revenusAssistant: revenusOutput({ totalRecettes: 3000, revenuTheorique: 6000 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.facts.some(f => f.id.toLowerCase().includes("ecart") || f.label.toLowerCase().includes("écart")), false);
+});
+
+test("Revenue G — provenance : document lié connu, fieldSources correctement rattachés, sinon aucune évidence inventée", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [], revenusDocumentIds: ["doc-bail"],
+    revenusAssistant: revenusOutput({ fieldSources: {} }),
+  };
+  input.documents = [{
+    id: "doc-bail", fiscalYearId: input.fiscalYear.id, fileName: "Bail réel.pdf",
+    mimeType: "application/pdf", sizeBytes: 100, category: "autre", documentType: "unknown",
+    status: "analyzed", uploadedAt: "2026-01-01",
+  }];
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.provenance, "partial");
+  assert.deepEqual(model.revenue.sources, [{ id: "doc-bail", label: "Bail réel.pdf" }]);
+  assert.equal(revenueFact(model, "totalRecettes")?.evidence, undefined);
+});
+
+test("Revenue E/G — REAL sans données : aucune fixture revenu ne fuit", () => {
+  const input = workspace();
+  input.declarationDraft = undefined;
+  assert.equal(resolveV3Revenue({ mode: "demo" }), undefined);
+  const revenue = resolveV3Revenue({ mode: "real", workspace: input });
+  assert.equal(revenue?.status, "incomplete");
+  assert.ok(revenue?.facts.every(item => item.value === null));
+  assert.deepEqual(revenue?.sources, []);
+  const serialized = JSON.stringify(revenue);
+  assert.equal(serialized.includes("14 400"), false);
+  assert.equal(serialized.includes("Bail de location"), false);
+  assert.equal(serialized.includes("Relevé de gestion"), false);
+});
+
+test("Revenue I — zéro donnée : pas de crash, aucun revenu inventé", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.status, "incomplete");
+  assert.ok(model.revenue.facts.every(item => item.value === null));
+  assert.deepEqual(model.revenue.sources, []);
+});
+
+test("Revenue J — multi-biens : garde identique aux autres domaines", () => {
+  const input = workspace();
+  input.properties.push({ id: "home-2", label: "Second bien", address: "2 rue Test", city: "Lyon", postalCode: "69002" });
+  input.fiscalYear.propertyIds.push("home-2");
+  input.declarationDraft = { completedSteps: [], revenusConfirmedAt: "2026-01-01", revenusAssistant: revenusOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.revenue.status, "unsupported");
+  assert.deepEqual(model.revenue.facts, []);
+  assert.match(model.revenue.summary, /multi-biens/);
 });

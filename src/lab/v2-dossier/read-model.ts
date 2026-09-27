@@ -32,7 +32,8 @@ export interface V3DossierDetailReadModel {
   activity: V3DomainReadModel;
   property: V3DomainReadModel;
   financing: V3DomainReadModel;
-  // F012–F014 deliberately have no projection in V3-R3.
+  revenue: V3DomainReadModel;
+  // F012/F014 deliberately have no projection in V3-R4.
 }
 
 export type V3PrototypeSource = { mode: "demo" } | { mode: "real"; workspace: PersistedWorkspace };
@@ -47,6 +48,10 @@ export function resolveV3Property(source: V3PrototypeSource): V3DomainReadModel 
 
 export function resolveV3Financing(source: V3PrototypeSource): V3DomainReadModel | undefined {
   return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).financing : undefined;
+}
+
+export function resolveV3Revenue(source: V3PrototypeSource): V3DomainReadModel | undefined {
+  return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).revenue : undefined;
 }
 
 function known(value: string | undefined): string | null {
@@ -287,10 +292,56 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
   };
 }
 
+function buildV3RevenueReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+  // Same mono-property contract as Activity/Property/Financing: never a partial aggregate.
+  if (isMultiProperty(workspace)) {
+    return {
+      id: "revenues", label: "Loyers", owner: "F013", status: "unsupported",
+      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      facts: [], sources: [], provenance: "unavailable", missing: [],
+    };
+  }
+
+  const draft = workspace.declarationDraft;
+  // Exercise-scoped F013 output: only trusted for the active fiscal year, same guard as isRevenusComplete.
+  const revenus = isAnnualOutputForActiveYear(draft?.revenusAssistant, workspace.fiscalYear.year)
+    ? draft?.revenusAssistant : undefined;
+  const fieldSources = revenus?.fieldSources ?? {};
+  const sourceDocuments = workspace.documents.filter(doc => (draft?.revenusDocumentIds ?? []).includes(doc.id));
+
+  // R3.6 discipline, confirmed by tracing computeRecettesExercice(): indemnitesAssurance,
+  // recettesPlateforme, ajustementsJanDec and moisLocationEffectifs all fold "not applicable"
+  // and "not asked" into 0 inside F013's own engine (`?? 0`) before persistence — never exposed
+  // here, since V3 cannot tell a confirmed zero from an unasked question for these fields.
+  const facts: V3Fact[] = [
+    { id: "totalRecettes", label: "Recettes retenues (exercice)", value: money(revenus?.totalRecettes),
+      evidence: fieldSourceLabel(fieldSources.revenu_declare) },
+    { id: "loyersEncaisses", label: "Loyers encaissés déclarés", value: money(revenus?.loyersEncaisses),
+      evidence: fieldSourceLabel(fieldSources.revenu_declare) },
+    // F013's contractual expectation from the lease (computeRevenuTheorique) — never presented as
+    // cash actually collected, and never derived here as loyerMensuel × 12.
+    { id: "revenuTheorique", label: "Loyer prévu au bail (théorique, F013)", value: money(revenus?.revenuTheorique),
+      evidence: fieldSourceLabel(fieldSources.loyer_mensuel) },
+  ];
+
+  const status = buildDossierSteps(draft, workspace.fiscalYear.year)
+    .find(step => step.id === "revenus")?.status ?? "incomplete";
+  const summary = status === "complete" ? "Revenus détectés" : "Revenus à compléter";
+  return {
+    id: "revenues", label: "Loyers", owner: "F013", status,
+    summary,
+    facts,
+    sources: sourceDocuments.map(doc => ({ id: doc.id, label: doc.fileName })),
+    provenance: sourceDocuments.length > 0 || facts.some(fact => fact.evidence) ? "partial" : "unavailable",
+    missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
+  };
+}
+
 export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3DossierDetailReadModel {
   return {
     activity: buildV3ActivityReadModel(workspace),
     property: buildV3PropertyReadModel(workspace),
     financing: buildV3FinancingReadModel(workspace),
+    revenue: buildV3RevenueReadModel(workspace),
   };
 }
