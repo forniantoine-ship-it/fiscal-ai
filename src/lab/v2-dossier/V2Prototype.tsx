@@ -6,7 +6,7 @@ import {
   INITIAL_STATE, illustrativeResult, motionDelay, nextAction, pendingCount, reduceDemo,
   type DemoDocument, type DemoState, type DomainId, type EntryStage, type ProcessingStep, type Resolution, type Scenario, type View,
 } from "./model";
-import { resolveV3Activity, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
+import { resolveV3Activity, resolveV3Property, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -141,14 +141,21 @@ function domainStatus(state: DemoState, id: DomainId) {
   return "Prêt";
 }
 
-function DomainList({ state, activity, onOpen }: { state: DemoState; activity?: V3DomainReadModel; onOpen: (id: DomainId) => void }) {
+function realDomainFor(id: DomainId, activity?: V3DomainReadModel, property?: V3DomainReadModel): V3DomainReadModel | undefined {
+  if (id === "activity") return activity;
+  if (id === "home") return property;
+  return undefined;
+}
+
+function DomainList({ state, activity, property, onOpen }: { state: DemoState; activity?: V3DomainReadModel; property?: V3DomainReadModel; onOpen: (id: DomainId) => void }) {
   const domains: DomainId[] = ["activity", "home", "loan", "income", "expenses"];
   return <section className={styles.domainSection}>
     <div className={styles.sectionTitle}><div><p className={styles.eyebrow}>CONSULTER À VOTRE RYTHME</p><h2>Votre dossier en détail</h2></div><span>Pour comprendre, vérifier ou corriger</span></div>
     <div className={styles.domainList}>
       {domains.map((id, index) => {
-        const status = id === "activity" && activity ? activity.summary : domainStatus(state, id);
-        const done = id === "activity" && activity ? activity.status === "complete" : status === "Prêt";
+        const real = realDomainFor(id, activity, property);
+        const status = real ? real.summary : domainStatus(state, id);
+        const done = real ? real.status === "complete" : status === "Prêt";
         return <button key={id} className={styles.domainRow} onClick={() => onOpen(id)} style={{ animationDelay: `${index * 45}ms` }}>
           <span className={`${styles.domainMark} ${done ? styles.domainMarkDone : styles.domainMarkPending}`}>{done ? "✓" : "·"}</span>
           <span className={styles.domainName}>{DOMAIN_LABELS[id]}</span>
@@ -260,9 +267,9 @@ function ResultLines({ tax, highlight = false }: { tax: number; highlight?: bool
   </div>;
 }
 
-function MainDossier({ state, activity, onDate, onConflict, onTax, onSource, onDomain, onDeclaration, onDocuments, onStartDocument, onManualTax }: {
+function MainDossier({ state, activity, property, onDate, onConflict, onTax, onSource, onDomain, onDeclaration, onDocuments, onStartDocument, onManualTax }: {
   state: DemoState; onDate: (value: string) => void; onConflict: (value: "2026-01-10" | "2026-01-12") => void;
-  activity?: V3DomainReadModel;
+  activity?: V3DomainReadModel; property?: V3DomainReadModel;
   onTax: (value: number) => void; onSource: (id: string) => void; onDomain: (id: DomainId) => void;
   onDeclaration: () => void; onDocuments: () => void; onStartDocument: () => void; onManualTax: () => void;
 }) {
@@ -280,7 +287,7 @@ function MainDossier({ state, activity, onDate, onConflict, onTax, onSource, onD
       <section className={`${styles.impactCard} ${styles.impactActive} ${styles.enterCard}`} aria-live="polite"><div><Pill tone="green">Résultat recalculé</Pill><h3>La dépense confirmée a changé le résultat.</h3><p>Taxe foncière intégrée : {money(state.taxAmount)}. Les autres lignes restent stables.</p></div><div className={styles.impactNumbers}><span>Avant cette dépense</span><small>{money(illustrativeResult(0).beforeAmortization)}</small><span>Après intégration</span><strong>{money(illustrativeResult(state.taxAmount).beforeAmortization)}</strong></div></section>
     </> : null}
     {!ready ? <div className={styles.preparedBrief}><span className={styles.preparedMark}>✳</span><div><strong>{state.manual ? "Votre dossier se construit." : `${state.taxDocumentStep === 4 ? 7 : 6} documents parcourus par sujet.`}</strong><p>{state.manual ? "Je réunis les informations déjà disponibles et quelques exemples locaux." : "Activité, logement et financement ont avancé. Vous pouvez vérifier les sources quand vous le souhaitez."}</p></div></div> : null}
-    <details className={styles.dossierDetails}><summary><span><strong>Votre dossier en détail</strong><small>Consulter les sujets, les sources et les informations préparées</small></span><span aria-hidden="true">⌄</span></summary><div className={styles.dossierColumns}><DomainList state={state} activity={activity} onOpen={onDomain} /><aside className={styles.sideColumn}>
+    <details className={styles.dossierDetails}><summary><span><strong>Votre dossier en détail</strong><small>Consulter les sujets, les sources et les informations préparées</small></span><span aria-hidden="true">⌄</span></summary><div className={styles.dossierColumns}><DomainList state={state} activity={activity} property={property} onOpen={onDomain} /><aside className={styles.sideColumn}>
       <div className={styles.workSummary}><p className={styles.eyebrow}>LE TRAVAIL DÉJÀ FAIT</p><h2>{state.manual ? "J’organise les informations disponibles." : `${state.taxDocumentStep === 4 ? 7 : 6} documents parcourus.`}</h2><p>{state.manual ? "La saisie guidée utilise des exemples locaux pour les montants non renseignés." : "Logement, financement et recettes ont été rapprochés. Les sources restent accessibles."}</p><button className={styles.inlineLink} onClick={onDocuments}>Voir les documents et leurs apports <span aria-hidden="true">↗</span></button></div>
       <div className={styles.propertyNote}><span className={styles.propertyGlyph}>⌂</span><div><small>LOGEMENT DE CETTE DÉMONSTRATION</small><strong>Bordeaux</strong><span>Un logement présenté ici</span></div></div>
     </aside></div></details>
@@ -307,8 +314,8 @@ function TaxAnalysisScene({ step, onDossier }: { step: ProcessingStep; onDossier
   </section>;
 }
 
-function DocumentsView({ state, realActivity, onDocument, onDossier, onStartDocument }: { state: DemoState; realActivity: boolean; onDocument: (id: string) => void; onDossier: () => void; onStartDocument: () => void }) {
-  const docs = DOCUMENTS.filter(doc => (!realActivity || doc.domain !== "activity") && (doc.id !== "tax" || state.taxDocumentStep === 4));
+function DocumentsView({ state, real, onDocument, onDossier, onStartDocument }: { state: DemoState; real: boolean; onDocument: (id: string) => void; onDossier: () => void; onStartDocument: () => void }) {
+  const docs = DOCUMENTS.filter(doc => (!real || (doc.domain !== "activity" && doc.domain !== "home")) && (doc.id !== "tax" || state.taxDocumentStep === 4));
   return <>
     <Heading eyebrow="MES DOCUMENTS · 2026" title="Vos documents, leurs apports." description="Pour chaque pièce, voyez ce qui a été retrouvé, ce qui a été retenu et où l’information a été utilisée." />
     {state.scenario !== "first" ? <div className={styles.emptyCard}><h2>{state.scenario === "takeover" ? "L’historique reste à recevoir." : "La formalité se prépare dans Mon dossier."}</h2><p>{state.scenario === "takeover" ? "La liasse et le registre sont simulés dans Mon dossier. Aucun document réel n’est importé dans cette variante." : "Cette variante illustre les informations utiles à la formalité INPI. Aucun justificatif n’est importé."}</p><button className={styles.primaryButton} onClick={onDossier}>Voir cette étape <Arrow /></button></div>
@@ -384,8 +391,9 @@ function DocumentDetail({ doc, state }: { doc: DemoDocument; state: DemoState })
   </>;
 }
 
-function DomainDetail({ state, domain, activity, onDocument, onAction }: { state: DemoState; domain: DomainId; activity?: V3DomainReadModel; onDocument: (id: string) => void; onAction: () => void }) {
-  if (domain === "activity" && activity) return <RealActivityDetail activity={activity} />;
+function DomainDetail({ state, domain, activity, property, onDocument, onAction }: { state: DemoState; domain: DomainId; activity?: V3DomainReadModel; property?: V3DomainReadModel; onDocument: (id: string) => void; onAction: () => void }) {
+  const real = realDomainFor(domain, activity, property);
+  if (real) return <RealDomainDetail domain={real} />;
   const docs = state.manual ? [] : DOCUMENTS.filter(doc => (doc.usedIn ?? [doc.domain]).includes(domain) && (doc.id !== "tax" || state.taxDocumentStep === 4));
   const facts: Record<DomainId, string[]> = {
     activity: ["Activité · location meublée", "Exploitant · Antoine Martin"],
@@ -406,19 +414,19 @@ function DomainDetail({ state, domain, activity, onDocument, onAction }: { state
   </>;
 }
 
-function RealActivityDetail({ activity }: { activity: V3DomainReadModel }) {
+function RealDomainDetail({ domain }: { domain: V3DomainReadModel }) {
   return <>
-    <div className={styles.panelStatus}><Pill tone={activity.status === "complete" ? "green" : "orange"}>{activity.summary}</Pill></div>
-    <p className={styles.domainDetailLead}>Données du dossier réel · source métier : {activity.owner}.</p>
+    <div className={styles.panelStatus}><Pill tone={domain.status === "complete" ? "green" : "orange"}>{domain.summary}</Pill></div>
+    <p className={styles.domainDetailLead}>Données du dossier réel · source métier : {domain.owner}.</p>
     <h3>Ce que le dossier sait</h3>
-    <ul className={styles.panelFindings}>{activity.facts.map(fact => <li key={fact.id}>
+    <ul className={styles.panelFindings}>{domain.facts.map(fact => <li key={fact.id}>
       <span>{fact.value === null ? "·" : "✓"}</span>{fact.label} · {fact.value ?? "Non renseigné"}
     </li>)}</ul>
     <h3>Sources associées</h3>
-    {activity.sources.length ? <ul className={styles.panelFindings}>{activity.sources.map(source => <li key={source.id}><span>▤</span>{source.label}</li>)}</ul>
+    {domain.sources.length ? <ul className={styles.panelFindings}>{domain.sources.map(source => <li key={source.id}><span>▤</span>{source.label}</li>)}</ul>
       : <p className={styles.domainDetailLead}>Aucune source documentaire disponible pour ce sujet.</p>}
-    {activity.facts.some(fact => fact.evidence) ? <ul className={styles.panelFindings}>{activity.facts.filter(fact => fact.evidence).map(fact => <li key={fact.id}><span>↳</span>{fact.label} · {fact.evidence}{fact.confidence === undefined ? null : ` · confiance ${Math.round(fact.confidence * 100)} %`}</li>)}</ul> : null}
-    <p className={styles.panelDisclaimer}>Provenance {activity.provenance === "complete" ? "documentée" : activity.provenance === "partial" ? "partielle" : "indisponible"}.</p>
+    {domain.facts.some(fact => fact.evidence) ? <ul className={styles.panelFindings}>{domain.facts.filter(fact => fact.evidence).map(fact => <li key={fact.id}><span>↳</span>{fact.label} · {fact.evidence}{fact.confidence === undefined ? null : ` · confiance ${Math.round(fact.confidence * 100)} %`}</li>)}</ul> : null}
+    <p className={styles.panelDisclaimer}>Provenance {domain.provenance === "complete" ? "documentée" : domain.provenance === "partial" ? "partielle" : "indisponible"}.</p>
   </>;
 }
 
@@ -441,8 +449,11 @@ function Inpi({ state, onShow, onSiret }: { state: DemoState; onShow: (show: boo
 export function V2Prototype({ source = { mode: "demo" } }: { source?: V3PrototypeSource }) {
   const [state, dispatch] = useReducer(reduceDemo, INITIAL_STATE);
   const activity = resolveV3Activity(source);
+  const property = resolveV3Property(source);
   const mainRef = useRef<HTMLElement>(null);
-  const activeDetail = state.selectedDocument ? DOCUMENTS.find(doc => doc.id === state.selectedDocument && (source.mode === "demo" || doc.domain !== "activity")) : null;
+  const activeDetail = state.selectedDocument
+    ? DOCUMENTS.find(doc => doc.id === state.selectedDocument && (source.mode === "demo" || (doc.domain !== "activity" && doc.domain !== "home")))
+    : null;
   const remaining = pendingCount(state);
 
   useEffect(() => {
@@ -533,16 +544,16 @@ export function V2Prototype({ source = { mode: "demo" } }: { source?: V3Prototyp
   }
 
   return <div className={styles.root}>
-    <div className={styles.labBar}><div><span className={styles.labDot} /> LABORATOIRE UX V3.1 <span className={styles.labDivider}>/</span> {source.mode === "real" ? "Activité réelle · autres sujets illustratifs" : "Données fictives, aucun dossier réel"}</div><div className={styles.labControls}><label htmlFor="v2-scenario">Scénario</label><select id="v2-scenario" value={state.scenario} onChange={event => changeScenario(event.target.value as Scenario)}><option value="first">Première année · 2026</option><option value="takeover">Reprise externe</option><option value="inpi">Sans SIRET</option></select><button onClick={() => changeScenario(state.scenario)}>Recommencer</button></div></div>
+    <div className={styles.labBar}><div><span className={styles.labDot} /> LABORATOIRE UX V3.1 <span className={styles.labDivider}>/</span> {source.mode === "real" ? "Activité et logement réels · autres sujets illustratifs" : "Données fictives, aucun dossier réel"}</div><div className={styles.labControls}><label htmlFor="v2-scenario">Scénario</label><select id="v2-scenario" value={state.scenario} onChange={event => changeScenario(event.target.value as Scenario)}><option value="first">Première année · 2026</option><option value="takeover">Reprise externe</option><option value="inpi">Sans SIRET</option></select><button onClick={() => changeScenario(state.scenario)}>Recommencer</button></div></div>
     <header className={styles.header}><div className={styles.brand}><span className={styles.brandMark}>✳</span><span>L’Assistant du Réel<small>VOTRE COMPTABILITÉ LMNP</small></span></div>{state.entryStage === "done" ? <nav aria-label="Navigation principale" className={styles.nav}><button aria-current={state.view === "dossier" ? "page" : undefined} onClick={() => changeView("dossier")}>Mon dossier</button><button aria-current={state.view === "documents" ? "page" : undefined} onClick={() => changeView("documents")}>Mes documents</button><button aria-current={state.view === "declaration" ? "page" : undefined} onClick={() => changeView("declaration")}>Ma déclaration</button></nav> : null}{state.entryStage === "done" ? <div className={styles.headerRight}><span>{activity?.facts.find(fact => fact.id === "identity")?.value ?? (source.mode === "real" ? "Dossier réel" : "Antoine Martin")}</span><span className={styles.avatar}>{source.mode === "real" ? "✳" : "AM"}</span></div> : null}</header>
     <main ref={mainRef} tabIndex={-1} className={styles.main}>
       {state.entryStage === "question" || state.entryStage === "unsure" || state.entryStage === "confirm" ? <EntryGate stage={state.entryStage} choice={state.entryChoice} source={state.entrySource} onChoice={choice => dispatch({ type: "entry-choice", choice })} onUnsure={() => dispatch({ type: "entry-unsure" })} onBack={() => changeScenario("first")} />
         : state.entryStage === "organize" && state.entryChoice ? <EntryWorking choice={state.entryChoice} />
         : state.entryStage === "invite" ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} />
-        : state.view === "dossier" ? state.scenario === "first" ? !state.received ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} /> : state.processing !== 4 ? <Working step={state.processing ?? 0} /> : <MainDossier state={state} activity={activity} onDate={value => dispatch({ type: "date", value })} onConflict={value => dispatch({ type: "conflict", value })} onTax={value => dispatch({ type: "tax", value })} onSource={id => dispatch({ type: "document", id })} onDomain={id => dispatch({ type: "domain", id })} onDeclaration={() => changeView("declaration")} onDocuments={() => changeView("documents")} onStartDocument={startTaxDocument} onManualTax={() => dispatch({ type: "tax-manual" })} /> : state.scenario === "takeover" ? <Takeover state={state} onIntake={() => dispatch({ type: "takeover-intake" })} onToggle={document => dispatch({ type: "takeover", document })} /> : <Inpi state={state} onShow={show => dispatch({ type: "inpi", show })} onSiret={() => dispatch({ type: "siret-received" })} /> : state.view === "documents" ? <DocumentsView state={state} realActivity={source.mode === "real"} onDocument={id => dispatch({ type: "document", id })} onDossier={() => changeView("dossier")} onStartDocument={startTaxDocument} /> : <DeclarationView state={state} onDossier={() => changeView("dossier")} />}
+        : state.view === "dossier" ? state.scenario === "first" ? !state.received ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} /> : state.processing !== 4 ? <Working step={state.processing ?? 0} /> : <MainDossier state={state} activity={activity} property={property} onDate={value => dispatch({ type: "date", value })} onConflict={value => dispatch({ type: "conflict", value })} onTax={value => dispatch({ type: "tax", value })} onSource={id => dispatch({ type: "document", id })} onDomain={id => dispatch({ type: "domain", id })} onDeclaration={() => changeView("declaration")} onDocuments={() => changeView("documents")} onStartDocument={startTaxDocument} onManualTax={() => dispatch({ type: "tax-manual" })} /> : state.scenario === "takeover" ? <Takeover state={state} onIntake={() => dispatch({ type: "takeover-intake" })} onToggle={document => dispatch({ type: "takeover", document })} /> : <Inpi state={state} onShow={show => dispatch({ type: "inpi", show })} onSiret={() => dispatch({ type: "siret-received" })} /> : state.view === "documents" ? <DocumentsView state={state} real={source.mode === "real"} onDocument={id => dispatch({ type: "document", id })} onDossier={() => changeView("dossier")} onStartDocument={startTaxDocument} /> : <DeclarationView state={state} onDossier={() => changeView("dossier")} />}
     </main>
     <footer className={styles.footer}><span>Prototype UX isolé · aucune donnée sauvegardée</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
     {activeDetail ? <DetailPanel title={activeDetail.name} subtitle={activeDetail.category} onClose={() => dispatch({ type: "document", id: null })}><DocumentDetail doc={activeDetail} state={state} /></DetailPanel> : null}
-    {state.selectedDomain ? <DetailPanel title={DOMAIN_LABELS[state.selectedDomain]} subtitle="Comprendre et vérifier" onClose={() => dispatch({ type: "domain", id: null })}><DomainDetail state={state} domain={state.selectedDomain} activity={activity} onDocument={id => dispatch({ type: "document", id })} onAction={() => dispatch({ type: "domain", id: null })} /></DetailPanel> : null}
+    {state.selectedDomain ? <DetailPanel title={DOMAIN_LABELS[state.selectedDomain]} subtitle="Comprendre et vérifier" onClose={() => dispatch({ type: "domain", id: null })}><DomainDetail state={state} domain={state.selectedDomain} activity={activity} property={property} onDocument={id => dispatch({ type: "document", id })} onAction={() => dispatch({ type: "domain", id: null })} /></DetailPanel> : null}
   </div>;
 }
