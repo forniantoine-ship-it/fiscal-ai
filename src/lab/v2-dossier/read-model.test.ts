@@ -4,6 +4,7 @@ import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { AmortissementAssistantOutput, ChargesAssistantOutput, DeclarationVersion, FinancementChargesOutput, FiscalEngineOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
+import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/validation-profile";
 import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3PrototypeSource } from "./read-model";
 
 function workspace(): PersistedWorkspace {
@@ -964,6 +965,21 @@ test("Declaration A — FiscalResult valide : projection exacte, statut computed
   assert.deepEqual(input, before);
 });
 
+test("Declaration A2 — declarationGeneratedAt présent + exercice actif : freshness fresh", () => {
+  const input = workspace();
+  input.fiscalYear.declarationGeneratedAt = "2026-03-01T00:00:00Z";
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.freshness, "fresh");
+});
+
+test("Declaration B2 — declarationGeneratedAt absent + exercice actif : freshness stale", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.freshness, "stale");
+});
+
 test("Declaration B — résultat fiscal réellement à 0 : 0 € conservé, jamais missing", () => {
   const input = workspace();
   input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput({ resultatFiscal: 0 }) };
@@ -972,20 +988,23 @@ test("Declaration B — résultat fiscal réellement à 0 : 0 € conservé, jam
   assert.notEqual(declarationFact(model, "resultatFiscal")?.value, null);
 });
 
-test("Declaration C — FiscalResult absent : aucun 0 € inventé, statut unavailable", () => {
+test("Declaration C — FiscalResult absent : aucun 0 € inventé, statut unavailable, freshness unknown", () => {
   const input = workspace();
   input.declarationDraft = { completedSteps: [] };
   const model = resolveV3Declaration({ mode: "real", workspace: input });
   assert.equal(model?.status, "unavailable");
+  assert.equal(model?.freshness, "unknown");
   assert.ok(model?.facts.every(f => f.value === null));
 });
 
-test("Declaration D — un FiscalResult d'un exercice différent n'est pas utilisé (year-safety)", () => {
+test("Declaration D — un FiscalResult d'un exercice différent n'est pas utilisé (year-safety), jamais fresh", () => {
   const input = workspace();
+  input.fiscalYear.declarationGeneratedAt = "2026-03-01T00:00:00Z";
   input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput({ exercice: 2025 }) };
   const model = resolveV3Declaration({ mode: "real", workspace: input });
   assert.equal(model?.status, "unavailable");
   assert.equal(declarationFact(model, "resultatFiscal")?.value, null);
+  assert.equal(model?.freshness, "unknown");
 });
 
 test("Declaration E — amortissement calculé (F014) ≠ amortissement retenu (F006) : les deux vérités restent distinctes", () => {
@@ -1021,31 +1040,57 @@ test("Declaration F — déficits antérieurs projetés individuellement, jamais
   assert.equal(model?.facts.some(f => f.id === "deficit-total" || f.label.includes("total")), false);
 });
 
-test("Declaration G — aucune notion de fraîcheur/péremption fabriquée : le statut ne prétend jamais 'à jour'", () => {
+test("Declaration G — `status` reste une notion de génération, jamais de fraîcheur : freshness est un champ séparé", () => {
   const input = workspace();
   input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
   const model = resolveV3Declaration({ mode: "real", workspace: input });
-  const serialized = JSON.stringify(model).toLowerCase();
-  assert.equal(serialized.includes("stale") || serialized.includes("périmé") || serialized.includes("à jour"), false);
+  assert.ok(["unavailable", "computed", "generated"].includes(model!.status));
+  assert.equal(model?.freshness, "stale");
 });
 
-test("Declaration H — aucun blocker n'est jamais fabriqué depuis les six domaines", () => {
+test("Declaration H — blockers projetés exactement depuis buildMissingItems(buildDossierSteps(...)), jamais reconstruits", () => {
   const input = workspace();
-  input.declarationDraft = { completedSteps: [] };
+  // Tous les six domaines sont volontairement complets ici : buildMissingItems doit renvoyer [],
+  // et V3 ne doit inventer aucun blocker par ailleurs.
+  input.declarationDraft = {
+    completedSteps: [],
+    inpiConfirmedAt: "2026-01-01T00:00:00Z",
+    logementAmortissement: logementOutput(),
+    creditDeclaredNoneAt: "2026-01-01T00:00:00Z",
+    amortissementAssistant: amortissementOutput(),
+    revenusConfirmedAt: "2026-01-01T00:00:00Z",
+    revenusAssistant: revenusOutput(),
+    chargesAssistant: chargesOutput(),
+    fiscalResult: fiscalEngineOutput(),
+  };
+  const expected = buildMissingItems(buildDossierSteps(input.declarationDraft, input.fiscalYear.year)).map(item => item.label);
+  assert.deepEqual(expected, []);
   const model = resolveV3Declaration({ mode: "real", workspace: input });
   assert.deepEqual(model?.blockers, []);
 });
 
-test("Declaration I — F014 contesté n'introduit aucune logique de blocage supplémentaire côté Déclaration", () => {
+test("Declaration H2 — aucun blocker n'est jamais fabriqué depuis les six domaines (V3DomainReadModel)", () => {
+  // Dossier vide : buildMissingItems retournera des éléments non vides ; le test vérifie que
+  // les blockers V3 correspondent EXACTEMENT à cette autorité, jamais à V3DomainReadModel.missing.
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const expected = buildMissingItems(buildDossierSteps(input.declarationDraft, input.fiscalYear.year)).map(item => item.label);
+  assert.ok(expected.length > 0);
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.deepEqual(model?.blockers, expected);
+});
+
+test("Declaration I — F014 contesté : le blocker Amortissements vient de buildDossierSteps, aucune règle Déclaration ajoutée", () => {
   const input = workspace();
   input.declarationDraft = {
     completedSteps: [],
     amortissementAssistant: amortissementOutput({ status: "contested" }),
     fiscalResult: fiscalEngineOutput(),
   };
+  const expected = buildMissingItems(buildDossierSteps(input.declarationDraft, input.fiscalYear.year)).map(item => item.label);
   const model = resolveV3Declaration({ mode: "real", workspace: input });
   assert.equal(model?.status, "computed");
-  assert.deepEqual(model?.blockers, []);
+  assert.deepEqual(model?.blockers, expected);
 });
 
 test("Declaration J — reprise comptable : aucun statut 'prêt' fabriqué en l'absence du generation gate réel", () => {
@@ -1070,12 +1115,71 @@ test("Declaration K — deliverables : uniquement les formulaires réellement g�
   assert.deepEqual(model?.deliverables.filter(d => d.status === "not_generated").map(d => d.id), ["2033-D-SD"]);
 });
 
+test("Declaration E2 — stale garde les valeurs : le dernier résultat connu reste projeté, mais marqué stale", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.freshness, "stale");
+  assert.equal(declarationFact(model, "resultatFiscal")?.value, money(5500));
+  assert.notEqual(model?.status, "unavailable");
+});
+
+test("Declaration F2 — généré mais stale : les documents historiques restent lisibles, l'état courant reste stale", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    fiscalResult: fiscalEngineOutput(),
+    declaration: { id: "decl-1", fiscalYearId: "year-2026", currentVersionId: "v1", createdAt: "2026-03-01T00:00:00Z" },
+    declarationVersions: [declarationVersion()],
+  };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "generated");
+  assert.equal(model?.freshness, "stale");
+  assert.equal(model?.deliverables.filter(d => d.status === "generated").length, 5);
+});
+
+test("Declaration J2 — paiement séparé : paidAt présent ou absent ne change jamais freshness", () => {
+  const input = workspace();
+  input.fiscalYear.declarationGeneratedAt = "2026-03-01T00:00:00Z";
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const withoutPayment = resolveV3Declaration({ mode: "real", workspace: input });
+  input.fiscalYear.paidAt = "2026-03-02T00:00:00Z";
+  const withPayment = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(withoutPayment?.freshness, "fresh");
+  assert.equal(withPayment?.freshness, "fresh");
+});
+
+test("Declaration K2 — legacy : fiscalResult actif sans declarationGeneratedAt jamais posé (fail-closed) → stale", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  assert.equal(input.fiscalYear.declarationGeneratedAt, undefined);
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.freshness, "stale");
+});
+
+test("Declaration L2 — aucun appel au generation gate / recalcul F006 depuis le read model", async () => {
+  const fs = await import("node:fs/promises");
+  const source = await fs.readFile(new URL("./read-model.ts", import.meta.url), "utf8");
+  // Ignore comments (a comment naming the real gate as the audited authority is fine and expected —
+  // see the R7.1/R7.2 provenance comments above buildV3DeclarationReadModel); only forbid an actual
+  // import or call of these functions, which would mean V3 triggers a live fiscal computation.
+  const code = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  for (const forbidden of ["resolveDeclarationGenerationGate(", "runDeclarationGeneration(", "produceFiscalResult(", "resolveDeclarationOutOfDate("]) {
+    assert.equal(code.includes(forbidden), false, `read-model.ts ne doit jamais appeler ${forbidden}`);
+  }
+  for (const forbiddenImport of ["declaration-generation-gate", "run-declaration-generation", "declaration-freshness"]) {
+    assert.equal(code.includes(forbiddenImport), false, `read-model.ts ne doit jamais importer depuis ${forbiddenImport}`);
+  }
+});
+
 test("Declaration L — REAL sans données : aucune chaîne du scénario demo ne fuit", () => {
   const input = workspace();
   input.declarationDraft = undefined;
   assert.equal(resolveV3Declaration({ mode: "demo" }), undefined);
   const model = resolveV3Declaration({ mode: "real", workspace: input });
   assert.equal(model?.status, "unavailable");
+  assert.equal(model?.freshness, "unknown");
   assert.ok(model?.facts.every(f => f.value === null));
   assert.deepEqual(model?.deliverables, []);
+  assert.deepEqual(model?.blockers, buildMissingItems(buildDossierSteps(undefined, input.fiscalYear.year)).map(item => item.label));
 });

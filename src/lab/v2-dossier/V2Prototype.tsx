@@ -344,7 +344,14 @@ function RealDeclarationView({ declaration }: { declaration: V3DeclarationReadMo
   return <>
     <Heading eyebrow="MA DÉCLARATION" title={title} description="Cette vue reflète directement le résultat calculé par l’Assistant (F006), jamais une seconde estimation ni un recalcul." />
     <div className={styles.declarationGrid}><section className={styles.declarationMain}>
-      <div className={styles.declarationTop}><Pill tone={declaration.status === "unavailable" ? "orange" : "green"}>{declaration.summary}</Pill></div>
+      <div className={styles.declarationTop}>
+        <Pill tone={declaration.status === "unavailable" ? "orange" : "green"}>{declaration.summary}</Pill>
+        {declaration.freshness === "stale" ? <Pill tone="orange">Votre dossier a changé depuis ce calcul</Pill>
+          : declaration.freshness === "fresh" ? <Pill tone="green">Calcul à jour</Pill> : null}
+      </div>
+      {declaration.blockers.length ? <ul className={styles.panelFindings}>{declaration.blockers.map(label => <li key={label}>
+        <span>·</span>{label}
+      </li>)}</ul> : null}
       <h2>Ce que dit votre dossier réel</h2>
       <ul className={styles.panelFindings}>{declaration.facts.map(fact => <li key={fact.id}>
         <span>{fact.value === null ? "·" : "✓"}</span>{fact.label} · {fact.value ?? "Non disponible"}

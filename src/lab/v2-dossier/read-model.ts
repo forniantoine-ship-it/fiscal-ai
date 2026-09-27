@@ -1,6 +1,6 @@
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { readActiviteFieldProvenance } from "@/lib/lmnp/services/activite-field-provenance";
-import { buildDossierSteps } from "@/lib/lmnp/services/validation-profile";
+import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/validation-profile";
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
 
@@ -41,6 +41,11 @@ export interface V3DossierDetailReadModel {
 // it is F006's AGGREGATION of them, not a seventh assistant. Kept as its own type on purpose.
 export type V3DeclarationStatus = "unavailable" | "computed" | "generated";
 
+// R7.2 (audited in R7.1) — freshness is a SEPARATE axis from `status`, never mixed into it.
+// "fresh"/"stale" answer "does the stored result still match the current dossier?"; "unknown"
+// means there is no current-exercise result to be fresh or stale about (status "unavailable").
+export type V3DeclarationFreshness = "fresh" | "stale" | "unknown";
+
 export interface V3DeclarationDeliverable {
   id: string;
   label: string;
@@ -49,14 +54,19 @@ export interface V3DeclarationDeliverable {
 
 export interface V3DeclarationReadModel {
   status: V3DeclarationStatus;
+  // R7.2 — derived exclusively from `fiscalYear.declarationGeneratedAt`, a field the reducer
+  // already clears on every contributive mutation (see declaration-draft-invalidation.ts /
+  // DECLARATION_PATCH_DRAFT). V3 only reads it — it never writes it, never compares timestamps,
+  // and never computes a fingerprint. See V3-R7.1 audit for the full trace.
+  freshness: V3DeclarationFreshness;
   summary: string;
   facts: V3Fact[];
-  // R7 — resolveDeclarationGenerationGate() is the one canonical authority for readiness
-  // blockers, but it works by re-running runDeclarationGeneration() (a live F006/F007/RFS
-  // computation) plus payment/generation context. V3 must not trigger a fiscal calculation,
-  // so this list is never populated from that gate, and — per the same discipline — never
-  // reconstructed from the six domains' own missing/status as a substitute authority. It stays
-  // empty until the real gate can be surfaced without invoking it.
+  // R7.2 — projected verbatim from buildMissingItems(buildDossierSteps(...)), the same pure-read
+  // authority resolveDeclarationGenerationGate() itself uses for its own pure-read blockers (see
+  // V3-R7.1 audit, section "PURE-READ BLOCKERS"). Never reconstructed from the six domains'
+  // V3DomainReadModel.missing/status/facts, and never extended with the gate's recompute-only
+  // blockers (structural drift, validateFiscalInputs anomalies) — those still require a live
+  // F006/F007/RFS run this read model must never trigger.
   blockers: string[];
   deliverables: V3DeclarationDeliverable[];
   provenance: V3ProvenanceLevel;
@@ -555,11 +565,27 @@ function buildV3DeclarationReadModel(workspace: PersistedWorkspace): V3Declarati
     : status === "computed" ? "Résultat fiscal calculé, déclaration non encore générée"
     : "Résultat fiscal non disponible";
 
+  // R7.2 — freshness is orthogonal to `status`: a "generated" or "computed" declaration can still
+  // be stale. No fiscalResult for the active exercise means there is nothing to be fresh/stale
+  // about ("unknown"), never "unavailable" implying fresh-by-default. Fail-closed on a legacy
+  // dossier that never set this field: absent → "stale", never assumed fresh.
+  const freshness: V3DeclarationFreshness = !fiscalResult
+    ? "unknown"
+    : workspace.fiscalYear.declarationGeneratedAt
+    ? "fresh"
+    : "stale";
+
+  // R7.2 — pure-read blockers, projected verbatim from the same authority the real generation
+  // gate itself uses for its own pure-read blockers. Never reconstructed from the six domains.
+  const blockers = buildMissingItems(buildDossierSteps(draft, workspace.fiscalYear.year))
+    .map(item => item.label);
+
   return {
     status,
+    freshness,
     summary,
     facts: allFacts,
-    blockers: [],
+    blockers,
     deliverables,
     // FiscalResult is a computed aggregation, never a document-traced fact — no fieldSources
     // exist for it, and none are borrowed from the six domains to imply otherwise.
