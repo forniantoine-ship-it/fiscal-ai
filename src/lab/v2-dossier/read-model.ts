@@ -33,7 +33,8 @@ export interface V3DossierDetailReadModel {
   property: V3DomainReadModel;
   financing: V3DomainReadModel;
   revenue: V3DomainReadModel;
-  // F012/F014 deliberately have no projection in V3-R4.
+  charges: V3DomainReadModel;
+  // F014 deliberately has no projection in V3-R5.
 }
 
 export type V3PrototypeSource = { mode: "demo" } | { mode: "real"; workspace: PersistedWorkspace };
@@ -52,6 +53,10 @@ export function resolveV3Financing(source: V3PrototypeSource): V3DomainReadModel
 
 export function resolveV3Revenue(source: V3PrototypeSource): V3DomainReadModel | undefined {
   return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).revenue : undefined;
+}
+
+export function resolveV3Charges(source: V3PrototypeSource): V3DomainReadModel | undefined {
+  return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).charges : undefined;
 }
 
 function known(value: string | undefined): string | null {
@@ -337,11 +342,82 @@ function buildV3RevenueReadModel(workspace: PersistedWorkspace): V3DomainReadMod
   };
 }
 
+const CHARGE_CATEGORY_LABELS: Record<string, string> = {
+  taxe_fonciere: "Taxe foncière", assurance_pno: "Assurance PNO", assurance_gli: "Assurance GLI",
+  copropriete: "Copropriété", honoraires_gestion: "Honoraires et frais de gestion", travaux: "Travaux",
+  honoraires_comptable: "Honoraires comptables", frais_bancaires: "Frais bancaires", divers: "Divers",
+};
+const CHARGE_CATEGORY_IDS = Object.keys(CHARGE_CATEGORY_LABELS);
+
+function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+  // Same mono-property contract as the other domains: never a partial aggregate.
+  if (isMultiProperty(workspace)) {
+    return {
+      id: "charges", label: "Dépenses", owner: "F012", status: "unsupported",
+      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      facts: [], sources: [], provenance: "unavailable", missing: [],
+    };
+  }
+
+  const draft = workspace.declarationDraft;
+  // Exercise-scoped F012 output: only trusted for the active fiscal year, same guard as isChargesComplete.
+  const charges = isAnnualOutputForActiveYear(draft?.chargesAssistant, workspace.fiscalYear.year)
+    ? draft?.chargesAssistant : undefined;
+  // R4.5 confirmed: F012's fieldSources accumulates across categories (spread, never reset per
+  // category, unlike F011's per-loan reset) and is persisted verbatim by buildChargesAssistantOutput()
+  // — per-category evidence is therefore safe to attribute here (see Charges H test).
+  const fieldSources = charges?.fieldSources ?? {};
+  const sourceDocuments = workspace.documents.filter(doc => (draft?.chargesDocumentIds ?? []).includes(doc.id));
+
+  const totalFacts: V3Fact[] = [
+    { id: "totalDeductible", label: "Charges déductibles (exercice)", value: money(charges?.totalDeductible) },
+    { id: "totalNonDeductible", label: "Charges non déductibles (exercice)", value: money(charges?.totalNonDeductible) },
+    { id: "totalPreExploitation", label: "Charges avant mise en location", value: money(charges?.totalPreExploitation) },
+    // Deliberately never labelled "charge déductible": these amounts are heading to F014's amortization
+    // plan (via composantsNouveaux), not deducted directly from the fiscal result.
+    { id: "totalAmortissable", label: "Dépenses orientées vers amortissement (F012)", value: money(charges?.totalAmortissable) },
+  ];
+
+  // R4.5: parCategorie[X] absent means "not applicable", "not asked" or "confirmed zero" —
+  // F012 cannot durably distinguish these. Only a key that genuinely exists is ever shown as a
+  // known amount; an absent key stays null/missing, never fabricated as "0 €".
+  const categoryFacts: V3Fact[] = CHARGE_CATEGORY_IDS.map(categoryId => {
+    const amount = charges?.parCategorie?.[categoryId];
+    return {
+      id: `category-${categoryId}`, label: CHARGE_CATEGORY_LABELS[categoryId],
+      value: amount === undefined ? null : money(amount),
+      evidence: fieldSourceLabel(fieldSources[categoryId]),
+    };
+  });
+
+  // Real, persisted components oriented toward amortization (travaux/copro requalifiés) — never
+  // presented as a deductible charge, never recomputed (no duration/dotation/plan built here).
+  const componentFacts: V3Fact[] = (charges?.composantsNouveaux ?? []).map((composant, index): V3Fact => ({
+    id: `component-${index}`,
+    label: `Composant F012 · ${composant.label} (vers amortissement)`,
+    value: `${money(composant.montant)} · ${composant.dureeAnnees} ans`,
+  }));
+
+  const facts = [...totalFacts, ...categoryFacts, ...componentFacts];
+  const status = buildDossierSteps(draft, workspace.fiscalYear.year)
+    .find(step => step.id === "charges")?.status ?? "incomplete";
+  const summary = status === "complete" ? "Charges classées" : "Charges à compléter";
+  return {
+    id: "charges", label: "Dépenses", owner: "F012", status,
+    summary,
+    facts,
+    sources: sourceDocuments.map(doc => ({ id: doc.id, label: doc.fileName })),
+    provenance: sourceDocuments.length > 0 || facts.some(fact => fact.evidence) ? "partial" : "unavailable",
+    missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
+  };
+}
+
 export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3DossierDetailReadModel {
   return {
     activity: buildV3ActivityReadModel(workspace),
     property: buildV3PropertyReadModel(workspace),
     financing: buildV3FinancingReadModel(workspace),
     revenue: buildV3RevenueReadModel(workspace),
+    charges: buildV3ChargesReadModel(workspace),
   };
 }

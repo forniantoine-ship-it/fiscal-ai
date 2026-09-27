@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import type { FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
+import type { ChargesAssistantOutput, FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
-import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Financing, resolveV3Property, resolveV3Revenue } from "./read-model";
+import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Charges, resolveV3Financing, resolveV3Property, resolveV3Revenue } from "./read-model";
 
 function workspace(): PersistedWorkspace {
   return {
@@ -53,6 +54,27 @@ function revenusOutput(overrides: Partial<RevenusAssistantOutput> = {}): Revenus
     exerciceFiscal: 2026, totalRecettes: 14400, loyersEncaisses: 14400, indemnitesAssurance: 0,
     recettesPlateforme: 0, ajustementsJanDec: 0, moisLocationEffectifs: 12,
     fieldSources: {}, computedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function chargesFact(data: ReturnType<typeof buildV3DossierDetailReadModel>, id: string) {
+  return data.charges.facts.find(item => item.id === id);
+}
+
+function chargesOutput(overrides: Partial<ChargesAssistantOutput> = {}): ChargesAssistantOutput {
+  return {
+    exerciceFiscal: 2026, totalDeductible: 2500, totalNonDeductible: 100, totalAmortissable: 0,
+    totalPreExploitation: 0, parCategorie: { taxe_fonciere: 900, assurance_pno: 250 },
+    composantsNouveaux: [], fieldSources: {}, computedAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function composantNouveau(overrides: Partial<ComposantNouveau> = {}): ComposantNouveau {
+  return {
+    id: "travaux-1", label: "Réfection toiture", montant: 8000, dureeAnnees: 15,
+    dotationAnnuelle: 533.33, nature: "amélioration", dateDebut: "2026-06-01", origin: "f012_travaux",
     ...overrides,
   };
 }
@@ -607,4 +629,166 @@ test("Revenue J — multi-biens : garde identique aux autres domaines", () => {
   assert.equal(model.revenue.status, "unsupported");
   assert.deepEqual(model.revenue.facts, []);
   assert.match(model.revenue.summary, /multi-biens/);
+});
+
+test("Charges A — F012 complet : statut confirmé, projection exacte des totaux et catégories", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ fieldSources: { taxe_fonciere: "extracted", assurance_pno: "manual" } }),
+  };
+  const before = structuredClone(input);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.charges.status, "complete");
+  assert.equal(model.charges.owner, "F012");
+  assert.equal(chargesFact(model, "totalDeductible")?.value, money(2500));
+  assert.equal(chargesFact(model, "totalNonDeductible")?.value, money(100));
+  assert.equal(chargesFact(model, "totalPreExploitation")?.value, money(0));
+  assert.equal(chargesFact(model, "category-taxe_fonciere")?.value, money(900));
+  assert.equal(chargesFact(model, "category-assurance_pno")?.value, money(250));
+  assert.deepEqual(input, before);
+});
+
+test("Charges B — partiel : catégories absentes ne deviennent jamais 0 €", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ parCategorie: { taxe_fonciere: 900 } }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(chargesFact(model, "category-taxe_fonciere")?.value, money(900));
+  assert.equal(chargesFact(model, "category-assurance_pno")?.value, null);
+  assert.equal(chargesFact(model, "category-copropriete")?.value, null);
+  assert.ok(model.charges.missing.includes("Assurance PNO"));
+});
+
+test("Charges C — zéro réel : une catégorie explicitement à 0 reste 0 €, jamais confondue avec l'absence", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ parCategorie: { taxe_fonciere: 0, assurance_pno: 250 } }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(chargesFact(model, "category-taxe_fonciere")?.value, money(0));
+  assert.notEqual(chargesFact(model, "category-taxe_fonciere")?.value, null);
+});
+
+test("Charges D — l'output F012 d'un exercice différent n'est pas utilisé (year-safety)", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ exerciceFiscal: 2025 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(chargesFact(model, "totalDeductible")?.value, null);
+  assert.equal(model.charges.status, "incomplete");
+});
+
+test("Charges E — totaux confirmés à zéro : le statut reste complete, jamais déduit du montant", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ totalDeductible: 0, totalNonDeductible: 0, totalPreExploitation: 0, parCategorie: {} }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.charges.status, "complete");
+  assert.equal(chargesFact(model, "totalDeductible")?.value, money(0));
+});
+
+test("Charges F — aucune donnée : pas de crash, aucune charge inventée", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.charges.status, "incomplete");
+  assert.ok(model.charges.facts.every(item => item.value === null));
+  assert.deepEqual(model.charges.sources, []);
+});
+
+test("Charges G — deux catégories distinctes : projection exacte, aucune ligne individuelle inventée", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ parCategorie: { copropriete: 1200, frais_bancaires: 45 } }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(chargesFact(model, "category-copropriete")?.value, money(1200));
+  assert.equal(chargesFact(model, "category-frais_bancaires")?.value, money(45));
+  assert.equal(model.charges.facts.some(f => f.label.includes("Facture") || f.id.startsWith("ligne-")), false);
+});
+
+test("Charges H — provenance multi-catégorie : deux sources différentes préservées sans écrasement ni fuite", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({
+      parCategorie: { taxe_fonciere: 900, assurance_pno: 250 },
+      fieldSources: { taxe_fonciere: "extracted", assurance_pno: "manual" },
+    }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(chargesFact(model, "category-taxe_fonciere")?.evidence, "Extrait");
+  assert.equal(chargesFact(model, "category-assurance_pno")?.evidence, "Saisi");
+  assert.notEqual(chargesFact(model, "category-taxe_fonciere")?.evidence, chargesFact(model, "category-assurance_pno")?.evidence);
+});
+
+test("Charges I — totalAmortissable n'est jamais présenté comme une charge déductible", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ totalAmortissable: 8000 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  const fact = chargesFact(model, "totalAmortissable");
+  assert.equal(fact?.value, money(8000));
+  assert.doesNotMatch(fact!.label, /déductible/i);
+  assert.match(fact!.label, /amortissement/i);
+});
+
+test("Charges J — composantsNouveaux projetés avec un label amortissement, aucune dotation recalculée", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({ composantsNouveaux: [composantNouveau()] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  const fact = chargesFact(model, "component-0");
+  assert.match(fact!.label, /amortissement/i);
+  assert.equal(fact?.value, `${money(8000)} · 15 ans`);
+  assert.equal(JSON.stringify(model.charges).includes("533"), false);
+});
+
+test("Charges K — le recoupement F011 n'est ni recalculé ni comparé dans V3", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    chargesAssistant: chargesOutput({
+      recouvrementAssuranceF011: { reference: 350, periodeCompatible: true, recouvert: 200, reliquat: 0 },
+    }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.charges.facts.some(f => f.id.toLowerCase().includes("recouvrement") || f.id.toLowerCase().includes("f011")), false);
+});
+
+test("Charges L — multi-biens : garde identique aux autres domaines", () => {
+  const input = workspace();
+  input.properties.push({ id: "home-2", label: "Second bien", address: "2 rue Test", city: "Lyon", postalCode: "69002" });
+  input.fiscalYear.propertyIds.push("home-2");
+  input.declarationDraft = { completedSteps: [], chargesAssistant: chargesOutput() };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(model.charges.status, "unsupported");
+  assert.deepEqual(model.charges.facts, []);
+  assert.match(model.charges.summary, /multi-biens/);
+});
+
+test("Charges M — REAL sans données : aucune fixture de dépenses ne fuit", () => {
+  const input = workspace();
+  input.declarationDraft = undefined;
+  assert.equal(resolveV3Charges({ mode: "demo" }), undefined);
+  const charges = resolveV3Charges({ mode: "real", workspace: input });
+  assert.equal(charges?.status, "incomplete");
+  assert.ok(charges?.facts.every(item => item.value === null));
+  assert.deepEqual(charges?.sources, []);
+  const serialized = JSON.stringify(charges);
+  assert.equal(serialized.includes("2 350"), false);
+  assert.equal(serialized.includes("1 250"), false);
 });
