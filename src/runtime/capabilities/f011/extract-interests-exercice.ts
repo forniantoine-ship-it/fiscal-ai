@@ -15,7 +15,11 @@ export type ExtractInterestsExerciceOutput = {
   interetsExercice: number;
   assuranceExercice: number;
   capitalRembourseExercice: number;
-  capitalRestantDu31_12: number;
+  /**
+   * R3.6 — `undefined` quand aucune échéance n'est exploitable au 31/12 de
+   * l'exercice (jamais confondu avec un prêt réellement soldé, `0` explicite).
+   */
+  capitalRestantDu31_12: number | undefined;
   anomalies: Anomaly[];
 };
 
@@ -57,7 +61,8 @@ export function extractInterestsExercice(
     .filter((e) => (yearOf(e.date) ?? Number.POSITIVE_INFINITY) <= input.exerciceFiscal)
     .at(-1);
 
-  const capitalRestantDu31_12 = lastInYear?.capitalRestantDu ?? 0;
+  // R3.6 — pas de fallback à 0 : aucune échéance exploitable ne prouve rien sur le CRD réel.
+  const capitalRestantDu31_12 = lastInYear === undefined ? undefined : round2(lastInYear.capitalRestantDu);
 
   if (rows.length === 0 && input.echeances.length > 0) {
     anomalies.push({
@@ -70,7 +75,7 @@ export function extractInterestsExercice(
     interetsExercice: round2(interetsExercice),
     assuranceExercice: round2(assuranceExercice),
     capitalRembourseExercice: round2(capitalRembourseExercice),
-    capitalRestantDu31_12: round2(capitalRestantDu31_12),
+    capitalRestantDu31_12,
     anomalies,
   };
 }

@@ -263,6 +263,23 @@ describe("Chantier 2D-B — 176 = 156 + 164 + 166 + 172 + 174 + 175", () => {
     assert.equal(findCase(form, "176"), undefined);
     assert.match(findBlocked(form, "176")!.raison, /156 non publiable/i);
   });
+
+  it("R3.6 — CRD F-011 inconnu (échéance non exploitable) sans valeur déclarée → 156 non publiable, jamais un total partiel", () => {
+    const form = mapWithPatrimoine(inputsToutesComposantesConnues(), {
+      emprunts: [{ ...EMPRUNT, capitalRestantDu31_12: undefined }],
+    });
+    assert.equal(findCase(form, "156"), undefined);
+    assert.equal(findCase(form, "176"), undefined);
+    assert.match(findBlocked(form, "156")!.raison, /aucune information/i);
+  });
+
+  it("R3.6 — CRD F-011 inconnu mais BilanInputs.financements.clotureCRD déclaré → 156 publiée sur la valeur déclarée", () => {
+    const form = mapWithPatrimoine(
+      inputsToutesComposantesConnues({ financements: { clotureCRD: 15000 } }),
+      { emprunts: [{ ...EMPRUNT, capitalRestantDu31_12: undefined }] },
+    );
+    assert.equal(findCase(form, "156")?.value, 15000);
+  });
 });
 
 describe("Chantier 2D-B — non-régression 048/098/112/110/180", () => {

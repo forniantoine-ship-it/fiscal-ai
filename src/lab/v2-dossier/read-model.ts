@@ -233,20 +233,21 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
   const financementCharges = isAnnualOutputForActiveYear(draft?.financementCharges, workspace.fiscalYear.year)
     ? draft?.financementCharges : undefined;
   const excludedLoanIds = new Set(financementCharges?.excludedLoanIds ?? []);
-  const fieldSources = financementCharges?.fieldSources ?? {};
   const sourceDocument = workspace.documents.find(doc => doc.id === draft?.creditDocumentId);
+  // R3.6 — F011's fieldSources is scoped to whichever loan the assistant was last editing (reset on
+  // every loan change, see assistant.ts): with several loans it cannot be attributed to a specific
+  // one without risk of misattribution. Uncertain provenance is never attached to a fact — only the
+  // known document (sourceDocument above) is exposed as a source for this domain.
 
   // Never merge, average, or pick loans[0]: every declared loan is projected on its own, matched by id.
   const facts: V3Fact[] = loans.flatMap((loan, index): V3Fact[] => {
     const label = loanLabel(index, known(loan.bank));
     const contractFacts: V3Fact[] = [
       { id: `loan-${index}-loanType`, label: `${label} · Type de prêt`, value: known(loan.loanType) },
-      { id: `loan-${index}-borrowedAmount`, label: `${label} · Capital emprunté`, value: money(loan.borrowedAmount),
-        evidence: fieldSourceLabel(fieldSources.borrowedAmount) },
+      { id: `loan-${index}-borrowedAmount`, label: `${label} · Capital emprunté`, value: money(loan.borrowedAmount) },
       // Distinct from borrowedAmount: capital read on the loan OFFER document, never derived from it.
       { id: `loan-${index}-capitalInitialOffre`, label: `${label} · Capital initial (offre)`, value: money(loan.capitalInitialOffre) },
-      { id: `loan-${index}-rate`, label: `${label} · Taux`, value: percent(loan.rate),
-        evidence: fieldSourceLabel(fieldSources.rate) },
+      { id: `loan-${index}-rate`, label: `${label} · Taux`, value: percent(loan.rate) },
       { id: `loan-${index}-durationMonths`, label: `${label} · Durée`,
         value: typeof loan.durationMonths === "number" ? `${loan.durationMonths} mois` : null },
       { id: `loan-${index}-startDate`, label: `${label} · Date du prêt`, value: known(loan.startDate) },
@@ -276,13 +277,12 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
   const summary = loans.length === 0
     ? draft?.creditDeclaredNoneAt ? "Aucun financement déclaré" : "Aucun financement enregistré"
     : status === "complete" ? "Financement analysé" : "Financement à compléter";
-  const hasFieldSourceEvidence = Object.keys(fieldSources).length > 0;
   return {
     id: "financing", label: "Financement", owner: "F011", status,
     summary,
     facts,
     sources: sourceDocument ? [{ id: sourceDocument.id, label: sourceDocument.fileName }] : [],
-    provenance: sourceDocument || hasFieldSourceEvidence ? "partial" : "unavailable",
+    provenance: sourceDocument ? "partial" : "unavailable",
     missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
   };
 }

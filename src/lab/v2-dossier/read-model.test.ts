@@ -425,3 +425,41 @@ test("Financing — un prêt exclu du calcul de l'exercice l'indique expliciteme
   assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (date de première mensualité inconnue)");
   assert.equal(financingFact(model, "loan-0-interetsExercice"), undefined);
 });
+
+test("Financing R3.6 — CRD F011 inconnu (aucune échéance exploitable) : jamais fabriqué en 0 €", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [pretExercice({ capitalRestantDu31_12: undefined })] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  const crdFact = financingFact(model, "loan-0-capitalRestantDu");
+  assert.equal(crdFact?.value, null);
+  assert.notEqual(crdFact?.value, money(0));
+  assert.ok(model.financing.missing.includes(crdFact!.label));
+});
+
+test("Financing R3.6 — CRD F011 réellement soldé (0 exact) reste distinct de l'inconnu", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [pretExercice({ capitalRestantDu31_12: 0 })] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-capitalRestantDu")?.value, money(0));
+});
+
+test("Financing R3.6 — aucune provenance champ-par-champ F011 n'est affichée (attribution au bon prêt non prouvée)", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ fieldSources: { capitalInitial: "extracted", tauxNominal: "extracted" } }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, undefined);
+  assert.equal(financingFact(model, "loan-0-rate")?.evidence, undefined);
+  assert.ok(model.financing.facts.every(f => f.evidence === undefined));
+});

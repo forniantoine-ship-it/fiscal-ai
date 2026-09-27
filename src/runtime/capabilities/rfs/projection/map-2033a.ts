@@ -267,8 +267,8 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         categorie: patrimoinePourEmprunts.emprunts.etat === "DIVERGENT" ? "incoherence_modele" : "donnee_absente",
       });
     }
-  } else if (rfs.emprunts !== undefined) {
-    const totalEmprunts = round2(rfs.emprunts.reduce((acc, p) => acc + p.capitalRestantDu31_12, 0));
+  } else if (rfs.emprunts !== undefined && rfs.emprunts.every((p) => p.capitalRestantDu31_12 !== undefined)) {
+    const totalEmprunts = round2(rfs.emprunts.reduce((acc, p) => acc + (p.capitalRestantDu31_12 as number), 0));
     cases.push({
       caseId: "156",
       label: "Emprunts et dettes assimilées",
@@ -278,6 +278,15 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         path: "Σ rfs.emprunts[].capitalRestantDu31_12",
         ksArtifacts: ["TRF-0032"],
       },
+    });
+  } else if (rfs.emprunts !== undefined) {
+    // R3.6 — au moins un prêt sans échéance exploitable pour l'exercice : jamais de total partiel.
+    casesNonAlimentees.push({
+      caseId: "156",
+      label: "Emprunts et dettes assimilées",
+      raison:
+        "Le capital restant dû au 31/12 d'au moins un emprunt n'est pas connu (aucune échéance exploitable pour cet exercice) — jamais transformé en 0 par défaut, un total partiel ne serait pas fiable.",
+      categorie: "donnee_absente",
     });
   } else {
     casesNonAlimentees.push({

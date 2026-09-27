@@ -32,7 +32,12 @@ export interface PretFinancementExercice {
   /** P2 — TRF-0023, déjà calculée par isolatePreExploitationInterests(), désormais transportée. */
   assurancePreExploitation: number;
   capitalRembourseExercice: number;
-  capitalRestantDu31_12: number;
+  /**
+   * R3.6 — `undefined` quand aucune échéance exploitable ne couvre l'exercice
+   * (échéancier documentaire absent/incomplet) : jamais confondu avec un prêt
+   * réellement soldé (`0` explicite). Voir `extractInterestsExercice()`.
+   */
+  capitalRestantDu31_12: number | undefined;
   fraisDossierDeductibles: number;
   garantieDeductible: number;
   iraDeductible: number;

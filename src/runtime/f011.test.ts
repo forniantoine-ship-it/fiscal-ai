@@ -504,3 +504,34 @@ describe("Cycle 20 — F-011 invariant au fuseau horaire du serveur", () => {
     }
   });
 });
+
+describe("R3.6 — capitalRestantDu31_12 : unknown ≠ zero", () => {
+  it("CAS A — aucune échéance exploitable pour l'exercice (échéancier ne couvrant que des dates postérieures) → undefined, jamais 0", () => {
+    const result = extractInterestsExercice({
+      echeances: [{ date: "2027-01-05", mensualite: 900, interets: 300, capital: 500, assurance: 100, capitalRestantDu: 190000 }],
+      exerciceFiscal: 2026,
+    });
+    assert.equal(result.capitalRestantDu31_12, undefined);
+  });
+
+  it("CAS A bis — échéancier vide → undefined, jamais 0", () => {
+    const result = extractInterestsExercice({ echeances: [], exerciceFiscal: 2026 });
+    assert.equal(result.capitalRestantDu31_12, undefined);
+  });
+
+  it("CAS B — dernière échéance avec capitalRestantDu = 0 (prêt réellement soldé) → 0 explicite", () => {
+    const result = extractInterestsExercice({
+      echeances: [{ date: "2026-12-05", mensualite: 900, interets: 10, capital: 890, assurance: 100, capitalRestantDu: 0 }],
+      exerciceFiscal: 2026,
+    });
+    assert.equal(result.capitalRestantDu31_12, 0);
+  });
+
+  it("CAS C — dernière échéance avec capitalRestantDu > 0 → valeur exacte", () => {
+    const result = extractInterestsExercice({
+      echeances: [{ date: "2026-12-05", mensualite: 900, interets: 300, capital: 600, assurance: 100, capitalRestantDu: 130524.13 }],
+      exerciceFiscal: 2026,
+    });
+    assert.equal(result.capitalRestantDu31_12, 130524.13);
+  });
+});

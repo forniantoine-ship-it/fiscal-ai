@@ -34,7 +34,13 @@ const TOLERANCE_RECONCILIATION_CRD = 0.01;
  * elle est retenue telle quelle : aucune seconde valeur n'est inventée.
  */
 function resolveEmprunts(rfs: FiscalRepresentation, inputs: BilanInputs): EmpruntsResolution {
-  const crdF011 = rfs.emprunts !== undefined ? round2(rfs.emprunts.reduce((acc, p) => acc + p.capitalRestantDu31_12, 0)) : undefined;
+  // R3.6 — un CRD de prêt inconnu (échéance non exploitable) ne doit jamais produire un total
+  // F-011 partiel silencieux : le total lui-même redevient indisponible, comme si rfs.emprunts
+  // était absent — la réconciliation avec BilanInputs.financements.clotureCRD reste inchangée.
+  const hasUnknownLoanCrd = rfs.emprunts?.some((p) => p.capitalRestantDu31_12 === undefined) ?? false;
+  const crdF011 = rfs.emprunts !== undefined && !hasUnknownLoanCrd
+    ? round2(rfs.emprunts.reduce((acc, p) => acc + (p.capitalRestantDu31_12 as number), 0))
+    : undefined;
   const crdDeclare = inputs.financements?.clotureCRD !== undefined ? round2(inputs.financements.clotureCRD) : undefined;
 
   if (crdF011 === undefined && crdDeclare === undefined) {
