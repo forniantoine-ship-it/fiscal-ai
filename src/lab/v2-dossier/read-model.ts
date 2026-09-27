@@ -37,6 +37,31 @@ export interface V3DossierDetailReadModel {
   amortization: V3DomainReadModel;
 }
 
+// R7 — Déclaration is conceptually distinct from the six "Votre dossier en détail" domains:
+// it is F006's AGGREGATION of them, not a seventh assistant. Kept as its own type on purpose.
+export type V3DeclarationStatus = "unavailable" | "computed" | "generated";
+
+export interface V3DeclarationDeliverable {
+  id: string;
+  label: string;
+  status: "generated" | "not_generated";
+}
+
+export interface V3DeclarationReadModel {
+  status: V3DeclarationStatus;
+  summary: string;
+  facts: V3Fact[];
+  // R7 — resolveDeclarationGenerationGate() is the one canonical authority for readiness
+  // blockers, but it works by re-running runDeclarationGeneration() (a live F006/F007/RFS
+  // computation) plus payment/generation context. V3 must not trigger a fiscal calculation,
+  // so this list is never populated from that gate, and — per the same discipline — never
+  // reconstructed from the six domains' own missing/status as a substitute authority. It stays
+  // empty until the real gate can be surfaced without invoking it.
+  blockers: string[];
+  deliverables: V3DeclarationDeliverable[];
+  provenance: V3ProvenanceLevel;
+}
+
 export type V3PrototypeSource = { mode: "demo" } | { mode: "real"; workspace: PersistedWorkspace };
 
 export function resolveV3Activity(source: V3PrototypeSource): V3DomainReadModel | undefined {
@@ -61,6 +86,10 @@ export function resolveV3Charges(source: V3PrototypeSource): V3DomainReadModel |
 
 export function resolveV3Amortization(source: V3PrototypeSource): V3DomainReadModel | undefined {
   return source.mode === "real" ? buildV3DossierDetailReadModel(source.workspace).amortization : undefined;
+}
+
+export function resolveV3Declaration(source: V3PrototypeSource): V3DeclarationReadModel | undefined {
+  return source.mode === "real" ? buildV3DeclarationReadModel(source.workspace) : undefined;
 }
 
 function known(value: string | undefined): string | null {
@@ -473,5 +502,67 @@ export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3
     revenue: buildV3RevenueReadModel(workspace),
     charges: buildV3ChargesReadModel(workspace),
     amortization: buildV3AmortizationReadModel(workspace),
+  };
+}
+
+function buildV3DeclarationReadModel(workspace: PersistedWorkspace): V3DeclarationReadModel {
+  const draft = workspace.declarationDraft;
+  // Level A (calcul disponible) — the REAL, persisted F006 output only, matched to the active
+  // fiscal year (FiscalEngineOutput uses `exercice`, not `exerciceFiscal`, so the shared
+  // isAnnualOutputForActiveYear() helper's shape doesn't apply — same discipline, written inline).
+  // Never buildFiscalSummary()'s estimate (an approximation used for previews elsewhere, not F006's
+  // truth), and never F014's totalDotations again (already shown by the Amortization domain).
+  const fiscalResult = draft?.fiscalResult?.exercice === workspace.fiscalYear.year ? draft.fiscalResult : undefined;
+
+  // Level C (documents générés) — a pure existence check on the last persisted, immutable
+  // generation snapshot. Never recomputed, never re-run.
+  const versions = draft?.declarationVersions ?? [];
+  const currentVersion = draft?.declaration?.currentVersionId
+    ? versions.find(version => version.id === draft.declaration!.currentVersionId)
+    : versions.at(-1);
+
+  const facts: V3Fact[] = [
+    { id: "totalRecettes", label: "Recettes retenues (F006)", value: money(fiscalResult?.totalRecettes) },
+    { id: "totalCharges", label: "Charges retenues (F006)", value: money(fiscalResult?.totalCharges) },
+    { id: "resultatAvantAmort", label: "Résultat avant amortissement", value: money(fiscalResult?.resultatAvantAmort) },
+    // Deliberately distinct from the Amortization domain's totalDotations (F014's calculated
+    // figure): this is what F006 actually deducted, which can differ after a fiscal limitation.
+    { id: "amortDeduct", label: "Amortissements fiscalement déduits (F006)", value: money(fiscalResult?.amortDeduct) },
+    { id: "amortReporte", label: "Stock d’amortissements non déduits reporté", value: money(fiscalResult?.amortReporte) },
+    { id: "amortNonDeduitExercice", label: "Amortissements non déduits sur l’exercice", value: money(fiscalResult?.amortNonDeduitExercice) },
+    { id: "resultatFiscal", label: "Résultat fiscal", value: money(fiscalResult?.resultatFiscal) },
+    { id: "deficitNouveau", label: "Déficit constaté cet exercice", value: money(fiscalResult?.deficitNouveau) },
+  ];
+
+  // Prior-year deficit stock: each persisted entry projected as-is, never summed or fused by V3.
+  const deficitFacts: V3Fact[] = (fiscalResult?.stocks.deficits ?? []).map((entry, index): V3Fact => ({
+    id: `deficit-stock-${index}`,
+    label: `Déficit antérieur reporté (${entry.millesime})`,
+    value: money(entry.montant),
+  }));
+
+  const allFacts = [...facts, ...deficitFacts];
+
+  // Which forms were actually assembled in the last generation, straight from the canonical
+  // ADR-004 tracking already computed by assembleLiasseFromRfs() — never guessed by V3.
+  const deliverables: V3DeclarationDeliverable[] = currentVersion ? [
+    ...currentVersion.liasseRfs.formulairesGeneres.map((id): V3DeclarationDeliverable => ({ id, label: id, status: "generated" })),
+    ...currentVersion.liasseRfs.formulairesManquants.map((id): V3DeclarationDeliverable => ({ id, label: id, status: "not_generated" })),
+  ] : [];
+
+  const status: V3DeclarationStatus = currentVersion ? "generated" : fiscalResult ? "computed" : "unavailable";
+  const summary = status === "generated" ? "Déclaration générée"
+    : status === "computed" ? "Résultat fiscal calculé, déclaration non encore générée"
+    : "Résultat fiscal non disponible";
+
+  return {
+    status,
+    summary,
+    facts: allFacts,
+    blockers: [],
+    deliverables,
+    // FiscalResult is a computed aggregation, never a document-traced fact — no fieldSources
+    // exist for it, and none are borrowed from the six domains to imply otherwise.
+    provenance: "unavailable",
   };
 }

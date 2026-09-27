@@ -6,7 +6,7 @@ import {
   INITIAL_STATE, illustrativeResult, motionDelay, nextAction, pendingCount, reduceDemo,
   type DemoDocument, type DemoState, type DomainId, type EntryStage, type ProcessingStep, type Resolution, type Scenario, type View,
 } from "./model";
-import { resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
+import { resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DeclarationReadModel, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -338,7 +338,27 @@ function DocumentsView({ state, real, onDocument, onDossier, onStartDocument }: 
   </>;
 }
 
-function DeclarationView({ state, onDossier }: { state: DemoState; onDossier: () => void }) {
+function RealDeclarationView({ declaration }: { declaration: V3DeclarationReadModel }) {
+  const title = declaration.status === "generated" ? "Votre déclaration"
+    : declaration.status === "computed" ? "Résultat fiscal calculé" : "Résultat fiscal non disponible";
+  return <>
+    <Heading eyebrow="MA DÉCLARATION" title={title} description="Cette vue reflète directement le résultat calculé par l’Assistant (F006), jamais une seconde estimation ni un recalcul." />
+    <div className={styles.declarationGrid}><section className={styles.declarationMain}>
+      <div className={styles.declarationTop}><Pill tone={declaration.status === "unavailable" ? "orange" : "green"}>{declaration.summary}</Pill></div>
+      <h2>Ce que dit votre dossier réel</h2>
+      <ul className={styles.panelFindings}>{declaration.facts.map(fact => <li key={fact.id}>
+        <span>{fact.value === null ? "·" : "✓"}</span>{fact.label} · {fact.value ?? "Non disponible"}
+      </li>)}</ul>
+      {declaration.deliverables.length ? <><h3>Documents</h3><ul className={styles.panelFindings}>{declaration.deliverables.map(item => <li key={item.id}>
+        <span>{item.status === "generated" ? "✓" : "·"}</span>{item.label} · {item.status === "generated" ? "généré" : "non généré"}
+      </li>)}</ul></> : null}
+      <p className={styles.panelDisclaimer}>Provenance : calcul produit par l’Assistant à partir de votre dossier — pas une source documentaire directe.</p>
+    </section></div>
+  </>;
+}
+
+function DeclarationView({ state, declaration, onDossier }: { state: DemoState; declaration?: V3DeclarationReadModel; onDossier: () => void }) {
+  if (declaration) return <RealDeclarationView declaration={declaration} />;
   if (state.scenario !== "first") return <>
     <Heading eyebrow="MA DÉCLARATION · 2026" title="Ce scénario s’arrête avant le résultat." description="Cette variante montre une situation particulière du dossier, sans inventer de calcul fiscal." />
     <div className={styles.emptyCard}><Pill tone="orange">Résultat non simulé</Pill><h2>{state.scenario === "takeover" ? "L’historique doit être repris et validé." : "La formalité INPI est présentée dans Mon dossier."}</h2><p>Le résultat chiffré illustratif est disponible dans le scénario Première année.</p><button className={styles.primaryButton} onClick={onDossier}>Revenir au dossier <Arrow /></button></div>
@@ -462,6 +482,7 @@ export function V2Prototype({ source = { mode: "demo" } }: { source?: V3Prototyp
   const revenue = resolveV3Revenue(source);
   const charges = resolveV3Charges(source);
   const amortization = resolveV3Amortization(source);
+  const declaration = resolveV3Declaration(source);
   const mainRef = useRef<HTMLElement>(null);
   const activeDetail = state.selectedDocument
     ? DOCUMENTS.find(doc => doc.id === state.selectedDocument && (source.mode === "demo" || (doc.domain !== "activity" && doc.domain !== "home" && doc.domain !== "loan" && doc.domain !== "income" && doc.domain !== "expenses")))
@@ -562,7 +583,7 @@ export function V2Prototype({ source = { mode: "demo" } }: { source?: V3Prototyp
       {state.entryStage === "question" || state.entryStage === "unsure" || state.entryStage === "confirm" ? <EntryGate stage={state.entryStage} choice={state.entryChoice} source={state.entrySource} onChoice={choice => dispatch({ type: "entry-choice", choice })} onUnsure={() => dispatch({ type: "entry-unsure" })} onBack={() => changeScenario("first")} />
         : state.entryStage === "organize" && state.entryChoice ? <EntryWorking choice={state.entryChoice} />
         : state.entryStage === "invite" ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} />
-        : state.view === "dossier" ? state.scenario === "first" ? !state.received ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} /> : state.processing !== 4 ? <Working step={state.processing ?? 0} /> : <MainDossier state={state} activity={activity} property={property} financing={financing} revenue={revenue} charges={charges} amortization={amortization} onDate={value => dispatch({ type: "date", value })} onConflict={value => dispatch({ type: "conflict", value })} onTax={value => dispatch({ type: "tax", value })} onSource={id => dispatch({ type: "document", id })} onDomain={id => dispatch({ type: "domain", id })} onDeclaration={() => changeView("declaration")} onDocuments={() => changeView("documents")} onStartDocument={startTaxDocument} onManualTax={() => dispatch({ type: "tax-manual" })} /> : state.scenario === "takeover" ? <Takeover state={state} onIntake={() => dispatch({ type: "takeover-intake" })} onToggle={document => dispatch({ type: "takeover", document })} /> : <Inpi state={state} onShow={show => dispatch({ type: "inpi", show })} onSiret={() => dispatch({ type: "siret-received" })} /> : state.view === "documents" ? <DocumentsView state={state} real={source.mode === "real"} onDocument={id => dispatch({ type: "document", id })} onDossier={() => changeView("dossier")} onStartDocument={startTaxDocument} /> : <DeclarationView state={state} onDossier={() => changeView("dossier")} />}
+        : state.view === "dossier" ? state.scenario === "first" ? !state.received ? <Intro onReceive={() => dispatch({ type: "receive" })} onManual={() => dispatch({ type: "manual" })} /> : state.processing !== 4 ? <Working step={state.processing ?? 0} /> : <MainDossier state={state} activity={activity} property={property} financing={financing} revenue={revenue} charges={charges} amortization={amortization} onDate={value => dispatch({ type: "date", value })} onConflict={value => dispatch({ type: "conflict", value })} onTax={value => dispatch({ type: "tax", value })} onSource={id => dispatch({ type: "document", id })} onDomain={id => dispatch({ type: "domain", id })} onDeclaration={() => changeView("declaration")} onDocuments={() => changeView("documents")} onStartDocument={startTaxDocument} onManualTax={() => dispatch({ type: "tax-manual" })} /> : state.scenario === "takeover" ? <Takeover state={state} onIntake={() => dispatch({ type: "takeover-intake" })} onToggle={document => dispatch({ type: "takeover", document })} /> : <Inpi state={state} onShow={show => dispatch({ type: "inpi", show })} onSiret={() => dispatch({ type: "siret-received" })} /> : state.view === "documents" ? <DocumentsView state={state} real={source.mode === "real"} onDocument={id => dispatch({ type: "document", id })} onDossier={() => changeView("dossier")} onStartDocument={startTaxDocument} /> : <DeclarationView state={state} declaration={declaration} onDossier={() => changeView("dossier")} />}
     </main>
     <footer className={styles.footer}><span>Prototype UX isolé · aucune donnée sauvegardée</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
     {activeDetail ? <DetailPanel title={activeDetail.name} subtitle={activeDetail.category} onClose={() => dispatch({ type: "document", id: null })}><DocumentDetail doc={activeDetail} state={state} /></DetailPanel> : null}

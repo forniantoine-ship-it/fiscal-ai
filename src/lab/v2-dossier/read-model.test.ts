@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import type { AmortissementAssistantOutput, ChargesAssistantOutput, FinancementChargesOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
+import type { AmortissementAssistantOutput, ChargesAssistantOutput, DeclarationVersion, FinancementChargesOutput, FiscalEngineOutput, LoanProfile, LogementAmortissementOutput, RevenusAssistantOutput } from "@/lib/lmnp/types/domain";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
-import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3PrototypeSource } from "./read-model";
+import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3PrototypeSource } from "./read-model";
 
 function workspace(): PersistedWorkspace {
   return {
@@ -88,6 +88,30 @@ function amortissementOutput(overrides: Partial<AmortissementAssistantOutput> = 
     exerciceFiscal: 2026, totalDotations: 1500, status: "validated", planVersion: "f014-2026-2026-02-10",
     profil: "PROF-001", validatedAt: "2026-02-10T10:00:00Z",
     ...overrides,
+  };
+}
+
+function fiscalEngineOutput(overrides: Partial<FiscalEngineOutput> = {}): FiscalEngineOutput {
+  return {
+    exercice: 2026, resultatFiscal: 5500, resultatAvantAmort: 7000, totalRecettes: 12000, totalCharges: 4000,
+    amortDeduct: 1500, amortReporte: 0, amortNonDeduitExercice: 0, deficitNouveau: 0,
+    stocks: { deficits: [], amortissementsReportes: 0 },
+    trace: { ksArtifacts: [], computedAt: "2026-03-01T00:00:00Z", journal: [] },
+    computedAt: "2026-03-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function declarationVersion(overrides: { id?: string; formulairesGeneres?: string[]; formulairesManquants?: string[] } = {}): DeclarationVersion {
+  return {
+    id: overrides.id ?? "v1", declarationId: "decl-1", versionNumber: 1, generatedAt: "2026-03-01T00:00:00Z",
+    fiscalResult: fiscalEngineOutput() as unknown as DeclarationVersion["fiscalResult"],
+    liasseResult: {} as DeclarationVersion["liasseResult"],
+    rfs: {} as DeclarationVersion["rfs"],
+    liasseRfs: {
+      formulairesGeneres: overrides.formulairesGeneres ?? ["2031-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"],
+      formulairesManquants: overrides.formulairesManquants ?? [],
+    } as unknown as DeclarationVersion["liasseRfs"],
   };
 }
 
@@ -921,4 +945,137 @@ test("Contract L — les six domaines réels ne retombent jamais sur une fixture
       assert.equal(serialized?.includes(fixture) ?? false, false, `${name}: fuite de la fixture démo "${fixture}"`);
     }
   }
+});
+
+function declarationFact(model: ReturnType<typeof resolveV3Declaration>, id: string) {
+  return model?.facts.find(item => item.id === id);
+}
+
+test("Declaration A — FiscalResult valide : projection exacte, statut computed", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const before = structuredClone(input);
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "computed");
+  assert.equal(declarationFact(model, "totalRecettes")?.value, money(12000));
+  assert.equal(declarationFact(model, "totalCharges")?.value, money(4000));
+  assert.equal(declarationFact(model, "resultatFiscal")?.value, money(5500));
+  assert.equal(declarationFact(model, "amortDeduct")?.value, money(1500));
+  assert.deepEqual(input, before);
+});
+
+test("Declaration B — résultat fiscal réellement à 0 : 0 € conservé, jamais missing", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput({ resultatFiscal: 0 }) };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(declarationFact(model, "resultatFiscal")?.value, money(0));
+  assert.notEqual(declarationFact(model, "resultatFiscal")?.value, null);
+});
+
+test("Declaration C — FiscalResult absent : aucun 0 € inventé, statut unavailable", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "unavailable");
+  assert.ok(model?.facts.every(f => f.value === null));
+});
+
+test("Declaration D — un FiscalResult d'un exercice différent n'est pas utilisé (year-safety)", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput({ exercice: 2025 }) };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "unavailable");
+  assert.equal(declarationFact(model, "resultatFiscal")?.value, null);
+});
+
+test("Declaration E — amortissement calculé (F014) ≠ amortissement retenu (F006) : les deux vérités restent distinctes", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    amortissementAssistant: amortissementOutput({ totalDotations: 6000 }),
+    fiscalResult: fiscalEngineOutput({ amortDeduct: 4000 }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  const declaration = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model.amortization.facts.find(f => f.id === "totalDotations")?.value, money(6000));
+  assert.equal(declarationFact(declaration, "amortDeduct")?.value, money(4000));
+  assert.notEqual(
+    model.amortization.facts.find(f => f.id === "totalDotations")?.value,
+    declarationFact(declaration, "amortDeduct")?.value,
+  );
+});
+
+test("Declaration F — déficits antérieurs projetés individuellement, jamais fusionnés ni sommés", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    fiscalResult: fiscalEngineOutput({
+      deficitNouveau: 500,
+      stocks: { deficits: [{ millesime: 2024, montant: 300 }, { millesime: 2025, montant: 200 }], amortissementsReportes: 0 },
+    }),
+  };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(declarationFact(model, "deficitNouveau")?.value, money(500));
+  assert.equal(declarationFact(model, "deficit-stock-0")?.value, money(300));
+  assert.equal(declarationFact(model, "deficit-stock-1")?.value, money(200));
+  assert.equal(model?.facts.some(f => f.id === "deficit-total" || f.label.includes("total")), false);
+});
+
+test("Declaration G — aucune notion de fraîcheur/péremption fabriquée : le statut ne prétend jamais 'à jour'", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  const serialized = JSON.stringify(model).toLowerCase();
+  assert.equal(serialized.includes("stale") || serialized.includes("périmé") || serialized.includes("à jour"), false);
+});
+
+test("Declaration H — aucun blocker n'est jamais fabriqué depuis les six domaines", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [] };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.deepEqual(model?.blockers, []);
+});
+
+test("Declaration I — F014 contesté n'introduit aucune logique de blocage supplémentaire côté Déclaration", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    amortissementAssistant: amortissementOutput({ status: "contested" }),
+    fiscalResult: fiscalEngineOutput(),
+  };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "computed");
+  assert.deepEqual(model?.blockers, []);
+});
+
+test("Declaration J — reprise comptable : aucun statut 'prêt' fabriqué en l'absence du generation gate réel", () => {
+  const input = workspace();
+  input.declarationDraft = { completedSteps: [], fiscalResult: fiscalEngineOutput() };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.notEqual(model?.status, "ready");
+  assert.ok(["unavailable", "computed", "generated"].includes(model!.status));
+});
+
+test("Declaration K — deliverables : uniquement les formulaires réellement générés/manquants d'après la dernière version", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    fiscalResult: fiscalEngineOutput(),
+    declaration: { id: "decl-1", fiscalYearId: "year-2026", currentVersionId: "v1", createdAt: "2026-03-01T00:00:00Z" },
+    declarationVersions: [declarationVersion({ formulairesGeneres: ["2031-SD", "2033-A-SD"], formulairesManquants: ["2033-D-SD"] })],
+  };
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "generated");
+  assert.deepEqual(model?.deliverables.filter(d => d.status === "generated").map(d => d.id), ["2031-SD", "2033-A-SD"]);
+  assert.deepEqual(model?.deliverables.filter(d => d.status === "not_generated").map(d => d.id), ["2033-D-SD"]);
+});
+
+test("Declaration L — REAL sans données : aucune chaîne du scénario demo ne fuit", () => {
+  const input = workspace();
+  input.declarationDraft = undefined;
+  assert.equal(resolveV3Declaration({ mode: "demo" }), undefined);
+  const model = resolveV3Declaration({ mode: "real", workspace: input });
+  assert.equal(model?.status, "unavailable");
+  assert.ok(model?.facts.every(f => f.value === null));
+  assert.deepEqual(model?.deliverables, []);
 });
