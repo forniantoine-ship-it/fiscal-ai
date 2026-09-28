@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { RealWorkspaceRoute } from "@/lab/v2-dossier/RealWorkspaceRoute";
 import { readV3ReturnQuery } from "@/lab/v2-dossier/correction-scope";
+import { isV3RealTestRouteEnabled } from "@/lab/v2-dossier/v3-real-route-access";
 
 export const metadata: Metadata = {
   title: "Laboratoire V3.1 · Dossier réel",
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
 export default async function RealV2DossierPage({ searchParams }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  if (process.env.NODE_ENV === "production") notFound();
+  // R14.1 — production stays blocked by default; only ENABLE_V3_REAL_TEST_ROUTE=true opens it.
+  if (process.env.NODE_ENV === "production" && !isV3RealTestRouteEnabled()) notFound();
   const raw = await searchParams;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(raw)) {
