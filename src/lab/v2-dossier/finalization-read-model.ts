@@ -6,6 +6,7 @@ import {
   type PriorHistoryEligibility,
 } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { GENERATION_PRICE_TTC } from "@/lib/lmnp/services/payment/price";
+import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
 import { isMultiProperty, type V3PrototypeSource } from "./read-model";
 import { v3CorrectionHrefForResolvedScope, type V3CorrectionScope } from "./correction-scope";
 
@@ -43,6 +44,13 @@ export interface V3FinalizationReadModel {
    * the owner screen still decides that.
    */
   finalizeHref: string | null;
+  /**
+   * R13.2 — server-sourced only (fetchServerPaymentStatus, lmnp_declaration_payments),
+   * never fiscalYear.paidAt. Informational only: it never changes the CTA
+   * (resolveV3FinalizationCta ignores it entirely) — V3 stays navigation-only,
+   * never an owner of checkout/download.
+   */
+  payment: ServerPaymentStatus;
 }
 
 export type V3FinalizationCtaKind =
@@ -83,14 +91,16 @@ export function resolveV3FinalizationCta(
 export function resolveV3Finalization(
   source: V3PrototypeSource,
   correctionScope: V3CorrectionScope | null,
+  payment: ServerPaymentStatus,
 ): V3FinalizationReadModel | undefined {
   if (source.mode !== "real") return undefined;
-  return buildV3FinalizationReadModel(source.workspace, correctionScope);
+  return buildV3FinalizationReadModel(source.workspace, correctionScope, payment);
 }
 
 function buildV3FinalizationReadModel(
   workspace: PersistedWorkspace,
   correctionScope: V3CorrectionScope | null,
+  payment: ServerPaymentStatus,
 ): V3FinalizationReadModel {
   const draft = workspace.declarationDraft;
   const blockers = buildMissingItems(buildDossierSteps(draft, workspace.fiscalYear.year)).map(item => item.label);
@@ -129,5 +139,6 @@ function buildV3FinalizationReadModel(
     lastGeneration,
     priceLabel: `${GENERATION_PRICE_TTC} €`,
     finalizeHref,
+    payment,
   };
 }

@@ -43,6 +43,48 @@ export class PaymentClientError extends Error {
 
 export type ServerEntitlement = { paid: boolean; paidAt?: string };
 
+/**
+ * R13.2 — V3's granular payment read. Unlike `fetchPaymentEntitlement` (which
+ * deliberately collapses "no row"/"pending"/error into a single boolean for
+ * delivery/checkout gating), V3 needs to tell these apart honestly for
+ * display. Same table, same RLS-protected client, same exact (dossier,
+ * fiscal_year) scoping — never a second payment model.
+ *
+ * `dossierId` is REQUIRED (no `getCurrentDossierId()` fallback): the caller
+ * must already hold the R8/R12-verified identity. Any read failure —
+ * network, RLS, an unexpected status value — resolves to "unknown", never
+ * "not_started"/unpaid.
+ */
+export type ServerPaymentStatus =
+  | { state: "not_started"; source: "server" }
+  | { state: "pending"; source: "server" }
+  | { state: "paid"; source: "server"; paidAt?: string }
+  | { state: "unknown"; source: "server"; reason: string };
+
+export async function fetchServerPaymentStatus(
+  dossierId: string,
+  fiscalYear: number,
+  deps: { client?: SupabaseLike } = {},
+): Promise<ServerPaymentStatus> {
+  try {
+    const client = deps.client ?? (await defaultClient());
+    const { data, error } = await client
+      .from("lmnp_declaration_payments")
+      .select("status, paid_at")
+      .eq("dossier_id", dossierId)
+      .eq("fiscal_year", fiscalYear)
+      .maybeSingle();
+    if (error) return { state: "unknown", source: "server", reason: "lookup_failed" };
+    const row = data as { status?: string; paid_at?: string | null } | null;
+    if (!row) return { state: "not_started", source: "server" };
+    if (row.status === "paid") return { state: "paid", source: "server", paidAt: row.paid_at ?? undefined };
+    if (row.status === "pending") return { state: "pending", source: "server" };
+    return { state: "unknown", source: "server", reason: "unexpected_status" };
+  } catch {
+    return { state: "unknown", source: "server", reason: "lookup_failed" };
+  }
+}
+
 /** Lit l'entitlement serveur du dossier/exercice. Erreur réseau/RLS → lève (jamais « payé » par défaut). */
 export async function fetchPaymentEntitlement(
   fiscalYear: number,

@@ -14,6 +14,7 @@ import type { V3DocumentsReadModel } from "./document-read-model";
 import { v3CorrectionActionFor, type V3CorrectionAction } from "./correction-registry";
 import type { V3CorrectionScope } from "./correction-scope";
 import { resolveV3Finalization, resolveV3FinalizationCta, type V3FinalizationReadModel } from "./finalization-read-model";
+import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -351,6 +352,17 @@ const FORM_CAVEATS: Record<string, string> = {
   "2033-D-SD": " (structure minimale, contenu non disponible)",
 };
 
+// R13.2 — payment is informational only here: it never changes the CTA above (resolveV3FinalizationCta
+// ignores it). "not_started" is shown only once finalization is genuinely reachable, to avoid a false
+// sense of urgency on a dossier that isn't ready yet. "unknown" (loading, network/RLS error, or an
+// unexpected status value) never renders anything — never guessed as "Non payé".
+function paymentMessage(payment: ServerPaymentStatus, finalizationReachable: boolean): string | null {
+  if (payment.state === "paid") return "Paiement effectué.";
+  if (payment.state === "pending") return "Paiement en cours de confirmation.";
+  if (payment.state === "not_started" && finalizationReachable) return "Aucun paiement n’a encore été initié pour cet exercice.";
+  return null;
+}
+
 function FinalizationBlock({ finalization, firstUserAction }: {
   finalization: V3FinalizationReadModel;
   firstUserAction?: { label: string; href: string };
@@ -365,10 +377,13 @@ function FinalizationBlock({ finalization, firstUserAction }: {
     : cta.kind === "ready_to_finalize"
     ? "Votre dossier est complet."
     : "Une déclaration a déjà été générée pour cet exercice.";
+  const finalizationReachable = cta.kind === "ready_to_finalize" || cta.kind === "already_generated";
+  const payment = paymentMessage(finalization.payment, finalizationReachable);
   return <section className={styles.realActions} aria-label="Finaliser ma déclaration">
     <h2>Finaliser ma déclaration</h2>
     <div className={styles.realActionCard}>
       <p>{message}</p>
+      {payment ? <p>{payment}</p> : null}
       {finalization.lastGeneration ? <ul className={styles.panelFindings}>
         <li><span>✓</span>Dernière génération · {dateLabel(finalization.lastGeneration.generatedAt.slice(0, 10))} · version {finalization.lastGeneration.versionNumber}</li>
         {finalization.lastGeneration.formulairesGeneres.map(id => <li key={id}><span>✓</span>{id}{FORM_CAVEATS[id] ?? ""}</li>)}
@@ -532,9 +547,10 @@ function Inpi({ state, onShow, onSiret }: { state: DemoState; onShow: (show: boo
   </>;
 }
 
-function RealPrototypeView({ source, correctionScope = null, realDocuments, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+function RealPrototypeView({ source, correctionScope = null, payment, realDocuments, onOpenRealDocument, busyDocumentId, documentOpenError }: {
   source: Extract<V3PrototypeSource, { mode: "real" }>;
   correctionScope?: V3CorrectionScope | null;
+  payment: ServerPaymentStatus;
   realDocuments: V3DocumentsReadModel;
   onOpenRealDocument?: (documentId: string) => void;
   busyDocumentId?: string | null;
@@ -546,7 +562,7 @@ function RealPrototypeView({ source, correctionScope = null, realDocuments, onOp
   const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
   const declaration = resolveV3Declaration(source);
   const userActions = buildV3UserActionReadModel(source.workspace);
-  const finalization = resolveV3Finalization(source, correctionScope);
+  const finalization = resolveV3Finalization(source, correctionScope, payment);
   const selected = domains.find(domain => domain.id === selectedDomain);
   const selectedAction = selected ? v3CorrectionActionFor(selected.id, correctionScope) : null;
   const year = source.workspace.fiscalYear.year;
@@ -592,15 +608,16 @@ function RealPrototypeView({ source, correctionScope = null, realDocuments, onOp
   </div>;
 }
 
-export function V2Prototype({ source = { mode: "demo" }, correctionScope = null, realDocuments = { state: "unknown", documents: [] }, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+export function V2Prototype({ source = { mode: "demo" }, correctionScope = null, payment = { state: "unknown", source: "server", reason: "not_loaded" }, realDocuments = { state: "unknown", documents: [] }, onOpenRealDocument, busyDocumentId, documentOpenError }: {
   source?: V3PrototypeSource;
   correctionScope?: V3CorrectionScope | null;
+  payment?: ServerPaymentStatus;
   realDocuments?: V3DocumentsReadModel;
   onOpenRealDocument?: (documentId: string) => void;
   busyDocumentId?: string | null;
   documentOpenError?: string | null;
 }) {
-  if (source.mode === "real") return <RealPrototypeView source={source} correctionScope={correctionScope} realDocuments={realDocuments} onOpenRealDocument={onOpenRealDocument} busyDocumentId={busyDocumentId} documentOpenError={documentOpenError} />;
+  if (source.mode === "real") return <RealPrototypeView source={source} correctionScope={correctionScope} payment={payment} realDocuments={realDocuments} onOpenRealDocument={onOpenRealDocument} busyDocumentId={busyDocumentId} documentOpenError={documentOpenError} />;
   return <DemoPrototypeView source={source} />;
 }
 

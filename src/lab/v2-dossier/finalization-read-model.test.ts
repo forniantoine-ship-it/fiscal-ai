@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { resolveV3Finalization, resolveV3FinalizationCta, type V3FinalizationReadModel } from "./finalization-read-model";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { V3CorrectionScope } from "./correction-scope";
+import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
+
+const PAYMENT_UNKNOWN: ServerPaymentStatus = { state: "unknown", source: "server", reason: "not_loaded" };
+const PAYMENT_PAID: ServerPaymentStatus = { state: "paid", source: "server", paidAt: "2025-07-01T00:00:00Z" };
 
 function workspace(overrides: Partial<PersistedWorkspace["fiscalYear"]> = {}): PersistedWorkspace {
   return {
@@ -40,18 +44,18 @@ function completeDraft() {
 
 describe("V3 finalization read model — R13.1", () => {
   it("DEMO isolation — never resolves for demo mode", () => {
-    assert.equal(resolveV3Finalization({ mode: "demo" }, REQUIRED_SCOPE), undefined);
+    assert.equal(resolveV3Finalization({ mode: "demo" }, REQUIRED_SCOPE, PAYMENT_UNKNOWN), undefined);
   });
 
   it("A/B — incomplete dossier reports its real blockers; complete dossier reports none", () => {
-    const incomplete = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE);
+    const incomplete = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.ok(incomplete);
     assert.equal(incomplete!.dossierComplete, false);
     assert.ok(incomplete!.blockers.length > 0);
 
     const ws = workspace();
     ws.declarationDraft = completeDraft();
-    const complete = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE);
+    const complete = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(complete!.dossierComplete, true);
     assert.deepEqual(complete!.blockers, []);
   });
@@ -59,7 +63,7 @@ describe("V3 finalization read model — R13.1", () => {
   it("C — multi-property is reported, and finalizeHref is null (fail closed, no dangerous CTA)", () => {
     const ws = workspace({ propertyIds: ["property-id", "other"] });
     ws.properties = [ws.properties[0]!, { ...ws.properties[0]!, id: "other" }];
-    const model = resolveV3Finalization({ mode: "real", workspace: ws }, null);
+    const model = resolveV3Finalization({ mode: "real", workspace: ws }, null, PAYMENT_UNKNOWN);
     assert.equal(model!.multiProperty, true);
     assert.equal(model!.finalizeHref, null);
   });
@@ -68,13 +72,13 @@ describe("V3 finalization read model — R13.1", () => {
     const ws = workspace();
     ws.fiscalYear.previousFiscalYearId = "prev-year";
     // No stocksOuverture → NATIVE_CONTINUITY_MISSING per prior-history-eligibility.ts
-    const model = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE);
+    const model = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(model!.priorHistory.eligible, false);
     if (!model!.priorHistory.eligible) assert.equal(model!.priorHistory.reason, "NATIVE_CONTINUITY_MISSING");
   });
 
   it("E — no DeclarationVersion at all → never_generated, lastGeneration null", () => {
-    const model = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE);
+    const model = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(model!.generationState, "never_generated");
     assert.equal(model!.lastGeneration, null);
   });
@@ -90,7 +94,7 @@ describe("V3 finalization read model — R13.1", () => {
         liasseRfs: { formulairesGeneres: ["2031-SD", "2033-A-SD"], formulairesManquants: ["2033-B-SD"] } as never,
       }],
     };
-    const model = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE);
+    const model = resolveV3Finalization({ mode: "real", workspace: ws }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.deepEqual(model!.lastGeneration, {
       generatedAt: "2025-06-01T10:00:00Z", versionNumber: 1,
       formulairesGeneres: ["2031-SD", "2033-A-SD"], formulairesManquants: ["2033-B-SD"],
@@ -99,28 +103,37 @@ describe("V3 finalization read model — R13.1", () => {
 
   it("G/H — generationState is honest: presence of declarationGeneratedAt is the ONLY signal, never numeric freshness", () => {
     const generated = workspace({ declarationGeneratedAt: "2025-06-01T10:00:00Z" });
-    const withFlag = resolveV3Finalization({ mode: "real", workspace: generated }, REQUIRED_SCOPE);
+    const withFlag = resolveV3Finalization({ mode: "real", workspace: generated }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(withFlag!.generationState, "generated_since_last_known_invalidation");
 
-    const withoutFlag = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE);
+    const withoutFlag = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(withoutFlag!.generationState, "never_generated");
     // The type itself proves the honesty constraint: V3GenerationState has no "fresh"/"current" member.
   });
 
   it("P — price comes from the canonical GENERATION_PRICE_TTC constant", () => {
-    const model = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE);
+    const model = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.equal(model!.priceLabel, "149 €");
   });
 
   it("finalizeHref reuses the R12.1A scope contract — null on unresolved scope, gated on the validation step", () => {
-    const withScope = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE);
+    const withScope = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_UNKNOWN);
     assert.ok(withScope!.finalizeHref);
     assert.ok(withScope!.finalizeHref!.startsWith("/documents?"));
     assert.ok(withScope!.finalizeHref!.endsWith("&step=validation"));
     assert.ok(withScope!.finalizeHref!.includes("v3Correction=1"));
 
-    const withoutScope = resolveV3Finalization({ mode: "real", workspace: workspace() }, null);
+    const withoutScope = resolveV3Finalization({ mode: "real", workspace: workspace() }, null, PAYMENT_UNKNOWN);
     assert.equal(withoutScope!.finalizeHref, null);
+  });
+
+  it("R13.2 — the server payment status is threaded through verbatim, never transformed", () => {
+    const model = resolveV3Finalization({ mode: "real", workspace: workspace() }, REQUIRED_SCOPE, PAYMENT_PAID);
+    assert.deepEqual(model!.payment, PAYMENT_PAID);
+  });
+
+  it("R13.2 §15 — DEMO never resolves, so it can never carry a real payment value either", () => {
+    assert.equal(resolveV3Finalization({ mode: "demo" }, REQUIRED_SCOPE, PAYMENT_PAID), undefined);
   });
 });
 
@@ -130,6 +143,7 @@ describe("V3 finalization CTA — R13.1 §6/§7/§8/§9/§10", () => {
     priorHistory: { eligible: true, status: "FIRST_REAL_YEAR", basis: "declared_by_client" },
     generationState: "never_generated", lastGeneration: null,
     priceLabel: "149 €", finalizeHref: "/documents?dossierId=d&fiscalYearId=f&year=2025&v3Correction=1&step=validation",
+    payment: PAYMENT_UNKNOWN,
   };
   const firstAction = { label: "Continuer l'activité", href: "/assistants/activite" };
 
@@ -167,6 +181,17 @@ describe("V3 finalization CTA — R13.1 §6/§7/§8/§9/§10", () => {
     const cta = resolveV3FinalizationCta({ ...base, finalizeHref: null }, firstAction);
     assert.equal(cta.actionHref, null);
     assert.equal(cta.actionLabel, null);
+  });
+
+  it("R13.2 §8/§10 — payment state never changes the CTA: same navigation whether paid, pending, not_started or unknown", () => {
+    const paymentStates: ServerPaymentStatus[] = [
+      { state: "not_started", source: "server" },
+      { state: "pending", source: "server" },
+      { state: "paid", source: "server", paidAt: "2025-07-01T00:00:00Z" },
+      { state: "unknown", source: "server", reason: "lookup_failed" },
+    ];
+    const ctas = paymentStates.map(payment => resolveV3FinalizationCta({ ...base, payment }, firstAction));
+    for (const cta of ctas) assert.deepEqual(cta, ctas[0]);
   });
 });
 

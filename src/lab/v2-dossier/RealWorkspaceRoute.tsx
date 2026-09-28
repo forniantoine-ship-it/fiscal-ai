@@ -5,9 +5,13 @@ import { supabase } from "@/lib/supabase";
 import { V2Prototype } from "./V2Prototype";
 import { loadRealDocuments, resolveRealDocumentForOpen, type RealDocumentLoad } from "./real-documents";
 import { sameCorrectionScope, scopeFromRealWorkspace, type ScopeQuery } from "./correction-scope";
+import { fetchServerPaymentStatus, type ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
 import styles from "./prototype.module.css";
 
 type RouteState = { status: "loading" } | RealDocumentLoad;
+
+/** Placeholder before the server read resolves — "unknown", never "paid" or "not_started" by default. */
+const PAYMENT_NOT_LOADED: ServerPaymentStatus = { state: "unknown", source: "server", reason: "not_loaded" };
 
 const MESSAGES = {
   no_dossier: "Aucun dossier réel n’est disponible pour ce compte.",
@@ -26,6 +30,7 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
   const [state, setState] = useState<RouteState>({ status: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [payment, setPayment] = useState<ServerPaymentStatus>(PAYMENT_NOT_LOADED);
 
   useEffect(() => {
     let active = true;
@@ -34,6 +39,7 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
       const current = ++request;
       setState({ status: "loading" });
       setOpenError(null);
+      setPayment(PAYMENT_NOT_LOADED);
       if (expectedReturn.kind === "invalid") {
         setState({ status: "year_unavailable", reason: "mismatch" });
         return;
@@ -44,6 +50,12 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
           ? { status: "year_unavailable" as const, reason: "mismatch" as const }
           : result;
       if (active && current === request) setState(checked);
+      // Payment is scoped by (dossierId, fiscal_year) only — multi-property never
+      // blocks this read (R13.2 §5); it only ever blocks finalizeHref (R13.1/R12.1A).
+      if (checked.status === "ready") {
+        const status = await fetchServerPaymentStatus(checked.dossierId, checked.fiscalYear);
+        if (active && current === request) setPayment(status);
+      }
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
@@ -94,7 +106,7 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
   }
 
   if (state.status === "ready") {
-    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state)} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
+    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state)} payment={payment} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
   }
   return <div className={styles.root}><main className={styles.main}>
     <div className={styles.emptyCard} role={state.status === "error" ? "alert" : "status"}>
