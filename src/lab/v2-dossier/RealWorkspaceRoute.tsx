@@ -26,7 +26,7 @@ const YEAR_MESSAGES = {
   ambiguous: "Nous ne pouvons pas déterminer automatiquement l’exercice à afficher.",
 } as const;
 
-export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expectedReturn?: ScopeQuery }) {
+export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requestedDossierId }: { expectedReturn?: ScopeQuery; requestedDossierId?: string | null }) {
   const [state, setState] = useState<RouteState>({ status: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -40,11 +40,13 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
       setState({ status: "loading" });
       setOpenError(null);
       setPayment(PAYMENT_NOT_LOADED);
-      if (expectedReturn.kind === "invalid") {
+      if (expectedReturn.kind === "invalid" || requestedDossierId === null ||
+          (expectedReturn.kind === "scope" && requestedDossierId && requestedDossierId !== expectedReturn.scope.dossierId)) {
         setState({ status: "year_unavailable", reason: "mismatch" });
         return;
       }
-      const result = await loadRealDocuments(userId);
+      const dossierId = requestedDossierId ?? (expectedReturn.kind === "scope" ? expectedReturn.scope.dossierId : undefined);
+      const result = await loadRealDocuments(userId, undefined, dossierId);
       const checked = expectedReturn.kind === "scope" &&
         !sameCorrectionScope(expectedReturn.scope, scopeFromRealWorkspace(result))
           ? { status: "year_unavailable" as const, reason: "mismatch" as const }
@@ -62,7 +64,7 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
       void load(session?.user?.id ?? null);
     });
     return () => { active = false; request += 1; subscription.unsubscribe(); };
-  }, [expectedReturn]);
+  }, [expectedReturn, requestedDossierId]);
 
   async function openDocument(documentId: string) {
     setOpenError(null);

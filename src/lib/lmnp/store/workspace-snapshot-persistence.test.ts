@@ -11,7 +11,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import type { PersistedWorkspace } from "./persistence";
-import { getWorkspaceRecord, putWorkspaceRecord } from "./db";
+import { getScopedWorkspaceRecord, getWorkspaceRecord, putWorkspaceRecord } from "./db";
 import { serializeWorkspaceSnapshot, WORKSPACE_SNAPSHOT_SCHEMA_VERSION } from "./workspace-snapshot";
 import type { WorkspaceSnapshotRecord } from "./workspace-snapshot-resolve";
 
@@ -67,6 +67,9 @@ function workspace(overrides: Partial<PersistedWorkspace> = {}): PersistedWorksp
     ...overrides,
   };
 }
+
+const readScoped = (userId: string, fiscalYear = 2025) =>
+  getScopedWorkspaceRecord({ userId, dossierId: "dossier-A", fiscalYear });
 
 function snapshotRecord(
   payload: unknown,
@@ -166,11 +169,11 @@ describe("persistence/provider — local newer than server after failed save", (
     failNextUpsert = true;
     await modules.saveWorkspace(userId, localWs);
 
-    const afterFail = await getWorkspaceRecord(userId);
+    const afterFail = await readScoped(userId);
     assert.equal((afterFail?.data as PersistedWorkspace).properties[0]?.city, "Lyon-NEWER-EDIT");
     assert.equal(afterFail?.lastSyncedServerRevision, 1);
 
-    const hydrated = await modules.hydrateLmnpStore(userId);
+    const hydrated = await modules.hydrateLmnpStore(userId, { dossierId: "dossier-A", fiscalYear: 2025 });
     const decision = await modules.reconcileLocalWorkspaceWithSnapshots({
       userId,
       local: hydrated.workspace,
@@ -184,7 +187,7 @@ describe("persistence/provider — local newer than server after failed save", (
     assert.equal(decision.uploadLocal, true);
     assert.equal(decision.workspace.properties[0]?.city, "Lyon-NEWER-EDIT");
     assert.equal(decision.workspace.declarationDraft?.siret, "12345678901234");
-    const reloaded = await getWorkspaceRecord(userId);
+    const reloaded = await readScoped(userId);
     assert.equal((reloaded?.data as PersistedWorkspace).properties[0]?.city, "Lyon-NEWER-EDIT");
     assert.equal(reloaded?.lastSyncedServerRevision, 1);
   });
@@ -205,7 +208,7 @@ describe("persistence/provider — local newer than server after failed save", (
     });
     await modules.saveWorkspace(userId, next);
 
-    const record = await getWorkspaceRecord(userId);
+    const record = await readScoped(userId);
     assert.equal((record?.data as PersistedWorkspace).properties[0]?.city, "Lyon-SAVED");
     assert.equal(record?.lastSyncedServerRevision, 2);
     assert.equal(memory.get("dossier-A:2025")?.revision, 2);
@@ -228,7 +231,7 @@ describe("persistence/provider — local newer than server after failed save", (
     });
     await modules.saveWorkspace(userId, dirty);
 
-    const record = await getWorkspaceRecord(userId);
+    const record = await readScoped(userId);
     assert.equal((record?.data as PersistedWorkspace).properties[0]?.city, "Lyon-NEWER-EDIT");
     assert.equal(record?.lastSyncedServerRevision, 1);
     assert.equal(memory.get("dossier-A:2025")?.revision, 1);
@@ -245,7 +248,7 @@ describe("persistence/provider — local newer than server after failed save", (
         ],
       }),
     );
-    const record = await getWorkspaceRecord(userId);
+    const record = await readScoped(userId);
     assert.equal((record?.data as PersistedWorkspace).properties[0]?.city, "Local-only");
     assert.equal(record?.lastSyncedServerRevision, undefined);
     assert.equal(memory.size, 0);
@@ -262,12 +265,12 @@ describe("persistence/provider — local newer than server after failed save", (
       });
     await modules.saveWorkspace(userId, ws2026("state-1"));
     assert.deepEqual(modules.getWorkspaceSnapshotReadyScope(), { dossierId: "dossier-A", fiscalYear: 2026 });
-    const afterFirst = await getWorkspaceRecord(userId);
+    const afterFirst = await readScoped(userId, 2026);
     assert.equal(afterFirst?.lastSyncedServerRevision, 1);
 
     await modules.saveWorkspace(userId, ws2026("state-2"));
     await modules.saveWorkspace(userId, ws2026("state-3"));
-    const afterThird = await getWorkspaceRecord(userId);
+    const afterThird = await readScoped(userId, 2026);
     assert.equal((afterThird?.data as PersistedWorkspace).properties[0]?.city, "state-3");
     assert.equal(afterThird?.lastSyncedServerRevision, 3);
     assert.equal(memory.get("dossier-A:2026")?.revision, 3);

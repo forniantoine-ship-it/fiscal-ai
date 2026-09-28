@@ -4,7 +4,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { PersistedWorkspace } from "./persistence";
-import { getWorkspaceRecord, putWorkspaceRecord } from "./db";
+import { getScopedWorkspaceRecord, putWorkspaceRecord } from "./db";
 import { serializeWorkspaceSnapshot, WORKSPACE_SNAPSHOT_SCHEMA_VERSION } from "./workspace-snapshot";
 import type { WorkspaceSnapshotRecord } from "./workspace-snapshot-resolve";
 
@@ -23,6 +23,8 @@ const BASE: PersistedWorkspace = {
   documents: [], extractions: [], validationItems: [], ledgerEntries: [],
   declarationDraft: { completedSteps: [], exploitantFirstName: "Before" },
 };
+
+const readScoped = (userId: string) => getScopedWorkspaceRecord({ userId, dossierId: "dossier-id", fiscalYear: 2025 });
 
 let id = 0;
 describe("V3 confirmed correction save", () => {
@@ -71,8 +73,8 @@ describe("V3 confirmed correction save", () => {
     const edited = { ...BASE, declarationDraft: { completedSteps: [], exploitantFirstName: "After" } };
     const result = await api.flushWorkspaceSaveConfirmed(userId, () => edited);
     assert.deepEqual(result, { status: "confirmed", revision: 2 });
-    assert.equal((await getWorkspaceRecord(userId))?.lastSyncedServerRevision, 2);
-    assert.equal((await getWorkspaceRecord(userId))?.data.declarationDraft?.exploitantFirstName, "After");
+    assert.equal((await readScoped(userId))?.lastSyncedServerRevision, 2);
+    assert.equal((await readScoped(userId))?.data.declarationDraft?.exploitantFirstName, "After");
   });
 
   it("IndexedDB success and Supabase failure retains the local edit but refuses confirmation", async () => {
@@ -82,7 +84,7 @@ describe("V3 confirmed correction save", () => {
     const edited = { ...BASE, declarationDraft: { completedSteps: [], exploitantFirstName: "Local only" } };
     const result = await api.flushWorkspaceSaveConfirmed(userId, () => edited);
     assert.deepEqual(result, { status: "failed", reason: "server_unavailable" });
-    const local = await getWorkspaceRecord(userId);
+    const local = await readScoped(userId);
     assert.equal(local?.data.declarationDraft?.exploitantFirstName, "Local only");
     assert.equal(local?.lastSyncedServerRevision, 1);
     assert.equal(server.revision, 1);

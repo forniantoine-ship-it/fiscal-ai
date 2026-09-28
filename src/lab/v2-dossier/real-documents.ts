@@ -17,11 +17,13 @@ export async function loadRealDocuments(
     loadWorkspace: typeof loadRealWorkspace;
     readRows: typeof readRealDocumentRows;
   },
+  requestedDossierId?: string,
 ): Promise<RealDocumentLoad> {
   const loadWorkspace = services?.loadWorkspace ?? loadRealWorkspace;
   const readRows = services?.readRows ?? readRealDocumentRows;
-  const resolved = await loadWorkspace(userId);
+  const resolved = await loadWorkspace(userId, undefined, requestedDossierId);
   if (resolved.status !== "ready") return resolved;
+  if (requestedDossierId && resolved.dossierId !== requestedDossierId) return { status: "error" };
   const read: DocumentRowsRead = await readRows({
     userId: resolved.userId,
     dossierId: resolved.dossierId,

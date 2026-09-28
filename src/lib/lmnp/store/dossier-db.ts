@@ -19,7 +19,7 @@ import {
   getFiscalYearRecord,
   putDossierRecord,
   withStores,
-  workspaceKeyForUser,
+  workspaceKeyForScope,
   STORE_DOSSIER,
   STORE_FISCAL_YEARS,
   STORE_WORKSPACE,
@@ -414,7 +414,7 @@ export async function persistFiscalYearClosureAndTransition(params: {
   };
 
   const workspaceRecord: WorkspaceRecord = {
-    id: workspaceKeyForUser(userId),
+    id: workspaceKeyForScope({ userId, dossierId, fiscalYear: nextFiscalYear.year }),
     data: nextWorkspace,
     updatedAt: now,
   };

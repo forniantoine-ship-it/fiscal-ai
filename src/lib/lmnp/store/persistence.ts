@@ -9,6 +9,7 @@ import type {
 } from "../types";
 import type { AiActivityEvent } from "../types/ai-activity";
 import type { FileRegistry } from "./reducer";
+import { parseWorkspaceSnapshot } from "./workspace-snapshot";
 import { getBoundAuthUserId } from "@/lib/lmnp/auth/auth-boundary";
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import {
@@ -22,9 +23,13 @@ import {
   getDocumentBlob,
   getLegacyWorkspaceRecord,
   getWorkspaceRecord,
+  getScopedWorkspaceRecord,
   putDocumentBlob,
   putWorkspaceRecord,
+  putScopedWorkspaceRecord,
   stampLocalWorkspaceSyncedRevision,
+  stampScopedWorkspaceSyncedRevision,
+  type WorkspaceScope,
   type DocumentBlobRecord,
 } from "./db";
 import {
@@ -78,6 +83,26 @@ type LocalWorkspaceCache = {
   workspace: PersistedWorkspace | null;
   lastSyncedServerRevision?: number;
 };
+
+function scopeOf(userId: string, workspace: PersistedWorkspace): WorkspaceScope | null {
+  const { dossierId, year } = workspace.fiscalYear;
+  return dossierId && Number.isInteger(year) ? { userId, dossierId, fiscalYear: year } : null;
+}
+
+async function readWorkspaceRecord(userId: string, workspace: PersistedWorkspace) {
+  const scope = scopeOf(userId, workspace);
+  return scope ? getScopedWorkspaceRecord(scope) : getWorkspaceRecord(userId);
+}
+
+async function writeWorkspaceRecord(userId: string, workspace: PersistedWorkspace, options?: { lastSyncedServerRevision?: number }) {
+  const scope = scopeOf(userId, workspace);
+  return scope ? putScopedWorkspaceRecord(scope, workspace, options) : putWorkspaceRecord(userId, workspace, options);
+}
+
+async function stampWorkspaceRevision(userId: string, workspace: PersistedWorkspace, revision: number) {
+  const scope = scopeOf(userId, workspace);
+  return scope ? stampScopedWorkspaceSyncedRevision(scope, revision) : stampLocalWorkspaceSyncedRevision(userId, revision);
+}
 
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingWorkspace: { userId: string; data: PersistedWorkspace } | null = null;
@@ -292,6 +317,7 @@ async function loadLocalWorkspaceCache(userId: string): Promise<LocalWorkspaceCa
  */
 export async function reconcileLocalWorkspaceWithSnapshots(input: {
   userId: string;
+  expectedDossierId?: string;
   local: PersistedWorkspace | null;
   lastSyncedServerRevision?: number | null;
   snapshots: WorkspaceSnapshotRecord[];
@@ -306,8 +332,24 @@ export async function reconcileLocalWorkspaceWithSnapshots(input: {
     fallbackYear: input.fallbackYear,
     activeFiscalYear: input.activeFiscalYear,
   });
+  if (input.expectedDossierId && decision.workspace &&
+      decision.workspace.fiscalYear.dossierId !== input.expectedDossierId) {
+    return { source: "blocked", workspace: null, blockWrites: true, reason: "invalid_snapshot" };
+  }
+  if (input.expectedDossierId && decision.workspace) {
+    const matchingSnapshot = input.snapshots.find(row => row.fiscalYear === decision.workspace?.fiscalYear.year);
+    if (matchingSnapshot) {
+      const parsed = parseWorkspaceSnapshot(matchingSnapshot.payload);
+      if (!parsed.ok || matchingSnapshot.dossierId !== input.expectedDossierId ||
+          parsed.envelope.workspace.fiscalYear.dossierId !== input.expectedDossierId ||
+          parsed.envelope.workspace.fiscalYear.year !== matchingSnapshot.fiscalYear ||
+          parsed.envelope.workspace.fiscalYear.id !== decision.workspace.fiscalYear.id) {
+        return { source: "blocked", workspace: null, blockWrites: true, reason: "invalid_snapshot" };
+      }
+    }
+  }
   if (decision.source === "server") {
-    await putWorkspaceRecord(input.userId, decision.workspace, {
+    await writeWorkspaceRecord(input.userId, decision.workspace, {
       lastSyncedServerRevision: decision.lastSyncedServerRevision,
     });
   }
@@ -315,7 +357,7 @@ export async function reconcileLocalWorkspaceWithSnapshots(input: {
 }
 
 /** Offline-first hydration: workspace metadata + document blobs for one auth user. */
-export async function hydrateLmnpStore(userId: string | null): Promise<HydratedLmnpStore> {
+export async function hydrateLmnpStore(userId: string | null, scope?: Omit<WorkspaceScope, "userId">): Promise<HydratedLmnpStore> {
   if (typeof window === "undefined") {
     return { workspace: null, fileRegistry: new Map() };
   }
@@ -325,7 +367,14 @@ export async function hydrateLmnpStore(userId: string | null): Promise<HydratedL
   }
 
   try {
-    const cache = await loadLocalWorkspaceCache(userId);
+    const cache = scope
+      ? await (async (): Promise<LocalWorkspaceCache> => {
+          const record = await getScopedWorkspaceRecord({ userId, ...scope });
+          return record?.data && isValidWorkspace(record.data)
+            ? { workspace: record.data, lastSyncedServerRevision: normalizeLastSyncedServerRevision(record.lastSyncedServerRevision) }
+            : { workspace: null };
+        })()
+      : await loadLocalWorkspaceCache(userId);
     if (!cache.workspace) return { workspace: null, fileRegistry: new Map() };
 
     const loaded = await loadFileRegistry(cache.workspace.documents, userId, cache.workspace.fiscalYear.id);
@@ -349,7 +398,7 @@ async function writeWorkspaceToDisk(
   if (typeof window === "undefined") return;
   if (isStaleWorkspaceWrite(generation)) return;
   try {
-    const existing = await getWorkspaceRecord(userId);
+    const existing = await readWorkspaceRecord(userId, data);
     if (isStaleWorkspaceWrite(generation)) return;
     const existingData =
       existing?.data && isValidWorkspace(existing.data) ? existing.data : null;
@@ -367,7 +416,7 @@ async function writeWorkspaceToDisk(
       return;
     }
     if (isStaleWorkspaceWrite(generation)) return;
-    await putWorkspaceRecord(userId, data);
+    await writeWorkspaceRecord(userId, data);
     if (isStaleWorkspaceWrite(generation)) return;
     console.log("[ai-event-persisted]", {
       feedSize: data.aiActivityFeed?.length ?? 0,
@@ -378,7 +427,7 @@ async function writeWorkspaceToDisk(
       workspace: data,
     });
     if (serverSave.status === "ok") {
-      await stampLocalWorkspaceSyncedRevision(userId, serverSave.revision);
+      await stampWorkspaceRevision(userId, data, serverSave.revision);
     }
     if (isStaleWorkspaceWrite(generation)) return;
     if (serverSave.status === "closed") {
@@ -536,7 +585,7 @@ export async function flushWorkspaceSaveForTransition(
   }
   pendingWorkspace = null;
 
-  const existingLocal = await getWorkspaceRecord(userId);
+  const existingLocal = await readWorkspaceRecord(userId, workspace);
   const localData =
     existingLocal?.data && isValidWorkspace(existingLocal.data) ? existingLocal.data : null;
   const targetYear = workspace.fiscalYear.year;
@@ -563,7 +612,7 @@ export async function flushWorkspaceSaveForTransition(
   );
 
   try {
-    await putWorkspaceRecord(userId, workspace);
+    await writeWorkspaceRecord(userId, workspace);
   } catch (error) {
     console.error("[lmnp] transition local flush failed", { userId, error });
     return { status: "failed", reason: "serialize_failed" };
@@ -582,7 +631,7 @@ export async function flushWorkspaceSaveForTransition(
   if (serverSave.status !== "ok") {
     return { status: "failed", reason: serverSave.reason };
   }
-  await stampLocalWorkspaceSyncedRevision(userId, serverSave.revision);
+  await stampWorkspaceRevision(userId, workspace, serverSave.revision);
   return { status: "ok", revision: serverSave.revision };
 }
 

@@ -29,6 +29,9 @@ import {
 } from "./persistence";
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import { toPersistedWorkspace } from "./workspace-snapshot";
+import { isValidPersistedWorkspace } from "./workspace-snapshot";
+import { getWorkspaceRecord, listScopedWorkspaceRecords } from "./db";
+import { pickTargetYear } from "./workspace-snapshot-resolve";
 import {
   beginWorkspaceSnapshotHydration,
   completeWorkspaceSnapshotHydration,
@@ -47,7 +50,7 @@ import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton"
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
 import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 import { scopeMatchesWorkspace } from "@/lab/v2-dossier/correction-scope";
-import { fetchActiveDossierForUser } from "@/lib/lmnp/dossier/supabase-dossier";
+import { fetchOwnedDossierById, type LmnpDossier } from "@/lib/lmnp/dossier/supabase-dossier";
 import {
   logWorkspaceHydrationComplete,
   logWorkspaceHydrationStart,
@@ -57,7 +60,6 @@ import {
   deleteDocumentOnServer,
   ensureActiveDossier,
   fetchDocumentsForDossier,
-  getCurrentDossierId,
   setCurrentDossierId,
   reconcileWorkspaceDocuments,
   resolveDocumentDeletionPlan,
@@ -119,7 +121,7 @@ function toPersisted(state: LmnpState) {
   return toPersistedWorkspace(state);
 }
 
-export function LmnpProvider({ children }: { children: ReactNode }) {
+export function LmnpProvider({ children, explicitDossier = null }: { children: ReactNode; explicitDossier?: LmnpDossier | null }) {
   const correctionScope = useV3CorrectionScope();
   const [isReady, setIsReady] = useState(false);
   const [hydrationError, setHydrationError] = useState<string | null>(null);
@@ -149,7 +151,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   );
 
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useLayoutEffect(() => { stateRef.current = state; }, [state]);
 
   const authUserIdRef = useRef<string | null>(null);
   const hydrationBlockedRef = useRef(false);
@@ -179,11 +181,13 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const { workspace, fileRegistry, lastSyncedServerRevision } = await hydrateLmnpStore(userId);
-        // A V3 correction has already passed a read-only pre-provider gate.
-        // Never create a replacement dossier if that authority disappeared meanwhile.
-        const dossier = correctionScope
-          ? await fetchActiveDossierForUser(userId)
+        // Resolve the dossier before reading any local workspace. The URL gate
+        // already checked ownership; an auth switch cannot reuse that result.
+        const exactCorrection = !explicitDossier && correctionScope
+          ? await fetchOwnedDossierById(userId, correctionScope.dossierId) : null;
+        const dossier = explicitDossier
+          ? explicitDossier.user_id === userId ? explicitDossier : null
+          : exactCorrection ? exactCorrection.status === "ok" ? exactCorrection.dossier : null
           : await ensureActiveDossier(userId);
         if (correctionScope && dossier?.id !== correctionScope.dossierId) {
           blocked = true;
@@ -191,52 +195,87 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
           setHydrationError("Le dossier de cette correction a changé.");
           return;
         }
+        if (explicitDossier && !dossier) {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("Ce dossier ne peut pas être vérifié pour cette session.");
+          return;
+        }
         if (dossier) setCurrentDossierId(dossier.id, userId);
-        const localWorkspace = dossier && workspace?.fiscalYear.dossierId && workspace.fiscalYear.dossierId !== dossier.id
+        const listed = dossier ? await listWorkspaceSnapshots(dossier.id) : null;
+        if (listed?.status === "error") {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("Les exercices de ce dossier ne peuvent pas être vérifiés pour le moment.");
+          return;
+        }
+        const snapshots = listed?.status === "ok" ? listed.snapshots.filter(row => row.dossierId === dossier?.id) : [];
+        const scopedRecords = dossier ? await listScopedWorkspaceRecords(userId, dossier.id) : [];
+        const legacyRecord = dossier ? await getWorkspaceRecord(userId) : undefined;
+        const candidates = scopedRecords.flatMap(record => isValidPersistedWorkspace(record.data) &&
+          record.data.fiscalYear.status !== "closed" ? [record.data] : []);
+        const legacyWorkspace = legacyRecord?.data;
+        if (isValidPersistedWorkspace(legacyWorkspace) &&
+            legacyWorkspace.fiscalYear.dossierId === dossier?.id &&
+            legacyWorkspace.fiscalYear.status !== "closed" &&
+            !candidates.some(candidate => candidate.fiscalYear.year === legacyWorkspace.fiscalYear.year)) {
+          candidates.push(legacyWorkspace);
+        }
+        if (dossier && dossier.active_fiscal_year == null && candidates.length > 1 && snapshots.length === 0) {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("Nous ne pouvons pas déterminer automatiquement l’exercice actif de ce dossier.");
+          return;
+        }
+        const target = dossier
+          ? pickTargetYear(candidates.length === 1 ? candidates[0] : null, snapshots, lastClosedFiscalYear(), dossier.active_fiscal_year)
+          : { status: "no_year" as const };
+        if (dossier && (target.status === "ambiguous" || (explicitDossier && target.status === "no_year"))) {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("Nous ne pouvons pas déterminer automatiquement l’exercice actif de ce dossier.");
+          return;
+        }
+        const { workspace, fileRegistry, lastSyncedServerRevision } = await hydrateLmnpStore(
+          userId, dossier && target.status === "resolved" ? { dossierId: dossier.id, fiscalYear: target.year } : undefined,
+        );
+        const localWorkspace = dossier && workspace && workspace.fiscalYear.dossierId !== dossier.id
           ? null : workspace;
         const localFileRegistry = localWorkspace === workspace ? fileRegistry : new Map<string, File>();
 
         let baseWorkspace = localWorkspace;
         if (dossier) {
-          const listed = await listWorkspaceSnapshots(dossier.id);
-          if (listed.status === "error") {
+          const decision = await reconcileLocalWorkspaceWithSnapshots({
+            userId,
+            expectedDossierId: dossier.id,
+            local: localWorkspace,
+            lastSyncedServerRevision,
+            snapshots,
+            fallbackYear: lastClosedFiscalYear(),
+            // Lot 3 — server active year wins over civil fallback / stale local N.
+            activeFiscalYear: dossier.active_fiscal_year,
+          });
+          if (decision.blockWrites ||
+              (decision.source === "none" && (snapshots.length > 0 || localWorkspace?.fiscalYear.status === "closed"))) {
             blocked = true;
             hydrationBlockedRef.current = true;
-            setHydrationError("Les exercices de ce dossier ne peuvent pas être vérifiés pour le moment.");
+            setHydrationError(decision.source === "blocked" && decision.reason === "ambiguous_fiscal_year"
+              ? "Nous ne pouvons pas déterminer automatiquement l’exercice actif de ce dossier."
+              : "L’exercice actif de ce dossier ne peut pas être restauré en sécurité.");
             return;
-          } else {
-            const snapshots = listed.snapshots.filter(row => row.dossierId === dossier.id);
-            const decision = await reconcileLocalWorkspaceWithSnapshots({
-              userId,
-              local: localWorkspace,
-              lastSyncedServerRevision,
-              snapshots,
-              fallbackYear: lastClosedFiscalYear(),
-              // Lot 3 — server active year wins over civil fallback / stale local N.
-              activeFiscalYear: dossier.active_fiscal_year,
-            });
-            if (decision.blockWrites ||
-                (decision.source === "none" && (snapshots.length > 0 || localWorkspace?.fiscalYear.status === "closed"))) {
-              blocked = true;
-              hydrationBlockedRef.current = true;
-              setHydrationError(decision.source === "blocked" && decision.reason === "ambiguous_fiscal_year"
-                ? "Nous ne pouvons pas déterminer automatiquement l’exercice actif de ce dossier."
-                : "L’exercice actif de ce dossier ne peut pas être restauré en sécurité.");
-              return;
-            }
-            baseWorkspace = decision.workspace ?? createDefaultWorkspace();
-            if (!baseWorkspace.fiscalYear.dossierId) {
-              baseWorkspace = {
-                ...baseWorkspace,
-                fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
-              };
-            }
-            completeWorkspaceSnapshotHydration({
-              blockWrites: decision.blockWrites,
-              dossierId: dossier.id,
-              fiscalYear: baseWorkspace.fiscalYear.year,
-            });
           }
+          baseWorkspace = decision.workspace ?? createDefaultWorkspace();
+          if (!baseWorkspace.fiscalYear.dossierId) {
+            baseWorkspace = {
+              ...baseWorkspace,
+              fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
+            };
+          }
+          completeWorkspaceSnapshotHydration({
+            blockWrites: decision.blockWrites,
+            dossierId: dossier.id,
+            fiscalYear: baseWorkspace.fiscalYear.year,
+          });
         } else {
           baseWorkspace = localWorkspace ?? createDefaultWorkspace();
         }
@@ -250,7 +289,9 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
 
         // Reconcile may select a newer local workspace after the outer server
         // check. Refuse it before HYDRATE/isReady and therefore before autosave.
-        if (correctionScope && !scopeMatchesWorkspace(correctionScope, baseWorkspace)) {
+        if ((correctionScope && !scopeMatchesWorkspace(correctionScope, baseWorkspace)) ||
+            (explicitDossier && (baseWorkspace.fiscalYear.dossierId !== explicitDossier.id ||
+              target.status !== "resolved" || baseWorkspace.fiscalYear.year !== target.year))) {
           blocked = true;
           hydrationBlockedRef.current = true;
           setHydrationError("L’exercice ou le bien de cette correction a changé.");
@@ -377,7 +418,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         setIsReady(!blocked);
       }
     });
-  }, [correctionScope]);
+  }, [correctionScope, explicitDossier]);
 
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
@@ -390,7 +431,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   // (cf. Dossier.id === lmnp_dossiers.id), le miroir reste `undefined`.
   useEffect(() => {
     if (!isReady || !authUserIdRef.current) return;
-    const dossierId = getCurrentDossierId();
+    const dossierId = stateRef.current.fiscalYear.dossierId;
     if (!dossierId) return;
 
     let cancelled = false;
@@ -403,7 +444,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   }, [isReady]);
 
   const updateInpiStatus = useCallback(async (status: InpiStatus, source: InpiStatusSource) => {
-    const dossierId = getCurrentDossierId();
+    const dossierId = stateRef.current.fiscalYear.dossierId;
     if (!dossierId) return;
     setInpiStatusUpdating(true);
     try {
@@ -551,7 +592,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   // pour un câblage dans un chantier ultérieur (voir rapport).
   const createNextFiscalYear = useCallback(async () => {
     await runCreateNextFiscalYear({
-      dossierId: getCurrentDossierId(),
+      dossierId: stateRef.current.fiscalYear.dossierId ?? null,
       userId: authUserIdRef.current,
       workspace: toPersisted(stateRef.current),
       dispatchCreateNextFiscalYear: (nextFiscalYear, properties) =>
@@ -567,7 +608,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
   // de N+1 dans la même transaction atomique.
   const closeFiscalYearAndCreateNext = useCallback(async () => {
     await runCloseAndCreateNextFiscalYear({
-      dossierId: getCurrentDossierId(),
+      dossierId: stateRef.current.fiscalYear.dossierId ?? null,
       userId: authUserIdRef.current,
       workspace: toPersisted(stateRef.current),
       dispatchCloseAndCreateNext: (nextWorkspace) =>
@@ -582,7 +623,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       const target = stateRef.current.documents.find((d) => d.id === documentId);
       const plan = resolveDocumentDeletionPlan({
         hasSupabaseArtifacts: target?.hasSupabaseArtifacts,
-        dossierId: getCurrentDossierId(),
+        dossierId: stateRef.current.fiscalYear.dossierId ?? null,
         documentRole: target?.documentRole,
         originFiscalYear: target?.fiscalYear,
         activeFiscalYear: stateRef.current.fiscalYear.year,
@@ -628,7 +669,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       // fiscal pluriannuel.
       void runCreateNewDeclaration({
         documents: stateRef.current.documents,
-        dossierId: getCurrentDossierId(),
+        dossierId: stateRef.current.fiscalYear.dossierId ?? null,
         deleteOnServer: deleteDocumentOnServer,
         dispatchCreateNewDeclaration: () => dispatch(action),
         onError: (message) => {

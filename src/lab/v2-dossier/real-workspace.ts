@@ -13,10 +13,11 @@ type ReadServices = {
   fetchDossier(userId: string): Promise<
     { status: "ok"; dossier: LmnpDossier } | { status: "not_found" } | { status: "error" }
   >;
+  fetchExactDossier?(userId: string, dossierId: string): ReturnType<ReadServices["fetchDossier"]>;
   listSnapshots(dossierId: string): Promise<
     { status: "ok"; snapshots: WorkspaceSnapshotRecord[] } | { status: "error" }
   >;
-  loadLocal(userId: string): Promise<{ workspace: PersistedWorkspace | null; lastSyncedServerRevision?: number }>;
+  loadLocal(userId: string, dossierId?: string, fiscalYear?: number): Promise<{ workspace: PersistedWorkspace | null; lastSyncedServerRevision?: number }>;
   fallbackYear: number;
 };
 
@@ -26,22 +27,28 @@ type ReadServices = {
 export async function loadRealWorkspace(
   userId: string | null,
   services?: ReadServices,
+  requestedDossierId?: string,
 ): Promise<RealWorkspaceLoad> {
   if (!userId) return { status: "no_dossier" };
   try {
     const readers = services ?? await defaultReaders();
-    const fetched = await readers.fetchDossier(userId);
+    const fetched = requestedDossierId
+      ? readers.fetchExactDossier ? await readers.fetchExactDossier(userId, requestedDossierId) : { status: "error" as const }
+      : await readers.fetchDossier(userId);
     if (fetched.status === "error") return { status: "error" };
     if (fetched.status === "not_found") return { status: "no_dossier" };
     const dossier = fetched.dossier;
-    if (dossier.user_id !== userId) return { status: "error" };
-    const [listed, localRecord] = await Promise.all([
-      readers.listSnapshots(dossier.id), readers.loadLocal(userId),
-    ]);
+    if (dossier.user_id !== userId || (requestedDossierId && dossier.id !== requestedDossierId)) return { status: "error" };
+    const listed = await readers.listSnapshots(dossier.id);
     if (listed.status !== "ok") return { status: "error" };
     const snapshots = listed.snapshots.filter(row => row.dossierId === dossier.id);
-    const local = localRecord.workspace?.fiscalYear.dossierId && localRecord.workspace.fiscalYear.dossierId !== dossier.id
-      ? null : localRecord.workspace;
+    const selectedYear = dossier.active_fiscal_year ??
+      (snapshots.length === 1 ? snapshots[0].fiscalYear : undefined);
+    const localRecord = await readers.loadLocal(userId, requestedDossierId ? dossier.id : undefined, selectedYear);
+    const local = requestedDossierId
+      ? localRecord.workspace?.fiscalYear.dossierId === dossier.id ? localRecord.workspace : null
+      : localRecord.workspace?.fiscalYear.dossierId && localRecord.workspace.fiscalYear.dossierId !== dossier.id
+        ? null : localRecord.workspace;
     const activeYear = dossier.active_fiscal_year;
     const target = pickTargetYear(local, snapshots, readers.fallbackYear, activeYear);
     if (target.status === "ambiguous") {
@@ -99,22 +106,37 @@ export async function loadRealWorkspace(
 }
 
 async function defaultReaders(): Promise<ReadServices> {
-  const [{ fetchActiveDossierForUserResult }, { listWorkspaceSnapshots }, { getWorkspaceRecord, LMNP_DB_NAME, LMNP_DB_VERSION }] = await Promise.all([
+  const [{ fetchActiveDossierForUserResult, fetchOwnedDossierById }, { listWorkspaceSnapshots }, { getWorkspaceRecord, peekScopedWorkspaceRecord, listScopedWorkspaceRecords, LMNP_DB_NAME, LMNP_DB_VERSION }] = await Promise.all([
     import("@/lib/lmnp/dossier/supabase-dossier"),
     import("@/lib/lmnp/store/workspace-snapshot-client"),
     import("@/lib/lmnp/store/db"),
   ]);
   return {
     fetchDossier: fetchActiveDossierForUserResult,
+    fetchExactDossier: fetchOwnedDossierById,
     listSnapshots: listWorkspaceSnapshots,
     fallbackYear: lastClosedFiscalYear(),
-    async loadLocal(userId) {
+    async loadLocal(userId, dossierId, fiscalYear) {
       if (typeof indexedDB === "undefined" || !indexedDB.databases) return { workspace: null };
       const databases = await indexedDB.databases();
       if (!databases.some(db => db.name === LMNP_DB_NAME && db.version === LMNP_DB_VERSION)) {
         return { workspace: null };
       }
-      const record = await getWorkspaceRecord(userId);
+      let record;
+      if (dossierId && fiscalYear != null) {
+        record = await peekScopedWorkspaceRecord({ userId, dossierId, fiscalYear });
+      } else if (dossierId) {
+        const records = await listScopedWorkspaceRecords(userId, dossierId);
+        const legacy = await getWorkspaceRecord(userId);
+        const legacyWorkspace = legacy?.data;
+        if (legacy && isValidPersistedWorkspace(legacyWorkspace) && legacyWorkspace.fiscalYear.dossierId === dossierId &&
+            !records.some(item => isValidPersistedWorkspace(item.data) && item.data.fiscalYear.year === legacyWorkspace.fiscalYear.year)) {
+          records.push(legacy);
+        }
+        record = records.length === 1 ? records[0] : undefined;
+      } else {
+        record = await getWorkspaceRecord(userId);
+      }
       return {
         workspace: isValidPersistedWorkspace(record?.data) ? record.data : null,
         lastSyncedServerRevision: record?.lastSyncedServerRevision,

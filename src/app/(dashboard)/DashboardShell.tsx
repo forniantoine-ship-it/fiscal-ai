@@ -9,6 +9,7 @@ import { DossierProvider } from "@/lib/lmnp/dossier";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
 import { V3CorrectionEntryGate } from "@/components/lmnp/app-shell/V3CorrectionEntryGate";
 import { V3CorrectionReturnBar } from "@/components/lmnp/app-shell/V3CorrectionReturnBar";
+import { ExplicitDossierScopeGate } from "@/components/lmnp/app-shell/ExplicitDossierScopeGate";
 
 function DashboardLayoutBridge({ children }: { children: ReactNode }) {
   const { workspace, autosaveStatus, persistenceUserId } = useLmnp();
@@ -32,13 +33,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={<div role="status">Chargement du parcours…</div>}>
       <V3CorrectionEntryGate>
-        <DossierProvider>
-          <LmnpProvider>
-            <FeedbackProvider>
-              <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
-            </FeedbackProvider>
-          </LmnpProvider>
-        </DossierProvider>
+        <ExplicitDossierScopeGate>{dossier => (
+          <DossierProvider explicitDossier={dossier}>
+            <LmnpProvider explicitDossier={dossier}>
+              <FeedbackProvider>
+                <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
+              </FeedbackProvider>
+            </LmnpProvider>
+          </DossierProvider>
+        )}</ExplicitDossierScopeGate>
       </V3CorrectionEntryGate>
     </Suspense>
   );

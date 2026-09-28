@@ -30,6 +30,7 @@ import {
   getDossierRecord,
   getFiscalYearRecord,
   getWorkspaceRecord,
+  getScopedWorkspaceRecord,
   getDocumentBlob,
   putDocumentBlob,
   listFiscalYearsForDossier,
@@ -138,7 +139,7 @@ describe("persistFiscalYearClosureAndTransition — R1 happy path", () => {
 
     // workspace — bascule vers N+1, dans la MÊME transaction (pas via le
     // chemin débounced).
-    const workspaceRecord = await getWorkspaceRecord(userId);
+    const workspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.fiscalYear.id, result.nextFiscalYear.id);
     assert.deepEqual(persisted?.documents, []);
@@ -284,7 +285,7 @@ describe("persistFiscalYearClosureAndTransition — R2/R10 rejouabilité, rollba
     assert.ok(dossier?.fiscalYearIds.includes(first.nextFiscalYear.id));
 
     // Le workspace actif reste celui écrit par la PREMIÈRE transition.
-    const workspaceRecord = await getWorkspaceRecord(userId);
+    const workspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: first.nextFiscalYear.year });
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.fiscalYear.id, first.nextFiscalYear.id);
   });
@@ -359,7 +360,7 @@ describe("Couche 1/Couche 2 — P0 FINAL GATE, écritures workspace stale", () =
     // FINAL GATE §2, Cas A : écriture déjà "en vol").
     await saveWorkspace(userId, workspace);
 
-    const workspaceRecord = await getWorkspaceRecord(userId);
+    const workspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.fiscalYear.id, result.nextFiscalYear.id, "N+1 doit rester actif — l'écriture stale de N doit avoir été refusée par la Couche 2");
   });
@@ -385,7 +386,7 @@ describe("Couche 1/Couche 2 — P0 FINAL GATE, écritures workspace stale", () =
 
     await saveWorkspace(userId, workspace);
 
-    const workspaceRecord = await getWorkspaceRecord(userId);
+    const workspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.fiscalYear.id, result.nextFiscalYear.id, "N+1 doit rester actif malgré une génération de sérialisation indépendante");
   });
@@ -427,7 +428,7 @@ describe("Couche 1/Couche 2 — P0 FINAL GATE, écritures workspace stale", () =
     };
     await saveWorkspace(userId, updatedNextWorkspace);
 
-    const workspaceRecord = await getWorkspaceRecord(userId);
+    const workspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     const persisted = workspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(persisted?.properties[0].label, "Bien mis à jour", "une resauvegarde ordinaire de N+1 après transition n'est jamais bloquée");
   });
@@ -551,7 +552,7 @@ describe("P1 — Historique des exercices clôturés (liste, chargement, isolati
 
     // Le workspace actif, lui, reste bien sur son propre rfs 2026 — la
     // consultation de l'archive ne l'a ni lu ni modifié.
-    const activeWorkspaceRecord = await getWorkspaceRecord(userId);
+    const activeWorkspaceRecord = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     const activeData = activeWorkspaceRecord?.data as PersistedWorkspace | undefined;
     assert.equal(activeData?.declarationDraft?.rfs?.exercice, 2026);
   });
@@ -568,14 +569,14 @@ describe("P1 — Historique des exercices clôturés (liste, chargement, isolati
       now: "2026-09-04T00:00:00.000Z",
     });
 
-    const workspaceBefore = await getWorkspaceRecord(userId);
+    const workspaceBefore = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
 
     // "Consultation" de N — strictement une lecture, aucun dispatch, aucune
     // écriture vers STORE_WORKSPACE.
     await loadArchivedFiscalYear(result.closedFiscalYear.id);
     await loadArchivedFiscalYear(result.closedFiscalYear.id);
 
-    const workspaceAfter = await getWorkspaceRecord(userId);
+    const workspaceAfter = await getScopedWorkspaceRecord({ userId, dossierId, fiscalYear: result.nextFiscalYear.year });
     assert.deepEqual(workspaceAfter, workspaceBefore, "le workspace actif (N+1) doit rester strictement inchangé après consultation de N-1");
     assert.equal((workspaceAfter?.data as PersistedWorkspace).fiscalYear.id, result.nextFiscalYear.id);
   });

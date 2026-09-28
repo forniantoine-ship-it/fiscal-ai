@@ -18,7 +18,7 @@ import {
   type PersistedWorkspace,
   type StrictWorkspaceFlushResult,
 } from "./persistence";
-import { putWorkspaceRecord } from "./db";
+import { putScopedWorkspaceRecord } from "./db";
 import { FiscalYearAlreadyClosedError } from "./dossier-db";
 import { setWorkspaceSnapshotSyncGate } from "./workspace-snapshot-client";
 
@@ -59,6 +59,7 @@ export type RunServerFiscalYearTransitionParams = {
    */
   mirrorLocalAfterCommit?: (input: {
     userId: string;
+    dossierId: string;
     nextWorkspace: PersistedWorkspace;
     nextRevision: number;
   }) => Promise<void>;
@@ -126,11 +127,18 @@ async function defaultCommitOnServer(input: {
 
 async function defaultMirrorLocal(input: {
   userId: string;
+  dossierId: string;
   nextWorkspace: PersistedWorkspace;
   nextRevision: number;
 }): Promise<void> {
   // Exact server N+1 + its revision — never inherit N's lastSyncedServerRevision.
-  await putWorkspaceRecord(input.userId, input.nextWorkspace, {
+  if (input.nextWorkspace.fiscalYear.dossierId !== input.dossierId) {
+    throw new Error("Post-commit workspace dossier mismatch");
+  }
+  await putScopedWorkspaceRecord({
+    userId: input.userId, dossierId: input.dossierId,
+    fiscalYear: input.nextWorkspace.fiscalYear.year,
+  }, input.nextWorkspace, {
     lastSyncedServerRevision: input.nextRevision,
   });
 }
@@ -232,6 +240,7 @@ export async function runServerFiscalYearTransition(
     try {
       await mirrorLocalAfterCommit({
         userId,
+        dossierId,
         nextWorkspace,
         nextRevision: committed.nextRevision,
       });

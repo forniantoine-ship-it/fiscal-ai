@@ -30,7 +30,7 @@ type DossierContextValue = {
 
 const DossierContext = createContext<DossierContextValue | null>(null);
 
-async function loadActiveDossierState(userId: string | null): Promise<{
+async function loadActiveDossierState(userId: string | null, explicitDossier: LmnpDossier | null): Promise<{
   dossier: LmnpDossier | null;
   documents: SupabaseDocumentRow[];
 }> {
@@ -39,7 +39,9 @@ async function loadActiveDossierState(userId: string | null): Promise<{
     return { dossier: null, documents: [] };
   }
 
-  const dossier = await ensureActiveDossier(userId);
+  const dossier = explicitDossier
+    ? explicitDossier.user_id === userId ? explicitDossier : null
+    : await ensureActiveDossier(userId);
   if (!dossier) {
     setCurrentDossierId(null, userId);
     return { dossier: null, documents: [] };
@@ -60,17 +62,17 @@ async function loadActiveDossierState(userId: string | null): Promise<{
   return { dossier, documents };
 }
 
-export function DossierProvider({ children }: { children: ReactNode }) {
+export function DossierProvider({ children, explicitDossier = null }: { children: ReactNode; explicitDossier?: LmnpDossier | null }) {
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [dossier, setDossier] = useState<LmnpDossier | null>(null);
   const [documents, setDocuments] = useState<SupabaseDocumentRow[]>([]);
   const [isReady, setIsReady] = useState(false);
 
   const refreshDossier = useCallback(async () => {
-    const next = await loadActiveDossierState(authUserId);
+    const next = await loadActiveDossierState(authUserId, explicitDossier);
     setDossier(next.dossier);
     setDocuments(next.documents);
-  }, [authUserId]);
+  }, [authUserId, explicitDossier]);
 
   useEffect(() => {
     return subscribeAuthBoundary(async ({ userId, userChanged }) => {
@@ -82,12 +84,12 @@ export function DossierProvider({ children }: { children: ReactNode }) {
         setDocuments([]);
       }
 
-      const next = await loadActiveDossierState(userId);
+      const next = await loadActiveDossierState(userId, explicitDossier);
       setDossier(next.dossier);
       setDocuments(next.documents);
       setIsReady(true);
     });
-  }, []);
+  }, [explicitDossier]);
 
   const value = useMemo(
     () => ({

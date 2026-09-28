@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { isDossierId } from "./explicit-dossier-id";
 
 export type LmnpDossier = {
   id: string;
@@ -31,6 +32,32 @@ const DOCUMENT_SELECT =
   "id, user_id, dossier_id, file_name, file_path, extraction_status, created_at, fiscal_year, document_role, property_id";
 
 const DOSSIER_SELECT = "id, user_id, status, city, lmnp_type, created_at, active_fiscal_year";
+
+export type DossierReadResult =
+  | { status: "ok"; dossier: LmnpDossier }
+  | { status: "not_found" }
+  | { status: "error" };
+
+/** Exact ownership read. A missing or inaccessible row never selects another dossier. */
+export async function fetchOwnedDossierById(userId: string, dossierId: string): Promise<DossierReadResult> {
+  if (!isDossierId(dossierId)) return { status: "not_found" };
+  const normalizedId = dossierId.toLowerCase();
+  const { data, error } = await supabase
+    .from("lmnp_dossiers")
+    .select(DOSSIER_SELECT)
+    .eq("id", normalizedId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    logSupabaseError("fetch exact failed", { userId, dossierId }, error);
+    return { status: "error" };
+  }
+  if (!data || data.id !== normalizedId || data.user_id !== userId) return { status: "not_found" };
+  return { status: "ok", dossier: {
+    ...(data as Omit<LmnpDossier, "active_fiscal_year">),
+    active_fiscal_year: typeof data.active_fiscal_year === "number" ? data.active_fiscal_year : null,
+  } };
+}
 
 function logSupabaseError(
   label: string,

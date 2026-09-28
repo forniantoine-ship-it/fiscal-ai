@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { RealWorkspaceRoute } from "@/lab/v2-dossier/RealWorkspaceRoute";
 import { readV3ReturnQuery } from "@/lab/v2-dossier/correction-scope";
 import { isV3RealTestRouteEnabled } from "@/lab/v2-dossier/v3-real-route-access";
+import { readExplicitDossierId } from "@/lib/lmnp/dossier/explicit-dossier-id";
 
 export const metadata: Metadata = {
   title: "Laboratoire V3.1 · Dossier réel",
@@ -20,5 +21,5 @@ export default async function RealV2DossierPage({ searchParams }: {
     if (Array.isArray(value)) value.forEach(item => params.append(key, item));
     else if (value !== undefined) params.append(key, value);
   }
-  return <RealWorkspaceRoute key={params.toString()} expectedReturn={readV3ReturnQuery(params)} />;
+  return <RealWorkspaceRoute key={params.toString()} expectedReturn={readV3ReturnQuery(params)} requestedDossierId={readExplicitDossierId(params)} />;
 }

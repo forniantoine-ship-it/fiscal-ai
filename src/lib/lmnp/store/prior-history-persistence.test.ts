@@ -180,7 +180,7 @@ describe("4 — continuité native RÉELLE : clôture IndexedDB → N+1 éligibl
     const reread = await m.db.getFiscalYearRecord<FiscalYear>(next.id);
     assert.equal(m.eligibility.resolvePriorHistoryEligibility(reread!).eligible, true, "relecture de l'archive IndexedDB");
 
-    const reloaded = await m.persistence.loadWorkspace(userId);
+    const reloaded = (await m.persistence.hydrateLmnpStore(userId, { dossierId, fiscalYear: next.year })).workspace;
     assert.equal(reloaded?.fiscalYear.id, next.id);
     assert.equal(m.eligibility.resolvePriorHistoryEligibility(reloaded!.fiscalYear).eligible, true, "rechargement du workspace actif");
   });

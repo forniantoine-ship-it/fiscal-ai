@@ -23,6 +23,15 @@ export function workspaceKeyForUser(userId: string): string {
   return `user:${userId}`;
 }
 
+export type WorkspaceScope = { userId: string; dossierId: string; fiscalYear: number };
+
+export function workspaceKeyForScope(scope: WorkspaceScope): string {
+  if (!scope.userId || !scope.dossierId || !Number.isInteger(scope.fiscalYear)) {
+    throw new Error("Invalid workspace scope");
+  }
+  return `user:${scope.userId}:dossier:${scope.dossierId}:year:${scope.fiscalYear}`;
+}
+
 /**
  * P3-SOCLE-CYCLE-FISCAL — P0-1 — version applicative tenue en cohérence avec
  * LMNP_DB_VERSION : ce numéro monte exactement quand une migration
@@ -239,6 +248,69 @@ export function getWorkspaceRecord(userId: string): Promise<WorkspaceRecord | un
   return idbGet<WorkspaceRecord>(STORE_WORKSPACE, workspaceKeyForUser(userId));
 }
 
+function workspaceMatchesScope(data: unknown, scope: WorkspaceScope): boolean {
+  if (!data || typeof data !== "object") return false;
+  const fiscalYear = (data as { fiscalYear?: { dossierId?: unknown; year?: unknown } }).fiscalYear;
+  return fiscalYear?.dossierId === scope.dossierId && fiscalYear.year === scope.fiscalYear;
+}
+
+/** Keep the user-only row untouched. Copy it only if its embedded identity proves the scope. */
+export async function peekScopedWorkspaceRecord(scope: WorkspaceScope): Promise<WorkspaceRecord | undefined> {
+  const id = workspaceKeyForScope(scope);
+  const existing = await idbGet<WorkspaceRecord>(STORE_WORKSPACE, id);
+  if (existing) return workspaceMatchesScope(existing.data, scope) ? existing : undefined;
+  const legacy = await getWorkspaceRecord(scope.userId);
+  if (!legacy || !workspaceMatchesScope(legacy.data, scope)) return undefined;
+  return { ...legacy, id };
+}
+
+export async function getScopedWorkspaceRecord(scope: WorkspaceScope): Promise<WorkspaceRecord | undefined> {
+  const record = await peekScopedWorkspaceRecord(scope);
+  if (!record) return undefined;
+  const id = workspaceKeyForScope(scope);
+  const current = await idbGet<WorkspaceRecord>(STORE_WORKSPACE, id);
+  if (current) return workspaceMatchesScope(current.data, scope) ? current : undefined;
+  await withStores([STORE_WORKSPACE], "readwrite", (stores) => {
+    const store = stores[STORE_WORKSPACE];
+    const request = store.get(id);
+    request.onsuccess = () => {
+      if (!request.result) store.put(record);
+    };
+  });
+  return (await idbGet<WorkspaceRecord>(STORE_WORKSPACE, id)) ?? record;
+}
+
+export async function listScopedWorkspaceRecords(userId: string, dossierId: string): Promise<WorkspaceRecord[]> {
+  const prefix = `user:${userId}:dossier:${dossierId}:year:`;
+  const records = await idbGetAll<WorkspaceRecord>(STORE_WORKSPACE);
+  return records.filter(record => record.id.startsWith(prefix) &&
+    workspaceMatchesScope(record.data, { userId, dossierId, fiscalYear: Number(record.id.slice(prefix.length)) }));
+}
+
+export async function putScopedWorkspaceRecord(
+  scope: WorkspaceScope,
+  data: unknown,
+  options?: { lastSyncedServerRevision?: number },
+): Promise<void> {
+  if (!workspaceMatchesScope(data, scope)) throw new Error("Workspace scope mismatch");
+  const existing = options && "lastSyncedServerRevision" in options
+    ? undefined : await getScopedWorkspaceRecord(scope);
+  const revision = options && "lastSyncedServerRevision" in options
+    ? options.lastSyncedServerRevision : existing?.lastSyncedServerRevision;
+  await idbPut(STORE_WORKSPACE, {
+    id: workspaceKeyForScope(scope), data, updatedAt: new Date().toISOString(),
+    ...(revision != null ? { lastSyncedServerRevision: revision } : {}),
+  } satisfies WorkspaceRecord);
+}
+
+export async function stampScopedWorkspaceSyncedRevision(scope: WorkspaceScope, revision: number): Promise<void> {
+  const existing = await getScopedWorkspaceRecord(scope);
+  if (!existing) return;
+  await idbPut(STORE_WORKSPACE, {
+    ...existing, lastSyncedServerRevision: revision, updatedAt: new Date().toISOString(),
+  } satisfies WorkspaceRecord);
+}
+
 export function getLegacyWorkspaceRecord(): Promise<WorkspaceRecord | undefined> {
   return idbGet<WorkspaceRecord>(STORE_WORKSPACE, LEGACY_WORKSPACE_KEY);
 }
@@ -318,4 +390,3 @@ export function listFiscalYearsForDossier<T>(dossierId: string): Promise<T[]> {
       }),
   );
 }
-
