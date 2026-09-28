@@ -394,7 +394,10 @@ function RealDeclarationView({ declaration, finalization, firstUserAction }: {
       <div className={styles.declarationTop}>
         <Pill tone={declaration.status === "unavailable" ? "orange" : "green"}>{declaration.summary}</Pill>
         {declaration.freshness === "stale" ? <Pill tone="orange">Votre dossier a changé depuis ce calcul</Pill>
-          : declaration.freshness === "fresh" ? <Pill tone="green">Calcul à jour</Pill> : null}
+          // R13.1A — "fresh" only proves a generation happened and declarationGeneratedAt is
+          // still set; it never proves the numbers are currently, numerically verified (that
+          // needs the gate's live F006/F007/RFS preview, which V3 must never call at render).
+          : declaration.freshness === "fresh" ? <Pill tone="green">Déclaration générée</Pill> : null}
       </div>
       {declaration.blockers.length ? <ul className={styles.panelFindings}>{declaration.blockers.map(label => <li key={label}>
         <span>·</span>{label}
