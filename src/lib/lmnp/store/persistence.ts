@@ -468,6 +468,54 @@ export type StrictWorkspaceFlushResult =
       reason: "no_user" | "server_unavailable" | "already_closed" | "serialize_failed" | "invalid_revision" | string;
     };
 
+export type ConfirmedWorkspaceSaveResult =
+  | { status: "confirmed"; revision: number }
+  | { status: "failed"; reason: string };
+
+/**
+ * V3 correction checkpoint. It shares the normal autosave queue, cancels a
+ * pending debounce, and uses the existing revision-checked server write. A
+ * local IndexedDB success never counts as a confirmed server save. A newer
+ * queued write also prevents this older revision from being reported as final.
+ */
+export async function flushWorkspaceSaveConfirmed(
+  userId: string | null,
+  currentWorkspace: () => PersistedWorkspace,
+): Promise<ConfirmedWorkspaceSaveResult> {
+  if (!userId) return { status: "failed", reason: "no_user" };
+  let generation = 0;
+  let savedWorkspace: PersistedWorkspace | null = null;
+  let scopeMismatch = false;
+  const outcome: { current: StrictWorkspaceFlushResult } = {
+    current: { status: "failed", reason: "server_unavailable" },
+  };
+  // runSerializedWorkspaceWrite never rejects (it logs and swallows the
+  // task's error to keep the write chain alive), so a thrown scope mismatch
+  // must be captured inside the task itself rather than via an outer catch.
+  await runSerializedWorkspaceWrite(async queuedGeneration => {
+    generation = queuedGeneration;
+    try {
+      savedWorkspace = currentWorkspace();
+    } catch {
+      scopeMismatch = true;
+      return;
+    }
+    outcome.current = await flushWorkspaceSaveForTransition(userId, savedWorkspace);
+  });
+  if (scopeMismatch) return { status: "failed", reason: "scope_mismatch" };
+  if (isStaleWorkspaceWrite(generation)) return { status: "failed", reason: "superseded" };
+  try {
+    if (!savedWorkspace || JSON.stringify(currentWorkspace()) !== JSON.stringify(savedWorkspace)) {
+      return { status: "failed", reason: "superseded" };
+    }
+  } catch {
+    return { status: "failed", reason: "scope_mismatch" };
+  }
+  return outcome.current.status === "ok"
+    ? { status: "confirmed", revision: outcome.current.revision }
+    : { status: "failed", reason: outcome.current.reason };
+}
+
 /**
  * Lot 3 — flush required before N→N+1. Soft skip is not proof.
  * Cancels debounce, forces IDB write, then CAS-saves from lastSyncedServerRevision

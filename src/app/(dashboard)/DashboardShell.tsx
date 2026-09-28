@@ -1,12 +1,13 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 
 import { FeedbackProvider } from "@/components/lmnp/shared/FeedbackProvider";
 import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
 import { DossierProvider } from "@/lib/lmnp/dossier";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
+import { V3CorrectionEntryGate } from "@/components/lmnp/app-shell/V3CorrectionEntryGate";
 
 function DashboardLayoutBridge({ children }: { children: ReactNode }) {
   const { workspace, autosaveStatus, persistenceUserId } = useLmnp();
@@ -27,12 +28,16 @@ function DashboardLayoutBridge({ children }: { children: ReactNode }) {
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   return (
-    <DossierProvider>
-      <LmnpProvider>
-        <FeedbackProvider>
-          <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
-        </FeedbackProvider>
-      </LmnpProvider>
-    </DossierProvider>
+    <Suspense fallback={<div role="status">Chargement du parcours…</div>}>
+      <V3CorrectionEntryGate>
+        <DossierProvider>
+          <LmnpProvider>
+            <FeedbackProvider>
+              <DashboardLayoutBridge>{children}</DashboardLayoutBridge>
+            </FeedbackProvider>
+          </LmnpProvider>
+        </DossierProvider>
+      </V3CorrectionEntryGate>
+    </Suspense>
   );
 }

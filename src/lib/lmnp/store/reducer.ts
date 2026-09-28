@@ -53,6 +53,7 @@ import {
 } from "../services/dossier/fiscal-year-cycle";
 import { snapshotImmobilisationsFromGeneratedRfs } from "../services/dossier/immobilisations-comptables";
 import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
+import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
 
 export type FileRegistry = Map<string, File>;
 
@@ -1231,9 +1232,17 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       // outputs dérivés), sans toucher aux inputs source du patch.
       const downstreamInvalidation = buildDownstreamInvalidationPatch(draft, action.patch);
 
+      // F009 can change the identity used in the generated RFS without
+      // changing F006's numeric inputs. Compare the actual F007 projection so
+      // unused/cosmetic draft fields do not invalidate a generation.
+      const identityChanged = !isDeepEqualDraftValue(
+        identiteFromDeclarationDraft(draft, state.fiscalYear.year),
+        identiteFromDeclarationDraft({ ...draft, ...action.patch }, state.fiscalYear.year),
+      );
+
       let fiscalYear = state.fiscalYear;
       if (
-        (contributiveKeyChanged || Object.keys(downstreamInvalidation).length > 0) &&
+        (contributiveKeyChanged || identityChanged || Object.keys(downstreamInvalidation).length > 0) &&
         fiscalYear.declarationGeneratedAt
       ) {
         // paidAt n'est jamais touché — seule la génération devient obsolète,

@@ -118,7 +118,7 @@ test("V/W — lecture bornée à l'identité R8, autre dossier et autre compte e
 
   const ready: Extract<RealWorkspaceLoad, { status: "ready" }> = {
     status: "ready", workspace: workspace(), dossierId: scope.dossierId, userId: scope.userId,
-    fiscalYear: scope.fiscalYear, source: "server", legacyDocumentYears: [],
+    fiscalYear: scope.fiscalYear, source: "server", serverScopeVerified: true, legacyDocumentYears: [],
   };
   const result = await loadRealDocuments(scope.userId, {
     loadWorkspace: async () => ready,

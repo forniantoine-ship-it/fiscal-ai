@@ -5,7 +5,7 @@ import { isValidPersistedWorkspace, parseWorkspaceSnapshot } from "@/lib/lmnp/st
 import { pickTargetYear, resolveWorkspaceHydration, type WorkspaceSnapshotRecord } from "@/lib/lmnp/store/workspace-snapshot-resolve";
 
 export type RealWorkspaceLoad =
-  | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; userId: string; fiscalYear: number; source: "server" | "local"; legacyDocumentYears: ReadonlyArray<{ fiscalYear: number; documentIds: ReadonlyArray<string> }> }
+  | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; userId: string; fiscalYear: number; source: "server" | "local"; serverScopeVerified: boolean; legacyDocumentYears: ReadonlyArray<{ fiscalYear: number; documentIds: ReadonlyArray<string> }> }
   | { status: "no_dossier" | "error" }
   | { status: "year_unavailable"; reason: "not_selected" | "snapshot_missing" | "closed" | "mismatch" | "ambiguous" };
 
@@ -70,13 +70,29 @@ export async function loadRealWorkspace(
         (workspace.fiscalYear.dossierId && workspace.fiscalYear.dossierId !== dossier.id)) {
       return { status: "year_unavailable", reason: "mismatch" };
     }
+    // A newer local draft may win R8's content reconciliation. Correction
+    // still requires a server snapshot proving the SAME entity scope; a local
+    // cache alone cannot authorize opening an editing provider.
+    const parsedActive = snapshot ? parseWorkspaceSnapshot(snapshot.payload) : null;
+    const serverWorkspace = parsedActive?.ok ? parsedActive.envelope.workspace : null;
+    const serverScopeVerified = Boolean(serverWorkspace &&
+      snapshot?.dossierId === dossier.id && snapshot.closedAt == null &&
+      serverWorkspace.fiscalYear.dossierId === dossier.id &&
+      serverWorkspace.fiscalYear.id === workspace.fiscalYear.id &&
+      serverWorkspace.fiscalYear.year === year && serverWorkspace.fiscalYear.status !== "closed" &&
+      serverWorkspace.fiscalYear.propertyIds.length === 1 &&
+      workspace.fiscalYear.propertyIds.length === 1 &&
+      serverWorkspace.fiscalYear.propertyIds[0] === workspace.fiscalYear.propertyIds[0] &&
+      serverWorkspace.properties.length === 1 && workspace.properties.length === 1 &&
+      serverWorkspace.properties[0]?.id === workspace.properties[0]?.id &&
+      serverWorkspace.properties[0]?.id === serverWorkspace.fiscalYear.propertyIds[0]);
     const legacyDocumentYears = snapshots.flatMap(row => {
       const parsed = parseWorkspaceSnapshot(row.payload);
       if (!parsed.ok || parsed.envelope.workspace.fiscalYear.year !== row.fiscalYear ||
           parsed.envelope.workspace.fiscalYear.dossierId !== dossier.id) return [];
       return [{ fiscalYear: row.fiscalYear, documentIds: parsed.envelope.workspace.documents.map(doc => doc.id) }];
     });
-    return { status: "ready", workspace, dossierId: dossier.id, userId, fiscalYear: year, source: decision.source, legacyDocumentYears };
+    return { status: "ready", workspace, dossierId: dossier.id, userId, fiscalYear: year, source: decision.source, serverScopeVerified, legacyDocumentYears };
   } catch {
     return { status: "error" };
   }

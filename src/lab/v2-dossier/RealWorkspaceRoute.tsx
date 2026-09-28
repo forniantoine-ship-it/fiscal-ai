@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { V2Prototype } from "./V2Prototype";
 import { loadRealDocuments, resolveRealDocumentForOpen, type RealDocumentLoad } from "./real-documents";
+import { sameCorrectionScope, scopeFromRealWorkspace, type ScopeQuery } from "./correction-scope";
 import styles from "./prototype.module.css";
 
 type RouteState = { status: "loading" } | RealDocumentLoad;
@@ -21,7 +22,7 @@ const YEAR_MESSAGES = {
   ambiguous: "Nous ne pouvons pas déterminer automatiquement l’exercice à afficher.",
 } as const;
 
-export function RealWorkspaceRoute() {
+export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expectedReturn?: ScopeQuery }) {
   const [state, setState] = useState<RouteState>({ status: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -33,15 +34,23 @@ export function RealWorkspaceRoute() {
       const current = ++request;
       setState({ status: "loading" });
       setOpenError(null);
+      if (expectedReturn.kind === "invalid") {
+        setState({ status: "year_unavailable", reason: "mismatch" });
+        return;
+      }
       const result = await loadRealDocuments(userId);
-      if (active && current === request) setState(result);
+      const checked = expectedReturn.kind === "scope" &&
+        !sameCorrectionScope(expectedReturn.scope, scopeFromRealWorkspace(result))
+          ? { status: "year_unavailable" as const, reason: "mismatch" as const }
+          : result;
+      if (active && current === request) setState(checked);
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!active) return;
       void load(session?.user?.id ?? null);
     });
     return () => { active = false; request += 1; subscription.unsubscribe(); };
-  }, []);
+  }, [expectedReturn]);
 
   async function openDocument(documentId: string) {
     setOpenError(null);

@@ -14,6 +14,7 @@ import {
 } from "react";
 import {
   createDefaultWorkspace,
+  flushWorkspaceSaveConfirmed,
   flushWorkspaceSave,
   hydrateLmnpStore,
   markAutosaveSaved,
@@ -24,6 +25,7 @@ import {
   subscribeAutosaveStatus,
   syncDocumentBlobs,
   type AutosaveStatus,
+  type ConfirmedWorkspaceSaveResult,
 } from "./persistence";
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import { toPersistedWorkspace } from "./workspace-snapshot";
@@ -43,6 +45,9 @@ import type { DeclarationDraft } from "../types";
 import type { InpiStatus, InpiStatusSource } from "../types/dossier";
 import { AppLoadingSkeleton } from "@/components/lmnp/shared/AppLoadingSkeleton";
 import { subscribeAuthBoundary } from "@/lib/lmnp/auth/auth-boundary";
+import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
+import { scopeMatchesWorkspace } from "@/lab/v2-dossier/correction-scope";
+import { fetchActiveDossierForUser } from "@/lib/lmnp/dossier/supabase-dossier";
 import {
   logWorkspaceHydrationComplete,
   logWorkspaceHydrationStart,
@@ -69,6 +74,8 @@ interface LmnpContextValue {
   persistenceUserId: string | null;
   /** Flush pending debounced save; optional draft patch for not-yet-committed dispatches. */
   flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
+  /** Correction V3 only: revision returned solely after a successful server CAS. */
+  confirmWorkspaceSave: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<ConfirmedWorkspaceSaveResult>;
   /** Document ids currently awaiting server-side deletion confirmation (Supabase-backed documents only). */
   pendingDocumentDeletions: Set<string>;
   /** Last document-deletion error, if any — cleared on the next removal attempt for that document. */
@@ -113,6 +120,7 @@ function toPersisted(state: LmnpState) {
 }
 
 export function LmnpProvider({ children }: { children: ReactNode }) {
+  const correctionScope = useV3CorrectionScope();
   const [isReady, setIsReady] = useState(false);
   const [hydrationError, setHydrationError] = useState<string | null>(null);
   const [isHydratingWorkspace, setIsHydratingWorkspace] = useState(true);
@@ -172,7 +180,17 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         }
 
         const { workspace, fileRegistry, lastSyncedServerRevision } = await hydrateLmnpStore(userId);
-        const dossier = await ensureActiveDossier(userId);
+        // A V3 correction has already passed a read-only pre-provider gate.
+        // Never create a replacement dossier if that authority disappeared meanwhile.
+        const dossier = correctionScope
+          ? await fetchActiveDossierForUser(userId)
+          : await ensureActiveDossier(userId);
+        if (correctionScope && dossier?.id !== correctionScope.dossierId) {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("Le dossier de cette correction a changé.");
+          return;
+        }
         if (dossier) setCurrentDossierId(dossier.id, userId);
         const localWorkspace = dossier && workspace?.fiscalYear.dossierId && workspace.fiscalYear.dossierId !== dossier.id
           ? null : workspace;
@@ -228,6 +246,15 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
             ...baseWorkspace,
             fiscalYear: { ...baseWorkspace.fiscalYear, dossierId: dossier.id },
           };
+        }
+
+        // Reconcile may select a newer local workspace after the outer server
+        // check. Refuse it before HYDRATE/isReady and therefore before autosave.
+        if (correctionScope && !scopeMatchesWorkspace(correctionScope, baseWorkspace)) {
+          blocked = true;
+          hydrationBlockedRef.current = true;
+          setHydrationError("L’exercice ou le bien de cette correction a changé.");
+          return;
         }
 
         // Pre-P0-2E successors stored only scalar opening totals. Recover the
@@ -350,7 +377,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
         setIsReady(!blocked);
       }
     });
-  }, []);
+  }, [correctionScope]);
 
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
@@ -486,12 +513,34 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
             declarationDraft: {
               ...base.declarationDraft,
               ...patch.declarationDraft,
+              completedSteps: patch.declarationDraft.completedSteps ?? base.declarationDraft?.completedSteps ?? [],
             },
           }
         : base;
       await flushWorkspaceSave(userId, data);
     },
     [],
+  );
+
+  const confirmWorkspaceSave = useCallback(
+    async (patch?: { declarationDraft?: Partial<DeclarationDraft> }): Promise<ConfirmedWorkspaceSaveResult> => {
+      const userId = authUserIdRef.current;
+      if (!correctionScope || !userId || !isReady || hydrationBlockedRef.current) {
+        return { status: "failed", reason: "scope_unavailable" };
+      }
+      return flushWorkspaceSaveConfirmed(userId, () => {
+        const base = toPersisted(stateRef.current);
+        if (!scopeMatchesWorkspace(correctionScope, base)) throw new Error("scope_mismatch");
+        return patch?.declarationDraft
+          ? { ...base, declarationDraft: {
+              ...base.declarationDraft,
+              ...patch.declarationDraft,
+              completedSteps: patch.declarationDraft.completedSteps ?? base.declarationDraft?.completedSteps ?? [],
+            } }
+          : base;
+      });
+    },
+    [correctionScope, isReady],
   );
 
   // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — même dossier, exercice suivant.
@@ -605,6 +654,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       autosaveStatus,
       persistenceUserId,
       flushWorkspace,
+      confirmWorkspaceSave,
       pendingDocumentDeletions,
       documentDeletionError,
       createNextFiscalYear,
@@ -623,6 +673,7 @@ export function LmnpProvider({ children }: { children: ReactNode }) {
       autosaveStatus,
       persistenceUserId,
       flushWorkspace,
+      confirmWorkspaceSave,
       pendingDocumentDeletions,
       documentDeletionError,
       createNextFiscalYear,

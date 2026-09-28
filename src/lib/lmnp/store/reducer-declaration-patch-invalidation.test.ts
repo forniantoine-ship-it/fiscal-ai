@@ -132,6 +132,33 @@ function logementAmortissementFixture(
 }
 
 describe("DECLARATION_PATCH_DRAFT — invalidation de declarationGeneratedAt sur modification contributive (P2-2)", () => {
+  it("F009 — identité projetée dans la RFS modifiée rend la génération obsolète", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["activite"], exploitantFirstName: "Marie", exploitantLastName: "Dupont", siren: "123456789" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT, paidAt: PAID_AT }),
+    );
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { exploitantLastName: "Martin" },
+    });
+    assert.equal(next.fiscalYear.declarationGeneratedAt, undefined);
+    assert.equal(next.fiscalYear.paidAt, PAID_AT);
+  });
+
+  it("F009 — métadonnée non contributive et espaces cosmétiques préservent la fraîcheur", async () => {
+    const lmnpReducer = await loadReducer();
+    const state = baseState(
+      { completedSteps: ["activite"], exploitantFirstName: "Marie", exploitantLastName: "Dupont" },
+      baseFiscalYear({ declarationGeneratedAt: GENERATED_AT }),
+    );
+    const next = lmnpReducer(state, {
+      type: "DECLARATION_PATCH_DRAFT",
+      patch: { exploitantLastName: " Dupont ", activiteAssistantState: undefined },
+    });
+    assert.equal(next.fiscalYear.declarationGeneratedAt, GENERATED_AT);
+  });
+
   it("#1 financementCharges modifié + declarationGeneratedAt posé → declarationGeneratedAt effacé, paidAt inchangé", async () => {
     const lmnpReducer = await loadReducer();
     const state = baseState(

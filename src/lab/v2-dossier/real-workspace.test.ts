@@ -70,6 +70,31 @@ test("R8 — le dossier et l'exercice actifs produisent uniquement une source re
   }
 });
 
+test("R12.1A — un brouillon local récent n'autorise la correction que si le snapshot serveur prouve le même périmètre", async () => {
+  const server = workspace();
+  server.fiscalYear.propertyIds = ["property-1"];
+  server.properties = [{ id: "property-1", label: "Bien 1", address: "", city: "", postalCode: "" }];
+  const local = structuredClone(server);
+  local.declarationDraft = { completedSteps: ["identite"] };
+  const confirmed = await loadRealWorkspace(dossier.user_id, services({
+    snapshots: [snapshot(server)], local, lastSyncedServerRevision: 1,
+  }));
+  assert.equal(confirmed.status, "ready");
+  if (confirmed.status === "ready") {
+    assert.equal(confirmed.source, "local");
+    assert.equal(confirmed.serverScopeVerified, true);
+  }
+
+  const foreign = structuredClone(server);
+  foreign.fiscalYear.propertyIds = ["property-2"];
+  foreign.properties = [{ ...server.properties[0], id: "property-2" }];
+  const discordant = await loadRealWorkspace(dossier.user_id, services({
+    snapshots: [snapshot(server)], local: foreign, lastSyncedServerRevision: 1,
+  }));
+  assert.equal(discordant.status, "ready");
+  if (discordant.status === "ready") assert.equal(discordant.serverScopeVerified, false);
+});
+
 test("R10 — les preuves legacy restent bornées aux snapshots du même dossier et à leur exercice déclaré", async () => {
   const current = workspace();
   current.documents = [{
