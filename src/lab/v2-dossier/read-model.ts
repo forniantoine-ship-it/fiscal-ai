@@ -128,7 +128,7 @@ function fieldSourceLabel(source: FieldSource | undefined): string | undefined {
   return source ? FIELD_SOURCE_LABELS[source] : undefined;
 }
 
-function isMultiProperty(workspace: PersistedWorkspace): boolean {
+export function isMultiProperty(workspace: PersistedWorkspace): boolean {
   return workspace.properties.length > 1 || workspace.fiscalYear.propertyIds.length > 1;
 }
 

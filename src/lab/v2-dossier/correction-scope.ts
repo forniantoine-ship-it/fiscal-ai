@@ -22,7 +22,12 @@ export type ScopeQuery =
   | { kind: "invalid" }
   | { kind: "scope"; scope: V3CorrectionScope };
 
-/** Single source of truth for which owner routes need a resolved property. */
+/**
+ * Single source of truth for which owner routes need a resolved property.
+ * Guards entry generically (any workspace-dependent owner screen), not only
+ * a "correction" of an existing fact — /documents hosts the validation/
+ * finalization step (R13.1) under the same pre-provider gate.
+ */
 export const OWNER_ROUTES: Readonly<Record<string, boolean>> = {
   "/assistants/activite": false,
   "/assistants/logement": true,
@@ -30,6 +35,7 @@ export const OWNER_ROUTES: Readonly<Record<string, boolean>> = {
   "/assistants/revenus": true,
   "/assistants/charges": true,
   "/assistants/amortissements": true,
+  "/documents": true,
 };
 
 function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {

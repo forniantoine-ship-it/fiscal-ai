@@ -13,6 +13,7 @@ import { RealDocumentsList } from "./RealDocumentsList";
 import type { V3DocumentsReadModel } from "./document-read-model";
 import { v3CorrectionActionFor, type V3CorrectionAction } from "./correction-registry";
 import type { V3CorrectionScope } from "./correction-scope";
+import { resolveV3Finalization, resolveV3FinalizationCta, type V3FinalizationReadModel } from "./finalization-read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -344,11 +345,51 @@ function DocumentsView({ state, real, onDocument, onDossier, onStartDocument }: 
   </>;
 }
 
-function RealDeclarationView({ declaration }: { declaration: V3DeclarationReadModel }) {
+// R13.1 §12 — 2033-D's registry is intentionally empty today (see V3-R13.0 audit):
+// a form id present in formulairesGeneres must still never read as "complete".
+const FORM_CAVEATS: Record<string, string> = {
+  "2033-D-SD": " (structure minimale, contenu non disponible)",
+};
+
+function FinalizationBlock({ finalization, firstUserAction }: {
+  finalization: V3FinalizationReadModel;
+  firstUserAction?: { label: string; href: string };
+}) {
+  const cta = resolveV3FinalizationCta(finalization, firstUserAction);
+  const message = cta.kind === "multi_property"
+    ? "Ce dossier concerne plusieurs biens : la finalisation n’est pas prise en charge ici."
+    : cta.kind === "dossier_incomplete"
+    ? "Votre dossier doit être complété avant de pouvoir finaliser votre déclaration."
+    : cta.kind === "prior_history_unresolved"
+    ? "Une question sur l’historique de votre activité doit être répondue avant de finaliser."
+    : cta.kind === "ready_to_finalize"
+    ? "Votre dossier est complet."
+    : "Une déclaration a déjà été générée pour cet exercice.";
+  return <section className={styles.realActions} aria-label="Finaliser ma déclaration">
+    <h2>Finaliser ma déclaration</h2>
+    <div className={styles.realActionCard}>
+      <p>{message}</p>
+      {finalization.lastGeneration ? <ul className={styles.panelFindings}>
+        <li><span>✓</span>Dernière génération · {dateLabel(finalization.lastGeneration.generatedAt.slice(0, 10))} · version {finalization.lastGeneration.versionNumber}</li>
+        {finalization.lastGeneration.formulairesGeneres.map(id => <li key={id}><span>✓</span>{id}{FORM_CAVEATS[id] ?? ""}</li>)}
+        {finalization.lastGeneration.formulairesManquants.map(id => <li key={id}><span>·</span>{id} · non généré</li>)}
+      </ul> : null}
+      <p className={styles.panelDisclaimer}>Prix indicatif : {finalization.priceLabel}. Le fichier est régénéré à chaque téléchargement à partir des données conservées — ce n’est jamais un fichier figé à la clôture.</p>
+      {cta.actionHref ? <a className={styles.primaryButton} href={cta.actionHref}>{cta.actionLabel} <Arrow /></a> : null}
+    </div>
+  </section>;
+}
+
+function RealDeclarationView({ declaration, finalization, firstUserAction }: {
+  declaration: V3DeclarationReadModel;
+  finalization?: V3FinalizationReadModel;
+  firstUserAction?: { label: string; href: string };
+}) {
   const title = declaration.status === "generated" ? "Votre déclaration"
     : declaration.status === "computed" ? "Résultat fiscal calculé" : "Résultat fiscal non disponible";
   return <>
     <Heading eyebrow="MA DÉCLARATION" title={title} description="Cette vue reflète directement le résultat calculé par l’Assistant (F006), jamais une seconde estimation ni un recalcul." />
+    {finalization ? <FinalizationBlock finalization={finalization} firstUserAction={firstUserAction} /> : null}
     <div className={styles.declarationGrid}><section className={styles.declarationMain}>
       <div className={styles.declarationTop}>
         <Pill tone={declaration.status === "unavailable" ? "orange" : "green"}>{declaration.summary}</Pill>
@@ -502,6 +543,7 @@ function RealPrototypeView({ source, correctionScope = null, realDocuments, onOp
   const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
   const declaration = resolveV3Declaration(source);
   const userActions = buildV3UserActionReadModel(source.workspace);
+  const finalization = resolveV3Finalization(source, correctionScope);
   const selected = domains.find(domain => domain.id === selectedDomain);
   const selectedAction = selected ? v3CorrectionActionFor(selected.id, correctionScope) : null;
   const year = source.workspace.fiscalYear.year;
@@ -540,7 +582,7 @@ function RealPrototypeView({ source, correctionScope = null, realDocuments, onOp
       </> : view === "documents" ? <>
         <Heading eyebrow={`MES DOCUMENTS · ${year}`} title="Vos documents" description="Les documents enregistrés pour ce dossier, sans validation fiscale implicite." />
         <RealDocumentsList model={realDocuments} onOpen={onOpenRealDocument} busyId={busyDocumentId} openError={documentOpenError} classes={styles} />
-      </> : declaration ? <RealDeclarationView declaration={declaration} /> : null}
+      </> : declaration ? <RealDeclarationView declaration={declaration} finalization={finalization} firstUserAction={userActions.actions[0]} /> : null}
     </main>
     <footer className={styles.footer}><span>Lecture seule · aucune modification du dossier</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
     {selected ? <DetailPanel title={selected.label} subtitle="Comprendre et vérifier" onClose={() => setSelectedDomain(null)}><RealDomainDetail domain={selected} action={selectedAction} /></DetailPanel> : null}
