@@ -94,7 +94,7 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" } }: { expe
   }
 
   if (state.status === "ready") {
-    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
+    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state)} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
   }
   return <div className={styles.root}><main className={styles.main}>
     <div className={styles.emptyCard} role={state.status === "error" ? "alert" : "status"}>

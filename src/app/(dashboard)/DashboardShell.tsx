@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
 import { DossierProvider } from "@/lib/lmnp/dossier";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
 import { V3CorrectionEntryGate } from "@/components/lmnp/app-shell/V3CorrectionEntryGate";
+import { V3CorrectionReturnBar } from "@/components/lmnp/app-shell/V3CorrectionReturnBar";
 
 function DashboardLayoutBridge({ children }: { children: ReactNode }) {
   const { workspace, autosaveStatus, persistenceUserId } = useLmnp();
@@ -21,6 +22,7 @@ function DashboardLayoutBridge({ children }: { children: ReactNode }) {
       persistenceUserId={persistenceUserId}
       chapterJourney={chapterJourney}
     >
+      <V3CorrectionReturnBar />
       {children}
     </DashboardLayout>
   );

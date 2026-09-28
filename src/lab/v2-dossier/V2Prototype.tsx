@@ -11,6 +11,8 @@ import type { V3DomainId } from "./read-model";
 import { buildV3UserActionReadModel } from "./user-action-read-model";
 import { RealDocumentsList } from "./RealDocumentsList";
 import type { V3DocumentsReadModel } from "./document-read-model";
+import { v3CorrectionActionFor, type V3CorrectionAction } from "./correction-registry";
+import type { V3CorrectionScope } from "./correction-scope";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -453,7 +455,7 @@ function DomainDetail({ state, domain, activity, property, financing, revenue, c
   </>;
 }
 
-function RealDomainDetail({ domain }: { domain: V3DomainReadModel }) {
+function RealDomainDetail({ domain, action }: { domain: V3DomainReadModel; action?: V3CorrectionAction | null }) {
   return <>
     <div className={styles.panelStatus}><Pill tone={domain.status === "complete" ? "green" : "orange"}>{domain.summary}</Pill></div>
     <p className={styles.domainDetailLead}>Données du dossier réel · source métier : {domain.owner}.</p>
@@ -466,6 +468,7 @@ function RealDomainDetail({ domain }: { domain: V3DomainReadModel }) {
       : <p className={styles.domainDetailLead}>Aucune source documentaire disponible pour ce sujet.</p>}
     {domain.facts.some(fact => fact.evidence) ? <ul className={styles.panelFindings}>{domain.facts.filter(fact => fact.evidence).map(fact => <li key={fact.id}><span>↳</span>{fact.label} · {fact.evidence}{fact.confidence === undefined ? null : ` · confiance ${Math.round(fact.confidence * 100)} %`}</li>)}</ul> : null}
     <p className={styles.panelDisclaimer}>Provenance {domain.provenance === "complete" ? "documentée" : domain.provenance === "partial" ? "partielle" : "indisponible"}.</p>
+    {action ? <a className={styles.primaryButton} href={action.href}>{action.label} <Arrow /></a> : null}
   </>;
 }
 
@@ -485,8 +488,9 @@ function Inpi({ state, onShow, onSiret }: { state: DemoState; onShow: (show: boo
   </>;
 }
 
-function RealPrototypeView({ source, realDocuments, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+function RealPrototypeView({ source, correctionScope = null, realDocuments, onOpenRealDocument, busyDocumentId, documentOpenError }: {
   source: Extract<V3PrototypeSource, { mode: "real" }>;
+  correctionScope?: V3CorrectionScope | null;
   realDocuments: V3DocumentsReadModel;
   onOpenRealDocument?: (documentId: string) => void;
   busyDocumentId?: string | null;
@@ -499,6 +503,7 @@ function RealPrototypeView({ source, realDocuments, onOpenRealDocument, busyDocu
   const declaration = resolveV3Declaration(source);
   const userActions = buildV3UserActionReadModel(source.workspace);
   const selected = domains.find(domain => domain.id === selectedDomain);
+  const selectedAction = selected ? v3CorrectionActionFor(selected.id, correctionScope) : null;
   const year = source.workspace.fiscalYear.year;
 
   return <div className={styles.root}>
@@ -538,18 +543,19 @@ function RealPrototypeView({ source, realDocuments, onOpenRealDocument, busyDocu
       </> : declaration ? <RealDeclarationView declaration={declaration} /> : null}
     </main>
     <footer className={styles.footer}><span>Lecture seule · aucune modification du dossier</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
-    {selected ? <DetailPanel title={selected.label} subtitle="Comprendre et vérifier" onClose={() => setSelectedDomain(null)}><RealDomainDetail domain={selected} /></DetailPanel> : null}
+    {selected ? <DetailPanel title={selected.label} subtitle="Comprendre et vérifier" onClose={() => setSelectedDomain(null)}><RealDomainDetail domain={selected} action={selectedAction} /></DetailPanel> : null}
   </div>;
 }
 
-export function V2Prototype({ source = { mode: "demo" }, realDocuments = { state: "unknown", documents: [] }, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+export function V2Prototype({ source = { mode: "demo" }, correctionScope = null, realDocuments = { state: "unknown", documents: [] }, onOpenRealDocument, busyDocumentId, documentOpenError }: {
   source?: V3PrototypeSource;
+  correctionScope?: V3CorrectionScope | null;
   realDocuments?: V3DocumentsReadModel;
   onOpenRealDocument?: (documentId: string) => void;
   busyDocumentId?: string | null;
   documentOpenError?: string | null;
 }) {
-  if (source.mode === "real") return <RealPrototypeView source={source} realDocuments={realDocuments} onOpenRealDocument={onOpenRealDocument} busyDocumentId={busyDocumentId} documentOpenError={documentOpenError} />;
+  if (source.mode === "real") return <RealPrototypeView source={source} correctionScope={correctionScope} realDocuments={realDocuments} onOpenRealDocument={onOpenRealDocument} busyDocumentId={busyDocumentId} documentOpenError={documentOpenError} />;
   return <DemoPrototypeView source={source} />;
 }
 
