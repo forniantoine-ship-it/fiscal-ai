@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
@@ -1119,7 +1119,10 @@ export function F012ChargesAssistantPanel() {
     async (file: File) => {
       setBusy(true);
       try {
-        const result = await analyzeImpotsDocument(file, fiscalYear);
+        const result = await analyzeImpotsDocument(file, fiscalYear, {
+          dossierId: workspace.fiscalYear.dossierId ?? "",
+          propertyId: workspace.fiscalYear.propertyIds[0],
+        });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
           return;
@@ -1158,7 +1161,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, fiscalYear],
+    [assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds],
   );
 
   const analyzePaperFile = useCallback(
@@ -1188,7 +1191,10 @@ export function F012ChargesAssistantPanel() {
       // change (voir `commit_document_review` → `applyDocumentReviewAsExpenses`).
       setBusy(true);
       try {
-        const result = await analyzeDocumentaryReview(file, familyId, fiscalYear);
+        const result = await analyzeDocumentaryReview(file, familyId, fiscalYear, {
+          dossierId: workspace.fiscalYear.dossierId ?? "",
+          propertyId: workspace.fiscalYear.propertyIds[0],
+        });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
           return;
@@ -1231,7 +1237,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear],
+    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds],
   );
 
   const handleSuggestion = useCallback(

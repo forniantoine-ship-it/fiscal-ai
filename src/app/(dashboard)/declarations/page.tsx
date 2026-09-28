@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useRouter } from "next/navigation";
 
 import { colors } from "@/design-system/theme/colors";
@@ -17,6 +17,7 @@ import { useLmnp } from "@/lib/lmnp/store";
 
 export default function DeclarationsPage() {
   const router = useRouter();
+  const validationHref = useScopedOwnerHref(LMNP_ROUTES.validation);
   const { workspace, isReady } = useLmnp();
   // Payment V1 — l'accès repose sur l'entitlement SERVEUR (webhook Stripe), pas
   // sur `fiscalYear.paidAt` local (simple miroir, falsifiable). La livraison
@@ -39,9 +40,9 @@ export default function DeclarationsPage() {
   useEffect(() => {
     if (!isReady || serverPayment.state === "loading" || serverPayment.state === "error") return;
     if (!paid || !priorHistoryEligible) {
-      router.replace(LMNP_ROUTES.validation);
+      if (validationHref) router.replace(validationHref);
     }
-  }, [isReady, paid, priorHistoryEligible, router, serverPayment.state]);
+  }, [isReady, paid, priorHistoryEligible, router, serverPayment.state, validationHref]);
 
   if (isReady && serverPayment.state === "error") {
     return (

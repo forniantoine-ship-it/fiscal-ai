@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
@@ -115,6 +115,8 @@ function suggestionToAction(suggestionId: string): F014Action | null {
 }
 
 export function F014AmortissementsAssistantPanel() {
+  const logementHref = useScopedOwnerHref(LMNP_ROUTES.logement);
+  const chargesHref = useScopedOwnerHref(LMNP_ROUTES.chargesAssistant);
   const { workspace, dispatch } = useLmnp();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
@@ -274,17 +276,17 @@ export function F014AmortissementsAssistantPanel() {
   const handleSuggestion = useCallback(
     (suggestionId: string) => {
       if (suggestionId === "redirect_logement") {
-        window.location.href = LMNP_ROUTES.logement;
+        if (logementHref) window.location.href = logementHref;
         return;
       }
       if (suggestionId === "redirect_charges") {
-        window.location.href = LMNP_ROUTES.chargesAssistant;
+        if (chargesHref) window.location.href = chargesHref;
         return;
       }
       const action = suggestionToAction(suggestionId);
       if (action) void runAction(action);
     },
-    [runAction],
+    [runAction, logementHref, chargesHref],
   );
 
   const step = state.step;

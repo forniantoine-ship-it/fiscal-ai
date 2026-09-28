@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -30,6 +30,7 @@ function fmtEur(value: number): string {
 
 export function DeclarationReadyView() {
   const router = useRouter();
+  const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
   const { workspace, closeFiscalYearAndCreateNext, closeFiscalYearError } = useLmnp();
   const { fiscalYear } = workspace;
   const { fiscalResult, liasseResult, rfs, activityStartDate, declaration } = workspace.declarationDraft ?? {};
@@ -82,10 +83,10 @@ export function DeclarationReadyView() {
   useEffect(() => {
     if (pendingCloseRef.current && fiscalYear.id !== prevFiscalYearIdRef.current) {
       pendingCloseRef.current = false;
-      router.push(LMNP_ROUTES.dashboard);
+      if (dashboardHref) router.push(dashboardHref);
     }
     prevFiscalYearIdRef.current = fiscalYear.id;
-  }, [fiscalYear.id, router]);
+  }, [dashboardHref, fiscalYear.id, router]);
 
   useEffect(() => {
     if (closeFiscalYearError) {
@@ -131,6 +132,7 @@ export function DeclarationReadyView() {
         }),
         declarationVersionId,
         fiscalYear: fiscalYear.year,
+        dossierId: fiscalYear.dossierId,
         fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
       });
     } catch (err) {
@@ -162,7 +164,7 @@ export function DeclarationReadyView() {
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
       <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.dashboard}>Tableau de bord</Button>
+        <Button href={dashboardHref ?? undefined} disabled={!dashboardHref}>Tableau de bord</Button>
       </div>
 
       <section
@@ -289,6 +291,7 @@ export function DeclarationReadyView() {
                   rfs,
                   activityStartDate,
                   fiscalYear: fiscalYear.year,
+                  dossierId: fiscalYear.dossierId,
                   fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
                 }).catch((err) =>
                   setAideDownloadError(

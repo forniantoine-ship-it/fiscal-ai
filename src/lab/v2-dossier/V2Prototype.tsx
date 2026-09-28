@@ -12,7 +12,7 @@ import { buildV3UserActionReadModel } from "./user-action-read-model";
 import { RealDocumentsList } from "./RealDocumentsList";
 import type { V3DocumentsReadModel } from "./document-read-model";
 import { v3CorrectionActionFor, type V3CorrectionAction } from "./correction-registry";
-import type { V3CorrectionScope } from "./correction-scope";
+import { v3OwnerHrefForResolvedScope, type V3CorrectionScope } from "./correction-scope";
 import { resolveV3Finalization, resolveV3FinalizationCta, type V3FinalizationReadModel } from "./finalization-read-model";
 import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
 import styles from "./prototype.module.css";
@@ -561,7 +561,15 @@ function RealPrototypeView({ source, correctionScope = null, payment, realDocume
   const detail = buildV3DossierDetailReadModel(source.workspace);
   const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
   const declaration = resolveV3Declaration(source);
-  const userActions = buildV3UserActionReadModel(source.workspace);
+  const rawUserActions = buildV3UserActionReadModel(source.workspace);
+  const userActions = {
+    ...rawUserActions,
+    state: correctionScope ? rawUserActions.state : "unknown",
+    actions: rawUserActions.actions.flatMap(action => {
+      const href = v3OwnerHrefForResolvedScope(action.href, correctionScope);
+      return href ? [{ ...action, href }] : [];
+    }),
+  };
   const finalization = resolveV3Finalization(source, correctionScope, payment);
   const selected = domains.find(domain => domain.id === selectedDomain);
   const selectedAction = selected ? v3CorrectionActionFor(selected.id, correctionScope) : null;

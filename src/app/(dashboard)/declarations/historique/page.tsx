@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
+import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
+import { v3ScopedNavigationHref } from "@/lab/v2-dossier/correction-scope";
 
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
@@ -26,6 +28,8 @@ type ArchivesLoad =
  * Jamais IndexedDB STORE_FISCAL_YEARS — cold browser / IDB vide doit lister N.
  */
 export default function DeclarationsHistoriquePage() {
+  const correctionScope = useV3CorrectionScope();
+  const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
   const { workspace, isReady: workspaceReady } = useLmnp();
   const { currentDossierId, isReady: dossierReady } = useDossier();
   const [load, setLoad] = useState<ArchivesLoad | null>(null);
@@ -85,7 +89,7 @@ export default function DeclarationsHistoriquePage() {
           <p style={{ ...typography.body.desktop, color: colors.text.primary }}>
             {workspace.fiscalYear.year} — En cours
           </p>
-          <Button href={LMNP_ROUTES.dashboard}>Ouvrir</Button>
+          <Button href={dashboardHref ?? undefined} disabled={!dashboardHref}>Ouvrir</Button>
         </li>
 
         {archives.map((archive) => (
@@ -101,7 +105,7 @@ export default function DeclarationsHistoriquePage() {
             <p style={{ ...typography.body.desktop, color: colors.text.primary }}>
               {archive.fiscalYear} — Clôturé
             </p>
-            <Button variant="secondary" href={archivedDeclarationRoute(archive.fiscalYear)}>
+            <Button variant="secondary" href={v3ScopedNavigationHref(archivedDeclarationRoute(archive.fiscalYear), correctionScope) ?? undefined}>
               Voir la déclaration
             </Button>
           </li>

@@ -105,7 +105,7 @@ async function stampWorkspaceRevision(userId: string, workspace: PersistedWorksp
 }
 
 let saveWorkspaceTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingWorkspace: { userId: string; data: PersistedWorkspace } | null = null;
+let pendingWorkspace: { userId: string; data: PersistedWorkspace; onServerConfirmed?: (revision: number) => void } | null = null;
 
 let autosaveStatus: AutosaveStatus = "idle";
 const autosaveListeners = new Set<(status: AutosaveStatus) => void>();
@@ -394,6 +394,7 @@ async function writeWorkspaceToDisk(
   userId: string,
   data: PersistedWorkspace,
   generation: number,
+  onServerConfirmed?: (revision: number) => void,
 ): Promise<void> {
   if (typeof window === "undefined") return;
   if (isStaleWorkspaceWrite(generation)) return;
@@ -440,6 +441,11 @@ async function writeWorkspaceToDisk(
       notifyAutosaveStatus("error");
       return;
     }
+    if (serverSave.status === "skipped") {
+      notifyAutosaveStatus("error");
+      return;
+    }
+    onServerConfirmed?.(serverSave.revision);
     notifyAutosaveStatus("saved");
   } catch (error) {
     if (isStaleWorkspaceWrite(generation)) return;
@@ -449,15 +455,15 @@ async function writeWorkspaceToDisk(
 }
 
 /** Serialized workspace write — newer snapshots cannot be overwritten by slower older writes. */
-export async function saveWorkspace(userId: string, data: PersistedWorkspace): Promise<void> {
+export async function saveWorkspace(userId: string, data: PersistedWorkspace, onServerConfirmed?: (revision: number) => void): Promise<void> {
   if (typeof window === "undefined") return;
   await runSerializedWorkspaceWrite(async (generation) => {
-    await writeWorkspaceToDisk(userId, data, generation);
+    await writeWorkspaceToDisk(userId, data, generation, onServerConfirmed);
   });
 }
 
 /** Debounced workspace write — keeps UI instant while batching disk I/O. */
-export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string | null): void {
+export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string | null, onServerConfirmed?: (revision: number) => void): void {
   if (!userId) return;
 
   const msSinceAnchor = msSinceCreditRenderUnblockAnchor();
@@ -468,7 +474,7 @@ export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string |
     });
   }
 
-  pendingWorkspace = { userId, data };
+  pendingWorkspace = { userId, data, onServerConfirmed };
   notifyAutosaveStatus("saving");
   if (saveWorkspaceTimer) clearTimeout(saveWorkspaceTimer);
   saveWorkspaceTimer = setTimeout(() => {
@@ -482,7 +488,7 @@ export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string |
           msSinceDebounceScheduled: msSinceAnchor,
         });
       }
-      void saveWorkspace(snapshot.userId, snapshot.data).then(() => {
+      void saveWorkspace(snapshot.userId, snapshot.data, snapshot.onServerConfirmed).then(() => {
         if (msSinceCreditRenderUnblockAnchor() != null) {
           traceCreditRenderUnblock("saveWorkspace_finished", {
             saveDurationMs: Math.round((performance.now() - saveStartedAt) * 100) / 100,
@@ -497,6 +503,7 @@ export function scheduleSaveWorkspace(data: PersistedWorkspace, userId: string |
 export async function flushWorkspaceSave(
   userId: string | null,
   data?: PersistedWorkspace,
+  onServerConfirmed?: (revision: number) => void,
 ): Promise<void> {
   if (saveWorkspaceTimer) {
     clearTimeout(saveWorkspaceTimer);
@@ -504,9 +511,10 @@ export async function flushWorkspaceSave(
   }
 
   const snapshot = resolveFlushSnapshot(pendingWorkspace, userId, data);
+  const confirmed = onServerConfirmed ?? (snapshot?.data === pendingWorkspace?.data ? pendingWorkspace?.onServerConfirmed : undefined);
   pendingWorkspace = null;
   if (snapshot) {
-    await saveWorkspace(snapshot.userId, snapshot.data);
+    await saveWorkspace(snapshot.userId, snapshot.data, confirmed);
   }
 }
 
@@ -518,6 +526,7 @@ export type StrictWorkspaceFlushResult =
     };
 
 export type ConfirmedWorkspaceSaveResult =
+  | { status: "clean" }
   | { status: "confirmed"; revision: number }
   | { status: "failed"; reason: string };
 

@@ -48,7 +48,7 @@ describe("F011-2 — shouldInvalidateCreditConfirmation (prédicat pur)", () => 
  * le restaure — sans jamais perdre les données de travail entre-temps.
  */
 describe("F011-2 — contrat bout-en-bout : complete → Modifier → abandon → F011 non 'confirmé'", () => {
-  const confirmedFinancing = { loans: [{ id: "pret-1" }] } as unknown as DeclarationDraft["creditFinancing"];
+  const confirmedFinancing = { loans: [{ id: "pret-1", firstPaymentDate: "2025-01-01" }] } as unknown as DeclarationDraft["creditFinancing"];
   const confirmedCharges = { prets: [{ pretId: "pret-1" }] } as unknown as DeclarationDraft["financementCharges"];
 
   it("A → B → C → D : abandon avant confirm_all → 'credit' redevient incomplet, données de travail conservées", () => {

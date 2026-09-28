@@ -19,6 +19,7 @@ type AmortissementUploadSectionProps = {
   uploadedFileName?: string;
   /** Lot 2 — calendar year of origin required for durable annual uploads. */
   fiscalYear: number;
+  dossierId: string | null | undefined;
   propertyId?: string;
   onFiles: (
     files: File[],
@@ -42,6 +43,7 @@ export function AmortissementUploadSection({
   uploadedCount = 0,
   uploadedFileName,
   fiscalYear,
+  dossierId,
   propertyId,
   onFiles,
   onContinue,
@@ -80,6 +82,7 @@ export function AmortissementUploadSection({
 
     const { files: uploadedFiles, documentIds: supabaseDocumentIds, filePaths } =
       await uploadFilesForUser(files, user.id, {
+        dossierId: dossierId ?? "",
         fiscalYear,
         documentRole: "annual_evidence",
         propertyId,

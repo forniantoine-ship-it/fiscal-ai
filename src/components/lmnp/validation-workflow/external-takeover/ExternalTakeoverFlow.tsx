@@ -324,6 +324,7 @@ export function ExternalTakeoverFlow({ onChangeAnswer }: ExternalTakeoverFlowPro
 
       <ExternalTakeoverUploadSlots
         fiscalYear={fiscalYear.year}
+        dossierId={fiscalYear.dossierId}
         taxPackageFileName={taxDoc?.fileName}
         registerFileName={registerDoc?.fileName}
         onUploaded={handleUpload}

@@ -36,7 +36,16 @@ export const OWNER_ROUTES: Readonly<Record<string, boolean>> = {
   "/assistants/charges": true,
   "/assistants/amortissements": true,
   "/documents": true,
+  // These legacy screens can mutate the hydrated workspace. A V3 exit must
+  // enter through the same exact dossier/year/property gate as an owner.
+  "/dashboard": true,
+  "/declarations": true,
+  "/declarations/historique": true,
 };
+
+function scopedRouteRequiresProperty(pathname: string): boolean | undefined {
+  return OWNER_ROUTES[pathname] ?? (/^\/declarations\/\d{4}$/.test(pathname) ? true : undefined);
+}
 
 function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {
   if (propertyIds.length === 0 && properties.length === 0) return { kind: "not_applicable" };
@@ -82,8 +91,9 @@ function readScope(params: URLSearchParams, marker: string, requiresProperty: bo
 }
 
 export function readV3CorrectionQuery(pathname: string, params: URLSearchParams): ScopeQuery {
-  if (!(pathname in OWNER_ROUTES)) return { kind: "none" };
-  return readScope(params, "v3Correction", OWNER_ROUTES[pathname]!);
+  const requiresProperty = scopedRouteRequiresProperty(pathname);
+  if (requiresProperty === undefined) return { kind: "none" };
+  return readScope(params, "v3Correction", requiresProperty);
 }
 
 export function readV3ReturnQuery(params: URLSearchParams): ScopeQuery {
@@ -125,13 +135,39 @@ function scopeParams(scope: V3CorrectionScope): URLSearchParams {
 
 /** Route-scoped: clips property identity out of the URL for owners that don't need it. */
 export function v3CorrectionHrefForResolvedScope(ownerRoute: string, scope: V3CorrectionScope | null): string | null {
-  const requiresProperty = OWNER_ROUTES[ownerRoute];
+  const requiresProperty = scopedRouteRequiresProperty(ownerRoute);
   if (!scope || requiresProperty === undefined) return null;
   if (requiresProperty && scope.property.kind !== "required") return null;
   const routeScope: V3CorrectionScope = requiresProperty ? scope : { ...scope, property: { kind: "not_applicable" } };
   const params = scopeParams(routeScope);
   params.set("v3Correction", "1");
   return `${ownerRoute}?${params}`;
+}
+
+/** Preserve an owner's existing local query (such as the Documents step) while adding the verified V3 scope. */
+export function v3OwnerHrefForResolvedScope(href: string, scope: V3CorrectionScope | null): string | null {
+  const url = new URL(href, "http://v3.local");
+  if (url.origin !== "http://v3.local" || !href.startsWith("/")) return null;
+  const scoped = v3CorrectionHrefForResolvedScope(url.pathname, scope);
+  if (!scoped) return null;
+  const target = new URL(scoped, url.origin);
+  for (const [key, value] of url.searchParams) {
+    if (["dossierId", "fiscalYearId", "year", "propertyId", "v3Correction", "v3Return"].includes(key)) return null;
+    target.searchParams.append(key, value);
+  }
+  return `${target.pathname}${target.search}`;
+}
+
+/** Keep the verified scope when an owner navigates to another workspace screen. */
+export function v3ScopedNavigationHref(href: string, scope: V3CorrectionScope | null): string | null {
+  if (!scope) return href;
+  const url = new URL(href, "http://v3.local");
+  if (url.origin !== "http://v3.local" || !href.startsWith("/")) return null;
+  if (scopedRouteRequiresProperty(url.pathname) !== undefined) return v3OwnerHrefForResolvedScope(href, scope);
+  // Public/auth destinations have no workspace authority. Every other unknown
+  // destination must wait until it can verify this exact V3 scope.
+  if (["/", "/login", "/signup"].includes(url.pathname)) return href;
+  return null;
 }
 
 /** Only callers holding R8's resolved REAL workspace may construct this route. */

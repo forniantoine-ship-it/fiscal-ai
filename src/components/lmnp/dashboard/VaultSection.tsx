@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useMemo, useState } from "react";
 
 import { humanizeConseillerText } from "@/components/lmnp/dashboard/conseiller-suggestions";
@@ -219,6 +219,7 @@ function DocumentActionsMenu({
 
 export function VaultSection() {
   const { workspace, dispatch } = useLmnp();
+  const documentsHref = useScopedOwnerHref(LMNP_ROUTES.documents);
   const documents = useMemo(
     () => [...workspace.documents].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)),
     [workspace.documents],
@@ -263,7 +264,7 @@ export function VaultSection() {
           <p style={{ ...typography.body.desktop, color: colors.text.primary, fontWeight: typography.fontWeight.medium }}>
             {documents.length} document{documents.length === 1 ? "" : "s"}
           </p>
-          <Button variant="secondary" href={LMNP_ROUTES.documents}>
+          <Button variant="secondary" href={documentsHref ?? undefined} disabled={!documentsHref}>
             Ajouter un document +
           </Button>
         </div>
@@ -274,7 +275,7 @@ export function VaultSection() {
               Aucun document pour le moment. Ajoutez votre premier justificatif quand vous êtes prêt.
             </p>
             <div className="mt-6 flex justify-center">
-              <Button href={LMNP_ROUTES.documents}>Ajouter un document +</Button>
+              <Button href={documentsHref ?? undefined} disabled={!documentsHref}>Ajouter un document +</Button>
             </div>
           </div>
         ) : (

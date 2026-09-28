@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { colors } from "@/design-system/theme/colors";

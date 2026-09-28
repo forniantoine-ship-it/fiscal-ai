@@ -1033,6 +1033,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
     }
 
     const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "durable_reference",
       propertyId: workspace.fiscalYear.propertyIds[0],

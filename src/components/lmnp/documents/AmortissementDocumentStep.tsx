@@ -44,7 +44,6 @@ import {
 import { runBulkDocumentExtraction } from "@/lib/ai/extract-document-client";
 import type { ExtractDocumentResult } from "@/lib/ai/document-types";
 import type { ResolvedDocumentClassification } from "@/lib/ai/document-classification-types";
-import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
 import { resolveDocumentFile } from "@/lib/lmnp/services/resolve-document-file";
 import {
   makeDocumentEnrichedEvent,
@@ -583,7 +582,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         return;
       }
 
-      const dossierId = getCurrentDossierId();
+      const dossierId = workspace.fiscalYear.dossierId;
       if (!dossierId) {
         console.log("[analysis] extraction skipped", {
           source: "AmortissementDocumentStep.runExtraction",
@@ -1225,6 +1224,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedCount={continuityDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
         fiscalYear={workspace.fiscalYear.year}
+        dossierId={workspace.fiscalYear.dossierId}
         propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "continuity", meta)}
         canContinue={continuityCanContinue}
@@ -1241,6 +1241,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedCount={travauxDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
         fiscalYear={workspace.fiscalYear.year}
+        dossierId={workspace.fiscalYear.dossierId}
         propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
         canContinue={travauxCanContinue}
@@ -1266,6 +1267,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedCount={mobilierDisplayCount}
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
         fiscalYear={workspace.fiscalYear.year}
+        dossierId={workspace.fiscalYear.dossierId}
         propertyId={workspace.fiscalYear.propertyIds[0]}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "mobilier", meta)}
         canContinue={showMobilierLaunchAnalysis}

@@ -11,6 +11,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LogementExtractionFallbackCard } from "@/components/lmnp/logement/LogementExtractionFallbackCard";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { ingestExtractionIntoStore, lockGovernedField } from "@/lib/documents/cross-tunnel-prefill";
 import { readGovernedFieldStore } from "@/lib/lmnp/services/governed-field-prefill";
 import {
@@ -817,6 +818,9 @@ export function computeF010LocalFormSync(next: F010State): F010LocalFormSyncValu
 
 export function F010LogementAssistantPanel() {
   const { workspace, dispatch, getFile, flushWorkspace } = useLmnp();
+  const activiteHref = useScopedOwnerHref(LMNP_ROUTES.activite);
+  const financementHref = useScopedOwnerHref(LMNP_ROUTES.financement);
+  const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
 
@@ -1350,6 +1354,7 @@ export function F010LogementAssistantPanel() {
         // Même pipeline Storage + documents que F009/F011/F012 — identité durable
         // unique (documents.id) + storagePath immédiat pour restore cross-device.
         const uploadResult = await uploadFilesForUser([file], user.id, {
+          dossierId: workspace.fiscalYear.dossierId ?? "",
           fiscalYear: workspace.fiscalYear.year,
           documentRole: "durable_reference",
           propertyId: workspace.fiscalYear.propertyIds[0],
@@ -1422,7 +1427,7 @@ export function F010LogementAssistantPanel() {
         analyzingRef.current = false;
       }
     },
-    [dispatch, fiscalYear, workspace.fiscalYear.id, persistSession, applyAnalysisResult],
+    [dispatch, fiscalYear, workspace.fiscalYear.id, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds, persistSession, applyAnalysisResult],
   );
 
   // Cycle 2 — reprend une analyse interrompue en vol (fermeture d'onglet pendant
@@ -1645,7 +1650,7 @@ export function F010LogementAssistantPanel() {
               >
                 Choisir un autre type d&apos;acquisition
               </Button>
-              <Button href={LMNP_ROUTES.dashboard} className={`w-full ${F010_FOCUS_BUTTON_CLASS}`} variant="ghost">
+              <Button href={dashboardHref ?? undefined} className={`w-full ${F010_FOCUS_BUTTON_CLASS}`} variant="ghost">
                 Retour au tableau de bord
               </Button>
             </div>
@@ -2248,11 +2253,11 @@ export function F010LogementAssistantPanel() {
 
           {step === "blocked_missing_date" ? (
             <div className="flex flex-col gap-3 sm:flex-row">
-              <Button href={LMNP_ROUTES.activite} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
+              <Button href={activiteHref ?? undefined} disabled={!activiteHref} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
                 Aller à l&apos;Activité
               </Button>
               <Button
-                href={LMNP_ROUTES.dashboard}
+                href={dashboardHref ?? undefined}
                 variant="secondary"
                 className={`w-full ${F010_FOCUS_BUTTON_CLASS}`}
               >
@@ -2291,10 +2296,10 @@ export function F010LogementAssistantPanel() {
           {step === "complete" ? (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <Button href={LMNP_ROUTES.financement} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
+                <Button href={financementHref ?? undefined} disabled={!financementHref} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
                   Continuer vers Financement
                 </Button>
-                <Button href={LMNP_ROUTES.dashboard} variant="ghost" className={F010_FOCUS_BUTTON_CLASS}>
+                <Button href={dashboardHref ?? undefined} variant="ghost" className={F010_FOCUS_BUTTON_CLASS}>
                   Retour au tableau de bord
                 </Button>
               </div>

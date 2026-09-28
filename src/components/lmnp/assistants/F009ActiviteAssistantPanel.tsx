@@ -109,6 +109,7 @@ export function F009ActiviteAssistantPanel() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Connectez-vous pour ajouter un document.");
       const result = await uploadFilesForUser([file], user.id, {
+        dossierId: workspace.fiscalYear.dossierId ?? "",
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence",
         propertyId: workspace.fiscalYear.propertyIds[0],

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useDossier } from "@/lib/lmnp/dossier";
@@ -29,6 +30,7 @@ type LoadState =
  */
 export function ArchivedDeclarationPageClient({ fiscalYearId }: { fiscalYearId: string }) {
   const router = useRouter();
+  const historyHref = useScopedOwnerHref(LMNP_ROUTES.declarationsHistorique);
   const { currentDossierId, isReady: dossierReady } = useDossier();
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const year = parseArchivedFiscalYearParam(fiscalYearId);
@@ -64,9 +66,9 @@ export function ArchivedDeclarationPageClient({ fiscalYearId }: { fiscalYearId: 
 
   useEffect(() => {
     if (denied) {
-      router.replace(LMNP_ROUTES.declarationsHistorique);
+      if (historyHref) router.replace(historyHref);
     }
-  }, [denied, router]);
+  }, [denied, historyHref, router]);
 
   if (denied || !ready) {
     return <p className="text-center text-stone-500">Chargement…</p>;

@@ -12,6 +12,7 @@ import path from "node:path";
 import { F010LogementAssistant } from "@/runtime";
 import type { F010State } from "@/runtime";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { v3ScopedNavigationHref } from "@/lab/v2-dossier/correction-scope";
 import {
   F010_FOCUS_BUTTON_CLASS,
   buildF010ReviewFieldA11yIds,
@@ -187,7 +188,7 @@ describe("Cycle 4E6A-B — M/N. non-régression upload et review", () => {
 });
 
 describe("Cycle 4E6A-B — O. non-régression 4E6A-A", () => {
-  it("aucun bouton Continuer sur review_extraction, état analyse et Button href conservés", () => {
+  it("aucun bouton Continuer sur review_extraction, état analyse et navigation scoped conservés", () => {
     const reviewBlock = panelSource.slice(
       panelSource.indexOf('step === "review_extraction"'),
       panelSource.indexOf('step === "collect_frais"'),
@@ -196,7 +197,24 @@ describe("Cycle 4E6A-B — O. non-régression 4E6A-A", () => {
     assert.match(panelSource, /shouldShowF010AnalysisStatus\(analyzingDocumentId, busy, resumeAnalysisActive\)/);
     assert.match(panelSource, /role="status"/);
     assert.doesNotMatch(panelSource, /<Link[\s\S]*?<Button/);
-    assert.match(panelSource, new RegExp(`<Button href=\\{LMNP_ROUTES\\.financement\\}`));
-    assert.equal(LMNP_ROUTES.financement.length > 0, true);
+    assert.match(panelSource, /financementHref = useScopedOwnerHref\(LMNP_ROUTES\.financement\)/);
+    assert.match(panelSource, /<Button href=\{financementHref \?\? undefined\} disabled=\{!financementHref\}/);
+    assert.equal(v3ScopedNavigationHref(LMNP_ROUTES.financement, null), LMNP_ROUTES.financement);
+    const scoped = v3ScopedNavigationHref(LMNP_ROUTES.financement, {
+      dossierId: "dossier-B",
+      fiscalYearId: "year-2026-B",
+      year: 2026,
+      property: { kind: "required", propertyId: "property-B" },
+    });
+    assert.ok(scoped);
+    const url = new URL(scoped, "https://test.invalid");
+    assert.equal(url.pathname, LMNP_ROUTES.financement);
+    assert.deepEqual(Object.fromEntries(url.searchParams), {
+      dossierId: "dossier-B",
+      fiscalYearId: "year-2026-B",
+      year: "2026",
+      propertyId: "property-B",
+      v3Correction: "1",
+    });
   });
 });

@@ -16,6 +16,7 @@ import {
   computeF010ReviewVisibleEntries,
 } from "./F010LogementAssistantPanel";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { v3ScopedNavigationHref } from "@/lab/v2-dossier/correction-scope";
 
 const ctx = { dossierId: "test-dossier", fiscalYear: 2024 };
 
@@ -90,10 +91,39 @@ describe("Cycle 4E6A-A — 3. Link + Button : corrigé", () => {
     assert.doesNotMatch(panelSource, /import Link from/);
   });
 
-  it("les hrefs de navigation sont conservés via Button href", () => {
-    assert.match(panelSource, new RegExp(`<Button href=\\{LMNP_ROUTES\\.dashboard\\}`));
-    assert.match(panelSource, new RegExp(`<Button href=\\{LMNP_ROUTES\\.financement\\}`));
-    assert.equal(LMNP_ROUTES.dashboard.length > 0, true);
-    assert.equal(LMNP_ROUTES.financement.length > 0, true);
+  it("les boutons gardent leur destination legacy et transmettent le scope V3", () => {
+    assert.match(panelSource, /dashboardHref = useScopedOwnerHref\(LMNP_ROUTES\.dashboard\)/);
+    assert.match(panelSource, /financementHref = useScopedOwnerHref\(LMNP_ROUTES\.financement\)/);
+    assert.match(panelSource, /<Button href=\{dashboardHref \?\? undefined\}/);
+    assert.match(panelSource, /<Button href=\{financementHref \?\? undefined\} disabled=\{!financementHref\}/);
+
+    assert.equal(v3ScopedNavigationHref(LMNP_ROUTES.dashboard, null), LMNP_ROUTES.dashboard);
+    assert.equal(v3ScopedNavigationHref(LMNP_ROUTES.financement, null), LMNP_ROUTES.financement);
+
+    const scope = {
+      dossierId: "dossier-A",
+      fiscalYearId: "year-2025-A",
+      year: 2025,
+      property: { kind: "required" as const, propertyId: "property-A" },
+    };
+    const dashboard = new URL(v3ScopedNavigationHref(LMNP_ROUTES.dashboard, scope)!, "https://test.invalid");
+    assert.equal(dashboard.pathname, LMNP_ROUTES.dashboard);
+    assert.deepEqual(Object.fromEntries(dashboard.searchParams), {
+      dossierId: scope.dossierId,
+      fiscalYearId: scope.fiscalYearId,
+      year: String(scope.year),
+      propertyId: scope.property.propertyId,
+      v3Correction: "1",
+    });
+
+    const financement = new URL(v3ScopedNavigationHref(LMNP_ROUTES.financement, scope)!, "https://test.invalid");
+    assert.equal(financement.pathname, LMNP_ROUTES.financement);
+    assert.deepEqual(Object.fromEntries(financement.searchParams), {
+      dossierId: scope.dossierId,
+      fiscalYearId: scope.fiscalYearId,
+      year: String(scope.year),
+      propertyId: scope.property.propertyId,
+      v3Correction: "1",
+    });
   });
 });

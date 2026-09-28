@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getCurrentDossierId } from "@/lib/lmnp/dossier/current-dossier";
+import { isDossierId } from "@/lib/lmnp/dossier/explicit-dossier-id";
 import { buildStorageObjectPath } from "@/lib/storage/sanitize-storage-filename";
 import type { DocumentRole } from "@/lib/lmnp/dossier/document-fiscal-origin";
 
@@ -12,6 +13,8 @@ export type UploadDocumentResult = {
 };
 
 export type UploadDocumentOptions = {
+  /** Exact dossier from the verified workspace. Legacy callers may omit it temporarily. */
+  dossierId?: string;
   /**
    * Calendar fiscal year of origin — written explicitly at upload time.
    * Required for every new durable document; never inferred later from the
@@ -37,6 +40,36 @@ function assertFiscalYear(fiscalYear: number): void {
       `[uploadDocument] fiscalYear invalide (${fiscalYear}) — un justificatif annuel doit porter son exercice d'origine.`,
     );
   }
+}
+
+/** Explicit upload targets never consult the mutable legacy current-dossier pointer. */
+export function resolveUploadDossierId(
+  explicitDossierId: string | undefined,
+  legacyCurrent: () => string | null = getCurrentDossierId,
+): string | null {
+  if (explicitDossierId !== undefined) return isDossierId(explicitDossierId) ? explicitDossierId.toLowerCase() : null;
+  return legacyCurrent();
+}
+
+export function documentInsertForUpload(input: {
+  userId: string;
+  dossierId: string;
+  fileName: string;
+  filePath: string;
+  fiscalYear: number;
+  documentRole: DocumentRole;
+  propertyId?: string;
+}) {
+  return {
+    user_id: input.userId,
+    dossier_id: input.dossierId,
+    file_name: input.fileName,
+    file_path: input.filePath,
+    extraction_status: "pending" as const,
+    fiscal_year: input.fiscalYear,
+    document_role: input.documentRole,
+    ...(input.propertyId ? { property_id: input.propertyId } : {}),
+  };
 }
 
 /** Uploads each file via the shared Supabase pipeline (storage + documents row). */
@@ -70,7 +103,7 @@ export async function uploadDocument(
 ): Promise<UploadDocumentResult | null> {
   assertFiscalYear(options.fiscalYear);
 
-  const dossierId = getCurrentDossierId();
+  const dossierId = resolveUploadDossierId(options.dossierId);
 
   if (!dossierId) {
     console.error("[uploadDocument] aborted: no active dossier_id");
@@ -114,16 +147,10 @@ export async function uploadDocument(
 
   const { data: inserted, error: insertError } = await supabase
     .from("documents")
-    .insert({
-      user_id: userId,
-      dossier_id: dossierId,
-      file_name: displayFilename,
-      file_path: storageData.path,
-      extraction_status: "pending",
-      fiscal_year: options.fiscalYear,
-      document_role: documentRole,
-      ...(options.propertyId ? { property_id: options.propertyId } : {}),
-    })
+    .insert(documentInsertForUpload({
+      userId, dossierId, fileName: displayFilename, filePath: storageData.path,
+      fiscalYear: options.fiscalYear, documentRole, propertyId: options.propertyId,
+    }))
     .select("id")
     .single();
 

@@ -87,7 +87,7 @@ function chargeTotalFor(state: Pick<F012State, "collected" | "categoryInventory"
 function mockUploadDeps(documentId: string, extractedText: string) {
   return {
     getAuthenticatedUserId: async () => "user-1",
-    uploadFiles: async (files: File[]) => ({ files, documentIds: [documentId] }),
+    uploadFiles: async (files: File[]) => ({ files, documentIds: [documentId], filePaths: [`tests/${documentId}`] }),
     extractText: async () => extractedText,
   };
 }

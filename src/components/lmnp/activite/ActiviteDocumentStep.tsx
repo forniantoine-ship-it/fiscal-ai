@@ -481,6 +481,7 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
     }
 
     const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
       propertyId: workspace.fiscalYear.propertyIds[0],

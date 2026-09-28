@@ -7,6 +7,7 @@ import test from "node:test";
 import type { LmnpDossier } from "@/lib/lmnp/dossier/supabase-dossier";
 import { readExplicitDossierId } from "@/lib/lmnp/dossier/explicit-dossier-id";
 import { loadRealWorkspace } from "@/lab/v2-dossier/real-workspace";
+import { readV3CorrectionQuery, v3OwnerHrefForResolvedScope, v3ReturnHref, type V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import { WORKSPACE_SNAPSHOT_SCHEMA_VERSION } from "./workspace-snapshot";
 import {
   getScopedWorkspaceRecord, getWorkspaceRecord, peekScopedWorkspaceRecord,
@@ -108,6 +109,44 @@ test("deux onglets A/2025 et B/2025 gardent payloads et révisions séparés", a
   assert.equal(a?.lastSyncedServerRevision, 2);
   assert.equal(b?.lastSyncedServerRevision, 8);
   assert.equal(await getWorkspaceRecord(userId), undefined);
+});
+
+test("deux onglets : F011 A et F013 B sauvegardent et reviennent chacun à leur dossier", async () => {
+  const userId = `owner-tabs-${Date.now()}`;
+  const scopeFor = (id: string): V3CorrectionScope => ({ dossierId: id, fiscalYearId: `fy-${id}`, year: 2025,
+    property: { kind: "required", propertyId: `property-${id}` } });
+  const scopedWorkspace = (id: string) => {
+    const value = workspace(id);
+    value.fiscalYear.propertyIds = [`property-${id}`];
+    value.properties = [{ id: `property-${id}`, label: "", address: "", city: "", postalCode: "" }];
+    return value;
+  };
+  const tabA = { userId, dossierId: A, fiscalYear: 2025 };
+  const tabB = { userId, dossierId: B, fiscalYear: 2025 };
+  await putScopedWorkspaceRecord(tabA, scopedWorkspace(A), { lastSyncedServerRevision: 1 });
+  await putScopedWorkspaceRecord(tabB, scopedWorkspace(B), { lastSyncedServerRevision: 7 });
+  for (const [tab, id, route, revision] of [
+    [tabA, A, "/assistants/financement", 2],
+    [tabB, B, "/assistants/revenus", 8],
+  ] as const) {
+    const owner = v3OwnerHrefForResolvedScope(route, scopeFor(id));
+    assert.ok(owner);
+    const parsed = new URL(owner, "http://localhost");
+    assert.equal(readV3CorrectionQuery(parsed.pathname, parsed.searchParams).kind, "scope");
+    const next = scopedWorkspace(id);
+    next.declarationDraft = { completedSteps: [], exploitantFirstName: `edit-${id}` };
+    await putScopedWorkspaceRecord(tab, next);
+    await stampScopedWorkspaceSyncedRevision(tab, revision);
+    const back = v3ReturnHref({ scope: scopeFor(id), scopeStillMatches: true, changed: true,
+      save: { status: "confirmed", revision } });
+    assert.ok(back?.includes(`dossierId=${id}`));
+  }
+  const a = await getScopedWorkspaceRecord(tabA);
+  const b = await getScopedWorkspaceRecord(tabB);
+  assert.equal((a?.data as PersistedWorkspace).declarationDraft?.exploitantFirstName, `edit-${A}`);
+  assert.equal((b?.data as PersistedWorkspace).declarationDraft?.exploitantFirstName, `edit-${B}`);
+  assert.equal(a?.lastSyncedServerRevision, 2);
+  assert.equal(b?.lastSyncedServerRevision, 8);
 });
 
 test("cache legacy prouvé est copié sans suppression ; cache ambigu est refusé", async () => {

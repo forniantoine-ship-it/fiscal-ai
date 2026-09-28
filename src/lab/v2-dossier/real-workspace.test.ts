@@ -95,6 +95,19 @@ test("R12.1A — un brouillon local récent n'autorise la correction que si le s
   if (discordant.status === "ready") assert.equal(discordant.serverScopeVerified, false);
 });
 
+test("R14.3B — F009 accepte zéro bien prouvé par serveur, jamais un multi-bien ambigu", async () => {
+  const empty = await loadRealWorkspace(dossier.user_id, services());
+  assert.equal(empty.status, "ready");
+  if (empty.status === "ready") assert.equal(empty.serverScopeVerified, true);
+
+  const multi = workspace();
+  multi.fiscalYear.propertyIds = ["property-a", "property-b"];
+  multi.properties = ["property-a", "property-b"].map(id => ({ id, label: "", address: "", city: "", postalCode: "" }));
+  const ambiguous = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(multi)] }));
+  assert.equal(ambiguous.status, "ready");
+  if (ambiguous.status === "ready") assert.equal(ambiguous.serverScopeVerified, false);
+});
+
 test("R10 — les preuves legacy restent bornées aux snapshots du même dossier et à leur exercice déclaré", async () => {
   const current = workspace();
   current.documents = [{

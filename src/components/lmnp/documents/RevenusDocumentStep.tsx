@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/design-system/components/Button";
@@ -86,6 +87,7 @@ function shouldDisplayRevenueGrid(session: RevenueGptSession, ocrReadFailure: bo
 }
 
 export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
+  const revenusHref = useScopedOwnerHref(LMNP_ROUTES.revenusAssistant);
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showInfo } = useFeedback();
   const router = useRouter();
@@ -438,6 +440,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
     }
 
     const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser(files, user.id, {
+      dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
       propertyId: workspace.fiscalYear.propertyIds[0],
@@ -563,7 +566,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
             { label: "Exercice", value: String(draft?.revenusAssistant?.exerciceFiscal ?? fiscalYear) },
           ]}
           footnote="Configurés via l'assistant Revenus (questions/réponses) — modifiez-les depuis cet assistant, pas depuis l'import de document, pour éviter tout double calcul."
-          onEdit={() => router.push(LMNP_ROUTES.revenusAssistant)}
+          onEdit={() => { if (revenusHref) router.push(revenusHref); }}
         />
       </div>
     );

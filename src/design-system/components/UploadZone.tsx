@@ -18,6 +18,7 @@ export type UploadZoneProps = {
   ) => void;
   /** Lot 2 — required calendar year of origin for every annual upload. */
   fiscalYear: number;
+  dossierId: string | null | undefined;
   documentRole?: DocumentRole;
   propertyId?: string;
   hint?: string;
@@ -30,6 +31,7 @@ export type UploadZoneProps = {
 export function UploadZone({
   onFiles,
   fiscalYear,
+  dossierId,
   documentRole = "annual_evidence",
   propertyId,
   hint = "PDF ou images — dépôt multiple accepté",
@@ -65,6 +67,7 @@ export function UploadZone({
     
       const { files: uploadedFiles, documentIds: supabaseDocumentIds, filePaths } =
         await uploadFilesForUser(files, user.id, {
+          dossierId: dossierId ?? "",
           fiscalYear,
           documentRole,
           propertyId,

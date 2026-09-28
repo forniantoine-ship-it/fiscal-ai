@@ -42,6 +42,7 @@ export type DownloadLiasseFiscalePdfInput = {
   extras?: LiasseDossierExtras;
   declarationVersionId: string;
   fiscalYear: number;
+  dossierId?: string;
   /** Lot 5.3 — Opening externe persistée (requise serveur si EXTERNAL_HISTORY). */
   fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
 };
@@ -50,6 +51,7 @@ export async function downloadLiasseFiscalePdf(input: DownloadLiasseFiscalePdfIn
   const payload = buildCerfaPdfRequestPayload(input.rfs, input.declarationVersionId);
   // Payment V1 — la route serveur exige identité, propriété et exercice payé.
   const access = await resolveDeliveryContext(input.fiscalYear, {
+    dossierId: input.dossierId,
     fiscalYearOpening: input.fiscalYearOpening,
   });
   const cerfaPdfBytes = await fetchOfficialCerfaPdfBytes(payload, access);

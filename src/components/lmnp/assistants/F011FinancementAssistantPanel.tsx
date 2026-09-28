@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
@@ -768,6 +768,7 @@ export function F011FinancementAssistantPanel() {
         if (!user) return;
 
         const { files: uploadedFiles, documentIds, filePaths } = await uploadFilesForUser([file], user.id, {
+          dossierId: workspace.fiscalYear.dossierId ?? "",
           fiscalYear: workspace.fiscalYear.year,
           documentRole: "annual_evidence",
           propertyId: workspace.fiscalYear.propertyIds[0],
@@ -801,7 +802,7 @@ export function F011FinancementAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, workspace.fiscalYear.year, workspace.fiscalYear.propertyIds],
+    [assistant, applyTurn, dispatch, workspace.fiscalYear.year, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds],
   );
 
   const openFilePicker = useCallback(() => {

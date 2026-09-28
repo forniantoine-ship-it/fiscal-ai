@@ -2,6 +2,7 @@
 
 import { useRef, type ReactNode } from "react";
 import { Button } from "@/design-system/components/Button";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { Card } from "@/design-system/components/Card";
 import { F009_QUESTIONS, hasF009Decisions, isQuestionStep, nextMissingQuestion } from "@/runtime/assistants/f009-activite/assistant";
 import type { F009Action, F009DocumentFieldKey, F009QuestionStep, F009State } from "@/runtime/assistants/f009-activite/types";
@@ -72,6 +73,7 @@ function Question({ state, onAction, busy }: Pick<F009ViewProps, "state" | "onAc
   </>;
 }
 export function F009ActiviteView({ state, year, busy, error, explanation, documents, onAction, onFile, onExistingDocument, onCompanion, companionLabel }: F009ViewProps) {
+  const logementHref = useScopedOwnerHref("/assistants/logement");
   const picker = useRef<HTMLInputElement>(null);
   const missing = nextMissingQuestion(state);
   const conflicts = Object.entries(state.conflicts ?? {}).filter(([field]) => field !== "establishmentAddress" || !state.conflicts?.siret).filter((entry): entry is [F009DocumentFieldKey, NonNullable<F009State["conflicts"]>[F009DocumentFieldKey] & object] => Boolean(entry[1]));
@@ -129,7 +131,7 @@ export function F009ActiviteView({ state, year, busy, error, explanation, docume
         <Title help="Vos informations sont conservées dans votre dossier Fiscal AI. Cette validation ne réalise aucune formalité administrative.">{missing ? "Votre dossier peut continuer" : "Les informations de votre activité sont validées dans votre dossier"}</Title>
         <Summary state={state} />
         {(!state.siret || state.registration !== "yes") && <div className="mt-6 rounded-2xl bg-orange-50 p-5"><h3 className="font-semibold">Finalisons votre immatriculation</h3><p className="mt-2 text-sm leading-relaxed text-stone-600">Fiscal AI vous accompagne pendant que vous réalisez et signez votre formalité sur le Guichet unique.</p><div className="mt-4"><Button disabled={busy} onClick={onCompanion}>{companionLabel ?? "Commencer avec le Compagnon INPI"}</Button></div></div>}
-        <div className="mt-6 flex flex-wrap gap-3"><a className="inline-flex min-h-11 items-center rounded-full bg-orange-600 px-5 py-3 font-medium text-white hover:bg-orange-700" href="/assistants/logement">Continuer vers Logement</a><Button variant="secondary" disabled={busy} onClick={() => onAction({ type: "edit" })}>Modifier mes réponses</Button></div>
+        <div className="mt-6 flex flex-wrap gap-3">{logementHref ? <a className="inline-flex min-h-11 items-center rounded-full bg-orange-600 px-5 py-3 font-medium text-white hover:bg-orange-700" href={logementHref}>Continuer vers Logement</a> : null}<Button variant="secondary" disabled={busy} onClick={() => onAction({ type: "edit" })}>Modifier mes réponses</Button></div>
         {state.deferred && <div className="mt-4"><Button variant="ghost" disabled={busy} onClick={() => onAction({ type: "select_registration", value: "yes" })}>J’ai obtenu mon SIRET ou mon justificatif</Button></div>}
       </>}
       {isQuestionStep(state.step) && <div className="mt-6 border-t border-stone-100 pt-4"><Button variant="ghost" disabled={busy} onClick={openUpload}>Utiliser un justificatif à la place</Button></div>}

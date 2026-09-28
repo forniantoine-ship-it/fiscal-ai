@@ -87,12 +87,13 @@ export async function loadRealWorkspace(
       serverWorkspace.fiscalYear.dossierId === dossier.id &&
       serverWorkspace.fiscalYear.id === workspace.fiscalYear.id &&
       serverWorkspace.fiscalYear.year === year && serverWorkspace.fiscalYear.status !== "closed" &&
-      serverWorkspace.fiscalYear.propertyIds.length === 1 &&
-      workspace.fiscalYear.propertyIds.length === 1 &&
-      serverWorkspace.fiscalYear.propertyIds[0] === workspace.fiscalYear.propertyIds[0] &&
-      serverWorkspace.properties.length === 1 && workspace.properties.length === 1 &&
-      serverWorkspace.properties[0]?.id === workspace.properties[0]?.id &&
-      serverWorkspace.properties[0]?.id === serverWorkspace.fiscalYear.propertyIds[0]);
+      ((serverWorkspace.fiscalYear.propertyIds.length === 0 && workspace.fiscalYear.propertyIds.length === 0 &&
+        serverWorkspace.properties.length === 0 && workspace.properties.length === 0) ||
+       (serverWorkspace.fiscalYear.propertyIds.length === 1 && workspace.fiscalYear.propertyIds.length === 1 &&
+        serverWorkspace.fiscalYear.propertyIds[0] === workspace.fiscalYear.propertyIds[0] &&
+        serverWorkspace.properties.length === 1 && workspace.properties.length === 1 &&
+        serverWorkspace.properties[0]?.id === workspace.properties[0]?.id &&
+        serverWorkspace.properties[0]?.id === serverWorkspace.fiscalYear.propertyIds[0])));
     const legacyDocumentYears = snapshots.flatMap(row => {
       const parsed = parseWorkspaceSnapshot(row.payload);
       if (!parsed.ok || parsed.envelope.workspace.fiscalYear.year !== row.fiscalYear ||

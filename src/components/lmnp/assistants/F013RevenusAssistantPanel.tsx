@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";

@@ -17,7 +17,6 @@ import {
   flushWorkspaceSaveConfirmed,
   flushWorkspaceSave,
   hydrateLmnpStore,
-  markAutosaveSaved,
   reconcileLocalWorkspaceWithSnapshots,
   removePersistedDocument,
   resetAutosaveStatus,
@@ -37,7 +36,8 @@ import {
   completeWorkspaceSnapshotHydration,
   listWorkspaceSnapshots,
 } from "./workspace-snapshot-client";
-import { lmnpReducer, selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
+import { selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
+import { trackedWorkspaceReducer, workspaceCanPersist, workspaceIsDirty, type TrackedWorkspace } from "./workspace-dirty";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
 import { loadArchivedWorkspaceFromServer } from "./fiscal-year-archive";
@@ -74,7 +74,7 @@ interface LmnpContextValue {
   autosaveStatus: AutosaveStatus;
   /** Bound auth user id — null means IndexedDB workspace writes are disabled. */
   persistenceUserId: string | null;
-  /** Flush pending debounced save; optional draft patch for not-yet-committed dispatches. */
+  /** Flush the committed workspace; legacy callers may still provide a draft patch. */
   flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
   /** Correction V3 only: revision returned solely after a successful server CAS. */
   confirmWorkspaceSave: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<ConfirmedWorkspaceSaveResult>;
@@ -144,16 +144,35 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
   // `autosaveStatus`/`closeFiscalYearError` ci-dessus.
   const [dossierInpiStatus, setDossierInpiStatus] = useState<DossierInpiStatusMirror | undefined>(undefined);
   const [inpiStatusUpdating, setInpiStatusUpdating] = useState(false);
-  const [state, dispatch] = useReducer(
-    lmnpReducer,
-    { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
-    (initial) => initial,
-  );
-
-  const stateRef = useRef(state);
-  useLayoutEffect(() => { stateRef.current = state; }, [state]);
-
   const authUserIdRef = useRef<string | null>(null);
+  const [tracked, dispatchTracked] = useReducer(trackedWorkspaceReducer, {
+    workspace: { ...createDefaultWorkspace(), fileRegistry: new Map() } as LmnpState,
+    appliedActions: 0, incarnation: 0, version: 0, savedVersion: 0, scopeKey: null,
+  } satisfies TrackedWorkspace);
+  const state = tracked.workspace;
+  const stateRef = useRef(state);
+  const trackedRef = useRef(tracked);
+  const queuedActionsRef = useRef(0);
+  const commitWaitersRef = useRef<Array<{ target: number; resolve: () => void }>>([]);
+  useLayoutEffect(() => {
+    stateRef.current = state;
+    trackedRef.current = tracked;
+    commitWaitersRef.current = commitWaitersRef.current.filter(waiter => {
+      if (waiter.target > tracked.appliedActions) return true;
+      waiter.resolve();
+      return false;
+    });
+  }, [state, tracked]);
+  const dispatch = useCallback((action: LmnpAction) => {
+    queuedActionsRef.current += 1;
+    dispatchTracked({ type: "apply", action, userId: authUserIdRef.current });
+  }, []);
+  const awaitCommittedActions = useCallback(async () => {
+    const target = queuedActionsRef.current;
+    if (trackedRef.current.appliedActions >= target) return;
+    await new Promise<void>(resolve => commitWaitersRef.current.push({ target, resolve }));
+  }, []);
+
   const hydrationBlockedRef = useRef(false);
   const pendingFileLoadsRef = useRef(new Set<string>());
 
@@ -161,8 +180,11 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     return subscribeAuthBoundary(async ({ userId, previousUserId, userChanged }) => {
       let blocked = false;
       try {
-        if (userChanged && previousUserId && !hydrationBlockedRef.current) {
-          await flushWorkspaceSave(previousUserId, toPersisted(stateRef.current));
+        if (userChanged && previousUserId && !hydrationBlockedRef.current && workspaceCanPersist(trackedRef.current, previousUserId, true)) {
+          const previous = toPersisted(stateRef.current);
+          if (!correctionScope || scopeMatchesWorkspace(correctionScope, previous)) {
+            await flushWorkspaceSave(previousUserId, previous);
+          }
         }
 
         hydrationBlockedRef.current = false;
@@ -410,7 +432,9 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
           files: localFileRegistry,
         });
 
-        markAutosaveSaved();
+        // Hydration proves only that a workspace was read. It is not a new
+        // confirmed server save and must not display the autosave success state.
+        resetAutosaveStatus();
       } finally {
         logWorkspaceHydrationComplete();
         setIsHydratingWorkspace(false);
@@ -418,7 +442,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
         setIsReady(!blocked);
       }
     });
-  }, [correctionScope, explicitDossier]);
+  }, [correctionScope, dispatch, explicitDossier]);
 
   useEffect(() => subscribeAutosaveStatus(setAutosaveStatus), []);
 
@@ -446,6 +470,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
   const updateInpiStatus = useCallback(async (status: InpiStatus, source: InpiStatusSource) => {
     const dossierId = stateRef.current.fiscalYear.dossierId;
     if (!dossierId) return;
+    if (correctionScope && !scopeMatchesWorkspace(correctionScope, toPersisted(stateRef.current))) throw new Error("scope_mismatch");
     setInpiStatusUpdating(true);
     try {
       const now = new Date().toISOString();
@@ -460,23 +485,24 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     } finally {
       setInpiStatusUpdating(false);
     }
-  }, []);
+  }, [correctionScope]);
 
   useEffect(() => {
-    if (!isReady || !authUserIdRef.current) return;
-    scheduleSaveWorkspace(toPersisted(state), authUserIdRef.current);
+    if (!workspaceCanPersist(tracked, authUserIdRef.current, isReady)) return;
+    const snapshot = toPersisted(tracked.workspace);
+    if (correctionScope && !scopeMatchesWorkspace(correctionScope, snapshot)) {
+      queueMicrotask(() => setAutosaveStatus("error"));
+      return;
+    }
+    const { scopeKey, incarnation, version } = tracked;
+    if (!scopeKey) return;
+    scheduleSaveWorkspace(snapshot, authUserIdRef.current, () => {
+      dispatchTracked({ type: "server_confirmed", scopeKey, incarnation, version });
+    });
   }, [
     isReady,
-    state.fiscalYear,
-    state.properties,
-    state.documents,
-    state.extractions,
-    state.validationItems,
-    state.ledgerEntries,
-    // declarationDraft and aiActivityFeed must be in deps so changes to
-    // confirmed financing, event cards, and resolutions are saved immediately.
-    state.declarationDraft,
-    state.aiActivityFeed,
+    tracked,
+    correctionScope,
   ]);
 
   useLayoutEffect(() => {
@@ -488,8 +514,14 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     if (!isReady) return;
 
     const flush = () => {
-      scheduleSaveWorkspace(toPersisted(stateRef.current), authUserIdRef.current);
-      void flushWorkspaceSave(authUserIdRef.current, toPersisted(stateRef.current));
+      if (!workspaceCanPersist(trackedRef.current, authUserIdRef.current, isReady)) return;
+      const snapshot = toPersisted(stateRef.current);
+      if (correctionScope && !scopeMatchesWorkspace(correctionScope, snapshot)) return;
+      const { scopeKey, incarnation, version } = trackedRef.current;
+      if (!scopeKey) return;
+      void flushWorkspaceSave(authUserIdRef.current, snapshot, () => {
+        dispatchTracked({ type: "server_confirmed", scopeKey, incarnation, version });
+      });
       void syncDocumentBlobs(
         stateRef.current.documents,
         stateRef.current.fileRegistry,
@@ -509,7 +541,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       window.removeEventListener("beforeunload", flush);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [isReady]);
+  }, [isReady, correctionScope]);
 
   const workspace = useMemo(() => selectWorkspace(state), [state]);
 
@@ -540,48 +572,60 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
 
       return undefined;
     },
-    [state.fileRegistry, state.documents],
+    [dispatch, state.fileRegistry, state.documents],
   );
 
   const flushWorkspace = useCallback(
     async (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => {
+      // Callers still pass a speculative patch for the old pre-commit flush.
+      // The reducer is now the only mutation authority; wait for its commit
+      // and persist that exact state instead of replaying a possibly stale patch.
+      void patch;
+      await awaitCommittedActions();
       const userId = authUserIdRef.current;
-      if (!userId) return;
+      if (!workspaceCanPersist(trackedRef.current, userId, isReady)) {
+        if (workspaceIsDirty(trackedRef.current)) throw new Error("scope_unavailable");
+        return;
+      }
       const base = toPersisted(stateRef.current);
-      const data = patch?.declarationDraft
-        ? {
-            ...base,
-            declarationDraft: {
-              ...base.declarationDraft,
-              ...patch.declarationDraft,
-              completedSteps: patch.declarationDraft.completedSteps ?? base.declarationDraft?.completedSteps ?? [],
-            },
-          }
-        : base;
-      await flushWorkspaceSave(userId, data);
+      if (correctionScope && !scopeMatchesWorkspace(correctionScope, base)) throw new Error("scope_mismatch");
+      const { scopeKey, incarnation, version } = trackedRef.current;
+      if (!scopeKey) throw new Error("scope_unavailable");
+      await flushWorkspaceSave(userId, base, () => {
+        dispatchTracked({ type: "server_confirmed", scopeKey, incarnation, version });
+      });
     },
-    [],
+    [awaitCommittedActions, correctionScope, isReady],
   );
 
   const confirmWorkspaceSave = useCallback(
     async (patch?: { declarationDraft?: Partial<DeclarationDraft> }): Promise<ConfirmedWorkspaceSaveResult> => {
+      void patch;
+      await awaitCommittedActions();
       const userId = authUserIdRef.current;
       if (!correctionScope || !userId || !isReady || hydrationBlockedRef.current) {
         return { status: "failed", reason: "scope_unavailable" };
       }
-      return flushWorkspaceSaveConfirmed(userId, () => {
+      const current = toPersisted(stateRef.current);
+      if (!scopeMatchesWorkspace(correctionScope, current)) return { status: "failed", reason: "scope_mismatch" };
+      if (!workspaceCanPersist(trackedRef.current, userId, isReady)) {
+        return workspaceIsDirty(trackedRef.current)
+          ? { status: "failed", reason: "scope_unavailable" }
+          : { status: "clean" };
+      }
+      const { scopeKey, incarnation, version } = trackedRef.current;
+      if (!scopeKey) return { status: "failed", reason: "scope_unavailable" };
+      const result = await flushWorkspaceSaveConfirmed(userId, () => {
         const base = toPersisted(stateRef.current);
         if (!scopeMatchesWorkspace(correctionScope, base)) throw new Error("scope_mismatch");
-        return patch?.declarationDraft
-          ? { ...base, declarationDraft: {
-              ...base.declarationDraft,
-              ...patch.declarationDraft,
-              completedSteps: patch.declarationDraft.completedSteps ?? base.declarationDraft?.completedSteps ?? [],
-            } }
-          : base;
+        return base;
       });
+      if (result.status === "confirmed") {
+        dispatchTracked({ type: "server_confirmed", scopeKey, incarnation, version });
+      }
+      return result;
     },
-    [correctionScope, isReady],
+    [awaitCommittedActions, correctionScope, isReady],
   );
 
   // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — même dossier, exercice suivant.
@@ -599,7 +643,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
         dispatch({ type: "CREATE_NEXT_FISCAL_YEAR", nextFiscalYear, properties }),
       onError: setNextFiscalYearError,
     });
-  }, []);
+  }, [dispatch]);
 
   // Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
   // "Clôturer et continuer", câblé depuis DeclarationReadyView.tsx. userId
@@ -615,7 +659,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
         dispatch({ type: "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT", nextWorkspace }),
       onError: setCloseFiscalYearError,
     });
-  }, []);
+  }, [dispatch]);
 
   const dispatchWithPersistence = useCallback((action: LmnpAction) => {
     if (action.type === "REMOVE_DOCUMENT") {
@@ -684,7 +728,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     }
 
     dispatch(action);
-  }, []);
+  }, [dispatch]);
 
   const value = useMemo(
     () => ({

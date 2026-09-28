@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
+import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
@@ -42,6 +44,7 @@ import {
   declarePriorHistoryOnServer,
   pollUntil,
   requestCheckout,
+  resolveDeliveryContext,
 } from "@/lib/lmnp/services/payment/entitlement-client";
 import { useServerPaymentSync } from "@/components/lmnp/payment/useServerPaymentSync";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
@@ -75,6 +78,8 @@ type FlowPhase = "idle" | "checkout" | "generating";
 
 export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const router = useRouter();
+  const correctionScope = useV3CorrectionScope();
+  const declarationsHref = useScopedOwnerHref(LMNP_ROUTES.declarations);
   const { workspace, dispatch, dossierInpiStatus, updateInpiStatus, inpiStatusUpdating } = useLmnp();
   const { showSuccess } = useFeedback();
 
@@ -116,9 +121,11 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       // Payment V1 — la réponse est aussi enregistrée côté serveur (c'est elle que
       // lit l'éligibilité avant Stripe). Échec silencieux ici : le checkout la
       // renvoie systématiquement avant de payer.
-      void declarePriorHistoryOnServer(fiscalYear.year, status).catch(() => undefined);
+      void resolveDeliveryContext(fiscalYear.year, { dossierId: fiscalYear.dossierId })
+        .then(context => declarePriorHistoryOnServer(fiscalYear.year, status, { context }))
+        .catch(() => undefined);
     },
-    [dispatch, fiscalYear.year],
+    [dispatch, fiscalYear.year, fiscalYear.dossierId],
   );
 
   const gate = useMemo(
@@ -265,25 +272,30 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       setContinueAfterPayment(false);
       if (generated) return;
       if (gate.canGenerate) setPhase("generating");
-      else router.push(LMNP_ROUTES.declarations);
+      else if (declarationsHref) router.push(declarationsHref);
     });
-  }, [continueAfterPayment, gate.canGenerate, generated, paid, router]);
+  }, [continueAfterPayment, declarationsHref, gate.canGenerate, generated, paid, router]);
 
   const handleStartCheckout = useCallback(async () => {
+    // The existing Stripe return URL contains only `fy`; it cannot restore an
+    // exact V3 dossier/year/property scope. Keep this exit closed until that
+    // separate payment flow accepts a verified scoped return destination.
+    if (correctionScope) throw new Error("Le paiement depuis ce parcours multi-dossier n'est pas encore disponible.");
     // Défense en profondeur : même résolveur + même preuve Opening que la porte.
     const externalOpeningProof = resolveExternalOpeningProofFromFiscalYear(fiscalYear);
     if (!resolvePriorHistoryEligibility(fiscalYear, externalOpeningProof).eligible) {
       throw new Error("Votre situation doit être confirmée avant le paiement.");
     }
     const declared = fiscalYear.priorHistoryDeclaration?.status;
-    if (declared) await declarePriorHistoryOnServer(fiscalYear.year, declared);
+    const context = await resolveDeliveryContext(fiscalYear.year, { dossierId: fiscalYear.dossierId });
+    if (declared) await declarePriorHistoryOnServer(fiscalYear.year, declared, { context });
     const outcome = await requestCheckout(fiscalYear.year, {
       previousFiscalYearId: fiscalYear.previousFiscalYearId ?? undefined,
       stocksOuverture: fiscalYear.stocksOuverture,
       stocksOuvertureUnavailableReason: fiscalYear.stocksOuvertureUnavailableReason,
       // Lot 5.3 — même Opening persistée ; le serveur la valide via isUsableExternalTakeoverOpening.
       fiscalYearOpening,
-    });
+    }, { context });
     if (outcome.status === "checkout") {
       window.location.assign(outcome.url);
       return;
@@ -292,7 +304,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     setCheckoutOpen(false);
     setPhase("idle");
     await verifyPayment();
-  }, [fiscalYear, fiscalYearOpening, verifyPayment]);
+  }, [correctionScope, fiscalYear, fiscalYearOpening, verifyPayment]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
@@ -394,10 +406,10 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     showSuccess(
       "Déclaration générée",
       "Vos éléments fiscaux sont générés et disponibles dans votre espace déclaration.",
-      LMNP_ROUTES.declarations,
+      declarationsHref ?? undefined,
     );
-    router.push(LMNP_ROUTES.declarations);
-  }, [dispatch, draft, fiscalYear, fiscalYearOpening, router, showSuccess, workspace.properties]);
+    if (declarationsHref) router.push(declarationsHref);
+  }, [declarationsHref, dispatch, draft, fiscalYear, fiscalYearOpening, router, showSuccess, workspace.properties]);
 
   if (generated && paid && !gate.canGenerate && !priorHistoryBlocked) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
@@ -437,7 +449,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
             {body}
           </p>
           <div className="mt-8 flex justify-center">
-            <Button href={LMNP_ROUTES.declarations}>Voir ma déclaration</Button>
+            <Button href={declarationsHref ?? undefined} disabled={!declarationsHref}>Voir ma déclaration</Button>
           </div>
         </div>
       </div>

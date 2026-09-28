@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { ScopedOwnerLink as Link, useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
@@ -10,6 +10,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { useDossier } from "@/lib/lmnp/dossier";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-aide-2042-pdf";
 import {
@@ -37,6 +38,8 @@ export type ArchivedDeclarationViewProps = {
  * stocksOuverture / versionId archivés) — jamais le workspace actif.
  */
 export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps) {
+  const historyHref = useScopedOwnerHref(LMNP_ROUTES.declarationsHistorique);
+  const { currentDossierId } = useDossier();
   const archivedDraft = record.declarationDraft ?? undefined;
   const rfs = archivedDraft?.rfs;
   const activityStartDate = archivedDraft?.activityStartDate;
@@ -58,7 +61,7 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
     setLiasseDownloading(true);
     setLiasseDownloadError(undefined);
     try {
-      await downloadLiasseFiscalePdf(resolved.input);
+      await downloadLiasseFiscalePdf({ ...resolved.input, dossierId: currentDossierId ?? undefined });
     } catch (err) {
       setLiasseDownloadError(
         err && typeof err === "object" && "message" in err && typeof err.message === "string"
@@ -88,7 +91,7 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
   return (
     <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
       <div className="flex w-full justify-center">
-        <Button href={LMNP_ROUTES.declarationsHistorique}>Mes déclarations</Button>
+        <Button href={historyHref ?? undefined} disabled={!historyHref}>Mes déclarations</Button>
       </div>
 
       <section
@@ -181,6 +184,7 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
                   rfs,
                   activityStartDate,
                   fiscalYear: record.year,
+                  dossierId: currentDossierId ?? undefined,
                   fiscalYearOpening: record.externalTakeoverOpening?.opening,
                 }).catch((err) =>
                   setAideDownloadError(

@@ -22,6 +22,7 @@ import {
   FrozenValidationDocumentStep,
 } from "@/components/lmnp/documents/memoized-tunnel-steps";
 import { useFeedback } from "@/components/lmnp/shared/FeedbackProvider";
+import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { WorkflowPageBackLink } from "@/components/lmnp/shared/WorkflowProgressionActions";
 import { WorkspaceProgress } from "@/components/lmnp/shared/WorkspaceProgress";
 import {
@@ -147,6 +148,7 @@ function DocumentRow({
 
 function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
   const step = getDocumentJourneyStep(stepId);
+  const declarationsHref = useScopedOwnerHref(LMNP_ROUTES.declarations);
   const { workspace, dispatch, getFile } = useLmnp();
   const { showSuccess, showError, showInfo } = useFeedback();
   const analyzingRef = useRef(false);
@@ -234,7 +236,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
           showSuccess(
             `${succeeded} document${succeeded > 1 ? "s" : ""} analysé${succeeded > 1 ? "s" : ""}`,
             "Consultez la validation dans Déclarations.",
-            LMNP_ROUTES.declarations,
+            declarationsHref ?? undefined,
           );
         }
         if (failed > 0 && succeeded === 0) {
@@ -264,7 +266,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
         setIsAnalyzing(false);
       }
     },
-    [workspace.documents, workspace.fiscalYear.year, getFile, dispatch, showSuccess, showError, showInfo],
+    [declarationsHref, workspace.documents, workspace.fiscalYear.year, getFile, dispatch, showSuccess, showError, showInfo],
   );
 
   useEffect(() => {
@@ -368,6 +370,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
         <DocumentUploadZone
           hint={step.uploadHint}
           fiscalYear={workspace.fiscalYear.year}
+          dossierId={workspace.fiscalYear.dossierId}
           propertyId={workspace.fiscalYear.propertyIds[0]}
           onFiles={handleUpload}
         />

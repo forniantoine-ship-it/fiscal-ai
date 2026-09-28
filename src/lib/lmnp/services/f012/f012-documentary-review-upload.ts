@@ -33,6 +33,8 @@ export type AnalyzeDocumentaryReviewResult =
   | { status: "success"; documentId: string; uploadedFile: File; storagePath: string; proposals: ChargeProposal[] };
 
 export type AnalyzeDocumentaryReviewDeps = {
+  dossierId?: string;
+  propertyId?: string;
   /** Défaut : `supabase.auth.getUser()` — remplaçable en test, jamais un second client. */
   getAuthenticatedUserId?: () => Promise<string | null>;
   /** Défaut : `uploadFilesForUser` — même pipeline Storage + table `documents` que tous les autres écrans. */
@@ -106,6 +108,8 @@ export async function analyzeDocumentaryReview(
   if (!userId) return { status: "not_authenticated" };
 
   const { files: uploadedFiles, documentIds, filePaths } = await uploadFiles([file], userId, {
+    ...(deps.dossierId !== undefined ? { dossierId: deps.dossierId } : {}),
+    ...(deps.propertyId ? { propertyId: deps.propertyId } : {}),
     fiscalYear,
     documentRole: "annual_evidence",
   });

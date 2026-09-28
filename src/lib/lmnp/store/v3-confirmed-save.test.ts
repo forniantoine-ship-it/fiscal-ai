@@ -31,6 +31,7 @@ describe("V3 confirmed correction save", () => {
   let api: Awaited<ReturnType<typeof modules>>;
   let server: WorkspaceSnapshotRecord;
   let failCas = false;
+  let failUpsert = false;
   let holdCas: Promise<void> | null = null;
   let casEntered: (() => void) | null = null;
 
@@ -38,6 +39,7 @@ describe("V3 confirmed correction save", () => {
     api = await modules();
     api.__testResetWorkspaceSaveChain();
     failCas = false;
+    failUpsert = false;
     holdCas = null;
     casEntered = null;
     const serialized = serializeWorkspaceSnapshot(BASE);
@@ -52,6 +54,7 @@ describe("V3 confirmed correction save", () => {
       async listByDossier() { return [server]; },
       async getMeta() { return { revision: server.revision, closedAt: null, schemaVersion: server.schemaVersion }; },
       async upsert(input) {
+        if (failUpsert) throw new Error("server unavailable");
         server = { ...server, payload: input.payload, revision: server.revision + 1 };
         return { revision: server.revision };
       },
@@ -87,6 +90,26 @@ describe("V3 confirmed correction save", () => {
     const local = await readScoped(userId);
     assert.equal(local?.data.declarationDraft?.exploitantFirstName, "Local only");
     assert.equal(local?.lastSyncedServerRevision, 1);
+    assert.equal(server.revision, 1);
+  });
+
+  it("normal autosave acknowledges only a confirmed server write", async () => {
+    const userId = `v3-auto-${++id}`;
+    const edited = { ...BASE, declarationDraft: { completedSteps: [], exploitantFirstName: "After" } };
+    const revisions: number[] = [];
+    await api.saveWorkspace(userId, edited, revision => revisions.push(revision));
+    assert.deepEqual(revisions, [2]);
+    assert.equal(server.revision, 2);
+  });
+
+  it("normal autosave leaves dirty authority unacknowledged after IndexedDB success and server failure", async () => {
+    const userId = `v3-auto-fail-${++id}`;
+    const edited = { ...BASE, declarationDraft: { completedSteps: [], exploitantFirstName: "Local only" } };
+    const revisions: number[] = [];
+    failUpsert = true;
+    await api.saveWorkspace(userId, edited, revision => revisions.push(revision));
+    assert.deepEqual(revisions, []);
+    assert.equal((await readScoped(userId))?.data.declarationDraft?.exploitantFirstName, "Local only");
     assert.equal(server.revision, 1);
   });
 

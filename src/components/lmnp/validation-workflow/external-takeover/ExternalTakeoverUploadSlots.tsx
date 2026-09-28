@@ -11,6 +11,7 @@ type SlotRole = "prior_tax_package" | "prior_depreciation_register";
 
 type ExternalTakeoverUploadSlotsProps = {
   fiscalYear: number;
+  dossierId: string | null | undefined;
   taxPackageFileName?: string;
   registerFileName?: string;
   disabled?: boolean;
@@ -23,6 +24,7 @@ type ExternalTakeoverUploadSlotsProps = {
 
 export function ExternalTakeoverUploadSlots({
   fiscalYear,
+  dossierId,
   taxPackageFileName,
   registerFileName,
   disabled,
@@ -35,6 +37,7 @@ export function ExternalTakeoverUploadSlots({
         help={EXTERNAL_TAKEOVER_COPY.taxPackage.help}
         fileName={taxPackageFileName}
         fiscalYear={fiscalYear}
+        dossierId={dossierId}
         accept=".pdf,application/pdf"
         hint="PDF"
         disabled={disabled}
@@ -45,6 +48,7 @@ export function ExternalTakeoverUploadSlots({
         help={EXTERNAL_TAKEOVER_COPY.register.help}
         fileName={registerFileName}
         fiscalYear={fiscalYear}
+        dossierId={dossierId}
         accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
         hint="Excel (.xlsx, .xls)"
         disabled={disabled}
@@ -59,6 +63,7 @@ function UploadSlot(props: {
   help: string;
   fileName?: string;
   fiscalYear: number;
+  dossierId: string | null | undefined;
   accept: string;
   hint: string;
   disabled?: boolean;
@@ -89,6 +94,7 @@ function UploadSlot(props: {
       {!props.disabled ? (
         <UploadZone
           fiscalYear={props.fiscalYear}
+          dossierId={props.dossierId}
           documentRole="annual_evidence"
           onFiles={props.onFiles}
           accept={props.accept}

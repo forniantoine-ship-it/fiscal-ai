@@ -20,6 +20,14 @@ function workspace(overrides: Partial<PersistedWorkspace["fiscalYear"]> = {}): P
 }
 
 describe("V3 correction return — R12.2 §16/§17", () => {
+  it("clean scoped return re-reads V3 without a server confirmation", async () => {
+    const outcome = await performV3CorrectionReturn({
+      scope: SCOPE, workspace: workspace(),
+      confirmWorkspaceSave: async () => ({ status: "clean" }),
+    });
+    assert.equal(outcome.status, "returning");
+    if (outcome.status === "returning") assert.ok(outcome.href.startsWith("/lab/v2-dossier/real?"));
+  });
   it("confirmed save + matching scope returns the internal V3 href", async () => {
     const outcome = await performV3CorrectionReturn({
       scope: SCOPE, workspace: workspace(),

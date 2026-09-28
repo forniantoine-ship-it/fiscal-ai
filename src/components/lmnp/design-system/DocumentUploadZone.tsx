@@ -9,6 +9,7 @@ interface DocumentUploadZoneProps {
     meta?: { supabaseDocumentIds: string[]; filePaths: string[] },
   ) => void;
   fiscalYear: number;
+  dossierId: string | null | undefined;
   documentRole?: DocumentRole;
   propertyId?: string;
   hint?: string;
@@ -17,6 +18,7 @@ interface DocumentUploadZoneProps {
 export function DocumentUploadZone({
   onFiles,
   fiscalYear,
+  dossierId,
   documentRole,
   propertyId,
   hint = "PDF ou images — l'analyse démarre automatiquement",
@@ -25,6 +27,7 @@ export function DocumentUploadZone({
     <UploadZone
       onFiles={onFiles}
       fiscalYear={fiscalYear}
+      dossierId={dossierId}
       documentRole={documentRole}
       propertyId={propertyId}
       hint={hint}
