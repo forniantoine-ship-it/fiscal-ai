@@ -25,8 +25,11 @@ interface V3CorrectionRegistryEntry {
 // see mission R12.2 §2/§5: derived results (prixRevient, totalDotations, F006's whole
 // aggregation, Property.amortissementBase…) never get their own "Modifier ce chiffre".
 const V3_CORRECTION_REGISTRY: Readonly<Record<V3DomainId, V3CorrectionRegistryEntry>> = {
+  // R14.4A — routed to F009's V3-native presentation, not the legacy panel.
+  // Same owner engine, same scope contract; only the mounted shell differs
+  // (see V3ActivityRoute.tsx). Legacy /assistants/activite is unaffected.
   activity: {
-    owner: "F009", route: "/assistants/activite", precision: "domain",
+    owner: "F009", route: "/lab/v2-dossier/real/activity", precision: "domain",
     factKind: "input", actionKind: "modifier", actionLabel: "Revoir l’activité",
   },
   property: {

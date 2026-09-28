@@ -15,6 +15,7 @@ import { v3CorrectionActionFor, type V3CorrectionAction } from "./correction-reg
 import { v3OwnerHrefForResolvedScope, type V3CorrectionScope } from "./correction-scope";
 import { resolveV3Finalization, resolveV3FinalizationCta, type V3FinalizationReadModel } from "./finalization-read-model";
 import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -566,7 +567,15 @@ function RealPrototypeView({ source, correctionScope = null, payment, realDocume
     ...rawUserActions,
     state: correctionScope ? rawUserActions.state : "unknown",
     actions: rawUserActions.actions.flatMap(action => {
-      const href = v3OwnerHrefForResolvedScope(action.href, correctionScope);
+      // R14.4A — the generic "Reprendre l'activité" action still targets the
+      // legacy F009 href from buildV3UserActionReadModel; redirect only that
+      // exact href to F009's V3-native route via the same registry entry
+      // RealDomainDetail already uses. A precise pending-validation item for
+      // "activite" (href /documents?step=validation) is untouched: it owns a
+      // different screen (F007's inbox), not F009's editor.
+      const href = action.domain === "activite" && action.href === LMNP_ROUTES.activite
+        ? (v3CorrectionActionFor("activity", correctionScope)?.href ?? null)
+        : v3OwnerHrefForResolvedScope(action.href, correctionScope);
       return href ? [{ ...action, href }] : [];
     }),
   };

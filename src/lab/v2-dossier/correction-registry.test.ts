@@ -15,7 +15,7 @@ const NOT_APPLICABLE_SCOPE: V3CorrectionScope = {
 describe("V3 correction registry — R12.2", () => {
   it("A/B/C/D/E — F009/F010/F011/F013/F012 each expose one domain-level owner action when scope is valid", () => {
     const activity = v3CorrectionActionFor("activity", NOT_APPLICABLE_SCOPE);
-    assert.deepEqual(activity, { owner: "F009", kind: "modifier", label: "Revoir l’activité", href: "/assistants/activite?dossierId=dossier-id&fiscalYearId=year-id&year=2025&v3Correction=1" });
+    assert.deepEqual(activity, { owner: "F009", kind: "modifier", label: "Revoir l’activité", href: "/lab/v2-dossier/real/activity?dossierId=dossier-id&fiscalYearId=year-id&year=2025&v3Correction=1" });
 
     const property = v3CorrectionActionFor("property", REQUIRED_SCOPE);
     assert.equal(property?.owner, "F010");

@@ -28,7 +28,7 @@ function workspace(dossierId: string, propertyId: string): PersistedWorkspace {
 }
 
 test("F009–F014 et Documents conservent le scope A/B exact, dont le step Documents", () => {
-  const routes = ["/assistants/activite", "/assistants/logement", "/assistants/financement",
+  const routes = ["/assistants/activite", "/lab/v2-dossier/real/activity", "/assistants/logement", "/assistants/financement",
     "/assistants/charges", "/assistants/revenus", "/assistants/amortissements", "/documents?step=validation"];
   for (const [dossierId, propertyId] of [[A, propertyA], [B, propertyB]]) {
     const expected = scope(dossierId, propertyId);
@@ -42,7 +42,8 @@ test("F009–F014 et Documents conservent le scope A/B exact, dont le step Docum
       assert.equal(query.scope.dossierId, dossierId);
       assert.equal(query.scope.fiscalYearId, expected.fiscalYearId);
       assert.equal(query.scope.year, 2025);
-      assert.equal(query.scope.property.kind, route === "/assistants/activite" ? "not_applicable" : "required");
+      const isF009Route = route === "/assistants/activite" || route === "/lab/v2-dossier/real/activity";
+      assert.equal(query.scope.property.kind, isF009Route ? "not_applicable" : "required");
       assert.equal(sameCorrectionScope(query.scope, expected), true);
       assert.equal(scopeMatchesWorkspace(query.scope, workspace(dossierId, propertyId)), true);
       assert.equal(scopeMatchesWorkspace(query.scope, workspace(dossierId === A ? B : A, dossierId === A ? propertyB : propertyA)), false);
