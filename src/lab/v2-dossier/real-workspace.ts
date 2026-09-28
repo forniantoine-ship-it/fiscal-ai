@@ -1,11 +1,11 @@
 import type { LmnpDossier } from "@/lib/lmnp/dossier/supabase-dossier";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
-import { isValidPersistedWorkspace } from "@/lib/lmnp/store/workspace-snapshot";
+import { isValidPersistedWorkspace, parseWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import { pickTargetYear, resolveWorkspaceHydration, type WorkspaceSnapshotRecord } from "@/lib/lmnp/store/workspace-snapshot-resolve";
 
 export type RealWorkspaceLoad =
-  | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; fiscalYear: number; source: "server" | "local" }
+  | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; userId: string; fiscalYear: number; source: "server" | "local"; legacyDocumentYears: ReadonlyArray<{ fiscalYear: number; documentIds: ReadonlyArray<string> }> }
   | { status: "no_dossier" | "error" }
   | { status: "year_unavailable"; reason: "not_selected" | "snapshot_missing" | "closed" | "mismatch" | "ambiguous" };
 
@@ -70,7 +70,13 @@ export async function loadRealWorkspace(
         (workspace.fiscalYear.dossierId && workspace.fiscalYear.dossierId !== dossier.id)) {
       return { status: "year_unavailable", reason: "mismatch" };
     }
-    return { status: "ready", workspace, dossierId: dossier.id, fiscalYear: year, source: decision.source };
+    const legacyDocumentYears = snapshots.flatMap(row => {
+      const parsed = parseWorkspaceSnapshot(row.payload);
+      if (!parsed.ok || parsed.envelope.workspace.fiscalYear.year !== row.fiscalYear ||
+          parsed.envelope.workspace.fiscalYear.dossierId !== dossier.id) return [];
+      return [{ fiscalYear: row.fiscalYear, documentIds: parsed.envelope.workspace.documents.map(doc => doc.id) }];
+    });
+    return { status: "ready", workspace, dossierId: dossier.id, userId, fiscalYear: year, source: decision.source, legacyDocumentYears };
   } catch {
     return { status: "error" };
   }

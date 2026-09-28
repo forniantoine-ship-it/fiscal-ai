@@ -9,6 +9,8 @@ import {
 import { buildV3DossierDetailReadModel, resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue, type V3DeclarationReadModel, type V3DomainReadModel, type V3PrototypeSource } from "./read-model";
 import type { V3DomainId } from "./read-model";
 import { buildV3UserActionReadModel } from "./user-action-read-model";
+import { RealDocumentsList } from "./RealDocumentsList";
+import type { V3DocumentsReadModel } from "./document-read-model";
 import styles from "./prototype.module.css";
 
 const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -483,7 +485,13 @@ function Inpi({ state, onShow, onSiret }: { state: DemoState; onShow: (show: boo
   </>;
 }
 
-function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mode: "real" }> }) {
+function RealPrototypeView({ source, realDocuments, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+  source: Extract<V3PrototypeSource, { mode: "real" }>;
+  realDocuments: V3DocumentsReadModel;
+  onOpenRealDocument?: (documentId: string) => void;
+  busyDocumentId?: string | null;
+  documentOpenError?: string | null;
+}) {
   const [view, setView] = useState<View>("dossier");
   const [selectedDomain, setSelectedDomain] = useState<V3DomainId | null>(null);
   const detail = buildV3DossierDetailReadModel(source.workspace);
@@ -525,8 +533,8 @@ function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mo
           </button>)}</div>
         </section>
       </> : view === "documents" ? <>
-        <Heading eyebrow={`MES DOCUMENTS · ${year}`} title="Vos documents" description="Cette vue ne présente pas encore les documents du dossier réel." />
-        <div className={styles.emptyCard}><h2>Documents indisponibles dans cette vue</h2><p>Les sources vérifiées restent indiquées dans le détail des rubriques du dossier.</p></div>
+        <Heading eyebrow={`MES DOCUMENTS · ${year}`} title="Vos documents" description="Les documents enregistrés pour ce dossier, sans validation fiscale implicite." />
+        <RealDocumentsList model={realDocuments} onOpen={onOpenRealDocument} busyId={busyDocumentId} openError={documentOpenError} classes={styles} />
       </> : declaration ? <RealDeclarationView declaration={declaration} /> : null}
     </main>
     <footer className={styles.footer}><span>Lecture seule · aucune modification du dossier</span><span>L’Assistant du Réel · laboratoire V3.1</span></footer>
@@ -534,8 +542,14 @@ function RealPrototypeView({ source }: { source: Extract<V3PrototypeSource, { mo
   </div>;
 }
 
-export function V2Prototype({ source = { mode: "demo" } }: { source?: V3PrototypeSource }) {
-  if (source.mode === "real") return <RealPrototypeView source={source} />;
+export function V2Prototype({ source = { mode: "demo" }, realDocuments = { state: "unknown", documents: [] }, onOpenRealDocument, busyDocumentId, documentOpenError }: {
+  source?: V3PrototypeSource;
+  realDocuments?: V3DocumentsReadModel;
+  onOpenRealDocument?: (documentId: string) => void;
+  busyDocumentId?: string | null;
+  documentOpenError?: string | null;
+}) {
+  if (source.mode === "real") return <RealPrototypeView source={source} realDocuments={realDocuments} onOpenRealDocument={onOpenRealDocument} busyDocumentId={busyDocumentId} documentOpenError={documentOpenError} />;
   return <DemoPrototypeView source={source} />;
 }
 

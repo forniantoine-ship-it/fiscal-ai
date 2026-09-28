@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { V2Prototype } from "./V2Prototype";
-import { loadRealWorkspace, type RealWorkspaceLoad } from "./real-workspace";
+import { loadRealDocuments, resolveRealDocumentForOpen, type RealDocumentLoad } from "./real-documents";
 import styles from "./prototype.module.css";
 
-type RouteState = { status: "loading" } | RealWorkspaceLoad;
+type RouteState = { status: "loading" } | RealDocumentLoad;
 
 const MESSAGES = {
   no_dossier: "Aucun dossier réel n’est disponible pour ce compte.",
@@ -23,6 +23,8 @@ const YEAR_MESSAGES = {
 
 export function RealWorkspaceRoute() {
   const [state, setState] = useState<RouteState>({ status: "loading" });
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -30,7 +32,8 @@ export function RealWorkspaceRoute() {
     async function load(userId: string | null) {
       const current = ++request;
       setState({ status: "loading" });
-      const result = await loadRealWorkspace(userId);
+      setOpenError(null);
+      const result = await loadRealDocuments(userId);
       if (active && current === request) setState(result);
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -40,8 +43,49 @@ export function RealWorkspaceRoute() {
     return () => { active = false; request += 1; subscription.unsubscribe(); };
   }, []);
 
+  async function openDocument(documentId: string) {
+    setOpenError(null);
+    if (state.status !== "ready") return;
+    const row = resolveRealDocumentForOpen(state, documentId);
+    if (!row) {
+      setOpenError("Ce document ne peut pas être ouvert pour le moment.");
+      return;
+    }
+    // Open the tab within the user gesture; no Storage access occurs until this click.
+    const preview = window.open("about:blank", "_blank");
+    if (!preview) {
+      setOpenError("Autorisez l’ouverture d’un nouvel onglet pour consulter ce document.");
+      return;
+    }
+    preview.opener = null;
+    setBusyId(documentId);
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || user?.id !== state.userId) {
+        preview.close();
+        setOpenError("Votre session a changé. Rechargez le dossier pour ouvrir ce document.");
+        return;
+      }
+      const { downloadDocumentFromStorage } = await import("@/lib/supabase/download-document");
+      const bytes = await downloadDocumentFromStorage(row.file_path);
+      const lower = row.file_name.toLowerCase();
+      const mime = lower.endsWith(".pdf") ? "application/pdf" :
+        /\.jpe?g$/.test(lower) ? "image/jpeg" :
+        lower.endsWith(".png") ? "image/png" :
+        lower.endsWith(".webp") ? "image/webp" : "application/octet-stream";
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      preview.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60_000);
+    } catch {
+      preview.close();
+      setOpenError("Le fichier est indisponible pour le moment.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   if (state.status === "ready") {
-    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} /></div>;
+    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
   }
   return <div className={styles.root}><main className={styles.main}>
     <div className={styles.emptyCard} role={state.status === "error" ? "alert" : "status"}>

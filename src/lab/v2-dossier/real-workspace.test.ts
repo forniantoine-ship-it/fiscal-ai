@@ -70,6 +70,26 @@ test("R8 — le dossier et l'exercice actifs produisent uniquement une source re
   }
 });
 
+test("R10 — les preuves legacy restent bornées aux snapshots du même dossier et à leur exercice déclaré", async () => {
+  const current = workspace();
+  current.documents = [{
+    id: "document-2026", fiscalYearId: current.fiscalYear.id, fileName: "piece.pdf",
+    mimeType: "application/pdf", sizeBytes: 1, category: "autre", documentType: "unknown",
+    status: "uploaded", uploadedAt: "2026-03-01",
+  }];
+  const foreign = workspace();
+  foreign.fiscalYear.year = 2025;
+  foreign.documents = [{ ...current.documents[0], id: "foreign-document" }];
+  const result = await loadRealWorkspace(dossier.user_id, services({
+    snapshots: [snapshot(current), { ...snapshot(foreign), fiscalYear: 2025 }],
+  }));
+  assert.equal(result.status, "ready");
+  if (result.status === "ready") {
+    assert.equal(result.userId, dossier.user_id);
+    assert.deepEqual(result.legacyDocumentYears, [{ fiscalYear: 2026, documentIds: ["document-2026"] }, { fiscalYear: 2025, documentIds: ["foreign-document"] }]);
+  }
+});
+
 test("R8 — sans compte ou dossier, aucune lecture de snapshot ni source demo", async () => {
   const io = services({ dossier: null });
   assert.deepEqual(await loadRealWorkspace(null, io), { status: "no_dossier" });
