@@ -40,7 +40,7 @@ export function DashboardPrimaryCard({
         boxShadow: shadows.hero.floating,
         backgroundImage: [
           `radial-gradient(ellipse 72% 56% at 0% 0%, ${colors.orange[100]} 0%, transparent 62%)`,
-          `radial-gradient(ellipse 55% 45% at 100% 100%, ${colors.background.landingGlowSoft} 0%, transparent 58%)`,
+          `radial-gradient(ellipse 55% 45% at 100% 100%, ${colors.surface.secondary} 0%, transparent 58%)`,
           gradients.card.highlight,
         ].join(", "),
       }}

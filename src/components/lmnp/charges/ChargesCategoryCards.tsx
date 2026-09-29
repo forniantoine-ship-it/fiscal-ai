@@ -157,11 +157,11 @@ function CategoryKindBadge({
     <span
       style={{
         ...typography.caption.desktop,
-        color: isPropertyTax ? "#4A5568" : colors.text.accent,
+        color: isPropertyTax ? colors.text.primary : colors.text.accent,
         padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
         borderRadius: radius.full,
-        border: `1px solid ${isPropertyTax ? "#C5D0DB" : colors.border.subtle}`,
-        backgroundColor: isPropertyTax ? "#EEF1F4" : colors.surface.primary,
+        border: `1px solid ${isPropertyTax ? colors.border.default : colors.border.subtle}`,
+        backgroundColor: isPropertyTax ? colors.surface.secondary : colors.surface.primary,
       }}
     >
       {label}
@@ -184,8 +184,8 @@ function IntelligentBadge({
         color: isInsurance ? colors.text.accent : colors.text.muted,
         padding: `${spacing.scale[1]} ${spacing.scale[2]}`,
         borderRadius: radius.full,
-        border: `1px solid ${isInsurance ? "#F0C4A0" : colors.border.subtle}`,
-        backgroundColor: isInsurance ? "#FFF8F3" : colors.surface.primary,
+        border: `1px solid ${isInsurance ? colors.border.focus : colors.border.subtle}`,
+        backgroundColor: isInsurance ? colors.surface.secondary : colors.surface.primary,
       }}
     >
       {label}

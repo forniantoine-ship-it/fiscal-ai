@@ -10,7 +10,7 @@ import {
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 const navLink =
-  "text-[12px] text-stone-500 transition-colors hover:text-stone-700";
+  "text-[12px] text-ink-muted transition-colors hover:text-ink";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-6">
           <Link
             href={base}
-            className="shrink-0 text-[13px] font-medium text-stone-600 transition-colors hover:text-stone-800"
+            className="shrink-0 text-[13px] font-medium text-ink-soft transition-colors hover:text-ink"
           >
             Fiscal AI
           </Link>
@@ -51,14 +51,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <Link
               href={base}
-              className={isDashboard ? "text-[12px] text-stone-700" : navLink}
+              className={isDashboard ? "text-[12px] text-ink" : navLink}
               aria-current={isDashboard ? "page" : undefined}
             >
               Tableau de bord
             </Link>
             <Link
               href={documentsHref}
-              className={isDocuments ? "text-[12px] text-stone-700" : navLink}
+              className={isDocuments ? "text-[12px] text-ink" : navLink}
               aria-current={isDocuments ? "page" : undefined}
             >
               Pièce en cours
@@ -77,24 +77,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/" className={`${navLink} sm:hidden`}>
               Accueil
             </Link>
-            <span className="text-[12px] tabular-nums text-stone-400">
+            <span className="text-[12px] tabular-nums text-ink-faint">
               {workspace.fiscalYear.year}
             </span>
           </div>
         </div>
         <nav
-          className="flex items-center justify-center gap-5 border-t border-stone-200/25 px-6 py-2.5 sm:hidden"
+          className="flex items-center justify-center gap-5 border-t border-outline/25 px-6 py-2.5 sm:hidden"
           aria-label="Navigation mobile"
         >
           <Link
             href={base}
-            className={isDashboard ? "text-[12px] text-stone-700" : navLink}
+            className={isDashboard ? "text-[12px] text-ink" : navLink}
           >
             Tableau de bord
           </Link>
           <Link
             href={`${base}/documents`}
-            className={isDocuments ? "text-[12px] text-stone-700" : navLink}
+            className={isDocuments ? "text-[12px] text-ink" : navLink}
           >
             Documents
           </Link>

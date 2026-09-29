@@ -42,7 +42,7 @@ function paletteForEvent(event: AiActivityEvent): CardPalette {
       background: colors.success.surface,
       border: colors.success.border,
       iconBackground: colors.success.DEFAULT,
-      iconColor: "#fff",
+      iconColor: colors.text.onDark,
       iconChar: "✓",
       titleColor: colors.success.DEFAULT,
     };
@@ -54,31 +54,31 @@ function paletteForEvent(event: AiActivityEvent): CardPalette {
       background: colors.error.surface,
       border: colors.error.border,
       iconBackground: colors.error.DEFAULT,
-      iconColor: "#fff",
+      iconColor: colors.text.onDark,
       iconChar: "✕",
       titleColor: colors.error.DEFAULT,
     };
   }
 
-  // Conflict pending — orange
+  // Conflict pending — warning state
   if (event.type === "conflict_detected") {
     return {
       background: colors.warning.surface,
       border: colors.warning.border,
       iconBackground: colors.warning.DEFAULT,
-      iconColor: "#fff",
+      iconColor: colors.text.onDark,
       iconChar: "⚠",
       titleColor: colors.warning.DEFAULT,
     };
   }
 
-  // Risk or recommendation — orange
+  // Risk or recommendation — warning state
   if (event.type === "risk_warning" || event.type === "recommendation") {
     return {
       background: colors.warning.surface,
       border: colors.warning.border,
       iconBackground: colors.warning.DEFAULT,
-      iconColor: "#fff",
+      iconColor: colors.text.onDark,
       iconChar: "⚠",
       titleColor: colors.warning.DEFAULT,
     };
@@ -94,21 +94,20 @@ function paletteForEvent(event: AiActivityEvent): CardPalette {
       background: colors.success.surface,
       border: colors.success.border,
       iconBackground: colors.success.DEFAULT,
-      iconColor: "#fff",
+      iconColor: colors.text.onDark,
       iconChar: "✓",
       titleColor: colors.success.DEFAULT,
     };
   }
 
-  // No change / ignored / informational — blue (Informations déjà connues)
+  // No change / ignored / informational — neutral brand surface
   return {
-    // Soft blue that reads as "informational" without conflicting with the warm palette
-    background: "#EEF4FA",
-    border: "#BFCFDE",
-    iconBackground: "#4A87B4",
-    iconColor: "#fff",
+    background: colors.surface.secondary,
+    border: colors.border.default,
+    iconBackground: colors.brand.gunmetal,
+    iconColor: colors.text.onDark,
     iconChar: "i",
-    titleColor: "#2C6490",
+    titleColor: colors.text.primary,
   };
 }
 

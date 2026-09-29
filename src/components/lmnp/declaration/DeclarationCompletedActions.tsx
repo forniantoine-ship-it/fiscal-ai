@@ -45,14 +45,14 @@ export function DeclarationCompletedActions({
       <SecondaryButton href={dashboardHref}>Retour au tableau de bord</SecondaryButton>
       <Link
         href={documentsHref}
-        className="text-[12px] text-stone-500 transition-colors hover:text-stone-700"
+        className="text-[12px] text-ink-muted transition-colors hover:text-ink"
       >
         Consulter mes documents
       </Link>
       <button
         type="button"
         onClick={startNewDeclaration}
-        className="text-[12px] text-stone-400 underline decoration-stone-300/80 underline-offset-[3px] transition-colors hover:text-stone-600"
+        className="text-[12px] text-ink-faint underline decoration-stone-300/80 underline-offset-[3px] transition-colors hover:text-ink-soft"
       >
         Déclarer un autre bien
       </button>

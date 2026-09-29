@@ -249,7 +249,7 @@ function UploadIcon({ active }: { active: boolean }) {
       style={{
         borderRadius: radius.full,
         backgroundColor: active ? colors.orange[100] : colors.surface.primary,
-        color: active ? colors.orange[500] : colors.text.muted,
+        color: active ? colors.text.primary : colors.text.muted,
         boxShadow: active ? `0 0 0 4px ${colors.orange[50]}` : "none",
         transition: motions.hover.card,
       }}

@@ -59,7 +59,7 @@ export default function DeclarationsHistoriquePage() {
   const listError = noDossier ? false : loadForDossier?.status === "error";
 
   if (!workspaceReady || !dossierReady || (!noDossier && closedYears === null && !listError)) {
-    return <p className="text-center text-stone-500">Chargement…</p>;
+    return <p className="text-center text-ink-muted">Chargement…</p>;
   }
 
   const archives = closedYears ?? [];
@@ -83,6 +83,7 @@ export default function DeclarationsHistoriquePage() {
           style={{
             borderRadius: radius.lg,
             border: `1px solid ${colors.border.subtle}`,
+            backgroundColor: colors.surface.primary,
             padding: spacing.card.md,
           }}
         >
@@ -99,6 +100,7 @@ export default function DeclarationsHistoriquePage() {
             style={{
               borderRadius: radius.lg,
               border: `1px solid ${colors.border.subtle}`,
+              backgroundColor: colors.surface.primary,
               padding: spacing.card.md,
             }}
           >

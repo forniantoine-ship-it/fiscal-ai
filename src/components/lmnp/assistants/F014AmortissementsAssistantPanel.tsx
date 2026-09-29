@@ -316,7 +316,7 @@ export function F014AmortissementsAssistantPanel() {
             Exercice {fiscalYear}
           </p>
         </div>
-        <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.caption.desktop, color: colors.orange[600] }}>
+        <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.caption.desktop, color: colors.text.primary }}>
           Retour au tableau de bord
         </Link>
       </div>

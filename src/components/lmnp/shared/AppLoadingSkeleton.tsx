@@ -108,7 +108,7 @@ export function AppLoadingSkeleton({ message }: AppLoadingSkeletonProps) {
             borderRadius: radius.full,
             border: `1px solid ${colors.border.subtle}`,
             backgroundColor: colors.surface.primary,
-            boxShadow: "0 4px 24px rgba(28, 25, 23, 0.06)",
+            boxShadow: `0 4px 24px color-mix(in srgb, ${colors.overlay.scrim} 6%, transparent)`,
           }}
         >
           {message}

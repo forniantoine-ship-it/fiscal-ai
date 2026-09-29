@@ -180,7 +180,7 @@ function AssetReviewCard({
   const borderColor = asset.userValidated
     ? colors.border.default
     : isHighlighted
-      ? (colors.orange[300] ?? "#F5D4B8")
+      ? (colors.orange[300])
       : colors.border.default;
 
   return (
@@ -205,9 +205,9 @@ function AssetReviewCard({
               <span
                 style={{
                   ...typography.caption.desktop,
-                  color: colors.orange[700] ?? "#B45309",
-                  backgroundColor: colors.orange[50] ?? "#FFF7ED",
-                  border: `1px solid ${colors.orange[200] ?? "#FED7AA"}`,
+                  color: colors.text.primary,
+                  backgroundColor: colors.orange[50],
+                  border: `1px solid ${colors.orange[200]}`,
                   borderRadius: radius.full,
                   padding: `2px ${spacing.scale[2]}`,
                   fontWeight: typography.fontWeight.medium,
@@ -220,9 +220,9 @@ function AssetReviewCard({
               <span
                 style={{
                   ...typography.caption.desktop,
-                  color: colors.success?.DEFAULT ?? "#5E8A66",
-                  backgroundColor: colors.success?.muted ?? "#F0FFF4",
-                  border: `1px solid ${colors.success?.light ?? "#C6F6D5"}`,
+                  color: colors.success.DEFAULT,
+                  backgroundColor: colors.success.muted,
+                  border: `1px solid ${colors.success.light}`,
                   borderRadius: radius.full,
                   padding: `2px ${spacing.scale[2]}`,
                 }}
@@ -281,14 +281,14 @@ function AssetReviewCard({
         <div
           className="mt-3 flex gap-2"
           style={{
-            backgroundColor: "#FFFBEB",
-            border: `1px solid #FDE68A`,
+            backgroundColor: colors.warning.surface,
+            border: `1px solid ${colors.warning.border}`,
             borderRadius: radius.lg,
             padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
           }}
         >
-          <span style={{ color: "#D97706", flexShrink: 0 }}>⚠</span>
-          <p style={{ ...typography.caption.desktop, color: "#92400E" }}>{durationWarning}</p>
+          <span style={{ color: colors.warning.DEFAULT, flexShrink: 0 }}>⚠</span>
+          <p style={{ ...typography.caption.desktop, color: colors.warning.DEFAULT }}>{durationWarning}</p>
         </div>
       ) : null}
 
@@ -462,13 +462,11 @@ function TreatmentPill({ isImmobilisation }: { isImmobilisation: boolean }) {
     <span
       style={{
         ...typography.caption.desktop,
-        color: isImmobilisation
-          ? (colors.orange[700] ?? "#B45309")
-          : colors.text.secondary,
+        color: isImmobilisation ? colors.text.primary : colors.text.secondary,
         backgroundColor: isImmobilisation
-          ? (colors.orange[50] ?? "#FFF7ED")
+          ? colors.orange[50]
           : colors.surface.secondary,
-        border: `1px solid ${isImmobilisation ? (colors.orange[200] ?? "#FED7AA") : colors.border.subtle}`,
+        border: `1px solid ${isImmobilisation ? colors.orange[200] : colors.border.subtle}`,
         borderRadius: radius.full,
         padding: `2px ${spacing.scale[2]}`,
       }}
@@ -502,9 +500,9 @@ function ActionButton({
           ? "none"
           : `1px solid ${colors.border.default}`,
         backgroundColor: variant === "primary"
-          ? (colors.orange[500] ?? "#F07C3A")
+          ? colors.orange[500]
           : colors.surface.secondary,
-        color: variant === "primary" ? "#FFFFFF" : colors.text.secondary,
+        color: variant === "primary" ? colors.text.inverse : colors.text.secondary,
       }}
     >
       {label}
@@ -579,7 +577,7 @@ function ReviewProgressBar({ total, validated }: { total: number; validated: num
           style={{
             height: "100%",
             width: `${pct}%`,
-            backgroundColor: pct === 100 ? (colors.success?.DEFAULT ?? "#5E8A66") : (colors.orange[400] ?? "#F08E51"),
+            backgroundColor: pct === 100 ? (colors.success.DEFAULT) : (colors.orange[400]),
             borderRadius: radius.full,
             transition: "width 400ms ease",
           }}
@@ -603,11 +601,11 @@ function GuidanceBanner({ message }: { message: GuidanceMessage }) {
   const isBlocking = message.severity === "blocking";
   const isWarning = message.severity === "warning";
 
-  const bg = isBlocking ? "#FFF7ED" : isWarning ? "#FFFBEB" : colors.surface.secondary;
-  const border = isBlocking ? "#FED7AA" : isWarning ? "#FDE68A" : colors.border.subtle;
-  const textColor = isBlocking ? "#92400E" : isWarning ? "#78350F" : colors.text.secondary;
+  const bg = isBlocking ? colors.error.surface : isWarning ? colors.warning.surface : colors.surface.secondary;
+  const border = isBlocking ? colors.error.border : isWarning ? colors.warning.border : colors.border.subtle;
+  const textColor = isBlocking ? colors.error.DEFAULT : isWarning ? colors.warning.DEFAULT : colors.text.secondary;
   const icon = isBlocking ? "●" : isWarning ? "⚠" : "✦";
-  const iconColor = isBlocking ? (colors.orange[500] ?? "#F07C3A") : isWarning ? "#D97706" : colors.text.accent;
+  const iconColor = isBlocking ? colors.error.DEFAULT : isWarning ? colors.warning.DEFAULT : colors.text.accent;
 
   return (
     <div

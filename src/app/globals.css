@@ -1,5 +1,17 @@
 @import "tailwindcss";
 
+@theme inline {
+  --color-ink: var(--brand-gunmetal);
+  --color-ink-soft: color-mix(in srgb, var(--brand-gunmetal) 82%, black);
+  --color-ink-muted: color-mix(in srgb, var(--brand-gunmetal) 82%, black);
+  --color-ink-faint: color-mix(in srgb, var(--brand-gunmetal) 82%, black);
+  --color-panel: var(--brand-light-blue);
+  --color-panel-soft: color-mix(in srgb, var(--brand-light-blue) 64%, white);
+  --color-outline: color-mix(in srgb, var(--brand-light-blue) 80%, var(--brand-gunmetal));
+  --color-action: var(--brand-saffron);
+  --color-action-hover: color-mix(in srgb, var(--brand-saffron) 88%, var(--brand-gunmetal));
+}
+
 *,
 *::before,
 *::after {
@@ -10,27 +22,13 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100%;
-  background-color: #fbf8f3;
-  background-image:
-    linear-gradient(
-      180deg,
-      #ffdcc4 0%,
-      #ffefe3 10%,
-      transparent 24%,
-      transparent 76%,
-      #ffefe3 90%,
-      #ffc49a 100%
-    ),
-    linear-gradient(
-      96deg,
-      #fbf8f3 0%,
-      #fff3e8 18%,
-      #ffd9b8 40%,
-      #f0a66b 62%,
-      #ffc49a 78%,
-      #ffdcc4 88%,
-      #ffc49a 100%
-    );
+  background-color: var(--brand-moonstone);
+  background-image: linear-gradient(
+    112deg,
+    color-mix(in srgb, var(--brand-moonstone) 92%, white),
+    var(--brand-moonstone) 55%,
+    color-mix(in srgb, var(--brand-moonstone) 92%, var(--brand-gunmetal))
+  );
   background-attachment: fixed;
   background-size: cover;
 }
@@ -39,6 +37,18 @@ body {
   margin: 0;
   min-height: 100%;
   background-color: transparent;
+}
+
+.surface-frost,
+.glass {
+  background-color: color-mix(in srgb, var(--brand-light-blue) 88%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+:where(a, button, input, select, textarea, [role="button"]):focus-visible {
+  outline: 3px solid var(--brand-saffron);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--brand-gunmetal) !important;
 }
 
 @keyframes fiscal-analyzing-pulse {

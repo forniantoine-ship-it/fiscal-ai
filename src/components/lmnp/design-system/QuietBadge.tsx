@@ -7,9 +7,9 @@ interface QuietBadgeProps {
 
 export function QuietBadge({ children, tone = "neutral" }: QuietBadgeProps) {
   const tones = {
-    neutral: "text-stone-500",
-    accent: "text-accent",
-    pending: "text-stone-600",
+    neutral: "text-ink-muted",
+    accent: "text-ink",
+    pending: "text-ink-soft",
   };
 
   return (

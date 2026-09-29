@@ -41,7 +41,7 @@ export function GuidedStepLayout({
     <div className="mx-auto max-w-lg animate-fade-in px-4 py-12 sm:py-16">
       <Link
         href={dashboardHref}
-        className="text-[12px] text-stone-400 transition-colors hover:text-stone-600"
+        className="text-[12px] text-ink-faint transition-colors hover:text-ink-soft"
       >
         ← Déclaration
       </Link>
@@ -53,11 +53,11 @@ export function GuidedStepLayout({
       />
 
       <header className="mt-12">
-        <h1 className="text-2xl font-normal leading-snug tracking-tight text-stone-800">{title}</h1>
+        <h1 className="text-2xl font-normal leading-snug tracking-tight text-ink">{title}</h1>
         {subtitle && (
-          <p className="mt-3 text-[15px] leading-relaxed text-stone-500">{subtitle}</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-ink-muted">{subtitle}</p>
         )}
-        {insight && <p className="mt-4 text-[12px] text-stone-500">{insight}</p>}
+        {insight && <p className="mt-4 text-[12px] text-ink-muted">{insight}</p>}
       </header>
 
       <div className="mt-10">{children}</div>

@@ -49,7 +49,7 @@ function TrustIcon() {
         borderRadius: radius.full,
         backgroundColor: colors.orange[50],
         border: `1px solid ${colors.border.subtle}`,
-        color: colors.orange[500],
+        color: colors.text.primary,
         fontSize: typography.fontSize.xs,
       }}
       aria-hidden
@@ -78,7 +78,7 @@ function FileTypeIcon({ mimeType }: { mimeType: string }) {
         height: "28px",
         borderRadius: radius.sm,
         backgroundColor: isPdf ? colors.orange[50] : colors.surface.secondary,
-        color: isPdf ? colors.orange[600] : colors.text.muted,
+        color: isPdf ? colors.text.primary : colors.text.muted,
         fontSize: typography.fontSize["2xs"],
         fontWeight: typography.fontWeight.medium,
       }}
@@ -92,22 +92,22 @@ function FileTypeIcon({ mimeType }: { mimeType: string }) {
 function categoryChipStyle(category: string) {
   const lower = category.toLowerCase();
   if (lower.includes("activité") || lower.includes("activite")) {
-    return { color: colors.orange[700], bg: colors.orange[50] };
+    return { color: colors.text.primary, bg: colors.orange[50] };
   }
   if (lower.includes("logement")) {
     return { color: colors.text.accent, bg: colors.surface.selected };
   }
   if (lower.includes("crédit") || lower.includes("credit") || lower.includes("financement")) {
-    return { color: colors.warning.DEFAULT, bg: colors.warning.light };
+    return { color: colors.text.primary, bg: colors.surface.secondary };
   }
   if (lower.includes("revenu")) {
-    return { color: colors.success.DEFAULT, bg: colors.success.surface };
+    return { color: colors.text.primary, bg: colors.surface.secondary };
   }
   if (lower.includes("charge")) {
     return { color: colors.text.secondary, bg: colors.surface.secondary };
   }
   if (lower.includes("amortissement")) {
-    return { color: colors.orange[600], bg: colors.orange[100] };
+    return { color: colors.text.primary, bg: colors.orange[100] };
   }
   return { color: colors.text.secondary, bg: colors.surface.secondary };
 }
@@ -132,7 +132,7 @@ function documentStatusLabel(status: LmnpDocument["status"]): {
   if (status === "analyzed") {
     return { label: "Importé", color: colors.success.DEFAULT, dot: colors.success.DEFAULT };
   }
-  return { label: "En attente", color: colors.orange[600], dot: colors.orange[500] };
+  return { label: "En attente", color: colors.text.primary, dot: colors.orange[500] };
 }
 
 function DocumentActionsMenu({

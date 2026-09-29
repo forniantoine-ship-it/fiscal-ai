@@ -119,7 +119,7 @@ function statusChip(step: WorkflowStepView) {
     return { label: "Terminé", color: colors.success.DEFAULT, bg: colors.success.surface };
   }
   if (step.status === "current") {
-    return { label: "En cours", color: colors.orange[600], bg: colors.orange[50] };
+    return { label: "En cours", color: colors.text.primary, bg: colors.orange[50] };
   }
   return { label: "À venir", color: colors.text.muted, bg: colors.surface.secondary };
 }

@@ -494,7 +494,7 @@ function WorkflowActionBar({
       className="sticky bottom-0 z-40"
       style={{
         borderTop: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(250, 248, 245, 0.88)",
+        backgroundColor: `color-mix(in srgb, ${colors.surface.primary} 88%, transparent)`,
         backdropFilter: "blur(20px) saturate(1.1)",
         WebkitBackdropFilter: "blur(20px) saturate(1.1)",
         boxShadow: shadows.card.inset,
@@ -553,7 +553,7 @@ export function WorkflowLayout({
         <header
           style={{
             borderBottom: `1px solid ${colors.border.subtle}`,
-            backgroundColor: "rgba(250, 248, 245, 0.82)",
+            backgroundColor: `color-mix(in srgb, ${colors.surface.primary} 82%, transparent)`,
             backdropFilter: "blur(16px)",
             WebkitBackdropFilter: "blur(16px)",
           }}

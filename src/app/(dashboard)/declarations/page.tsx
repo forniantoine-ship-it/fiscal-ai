@@ -47,7 +47,7 @@ export default function DeclarationsPage() {
   if (isReady && serverPayment.state === "error") {
     return (
       <div className="text-center">
-        <p className="text-stone-500">Nous n&apos;avons pas pu vérifier votre paiement. Vérifiez votre connexion.</p>
+        <p className="text-ink-muted">Nous n&apos;avons pas pu vérifier votre paiement. Vérifiez votre connexion.</p>
         <button
           type="button"
           className="mt-3 underline"
@@ -61,7 +61,7 @@ export default function DeclarationsPage() {
   }
 
   if (!isReady || !paid || !priorHistoryEligible) {
-    return <p className="text-center text-stone-500">Chargement…</p>;
+    return <p className="text-center text-ink-muted">Chargement…</p>;
   }
 
   return (

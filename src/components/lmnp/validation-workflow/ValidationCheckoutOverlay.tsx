@@ -91,7 +91,7 @@ function CheckoutDialog({ fiscalYear, onClose, onPay, mode = "generate" }: Valid
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(28, 25, 23, 0.24)" }}
+      style={{ backgroundColor: `color-mix(in srgb, ${colors.overlay.scrim} 24%, transparent)` }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="validation-checkout-title"

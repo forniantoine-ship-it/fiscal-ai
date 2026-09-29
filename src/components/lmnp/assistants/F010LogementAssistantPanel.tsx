@@ -76,7 +76,7 @@ export const F010_RESTART_DIALOG_IDS = {
 
 /** Classe locale — focus clavier visible sans modifier `Button.tsx` global. */
 export const F010_FOCUS_BUTTON_CLASS =
-  "outline-none focus-visible:ring-[3px] focus-visible:ring-[#F0C4A033]";
+  "outline-none focus-visible:ring-[3px] focus-visible:ring-action/30";
 
 export const F010_STEP_TITLES: Record<F010State["step"], string> = {
   orientation: "Type d'acquisition",

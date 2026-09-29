@@ -20,9 +20,9 @@ export function AiActivityGroup({ entityLabel, events, onReimport }: AiActivityG
   const hasWarning = events.some((ev) => ev.severity === "warning" || ev.severity === "blocking");
 
   const indicatorColor = hasPending
-    ? "#E8A857"
+    ? colors.warning.DEFAULT
     : hasWarning
-      ? "#C8A87A"
+      ? colors.warning.muted
       : colors.text.muted;
 
   return (

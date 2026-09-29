@@ -1,242 +1,162 @@
-/**
- * Fiscal AI — Official Color System
- *
- * Warm premium minimalism. Apple × Linear × modern French fintech.
- * Ultra-soft contrasts, no aggressive SaaS blue, light mode only.
- */
+/** The four approved brand pigments. All non-semantic UI tones derive from these. */
+export const brand = {
+  lightBlue: "#C3E7F1",
+  moonstone: "#519CAB",
+  saffron: "#FFC64F",
+  gunmetal: "#20373B",
+  white: "#FFFFFF",
+} as const;
+
+function mix(first: string, second: string, amount: number): string {
+  const channel = (index: number) => Math.round(
+    Number.parseInt(first.slice(index, index + 2), 16) * (1 - amount) +
+    Number.parseInt(second.slice(index, index + 2), 16) * amount,
+  ).toString(16).padStart(2, "0");
+  return `#${channel(1)}${channel(3)}${channel(5)}`.toUpperCase();
+}
+
+const blue = brand.lightBlue;
+const moon = brand.moonstone;
+const yellow = brand.saffron;
+const ink = brand.gunmetal;
+const white = brand.white;
+const readableInk = mix(ink, "#000000", 0.18);
+
+/** Semantic color system. Legacy key names are retained for existing consumers. */
 export const colors = {
-  // ─── Backgrounds ───────────────────────────────────────────────────────────
-
+  brand,
   background: {
-    /** Shared warm cream base */
-    cream: "#FAF8F5",
-    creamWarm: "#FBF8F3",
-    creamSoft: "#F7F4EF",
-
-    /** Public landing — left cream panel */
-    landingLeft: "#FBF8F3",
-
-    /** Public landing — right orange gradient stops */
-    landingGradientStart: "#FFF3E8",
-    landingGradientMid: "#FFD9B8",
-    landingGradientEnd: "#F0A66B",
-
-    /** Public landing — warm glow accents */
-    landingGlow: "#FFE8D0",
-    landingGlowSoft: "#FFF5EB",
-
-    /** Private app — centered cream canvas */
-    app: "#FAF8F5",
-
-    /** Private app — warm edge diffusion tones */
-    appDiffusionLeft: "#FFDCC4",
-    appDiffusionRight: "#FFC49A",
-    appDiffusionCenter: "#FBF8F3",
+    cream: moon,
+    creamWarm: moon,
+    creamSoft: moon,
+    landingLeft: moon,
+    landingGradientStart: moon,
+    landingGradientMid: moon,
+    landingGradientEnd: moon,
+    landingGlow: mix(moon, white, 0.12),
+    landingGlowSoft: mix(moon, white, 0.06),
+    app: moon,
+    appDiffusionLeft: mix(moon, white, 0.08),
+    appDiffusionRight: mix(moon, ink, 0.08),
+    appDiffusionCenter: moon,
   },
-
-  // ─── Surfaces ──────────────────────────────────────────────────────────────
-
   surface: {
-    /** Pure white cards on cream */
-    primary: "#FFFFFF",
-    /** Ultra-soft beige — default UI panels */
-    secondary: "#F5F2EC",
-    /** Slightly deeper beige — nested sections */
-    tertiary: "#EFEBE4",
-    /** Elevated cards, modals, dropdowns */
-    elevated: "#FFFFFF",
-    /** Inset wells, input backgrounds */
-    inset: "#F3F0EA",
-    /** Hover-ready surface base */
-    interactive: "#F8F5F0",
-    /** Selected / active row background */
-    selected: "#FFF6EE",
-    /** Disabled surface */
-    disabled: "#F2EFE9",
+    primary: blue,
+    secondary: mix(blue, white, 0.38),
+    tertiary: mix(blue, white, 0.18),
+    elevated: white,
+    inset: white,
+    interactive: mix(blue, white, 0.2),
+    selected: blue,
+    disabled: mix(blue, white, 0.55),
   },
-
-  // ─── Borders ───────────────────────────────────────────────────────────────
-
   border: {
-    /** Barely visible dividers */
-    subtle: "#F0EBE3",
-    /** Default card and input borders */
-    default: "#E8E2D9",
-    /** Stronger separation — tables, sections */
-    strong: "#DAD3C8",
-    /** Focus rings and active outlines */
-    focus: "#F0C4A0",
-    /** Selected item border */
-    selected: "#F5D4B8",
-    /** Disabled borders */
-    disabled: "#EDE8E1",
+    subtle: mix(blue, ink, 0.12),
+    default: mix(blue, ink, 0.2),
+    strong: mix(blue, ink, 0.34),
+    focus: yellow,
+    selected: mix(blue, ink, 0.3),
+    disabled: mix(blue, white, 0.35),
   },
-
-  // ─── Text hierarchy ────────────────────────────────────────────────────────
-
   text: {
-    /** Headlines, primary labels */
-    primary: "#1C1917",
-    /** Body copy, descriptions */
-    secondary: "#5C5650",
-    /** Captions, metadata, placeholders */
-    tertiary: "#8A837A",
-    /** De-emphasized, timestamps */
-    muted: "#ABA49B",
-    /** Disabled form labels */
-    disabled: "#C9C3BA",
-    /** Text on orange primary buttons */
-    inverse: "#FFFAF6",
-    /** Brand accent links and highlights */
-    accent: "#C4621A",
-    /** Accent hover state */
-    accentHover: "#A85214",
+    primary: ink,
+    secondary: readableInk,
+    tertiary: readableInk,
+    muted: readableInk,
+    disabled: mix(ink, moon, 0.52),
+    inverse: ink,
+    onDark: white,
+    /** Accessible small text directly on Moonstone (derived Gunmetal shade). */
+    onMoonstone: readableInk,
+    accent: ink,
+    accentHover: ink,
   },
-
-  // ─── Orange primary scale ──────────────────────────────────────────────────
-
+  /** Compatibility scale: 50–300 are quiet content tones, 400–900 are action tones. */
   orange: {
-    50: "#FFF8F3",
-    100: "#FFEFE3",
-    200: "#FFDCC4",
-    300: "#FFC49A",
-    400: "#F5A06A",
-    500: "#E87D3A",
-    600: "#D66B28",
-    700: "#B8571E",
-    800: "#944518",
-    900: "#733512",
+    50: mix(blue, white, 0.55),
+    100: mix(blue, white, 0.28),
+    200: blue,
+    300: mix(blue, moon, 0.2),
+    400: mix(yellow, white, 0.15),
+    500: yellow,
+    600: mix(yellow, ink, 0.12),
+    700: mix(yellow, ink, 0.2),
+    800: mix(yellow, ink, 0.3),
+    900: mix(yellow, ink, 0.4),
   },
-
-  // ─── Semantic — muted, never loud ─────────────────────────────────────────
-
   success: {
-    DEFAULT: "#5E8A66",
-    light: "#EEF5F0",
-    muted: "#8BA892",
-    border: "#C5D9C9",
-    surface: "#F4F9F5",
+    DEFAULT: "#336D49",
+    light: "#E5F2E9",
+    muted: "#528563",
+    border: "#A7C9AF",
+    surface: "#EFF7F1",
   },
-
   warning: {
-    DEFAULT: "#A8834A",
-    light: "#F7F0E6",
-    muted: "#C4A070",
-    border: "#E0CEB0",
-    surface: "#FBF7F0",
+    DEFAULT: "#86590A",
+    light: "#FFF3D5",
+    muted: "#966D23",
+    border: "#D7B879",
+    surface: "#FFF8E9",
   },
-
   error: {
-    DEFAULT: "#B66B63",
-    light: "#FAF0EF",
-    muted: "#C98E88",
-    border: "#E5C8C4",
-    surface: "#FDF5F4",
+    DEFAULT: "#A6433D",
+    light: "#FBECEB",
+    muted: "#BA6862",
+    border: "#E1ABA7",
+    surface: "#FFF5F4",
   },
-
-  // ─── Workflow states ───────────────────────────────────────────────────────
-
   workflow: {
-    /** Current active step */
-    active: "#E87D3A",
-    activeBackground: "#FFF8F3",
-    activeBorder: "#FFDCC4",
-
-    /** Completed step */
-    completed: "#5E8A66",
-    completedBackground: "#EEF5F0",
-    completedBorder: "#C5D9C9",
-
-    /** Upcoming / not yet reached */
-    upcoming: "#ABA49B",
-    upcomingBackground: "#F5F2EC",
-    upcomingBorder: "#E8E2D9",
-
-    /** In progress — processing */
-    inProgress: "#D66B28",
-    inProgressBackground: "#FFEFE3",
-    inProgressBorder: "#FFC49A",
-
-    /** Blocked or requires attention */
-    blocked: "#B66B63",
-    blockedBackground: "#FAF0EF",
-    blockedBorder: "#E5C8C4",
-
-    /** Skipped or optional */
-    skipped: "#C9C3BA",
-    skippedBackground: "#F2EFE9",
-    skippedBorder: "#EDE8E1",
+    active: yellow,
+    activeBackground: blue,
+    activeBorder: mix(blue, ink, 0.22),
+    completed: "#336D49",
+    completedBackground: "#E5F2E9",
+    completedBorder: "#A7C9AF",
+    upcoming: mix(ink, moon, 0.38),
+    upcomingBackground: mix(blue, white, 0.38),
+    upcomingBorder: mix(blue, ink, 0.2),
+    inProgress: yellow,
+    inProgressBackground: blue,
+    inProgressBorder: mix(blue, moon, 0.2),
+    blocked: "#A6433D",
+    blockedBackground: "#FBECEB",
+    blockedBorder: "#E1ABA7",
+    skipped: mix(ink, moon, 0.52),
+    skippedBackground: mix(blue, white, 0.55),
+    skippedBorder: mix(blue, white, 0.35),
   },
-
-  // ─── Upload states ─────────────────────────────────────────────────────────
-
   upload: {
-    /** Default drop zone — idle */
-    idleBackground: "#FFFFFF",
-    idleBorder: "#E8E2D9",
-    idleIcon: "#ABA49B",
-
-    /** File dragged over zone */
-    dragOverBackground: "#FFF8F3",
-    dragOverBorder: "#FFC49A",
-    dragOverIcon: "#E87D3A",
-
-    /** Upload in progress */
-    uploadingBackground: "#FFEFE3",
-    uploadingBorder: "#F5A06A",
-    uploadingProgress: "#E87D3A",
-    uploadingIcon: "#D66B28",
-
-    /** Upload succeeded */
-    successBackground: "#EEF5F0",
-    successBorder: "#C5D9C9",
-    successIcon: "#5E8A66",
-
-    /** Upload failed */
-    errorBackground: "#FAF0EF",
-    errorBorder: "#E5C8C4",
-    errorIcon: "#B66B63",
+    idleBackground: white,
+    idleBorder: mix(blue, ink, 0.2),
+    idleIcon: mix(ink, moon, 0.38),
+    dragOverBackground: blue,
+    dragOverBorder: yellow,
+    dragOverIcon: ink,
+    uploadingBackground: blue,
+    uploadingBorder: mix(blue, moon, 0.2),
+    uploadingProgress: yellow,
+    uploadingIcon: ink,
+    successBackground: "#E5F2E9",
+    successBorder: "#A7C9AF",
+    successIcon: "#336D49",
+    errorBackground: "#FBECEB",
+    errorBorder: "#E1ABA7",
+    errorIcon: "#A6433D",
   },
-
-  // ─── Hover states ──────────────────────────────────────────────────────────
-
   hover: {
-    /** Primary CTA button */
-    primaryBackground: "#D66B28",
-    primaryBackgroundPressed: "#B8571E",
-
-    /** Secondary / outline button */
-    secondaryBackground: "#F5F2EC",
-    secondaryBorder: "#DAD3C8",
-
-    /** Ghost / text button */
-    ghostBackground: "#FFF8F3",
-
-    /** Card and list row */
-    surfaceBackground: "#F8F5F0",
-
-    /** Interactive border emphasis */
-    border: "#DAD3C8",
-
-    /** Link text */
-    link: "#A85214",
-
-    /** Icon button */
-    iconBackground: "#EFEBE4",
-    iconForeground: "#5C5650",
+    primaryBackground: mix(yellow, ink, 0.12),
+    primaryBackgroundPressed: mix(yellow, ink, 0.2),
+    secondaryBackground: mix(blue, white, 0.38),
+    secondaryBorder: mix(blue, ink, 0.34),
+    ghostBackground: mix(blue, white, 0.55),
+    surfaceBackground: mix(blue, white, 0.2),
+    border: mix(blue, ink, 0.34),
+    link: ink,
+    iconBackground: mix(blue, white, 0.18),
+    iconForeground: ink,
   },
-
-  // ─── Focus & overlay ───────────────────────────────────────────────────────
-
-  focus: {
-    ring: "#F0C4A0",
-    ringOffset: "#FAF8F5",
-  },
-
-  overlay: {
-    scrim: "#1C1917",
-    scrimLight: "#5C5650",
-  },
+  focus: { ring: yellow, ringOffset: ink },
+  overlay: { scrim: ink, scrimLight: mix(ink, moon, 0.2) },
 } as const;
 
 export type Colors = typeof colors;

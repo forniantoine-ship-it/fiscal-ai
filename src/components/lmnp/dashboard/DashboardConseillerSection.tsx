@@ -11,7 +11,6 @@ import type { WorkflowStepView } from "@/components/lmnp/dashboard/dashboard-wor
 import type { DashboardHeroKind } from "@/components/lmnp/dashboard/workflow-progression";
 import { Button } from "@/design-system/components/Button";
 import { colors } from "@/design-system/theme/colors";
-import { gradients } from "@/design-system/theme/gradients";
 import { motions } from "@/design-system/theme/motions";
 import { radius } from "@/design-system/theme/radius";
 import { shadows } from "@/design-system/theme/shadows";
@@ -35,11 +34,11 @@ function SparklesIcon({ inverse = false }: { inverse?: boolean }) {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
       <path
         d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
-        stroke={inverse ? colors.text.inverse : colors.orange[500]}
+        stroke={inverse ? colors.text.onDark : colors.orange[500]}
         strokeWidth="1.2"
         strokeLinecap="round"
       />
-      <circle cx="8" cy="8" r="2" fill={inverse ? "rgba(255,250,246,0.35)" : colors.orange[200]} />
+      <circle cx="8" cy="8" r="2" fill={inverse ? `color-mix(in srgb, ${colors.text.onDark} 35%, transparent)` : colors.orange[200]} />
     </svg>
   );
 }
@@ -67,7 +66,7 @@ function ConseillerPresenceIcon() {
         height: "28px",
         borderRadius: radius.full,
         backgroundColor: colors.orange[100],
-        color: colors.orange[600],
+        color: colors.text.primary,
         fontSize: typography.fontSize.xs,
         fontWeight: typography.fontWeight.medium,
       }}
@@ -145,10 +144,10 @@ export function DashboardConseillerSection({
           <div
             style={{
               borderRadius: radius.xl,
-              border: `1px solid ${colors.orange[600]}`,
+              border: `1px solid ${colors.brand.gunmetal}`,
               boxShadow: shadows.card.hover,
               padding: spacing.card.xl,
-              backgroundImage: gradients.button.primary,
+              backgroundColor: colors.brand.gunmetal,
             }}
           >
             <div className="flex items-center gap-2">
@@ -156,7 +155,7 @@ export function DashboardConseillerSection({
               <p
                 style={{
                   ...typography.caption.desktop,
-                  color: "rgba(255, 250, 246, 0.88)",
+                  color: colors.text.onDark,
                   letterSpacing: typography.letterSpacing.label,
                   textTransform: "uppercase",
                   fontWeight: typography.fontWeight.medium,
@@ -173,7 +172,7 @@ export function DashboardConseillerSection({
                 fontSize: typography.fontSize["2xl"],
                 lineHeight: typography.lineHeight.heading,
                 letterSpacing: typography.letterSpacing.heading,
-                color: colors.text.inverse,
+                color: colors.text.onDark,
               }}
             >
               {displayTitle}
@@ -183,7 +182,7 @@ export function DashboardConseillerSection({
               className="mt-4 whitespace-pre-line"
               style={{
                 ...typography.body.desktop,
-                color: "rgba(255, 250, 246, 0.92)",
+                color: colors.text.onDark,
                 lineHeight: typography.lineHeight.relaxed,
               }}
             >
@@ -191,7 +190,7 @@ export function DashboardConseillerSection({
             </p>
 
             <div className="mt-8">
-              <Button variant="onAccent" onClick={onPrimaryClick}>
+              <Button variant="primary" onClick={onPrimaryClick}>
                 {primaryLabel}
               </Button>
             </div>

@@ -42,11 +42,11 @@ export function DocumentPreviewPanel({
   if (!file || !objectUrl) {
     return (
       <div
-        className={`flex aspect-[3/4] items-center justify-center rounded-xl border border-dashed border-stone-200 bg-stone-100 ${className}`}
+        className={`flex aspect-[3/4] items-center justify-center rounded-xl border border-dashed border-outline bg-panel-soft ${className}`}
       >
         <div className="px-6 text-center">
           <svg
-            className="mx-auto h-10 w-10 text-stone-500"
+            className="mx-auto h-10 w-10 text-ink-muted"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -58,15 +58,15 @@ export function DocumentPreviewPanel({
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <p className="mt-3 text-sm text-stone-500">Aperçu indisponible</p>
-          <p className="mt-1 text-xs text-stone-500">Réimportez le document pour afficher l&apos;aperçu</p>
+          <p className="mt-3 text-sm text-ink-muted">Aperçu indisponible</p>
+          <p className="mt-1 text-xs text-ink-muted">Réimportez le document pour afficher l&apos;aperçu</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`relative overflow-hidden rounded-xl border border-stone-200 bg-black/30 ${className}`}>
+    <div className={`relative overflow-hidden rounded-xl border border-outline bg-ink/30 ${className}`}>
       <div className="relative aspect-[3/4] w-full">
         {isPdf ? (
           <iframe
@@ -98,8 +98,8 @@ export function DocumentPreviewPanel({
       </div>
 
       {isPdf && regionsByField.size > 0 && (
-        <div className="border-t border-stone-200 bg-black/40 px-3 py-2">
-          <p className="text-[10px] text-stone-500">
+        <div className="border-t border-outline bg-ink/40 px-3 py-2">
+          <p className="text-[10px] text-ink-muted">
             Surlignage disponible sur les images — ouvrez le PDF dans un lecteur externe pour comparer.
           </p>
           <FieldLegend
@@ -115,7 +115,7 @@ export function DocumentPreviewPanel({
           extractions={extractions}
           activeFieldKey={activeFieldKey}
           onFieldHover={onFieldHover}
-          className="border-t border-stone-200 bg-black/40 px-3 py-2"
+          className="border-t border-outline bg-ink/40 px-3 py-2"
         />
       )}
     </div>
@@ -123,11 +123,11 @@ export function DocumentPreviewPanel({
 }
 
 const FIELD_COLORS: Record<OcrFieldKey, string> = {
-  totalAmount: "border-accent border-accent",
-  vatAmount: "bg-blue-400/30 border-blue-400",
-  supplierName: "bg-purple-400/30 border-purple-400",
-  invoiceDate: "bg-amber-400/30 border-amber-400",
-  address: "bg-pink-400/30 border-pink-400",
+  totalAmount: "border-action border-action",
+  vatAmount: "bg-panel/40 border-outline",
+  supplierName: "bg-panel/40 border-outline",
+  invoiceDate: "bg-panel/40 border-outline",
+  address: "bg-panel/40 border-outline",
 };
 
 const FIELD_LABELS: Record<OcrFieldKey, string> = {
@@ -169,8 +169,8 @@ function FieldLegend({
             onMouseLeave={() => onFieldHover?.(null)}
             className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
               isActive
-                ? `${colorClass} text-stone-900 ring-1 ring-white/20`
-                : "border-stone-200 bg-stone-100 text-stone-600 hover:text-stone-800"
+                ? `${colorClass} text-ink ring-1 ring-white/20`
+                : "border-outline bg-panel-soft text-ink-soft hover:text-ink"
             }`}
           >
             <span className={`h-2 w-2 rounded-full ${colorClass.split(" ")[0]}`} />

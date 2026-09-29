@@ -16,7 +16,7 @@ export function CTABanner() {
             border: `1px solid ${colors.border.selected}`,
             backgroundImage: [
               `radial-gradient(ellipse 60% 50% at 100% 0%, ${colors.orange[100]} 0%, transparent 70%)`,
-              `radial-gradient(ellipse 50% 45% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 68%)`,
+              `radial-gradient(ellipse 50% 45% at 0% 100%, ${colors.surface.secondary} 0%, transparent 68%)`,
               `linear-gradient(135deg, ${colors.surface.primary} 0%, ${colors.orange[50]} 100%)`,
             ].join(", "),
           }}

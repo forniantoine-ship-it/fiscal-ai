@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
+import type { CSSProperties } from "react";
+
+import { brand } from "@/design-system/theme/colors";
 
 import "./globals.css";
 
@@ -29,7 +32,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" className={`${fraunces.variable} ${dmSans.variable}`}>
+    <html
+      lang="fr"
+      className={`${fraunces.variable} ${dmSans.variable}`}
+      style={{
+        "--brand-light-blue": brand.lightBlue,
+        "--brand-moonstone": brand.moonstone,
+        "--brand-saffron": brand.saffron,
+        "--brand-gunmetal": brand.gunmetal,
+      } as CSSProperties}
+    >
       <body className="font-sans antialiased">{children}</body>
     </html>
   );

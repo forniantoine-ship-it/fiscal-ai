@@ -215,7 +215,7 @@ function HowItWorksSection() {
             <p
               style={{
                 ...typography.caption.desktop,
-                color: colors.orange[600],
+                color: colors.text.primary,
                 letterSpacing: typography.letterSpacing.caps,
                 marginBottom: spacing.scale[4],
               }}
@@ -295,7 +295,7 @@ function DemoSection() {
                     aria-hidden
                     style={{
                       ...typography.caption.desktop,
-                      color: isActive ? colors.orange[600] : isPast ? colors.success.DEFAULT : colors.text.muted,
+                      color: isActive ? colors.text.primary : isPast ? colors.success.DEFAULT : colors.text.muted,
                       width: "1.5rem",
                       flexShrink: 0,
                     }}

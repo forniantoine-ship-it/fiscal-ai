@@ -237,7 +237,7 @@ export function F007LiasseEnginePanel() {
         ) : null}
 
         {state.step === "complete" ? (
-          <Link href={LMNP_ROUTES.validation} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
+          <Link href={LMNP_ROUTES.validation} style={{ ...typography.body.desktop, color: colors.text.primary }}>
             Préparer la déclaration
           </Link>
         ) : null}

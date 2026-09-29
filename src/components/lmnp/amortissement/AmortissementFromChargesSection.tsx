@@ -23,7 +23,7 @@ export function AmortissementFromChargesSection({
 }: AmortissementFromChargesSectionProps) {
   if (!items.length) return null;
 
-  const sageAccent = "#5c7a6b";
+  const sageAccent = colors.success.DEFAULT;
 
   return (
     <section

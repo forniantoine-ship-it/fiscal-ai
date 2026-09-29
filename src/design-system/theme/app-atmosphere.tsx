@@ -8,7 +8,7 @@ const fullScreenLayer: CSSProperties = {
 };
 
 /**
- * Shared immersive orange atmosphere for private app shells.
+ * Shared Moonstone atmosphere for private app shells.
  * Mirrors PublicLayout layering — every layer covers the full viewport.
  */
 export function appAtmosphereLayers(): Array<{ id: string; className: string; style: CSSProperties }> {
@@ -42,8 +42,7 @@ export function appAtmosphereLayers(): Array<{ id: string; className: string; st
 }
 
 /**
- * Dashboard-only atmosphere — symmetrical CTA-orange bilateral diffusion,
- * ivory cream center, premium sunset environment.
+ * Dashboard-only tonal Moonstone atmosphere.
  */
 export function dashboardAtmosphereLayers(): Array<{ id: string; className: string; style: CSSProperties }> {
   return [

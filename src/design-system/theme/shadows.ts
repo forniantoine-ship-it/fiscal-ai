@@ -1,20 +1,17 @@
-/**
- * Warm shadow pigments — derived from the palette, never pure black.
- * Extremely low opacity for a light, breathable, premium feel.
- */
+import { colors } from "./colors";
+
+function rgb(hex: string) {
+  return [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(", ");
+}
+
+/** Low-opacity pigments derived from the shared palette. */
 const pigment = {
-  /** colors.text.secondary — primary shadow tone */
-  warm: "92, 86, 80",
-  /** colors.text.tertiary — ambient diffusion */
-  ambient: "138, 131, 122",
-  /** colors.orange[500] — warm accent glow */
-  accent: "232, 125, 58",
-  /** colors.orange[300] — soft accent halo */
-  accentSoft: "255, 196, 154",
-  /** colors.border.default — hairline depth */
-  edge: "232, 226, 217",
-  /** colors.success.DEFAULT — muted completion glow */
-  success: "94, 138, 102",
+  warm: rgb(colors.text.secondary),
+  ambient: rgb(colors.text.tertiary),
+  accent: rgb(colors.brand.saffron),
+  accentSoft: rgb(colors.brand.lightBlue),
+  edge: rgb(colors.border.default),
+  success: rgb(colors.success.DEFAULT),
 } as const;
 
 /**
@@ -143,7 +140,7 @@ export const shadows = {
     ].join(", "),
 
     /** Upload error — muted, not alarming */
-    error: `0 2px 8px rgba(182, 107, 99, 0.08)`,
+    error: `0 2px 8px rgba(${rgb(colors.error.DEFAULT)}, 0.08)`,
   },
 
   // ─── Workflow card shadows ─────────────────────────────────────────────────
@@ -184,7 +181,7 @@ export const shadows = {
   ring: `0 0 0 1px rgba(${pigment.edge}, 0.65)`,
 
   /** Focus ring — pairs with colors.focus.ring */
-  focus: `0 0 0 3px rgba(240, 196, 160, 0.35)`,
+  focus: `0 0 0 3px rgba(${rgb(colors.focus.ring)}, 0.35)`,
 } as const;
 
 export type Shadows = typeof shadows;

@@ -43,7 +43,7 @@ export function DashboardHero({
         padding: spacing.card.lg,
         backgroundImage: [
           `radial-gradient(ellipse 92% 68% at 50% 0%, ${colors.orange[100]} 0%, ${colors.orange[50]} 38%, transparent 72%)`,
-          `radial-gradient(ellipse 62% 48% at 0% 100%, ${colors.background.landingGlowSoft} 0%, transparent 58%)`,
+          `radial-gradient(ellipse 62% 48% at 0% 100%, ${colors.surface.secondary} 0%, transparent 58%)`,
           `radial-gradient(ellipse 62% 48% at 100% 100%, ${colors.orange[100]} 0%, transparent 58%)`,
           gradients.card.elevated,
         ].join(", "),

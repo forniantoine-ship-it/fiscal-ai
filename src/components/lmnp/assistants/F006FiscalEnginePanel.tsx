@@ -226,7 +226,7 @@ export function F006FiscalEnginePanel() {
             <Link href={LMNP_ROUTES.liasseEngine}>
               <Button className="w-full">Continuer vers la Liasse</Button>
             </Link>
-            <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.body.desktop, color: colors.orange[600] }}>
+            <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.body.desktop, color: colors.text.primary }}>
               Retour au tableau de bord
             </Link>
           </div>

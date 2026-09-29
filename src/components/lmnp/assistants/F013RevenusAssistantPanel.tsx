@@ -144,7 +144,7 @@ function ResultSummary({ result }: { result: F013Result }) {
       {blocking.length > 0 ? (
         <div style={{ marginTop: spacing.scale[3] }}>
           {blocking.map((anomaly, index) => (
-            <p key={index} style={{ ...typography.caption.desktop, color: colors.orange[600] }}>
+            <p key={index} style={{ ...typography.caption.desktop, color: colors.text.primary }}>
               ⚠ {anomaly.message}
             </p>
           ))}

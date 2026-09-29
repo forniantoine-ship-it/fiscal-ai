@@ -105,7 +105,7 @@ function SuggestionCard({
   isTransferring: boolean;
   isConfirmed: boolean;
 }) {
-  const sageAccent = "#5c7a6b";
+  const sageAccent = colors.success.DEFAULT;
 
   if (isConfirmed) {
     return (

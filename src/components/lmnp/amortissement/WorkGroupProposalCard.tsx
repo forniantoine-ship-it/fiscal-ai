@@ -168,8 +168,8 @@ export function WorkGroupProposalCard({
           onClick={() => onConfirm(group.id)}
           style={{
             flex: 1,
-            backgroundColor: colors.orange[500] ?? "#F07C3A",
-            color: "#FFFFFF",
+            backgroundColor: colors.orange[500],
+            color: colors.text.inverse,
             border: "none",
             borderRadius: radius.lg,
             padding: `${spacing.scale[3]} ${spacing.scale[4]}`,
@@ -306,7 +306,7 @@ export function BusinessAssetCard({
 
   const cardStyle: React.CSSProperties = {
     backgroundColor: colors.surface.primary,
-    border: `1px solid ${asset.userValidated ? colors.border.default : colors.orange[200] ?? "#F5D4B8"}`,
+    border: `1px solid ${asset.userValidated ? colors.border.default : colors.orange[200]}`,
     borderRadius: radius.xl,
     boxShadow: shadows.card.default,
     padding: spacing.scale[5],
@@ -323,9 +323,9 @@ export function BusinessAssetCard({
               <span
                 style={{
                   ...typography.caption.desktop,
-                  color: colors.orange[600] ?? "#D97706",
-                  backgroundColor: colors.orange[50] ?? "#FFF7ED",
-                  border: `1px solid ${colors.orange[200] ?? "#FED7AA"}`,
+                  color: colors.text.primary,
+                  backgroundColor: colors.orange[50],
+                  border: `1px solid ${colors.orange[200]}`,
                   borderRadius: radius.full,
                   padding: `2px ${spacing.scale[2]}`,
                 }}
@@ -387,8 +387,8 @@ export function BusinessAssetCard({
               type="button"
               onClick={() => onValidate(asset.id)}
               style={{
-                backgroundColor: colors.orange[500] ?? "#F07C3A",
-                color: "#FFFFFF",
+                backgroundColor: colors.orange[500],
+                color: colors.text.inverse,
                 border: "none",
                 borderRadius: radius.md,
                 padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
@@ -455,9 +455,9 @@ function TreatmentBadge({ isImmobilisation }: { isImmobilisation: boolean }) {
         ...typography.caption.desktop,
         color: isImmobilisation ? colors.text.accent : colors.text.secondary,
         backgroundColor: isImmobilisation
-          ? (colors.orange[50] ?? "#FFF7ED")
+          ? (colors.orange[50])
           : colors.surface.secondary,
-        border: `1px solid ${isImmobilisation ? (colors.orange[200] ?? "#FED7AA") : colors.border.subtle}`,
+        border: `1px solid ${isImmobilisation ? (colors.orange[200]) : colors.border.subtle}`,
         borderRadius: radius.full,
         padding: `2px ${spacing.scale[2]}`,
       }}

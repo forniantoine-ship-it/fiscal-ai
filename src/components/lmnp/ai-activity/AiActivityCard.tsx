@@ -34,10 +34,10 @@ function severityConfig(severity: AiActivityEvent["severity"]): SeverityConfig {
       };
     case "blocking":
       return {
-        background: "#FFF7F0",
-        border: "#F5C4A0",
+        background: colors.warning.surface,
+        border: colors.border.selected,
         icon: "!",
-        iconColor: colors.orange[700],
+        iconColor: colors.warning.DEFAULT,
       };
     case "info":
     default:
@@ -45,7 +45,7 @@ function severityConfig(severity: AiActivityEvent["severity"]): SeverityConfig {
         background: colors.surface.secondary,
         border: colors.border.subtle,
         icon: "i",
-        iconColor: colors.text.tertiary,
+        iconColor: colors.brand.gunmetal,
       };
   }
 }
@@ -246,7 +246,7 @@ export function AiActivityCard({ event, onReimport }: AiActivityCardProps) {
             height: 20,
             borderRadius: "50%",
             background: cfg.iconColor,
-            color: "#fff",
+            color: colors.text.onDark,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

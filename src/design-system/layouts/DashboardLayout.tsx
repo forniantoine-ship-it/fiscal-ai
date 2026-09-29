@@ -342,7 +342,7 @@ export function DashboardLayout({
     <div
       className="relative min-h-screen"
       style={{
-        backgroundColor: "#FFF8F0",
+        backgroundColor: colors.background.app,
         backgroundImage: gradients.dashboard.background,
         backgroundAttachment: "fixed",
         backgroundSize: "cover",
@@ -364,7 +364,7 @@ export function DashboardLayout({
         <header
           style={{
             borderBottom: `1px solid ${colors.border.subtle}`,
-            backgroundColor: "rgba(251, 248, 243, 0.84)",
+            backgroundColor: `color-mix(in srgb, ${colors.surface.primary} 84%, transparent)`,
             backdropFilter: "blur(16px)",
             WebkitBackdropFilter: "blur(16px)",
           }}

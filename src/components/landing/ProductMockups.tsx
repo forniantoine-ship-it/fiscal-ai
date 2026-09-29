@@ -154,7 +154,7 @@ export function HeroDashboardMockup() {
           <span
             style={{
               ...typography.caption.desktop,
-              color: colors.orange[600],
+              color: colors.text.primary,
               padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
               borderRadius: radius.full,
               backgroundColor: colors.orange[50],
@@ -219,7 +219,7 @@ export function HeroDashboardMockup() {
               <span
                 style={{
                   ...typography.caption.desktop,
-                  color: doc.status === "En cours" ? colors.orange[600] : colors.success.DEFAULT,
+                  color: doc.status === "En cours" ? colors.text.primary : colors.success.DEFAULT,
                   whiteSpace: "nowrap",
                 }}
               >
@@ -272,7 +272,7 @@ export function UploadMockup() {
             aria-hidden
             style={{
               fontSize: typography.fontSize["2xl"],
-              color: colors.orange[400],
+              color: colors.text.primary,
               marginBottom: spacing.scale[3],
             }}
           >
@@ -298,7 +298,7 @@ export function UploadMockup() {
               }}
             >
               <span style={{ ...typography.caption.desktop, color: colors.text.primary }}>{file}</span>
-              <span style={{ ...typography.caption.desktop, color: colors.orange[600] }}>Analyse…</span>
+              <span style={{ ...typography.caption.desktop, color: colors.text.primary }}>Analyse…</span>
             </div>
           ))}
         </div>
@@ -381,7 +381,7 @@ export function AmortizationMockup() {
           <span
             style={{
               ...typography.caption.desktop,
-              color: colors.orange[600],
+              color: colors.text.primary,
               padding: `${spacing.scale[2]} ${spacing.scale[3]}`,
               borderRadius: radius.full,
               backgroundColor: colors.orange[50],
@@ -479,7 +479,7 @@ export function ValidationMockup() {
               <span
                 style={{
                   ...typography.caption.desktop,
-                  color: field.status === "Validé" ? colors.success.DEFAULT : colors.orange[600],
+                  color: field.status === "Validé" ? colors.success.DEFAULT : colors.text.primary,
                 }}
               >
                 {field.status}

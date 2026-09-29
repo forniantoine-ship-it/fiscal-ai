@@ -52,7 +52,7 @@ function displayConfig(event: AiActivityEvent): DisplayConfig {
         background: colors.success.surface,
         border: colors.success.border,
         iconBackground: colors.success.DEFAULT,
-        iconColor: "#fff",
+        iconColor: colors.text.onDark,
         iconChar: "✓",
         titleColor: colors.success.DEFAULT,
       };
@@ -62,7 +62,7 @@ function displayConfig(event: AiActivityEvent): DisplayConfig {
         background: colors.warning.surface,
         border: colors.warning.border,
         iconBackground: colors.warning.DEFAULT,
-        iconColor: "#fff",
+        iconColor: colors.text.onDark,
         iconChar: "⚠",
         titleColor: colors.warning.DEFAULT,
       };
@@ -72,7 +72,7 @@ function displayConfig(event: AiActivityEvent): DisplayConfig {
         background: colors.surface.secondary,
         border: colors.border.default,
         iconBackground: colors.text.muted,
-        iconColor: "#fff",
+        iconColor: colors.text.onDark,
         iconChar: "i",
         titleColor: colors.text.primary,
       };
@@ -146,7 +146,7 @@ function ConflictPanel({ event, onKeepExisting, onUseNew }: ConflictPanelProps) 
           {/* Detected */}
           <div
             style={{
-              background: "#FFF8F3",
+              background: colors.surface.secondary,
               border: `1px solid ${colors.warning.border}`,
               borderRadius: radius.md,
               padding: "12px",

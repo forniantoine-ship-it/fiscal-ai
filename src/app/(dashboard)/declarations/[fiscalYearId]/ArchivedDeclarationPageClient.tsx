@@ -71,7 +71,7 @@ export function ArchivedDeclarationPageClient({ fiscalYearId }: { fiscalYearId: 
   }, [denied, historyHref, router]);
 
   if (denied || !ready) {
-    return <p className="text-center text-stone-500">Chargement…</p>;
+    return <p className="text-center text-ink-muted">Chargement…</p>;
   }
 
   return <ArchivedDeclarationView record={ready} />;

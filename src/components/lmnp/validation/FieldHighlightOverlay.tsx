@@ -10,28 +10,28 @@ interface FieldHighlightOverlayProps {
 
 const FIELD_COLORS: Record<OcrFieldKey, { bg: string; border: string; label: string }> = {
   totalAmount: {
-    bg: "bg-accent-muted",
-    border: "border-accent/50",
+    bg: "bg-action/25",
+    border: "border-action/50",
     label: "Montant",
   },
   vatAmount: {
-    bg: "bg-blue-400/25",
-    border: "border-blue-400/80",
+    bg: "bg-panel/40",
+    border: "border-outline",
     label: "TVA",
   },
   supplierName: {
-    bg: "bg-purple-400/25",
-    border: "border-purple-400/80",
+    bg: "bg-panel/40",
+    border: "border-outline",
     label: "Fournisseur",
   },
   invoiceDate: {
-    bg: "bg-amber-400/25",
-    border: "border-amber-400/80",
+    bg: "bg-panel/40",
+    border: "border-outline",
     label: "Date",
   },
   address: {
-    bg: "bg-pink-400/25",
-    border: "border-pink-400/80",
+    bg: "bg-panel/40",
+    border: "border-outline",
     label: "Adresse",
   },
 };
@@ -73,7 +73,7 @@ export function FieldHighlightOverlay({
               }`}
             />
             <span
-              className={`absolute -top-5 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-semibold ${colors.bg} ${colors.border} border text-stone-900`}
+              className={`absolute -top-5 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-semibold ${colors.bg} ${colors.border} border text-ink`}
             >
               {colors.label} · {ext.confidence}%
             </span>

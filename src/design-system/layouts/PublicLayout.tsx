@@ -144,7 +144,7 @@ function PublicNavbar({
           maxWidth: spacing.container.max,
           paddingInline: GUTTER,
           paddingBlock: spacing.scale[4],
-          backgroundColor: scrolled ? "rgba(251, 248, 243, 0.82)" : "transparent",
+          backgroundColor: scrolled ? `color-mix(in srgb, ${colors.surface.primary} 82%, transparent)` : "transparent",
           backdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
           WebkitBackdropFilter: scrolled ? "blur(20px) saturate(1.2)" : "none",
           borderBottom: scrolled ? `1px solid ${colors.border.subtle}` : "1px solid transparent",
@@ -211,7 +211,7 @@ function PublicNavbar({
           className="lg:hidden"
           style={{
             borderBottom: `1px solid ${colors.border.subtle}`,
-            backgroundColor: "rgba(251, 248, 243, 0.94)",
+            backgroundColor: `color-mix(in srgb, ${colors.surface.primary} 94%, transparent)`,
             backdropFilter: "blur(20px)",
             WebkitBackdropFilter: "blur(20px)",
             boxShadow: shadows.card.default,
@@ -251,7 +251,7 @@ function PublicFooter() {
     <footer
       style={{
         borderTop: `1px solid ${colors.border.subtle}`,
-        backgroundColor: "rgba(251, 248, 243, 0.58)",
+        backgroundColor: `color-mix(in srgb, ${colors.surface.primary} 58%, transparent)`,
         backdropFilter: "blur(12px)",
         WebkitBackdropFilter: "blur(12px)",
       }}

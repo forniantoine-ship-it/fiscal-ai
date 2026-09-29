@@ -4,6 +4,7 @@
  */
 
 import type { ChargesCategoryData, ChargesExpenseLine, ExpenseCategory } from "../../types";
+import { colors } from "@/design-system/theme/colors";
 import { categoryLabel } from "../charges-profile";
 
 export type ChargeCategoryVisualKind =
@@ -66,9 +67,9 @@ export function resolveChargeCategoryCardVisual(cat: ChargesCategoryData): Charg
     return {
       kind,
       title: resolveChargeCategoryTitle(cat.category),
-      accentColor: "#5C6B7A",
-      accentBorderColor: "#C5D0DB",
-      surfaceTint: "#F4F6F8",
+      accentColor: colors.text.primary,
+      accentBorderColor: colors.border.default,
+      surfaceTint: colors.surface.secondary,
       kindBadge: KIND_BADGE.property_tax ?? null,
       showRecurringBadge: false,
     };
@@ -78,9 +79,9 @@ export function resolveChargeCategoryCardVisual(cat: ChargesCategoryData): Charg
     return {
       kind,
       title: resolveChargeCategoryTitle(cat.category),
-      accentColor: "#C4621A",
-      accentBorderColor: "#F0C4A0",
-      surfaceTint: "#FFF8F3",
+      accentColor: colors.text.primary,
+      accentBorderColor: colors.border.selected,
+      surfaceTint: colors.surface.secondary,
       kindBadge: KIND_BADGE.insurance ?? null,
       showRecurringBadge: resolveChargeCategoryRecurring(cat),
     };
@@ -89,9 +90,9 @@ export function resolveChargeCategoryCardVisual(cat: ChargesCategoryData): Charg
   return {
     kind,
     title: resolveChargeCategoryTitle(cat.category),
-    accentColor: "#5C5650",
-    accentBorderColor: "#E8E2D9",
-    surfaceTint: "#FFFFFF",
+    accentColor: colors.text.secondary,
+    accentBorderColor: colors.border.default,
+    surfaceTint: colors.surface.primary,
     kindBadge: KIND_BADGE[cat.category] ?? null,
     showRecurringBadge: false,
   };
