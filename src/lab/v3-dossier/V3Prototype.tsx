@@ -546,7 +546,7 @@ function WorkspaceFinancement({ state, dispatch }: Props) {
       </section>
     </div>
     <div className={styles.workspaceFooter}>
-      <button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: "view", view: "dossier" })}>Revenir à mon dossier</button>
+      <button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: "view", view: "dossier" })}>Revenir à mon dossier</button>
     </div>
   </>;
 }
@@ -565,7 +565,7 @@ function DocumentsView({ state }: { state: LabState }) {
 function DeclarationView({ dispatch }: { dispatch: Dispatch<LabAction> }) {
   return <>
     <header className={styles.pageHead}><p className={styles.eyebrow}>Ma déclaration {DEMO.year}</p><h1>Non simulée dans ce LAB.</h1><p className={styles.lead}>Le résultat estimé est visible en bas de Mon dossier. Aucune liasse n’est produite ici.</p></header>
-    <button type="button" className={styles.primaryButton} onClick={() => dispatch({ type: "view", view: "dossier" })}>Revenir à mon dossier</button>
+    <button type="button" className={styles.secondaryButton} onClick={() => dispatch({ type: "view", view: "dossier" })}>Revenir à mon dossier</button>
   </>;
 }
 
