@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { V2Prototype } from "./V2Prototype";
+import { V3RealPrototype } from "@/lab/v3-dossier/V3RealPrototype";
 import { loadRealDocuments, resolveRealDocumentForOpen, type RealDocumentLoad } from "./real-documents";
 import { sameCorrectionScope, scopeFromRealWorkspace, type ScopeQuery } from "./correction-scope";
 import { fetchServerPaymentStatus, type ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
@@ -26,7 +27,12 @@ const YEAR_MESSAGES = {
   ambiguous: "Nous ne pouvons pas déterminer automatiquement l’exercice à afficher.",
 } as const;
 
-export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requestedDossierId }: { expectedReturn?: ScopeQuery; requestedDossierId?: string | null }) {
+export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requestedDossierId, shell }: {
+  expectedReturn?: ScopeQuery;
+  requestedDossierId?: string | null;
+  /** R15 — "v3" mounts the V3 real shell on the exact same loading, scope and security path. Absent = V2 (unchanged). */
+  shell?: "v3";
+}) {
   const [state, setState] = useState<RouteState>({ status: "loading" });
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
@@ -107,6 +113,11 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requeste
     }
   }
 
+  if (state.status === "ready" && shell === "v3") {
+    const scope = scopeFromRealWorkspace(state);
+    // The shell marker only selects where a completed F011 correction returns to; it carries no authority.
+    return <div data-workspace-source={state.source}><V3RealPrototype workspace={state.workspace} scope={scope ? { ...scope, shell: "v3" } : null} documents={state.documents} /></div>;
+  }
   if (state.status === "ready") {
     return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state)} payment={payment} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
   }

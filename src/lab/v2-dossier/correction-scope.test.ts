@@ -4,7 +4,8 @@ import type { RealWorkspaceLoad } from "./real-workspace";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import {
   readV3CorrectionQuery, readV3ReturnQuery, sameCorrectionScope,
-  scopeFromRealWorkspace, scopeMatchesWorkspace, v3OwnerCorrectionHref, v3ReturnHref,
+  scopeFromRealWorkspace, scopeMatchesWorkspace, v3CorrectionHrefForResolvedScope, v3OwnerCorrectionHref,
+  v3OwnerHrefForResolvedScope, v3ReturnHref,
 } from "./correction-scope";
 
 const WORKSPACE: PersistedWorkspace = {
@@ -113,5 +114,54 @@ describe("V3 correction scope — before provider and on return", () => {
     assert.equal(scopeMatchesWorkspace(NOT_APPLICABLE_SCOPE, NO_PROPERTY_WORKSPACE), true);
     assert.equal(scopeMatchesWorkspace(NOT_APPLICABLE_SCOPE, WORKSPACE), true);
     assert.equal(scopeMatchesWorkspace(SCOPE, NO_PROPERTY_WORKSPACE), false);
+  });
+});
+
+describe("R15 — marqueur de coque V3 (v3Shell) : liste blanche, sans autorité", () => {
+  const V3_SCOPE = { ...SCOPE, shell: "v3" as const };
+  const owner = (scope: typeof V3_SCOPE | typeof SCOPE) => v3CorrectionHrefForResolvedScope("/assistants/financement", scope)!;
+
+  it("émis seulement pour la coque V3 ; la route V2 réelle et ses liens restent strictement identiques", () => {
+    assert.equal(new URL(owner(SCOPE), "http://x").searchParams.has("v3Shell"), false);
+    assert.equal(new URL(owner(V3_SCOPE), "http://x").searchParams.get("v3Shell"), "v3");
+  });
+
+  it("aller-retour : le marqueur est relu ; sans marqueur, la portée n'a aucune clé shell", () => {
+    const withShell = readV3CorrectionQuery("/assistants/financement", new URL(owner(V3_SCOPE), "http://x").searchParams);
+    assert.deepEqual(withShell, { kind: "scope", scope: V3_SCOPE });
+    const without = readV3CorrectionQuery("/assistants/financement", new URL(owner(SCOPE), "http://x").searchParams);
+    assert.deepEqual(without, { kind: "scope", scope: SCOPE });
+    assert.equal("shell" in (without.kind === "scope" ? without.scope : {}), false);
+  });
+
+  it("toute autre valeur, un doublon ou une valeur vide invalident la portée entière (jamais une URL, jamais un défaut)", () => {
+    const base = new URL(owner(SCOPE), "http://x").searchParams;
+    for (const bad of [["other"], ["V3"], ["/lab/x"], ["https://evil.example"], [""], ["v3", "v3"]]) {
+      const params = new URLSearchParams(base);
+      for (const value of bad) params.append("v3Shell", value);
+      assert.deepEqual(readV3CorrectionQuery("/assistants/financement", params), { kind: "invalid" }, JSON.stringify(bad));
+    }
+  });
+
+  it("retour F011 : coque V3 → /lab/v3-dossier/real, sinon V2 ; même sauvegarde confirmée exigée", () => {
+    const back = (scope: typeof V3_SCOPE | typeof SCOPE) => v3ReturnHref({ scope, scopeStillMatches: true, changed: true, save: { status: "confirmed", revision: 2 } });
+    assert.ok(back(V3_SCOPE)?.startsWith("/lab/v3-dossier/real?"));
+    assert.ok(back(SCOPE)?.startsWith("/lab/v2-dossier/real?"));
+    assert.equal(v3ReturnHref({ scope: V3_SCOPE, scopeStillMatches: true, changed: true, save: { status: "failed", reason: "x" } }), null);
+    assert.equal(v3ReturnHref({ scope: V3_SCOPE, scopeStillMatches: false, changed: false }), null);
+    const href = back(V3_SCOPE)!;
+    assert.deepEqual(readV3ReturnQuery(new URL(href, "http://localhost").searchParams), { kind: "scope", scope: V3_SCOPE });
+  });
+
+  it("aucune autorité : l'égalité de portée et la portée du workspace ignorent la coque", () => {
+    assert.equal(sameCorrectionScope(V3_SCOPE, SCOPE), true);
+    assert.equal(sameCorrectionScope(SCOPE, V3_SCOPE), true);
+    assert.equal(sameCorrectionScope(V3_SCOPE, { ...SCOPE, year: 2024 }), false);
+    assert.equal(scopeMatchesWorkspace(V3_SCOPE, WORKSPACE), true);
+  });
+
+  it("un href déjà porteur du marqueur est refusé (jamais deux marqueurs)", () => {
+    assert.equal(v3OwnerHrefForResolvedScope("/assistants/financement?v3Shell=v3", V3_SCOPE), null);
+    assert.ok(v3OwnerHrefForResolvedScope("/assistants/financement", V3_SCOPE)?.includes("v3Shell=v3"));
   });
 });

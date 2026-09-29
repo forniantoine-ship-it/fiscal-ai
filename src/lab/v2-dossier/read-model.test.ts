@@ -494,8 +494,48 @@ test("Financing — un prêt exclu du calcul de l'exercice l'indique expliciteme
     financementCharges: financementChargesOutput({ prets: [], excludedLoanIds: ["loan-1"] }),
   };
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (date de première mensualité inconnue)");
+  // R15 — le prêt de la fixture a une date de première mensualité : l'ancienne cause « date inconnue » aurait été fausse.
+  // Exclusion persistée sans cause re-dérivable des données enregistrées → libellé neutre, jamais une cause supposée.
+  assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (cause non déterminable à partir des données enregistrées)");
   assert.equal(financingFact(model, "loan-0-interetsExercice"), undefined);
+});
+
+test("Financing — cause réelle d'exclusion : date de première mensualité manquante (libellé historique conservé pour ce seul cas)", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan({ firstPaymentDate: "" })], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [], excludedLoanIds: ["loan-1"] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (date de première mensualité inconnue)");
+});
+
+test("Financing — cause réelle d'exclusion : année de souscription inconnue alors que des frais sont renseignés", () => {
+  const input = workspace();
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan({ loanApplicationFees: 500 })], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+    financementCharges: financementChargesOutput({ prets: [], excludedLoanIds: ["loan-1"] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-exerciseStatus")?.value, "Exclu du calcul (année de souscription inconnue alors que des frais sont renseignés)");
+});
+
+test("Financing — cause réelle d'exclusion : échéancier importé non attribuable à plusieurs prêts, jamais confondu avec une date manquante", () => {
+  const input = workspace();
+  const installment = { date: "2026-01-05", totalPayment: 800, principal: 500, interest: 250, insurance: 50, fees: 0 };
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans: [loan({ id: "loan-1" }), loan({ id: "loan-2" })], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [installment] },
+    financementCharges: financementChargesOutput({ prets: [], excludedLoanIds: ["loan-1", "loan-2"] }),
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  for (const index of [0, 1]) {
+    const value = financingFact(model, `loan-${index}-exerciseStatus`)?.value;
+    assert.equal(value, "Exclu du calcul (échéancier importé inexploitable ou non attribuable à ce prêt)");
+    assert.equal(String(value).includes("date de première mensualité"), false);
+  }
 });
 
 test("Financing R3.6 — CRD F011 inconnu (aucune échéance exploitable) : jamais fabriqué en 0 €", () => {

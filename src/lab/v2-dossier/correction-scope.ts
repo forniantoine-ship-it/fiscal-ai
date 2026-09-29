@@ -15,7 +15,17 @@ export type V3CorrectionScope = {
   fiscalYearId: string;
   year: number;
   property: V3PropertyScope;
+  /**
+   * R15 — which V3 shell to come back to, as an allow-listed marker (never a URL). Absent = the original V2 real route.
+   * It carries no authority: scope equality and every security check ignore it.
+   */
+  shell?: V3Shell;
 };
+
+export type V3Shell = "v3";
+
+const V3_SHELL_RETURN_ROUTES: Readonly<Record<V3Shell, string>> = { v3: "/lab/v3-dossier/real" };
+const V2_REAL_ROUTE = "/lab/v2-dossier/real";
 
 export type ScopeQuery =
   | { kind: "none" }
@@ -67,7 +77,7 @@ function propertyScopeEqual(expected: V3PropertyScope, actual: V3PropertyScope):
 function parseScopeParams(
   params: URLSearchParams,
   requiresProperty: boolean | null,
-): { dossierId: string; fiscalYearId: string; year: number; property: V3PropertyScope } | "invalid" {
+): { dossierId: string; fiscalYearId: string; year: number; property: V3PropertyScope; shell?: V3Shell } | "invalid" {
   const baseKeys = ["dossierId", "fiscalYearId", "year"] as const;
   const values = baseKeys.map(key => params.getAll(key));
   if (values.some(value => value.length !== 1 || !value[0]?.trim())) return "invalid";
@@ -82,7 +92,10 @@ function parseScopeParams(
   const wantsProperty = requiresProperty ?? hasProperty;
   if (wantsProperty !== hasProperty) return "invalid";
   const property: V3PropertyScope = hasProperty ? { kind: "required", propertyId: propertyValues[0]! } : { kind: "not_applicable" };
-  return { dossierId, fiscalYearId, year: Number(rawYear), property };
+  // Optional allow-listed shell marker: exactly "v3" once, or absent. Anything else invalidates the whole scope.
+  const shellValues = params.getAll("v3Shell");
+  if (shellValues.length > 1 || (shellValues.length === 1 && shellValues[0] !== "v3")) return "invalid";
+  return { dossierId, fiscalYearId, year: Number(rawYear), property, ...(shellValues.length === 1 ? { shell: "v3" as const } : {}) };
 }
 
 function readScope(params: URLSearchParams, marker: string, requiresProperty: boolean | null): ScopeQuery {
@@ -133,6 +146,7 @@ function scopeParams(scope: V3CorrectionScope): URLSearchParams {
     dossierId: scope.dossierId, fiscalYearId: scope.fiscalYearId, year: String(scope.year),
   });
   if (scope.property.kind === "required") params.set("propertyId", scope.property.propertyId);
+  if (scope.shell === "v3") params.set("v3Shell", "v3");
   return params;
 }
 
@@ -155,7 +169,7 @@ export function v3OwnerHrefForResolvedScope(href: string, scope: V3CorrectionSco
   if (!scoped) return null;
   const target = new URL(scoped, url.origin);
   for (const [key, value] of url.searchParams) {
-    if (["dossierId", "fiscalYearId", "year", "propertyId", "v3Correction", "v3Return"].includes(key)) return null;
+    if (["dossierId", "fiscalYearId", "year", "propertyId", "v3Correction", "v3Return", "v3Shell"].includes(key)) return null;
     target.searchParams.append(key, value);
   }
   return `${target.pathname}${target.search}`;
@@ -191,5 +205,5 @@ export function v3ReturnHref(input: {
   if (input.changed && (input.save?.status !== "confirmed" || !Number.isSafeInteger(input.save.revision) || input.save.revision < 1)) return null;
   const params = scopeParams(input.scope);
   params.set("v3Return", "1");
-  return `/lab/v2-dossier/real?${params}`;
+  return `${input.scope.shell ? V3_SHELL_RETURN_ROUTES[input.scope.shell] : V2_REAL_ROUTE}?${params}`;
 }

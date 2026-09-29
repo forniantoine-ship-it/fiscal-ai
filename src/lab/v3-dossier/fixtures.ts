@@ -12,11 +12,9 @@
 
 export type DomainId = "activite" | "logement" | "financement" | "revenus" | "charges" | "amortissements";
 
-export type SourceRef = {
-  document: string;
-  /** Localisation dans la pièce (page, échéance…). */
-  detail: string;
-};
+import type { SourceRef } from "./source-ref";
+
+export type { SourceRef };
 
 export const DOMAIN_ORDER: DomainId[] = ["activite", "logement", "financement", "revenus", "charges", "amortissements"];
 

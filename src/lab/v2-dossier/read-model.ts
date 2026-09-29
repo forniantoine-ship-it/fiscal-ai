@@ -3,6 +3,7 @@ import { readActiviteFieldProvenance } from "@/lib/lmnp/services/activite-field-
 import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/validation-profile";
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
+import { LOAN_FACT_PROVENANCE_KEY, exclusionFactValue, loanExclusionCauses } from "./financing-shared";
 
 export type V3DomainId = "activity" | "property" | "financing" | "revenues" | "charges" | "depreciation";
 export type V3DomainStatus = "complete" | "incomplete" | "unsupported";
@@ -102,15 +103,15 @@ export function resolveV3Declaration(source: V3PrototypeSource): V3DeclarationRe
   return source.mode === "real" ? buildV3DeclarationReadModel(source.workspace) : undefined;
 }
 
-function known(value: string | undefined): string | null {
+export function known(value: string | undefined): string | null {
   return value?.trim() || null;
 }
 
-function money(value: number | undefined): string | null {
+export function money(value: number | undefined): string | null {
   return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value)} €` : null;
 }
 
-function percent(value: number | undefined): string | null {
+export function percent(value: number | undefined): string | null {
   return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} %` : null;
 }
 
@@ -124,7 +125,7 @@ const FIELD_SOURCE_LABELS: Record<FieldSource, string> = {
   judgment: "Choix de jugement", user_correction: "Corrigé",
 };
 
-function fieldSourceLabel(source: FieldSource | undefined): string | undefined {
+export function fieldSourceLabel(source: FieldSource | undefined): string | undefined {
   return source ? FIELD_SOURCE_LABELS[source] : undefined;
 }
 
@@ -270,13 +271,6 @@ function loanLabel(index: number, bank: string | null): string {
   return bank ? `Prêt ${index + 1} (${bank})` : `Prêt ${index + 1}`;
 }
 
-// Contract fact → key of `LoanProfile.provenance` (F011 field names). Both dates come from the same F011 answer.
-const LOAN_FACT_PROVENANCE_KEY: Record<string, string> = {
-  loanType: "typePret", borrowedAmount: "capitalInitial", capitalInitialOffre: "capitalInitialOffre",
-  rate: "tauxNominal", durationMonths: "dureeMois", startDate: "datePremiereMensualite",
-  firstPaymentDate: "datePremiereMensualite", insurance: "assuranceAnnuelle",
-};
-
 function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as Activity/Property: the whole dossier stays unsupported, never partial.
   if (isMultiProperty(workspace)) {
@@ -333,7 +327,7 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
       { id: `loan-${index}-capitalRestantDu`, label: `${label} · Capital restant dû au 31/12/${exerciseYear} (F011)`, value: money(pret.capitalRestantDu31_12) },
     ] : excludedLoanIds.has(loan.id) ? [
       { id: `loan-${index}-exerciseStatus`, label: `${label} · Situation exercice ${exerciseYear}`,
-        value: "Exclu du calcul (date de première mensualité inconnue)" },
+        value: exclusionFactValue(loanExclusionCauses({ loans, installments: draft?.creditFinancing?.installments ?? [] }, loan, workspace.fiscalYear.year)) },
     ] : [];
 
     return [...contractFacts, ...exerciseFacts];

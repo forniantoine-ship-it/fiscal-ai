@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { SourceRef } from "./fixtures";
+import type { SourceRef } from "./source-ref";
 import styles from "./prototype.module.css";
 
 export const money = (value: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(value) + " €";
@@ -47,13 +47,13 @@ export function SourceLink({ source, prefix = false }: { source: SourceRef; pref
       onKeyDown={event => { if (event.key === "Escape") setOpen(false); }}>
       {prefix ? <span aria-hidden="true">↳ </span> : null}{source.document}
     </button>
-    {open ? <span role="tooltip" id={id} className={styles.sourcePopover}><strong>{source.document}</strong>{source.detail}</span> : null}
+    {open && source.detail ? <span role="tooltip" id={id} className={styles.sourcePopover}><strong>{source.document}</strong>{source.detail}</span> : null}
   </span>;
 }
 
-export function StatusMark({ tone, label }: { tone: "ok" | "attention" | "corrected"; label: string }) {
+export function StatusMark({ tone, label, showLabel = false }: { tone: "ok" | "attention" | "corrected"; label: string; showLabel?: boolean }) {
   const glyph = tone === "ok" ? "✓" : tone === "corrected" ? "✎" : "!";
-  return <span className={`${styles.status} ${styles[`status_${tone}`]}`}><span aria-hidden="true">{glyph}</span><span className={tone === "ok" ? styles.srOnly : undefined}>{label}</span></span>;
+  return <span className={`${styles.status} ${styles[`status_${tone}`]}`}><span aria-hidden="true">{glyph}</span><span className={tone === "ok" && !showLabel ? styles.srOnly : undefined}>{label}</span></span>;
 }
 
 export type Column<Row> = {
@@ -99,14 +99,22 @@ export function RestitutionShape({ columns }: { columns: string[] }) {
   </div>;
 }
 
-export type Piece = { name: string; state: "done" | "reading"; note?: string };
+/** `unknown` / `failed` ne servent qu'au chemin réel : l'état d'analyse n'est jamais supposé. */
+export type Piece = { name: string; state: "done" | "reading" | "unknown" | "failed"; note?: string };
+
+const PIECE_STATE: Record<Piece["state"], { label: string; done: boolean }> = {
+  done: { label: "✓ Analyse terminée", done: true },
+  reading: { label: "Lecture en cours…", done: false },
+  unknown: { label: "État d’analyse non déterminé", done: false },
+  failed: { label: "Analyse à reprendre", done: false },
+};
 
 export function PiecesList({ pieces, onAdd, addLabel = "Ajouter une pièce" }: { pieces: Piece[]; onAdd?: () => void; addLabel?: string }) {
   return <div className={styles.pieces}>
     <ul>{pieces.map(piece => <li key={piece.name}>
       <span className={styles.fileGlyph} aria-hidden="true">▤</span>
       <span className={styles.pieceName}>{piece.name}{piece.note ? <small>{piece.note}</small> : null}</span>
-      <span className={piece.state === "done" ? styles.pieceDone : styles.pieceReading}>{piece.state === "done" ? "✓ Analyse terminée" : "Lecture en cours…"}</span>
+      <span className={PIECE_STATE[piece.state].done ? styles.pieceDone : styles.pieceReading}>{PIECE_STATE[piece.state].label}</span>
     </li>)}</ul>
     {onAdd ? <button type="button" className={styles.secondaryButton} onClick={onAdd}>{addLabel}</button> : null}
   </div>;
