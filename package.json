@@ -70,6 +70,7 @@
     "test:f011-assistant-cycle10": "npx tsx --test src/runtime/assistants/f011-financement/assistant-cycle10.test.ts",
     "test:f011-assistant-cycle11": "npx tsx --test src/runtime/assistants/f011-financement/assistant-cycle11.test.ts",
     "test:f011-runtime": "npx tsx --test src/runtime/f011.test.ts",
+    "test:v3-shell": "npx tsx --test src/lab/v3-dossier/assistant-shell.test.tsx src/lab/v2-dossier/explicit-owner-flow.test.ts src/lab/v2-dossier/v3-activity-route.test.ts",
     "test:v3-real": "npx tsx --test src/lab/v2-dossier/financing-detail-read-model.test.ts src/lab/v3-dossier/financing-view-model.test.ts src/lab/v3-dossier/real-v3.test.tsx src/lab/v2-dossier/correction-scope.test.ts",
     "test:f011-provenance": "npx tsx --test src/lib/lmnp/services/f011/f011-loan-provenance.test.ts src/runtime/assistants/f011-financement/assistant-provenance.test.ts src/lib/lmnp/store/workspace-snapshot-f011-provenance.test.ts",
     "test:f011": "npm run test:f011-document-bridge && npm run test:f011-financing-charges && npm run test:f011-critical-persist && npm run test:f011-field-sources && npm run test:f011-loan-form-state && npm run test:f011-resume && npm run test:f011-assistant && npm run test:f011-assistant-cycle2 && npm run test:f011-assistant-cycle3 && npm run test:f011-assistant-cycle5 && npm run test:f011-assistant-cycle6 && npm run test:f011-assistant-cycle7 && npm run test:f011-assistant-cycle9 && npm run test:f011-assistant-cycle10 && npm run test:f011-assistant-cycle11 && npm run test:f011-runtime && npm run test:f011-provenance",

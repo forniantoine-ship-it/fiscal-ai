@@ -1,6 +1,7 @@
 "use client";
 
 import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
+import { useShellVocabulary } from "@/components/lmnp/app-shell/shell-vocabulary";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/design-system/components/Button";
@@ -337,6 +338,8 @@ function GoBackControl({
 }
 
 export function F011FinancementAssistantPanel() {
+  // R15.1 — wording of the "home" only ("Mon dossier" under the V3 shell); no assistant logic depends on it.
+  const words = useShellVocabulary();
   const { workspace, dispatch, flushWorkspace, getFile } = useLmnp();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
@@ -957,7 +960,7 @@ export function F011FinancementAssistantPanel() {
           }}
         >
           <Link href={LMNP_ROUTES.dashboard} style={{ color: colors.text.muted }}>
-            Tableau de bord
+            {words.dashboard}
           </Link>
           {" · Financement"}
         </p>
@@ -1184,7 +1187,7 @@ export function F011FinancementAssistantPanel() {
             </Link>
             <Link href={LMNP_ROUTES.dashboard}>
               <Button variant="secondary" className="w-full">
-                Retour au tableau de bord
+                {words.backToDashboard}
               </Button>
             </Link>
           </div>
@@ -1198,7 +1201,7 @@ export function F011FinancementAssistantPanel() {
               </Link>
               <Link href={LMNP_ROUTES.dashboard}>
                 <Button variant="secondary" className="w-full">
-                  Retour au tableau de bord
+                  {words.backToDashboard}
                 </Button>
               </Link>
             </div>

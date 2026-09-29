@@ -1,31 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
-import { useLmnp } from "@/lib/lmnp/store";
-import { performV3CorrectionReturn } from "./v3-correction-return";
+import { useV3CorrectionReturn } from "./useV3CorrectionReturn";
 
 /** Visible only inside a V3 correction (non-null scope from V3CorrectionEntryGate). */
 export function V3CorrectionReturnBar() {
-  const scope = useV3CorrectionScope();
-  const { workspace, confirmWorkspaceSave } = useLmnp();
-  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
+  const { available, status, run } = useV3CorrectionReturn();
 
-  if (!scope) return null;
-
-  async function handleReturn() {
-    setStatus("saving");
-    const outcome = await performV3CorrectionReturn({ scope: scope!, workspace, confirmWorkspaceSave });
-    if (outcome.status === "error") {
-      setStatus("error");
-      return;
-    }
-    window.location.assign(outcome.href);
-  }
+  if (!available) return null;
 
   return (
     <div role="region" aria-label="Retour au dossier">
-      <button type="button" onClick={() => void handleReturn()} disabled={status === "saving"}>
+      <button type="button" onClick={() => void run()} disabled={status === "saving"}>
         {status === "saving" ? "Enregistrement en cours…" : "Retour au dossier"}
       </button>
       {status === "error" ? (
