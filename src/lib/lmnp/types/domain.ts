@@ -132,6 +132,11 @@ export interface LoanProfile {
   firstPaymentDate: string;
   remainingCapital: number;
   isWorksLoan?: boolean;
+  /**
+   * Provenance par champ de CE prêt (F-011), portée par le prêt lui-même : elle est remplacée avec lui,
+   * jamais attribuée à un autre. Absente = inconnue (dossiers antérieurs, confirmation Tunnel A) — jamais reconstituée.
+   */
+  provenance?: import("@/runtime/assistants/f011-financement/types").F011LoanProvenance;
 }
 
 export interface LoanInstallment {

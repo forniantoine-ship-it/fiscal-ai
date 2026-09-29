@@ -171,7 +171,7 @@ describe("F-011 — correctif provenance manual/user_correction après GO_BACK p
     assert.equal(turn.state.fieldSources.capitalInitial, "manual", "saisie neuve du prêt 2, jamais 'extracted'/'user_correction'");
   });
 
-  it("J — edit_loan conserve le comportement actuel (reset fieldSources à {}, comportement déjà attendu)", async () => {
+  it("J — edit_loan restaure la provenance figée du prêt ; un prêt sans provenance (dossier antérieur) repart toujours de {}", async () => {
     const assistant = new F011FinancementAssistant(ctx, DEPS_OK);
     const extracted = await driveToFullExtraction(assistant);
     let turn = await assistant.handle(extracted, { type: "set_insurance", assuranceType: "bancaire" });
@@ -181,9 +181,21 @@ describe("F-011 — correctif provenance manual/user_correction après GO_BACK p
     turn = await assistant.handle(turn.state, { type: "confirm_loan" });
     const pretId = turn.state.loans[0]!.pretId;
 
+    // Depuis la provenance persistante (F-011 provenance par prêt) : ce prêt porte sa provenance, `edit_loan` la restaure
+    // — l'ancienne limite « on ne peut pas restaurer » (Cycle 6 §11) n'existe plus pour les prêts qui en portent une.
     const edited = await assistant.handle(turn.state, { type: "edit_loan", pretId });
-    assert.deepEqual(edited.state.fieldSources, {}, "comportement inchangé : edit_loan repart de {} (Cycle 6 §11)");
+    assert.deepEqual(edited.state.fieldSources, {
+      typePret: "extracted", capitalInitial: "extracted", tauxNominal: "extracted",
+      dureeMois: "extracted", datePremiereMensualite: "extracted",
+    });
     assert.equal(edited.state.pendingLoan?.capitalInitial, 131481.96, "les valeurs du prêt restent bien préremplies");
+
+    // Comportement historique conservé pour un prêt confirmé avant l'introduction de la provenance : jamais fabriquée.
+    const legacyLoan = { ...turn.state.loans[0]! };
+    delete legacyLoan.provenance;
+    const legacy = await assistant.handle({ ...turn.state, loans: [legacyLoan] }, { type: "edit_loan", pretId });
+    assert.deepEqual(legacy.state.fieldSources, {}, "prêt sans provenance : edit_loan repart de {} (Cycle 6 §11)");
+    assert.deepEqual(legacy.state.fieldDocumentIds, {});
   });
 
   it("K — GO_BACK normal (pendingLoan garde ses valeurs) ne modifie aucune provenance valide", async () => {

@@ -30,6 +30,16 @@ export type F011Step =
 
 export type TypeGarantie = "caution" | "hypotheque_ippd" | "aucune" | "autre";
 
+/**
+ * Provenance persistante d'UN champ d'UN prêt. `documentId` n'existe que lorsqu'un document a réellement
+ * fourni la valeur (`extracted`) ou l'a proposée avant une correction utilisateur (`user_correction` :
+ * le document d'origine est conservé, jamais la valeur écrasée). Une saisie purement manuelle n'en a jamais.
+ */
+export type F011FieldProvenance = { source: FieldSource; documentId?: string };
+
+/** Provenance par champ, portée par le prêt lui-même (jamais une table globale indexée par identifiant de prêt). */
+export type F011LoanProvenance = Partial<Record<string, F011FieldProvenance>>;
+
 export interface F011LoanDraft {
   pretId: string;
   typePret: TypePret;
@@ -56,6 +66,11 @@ export interface F011LoanDraft {
   echeancesDocument?: LoanInstallment[];
   /** R1.x — capital lu sur une offre / un contrat importé (upload sans tableau), jamais sur le tableau. */
   capitalInitialOffre?: number;
+  /**
+   * Provenance par champ, figée à `confirm_loan`. Absente des prêts confirmés avant son introduction :
+   * jamais reconstituée (absence = provenance inconnue).
+   */
+  provenance?: F011LoanProvenance;
 }
 
 export interface F011Result {
@@ -99,6 +114,11 @@ export interface F011State {
   pendingLoan?: Partial<F011LoanDraft>;
   result?: F011Result;
   fieldSources: Partial<Record<string, FieldSource>>;
+  /**
+   * Document ayant fourni (ou proposé, avant correction) chaque champ du prêt en cours de saisie — même portée
+   * que `fieldSources`. Absent pour un champ purement manuel. Figé dans `F011LoanDraft.provenance` à `confirm_loan`.
+   */
+  fieldDocumentIds?: Partial<Record<string, string>>;
   /** Pile des états quittés, pour reprendre GO_BACK là où il en était (Cycle 3). */
   history?: F011HistorySnapshot[];
   /** Document dont l'analyse est en cours — permet de reprendre l'analyse sans re-upload. */
@@ -205,6 +225,8 @@ export type F011PersistedState = {
   loans: F011LoanDraft[];
   pendingLoan?: Partial<F011LoanDraft>;
   fieldSources: Partial<Record<string, FieldSource>>;
+  /** Absent des états persistés avant l'introduction de la provenance par prêt. */
+  fieldDocumentIds?: Partial<Record<string, string>>;
   /** GO_BACK doit survivre à un refresh — même mécanisme unique qu'en mémoire (Cycle 3). */
   history?: F011HistorySnapshot[];
   /** Cycle 5 — pour reprendre une analyse en cours sans re-upload après un refresh. */
@@ -228,6 +250,7 @@ export function toF011PersistedState(state: F011State, updatedAt: string): F011P
     loans: state.loans,
     pendingLoan: state.pendingLoan,
     fieldSources: state.fieldSources,
+    fieldDocumentIds: state.fieldDocumentIds,
     history: state.history,
     analyzingDocumentId: state.analyzingDocumentId,
     pendingExtraction: state.pendingExtraction,

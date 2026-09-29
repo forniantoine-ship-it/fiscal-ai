@@ -20,7 +20,7 @@ import {
   resolveLoanFormAction,
   type LoanIdentity,
 } from "@/lib/lmnp/services/f011/f011-loan-form-state";
-import { buildFinancementCharges } from "@/lib/lmnp/services/f011/f011-build-financement-charges";
+import { buildCreditFinancingLoanFromF011, buildFinancementCharges } from "@/lib/lmnp/services/f011/f011-build-financement-charges";
 import { documentaryInstallmentsForCreditFinancing } from "@/lib/lmnp/services/f011/f011-documentary-installments";
 import { shouldInvalidateCreditConfirmation } from "@/lib/lmnp/services/f011/f011-credit-confirmation-invalidation";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
@@ -594,34 +594,9 @@ export function F011FinancementAssistantPanel() {
 
       const financementCharges = buildFinancementCharges(result.charges, finalState.fieldSources, now);
       const financing = {
-        loans: finalState.loans.map((loan, index) => ({
-          id: loan.pretId,
-          bank: `Prêt ${index + 1}`,
-          loanType: loan.typePret,
-          borrowedAmount: loan.capitalInitial,
-          rate: loan.tauxNominal * 100,
-          durationMonths: loan.dureeMois,
-          monthlyPayment: 0,
-          insurance: loan.assuranceAnnuelle ?? 0,
-          ...(loan.assuranceType ? { assuranceType: loan.assuranceType } : {}),
-          ...(loan.capitalInitialOffre !== undefined ? { capitalInitialOffre: loan.capitalInitialOffre } : {}),
-          fees: 0,
-          // F011 fees/guarantee V1 fix — transport pur des mêmes valeurs déjà
-          // résolues et utilisées pour `financementCharges` ci-dessus
-          // (assistant.ts:computeForLoans), vers le `creditFinancing` canonique.
-          // Sans ceci, une reconfirmation ultérieure côté Tunnel A
-          // (`CreditDocumentStep.tsx`, qui recalcule toujours
-          // `financementCharges` depuis `creditFinancing`) écrasait
-          // silencieusement une déduction correcte par 0 — le fait doit
-          // vivre dans un seul champ canonique, jamais recalculé
-          // différemment par canal.
-          loanApplicationFees: loan.fraisDossier,
-          loanGuaranteeFees: loan.typeGarantie === "caution" ? loan.commissionCaution : undefined,
-          souscritCetExercice: loan.souscritCetExercice,
-          startDate: loan.datePremiereMensualite,
-          firstPaymentDate: loan.datePremiereMensualite,
-          remainingCapital: result.charges.prets[index]?.capitalRestantDu31_12 ?? 0,
-        })),
+        loans: finalState.loans.map((loan, index) =>
+          buildCreditFinancingLoanFromF011(loan, index, result.charges.prets[index]?.capitalRestantDu31_12 ?? 0),
+        ),
         summary: {
           fiscalYearLabel: String(result.charges.exerciceFiscal),
           annualInterest: result.charges.totalInteretsEmprunt,

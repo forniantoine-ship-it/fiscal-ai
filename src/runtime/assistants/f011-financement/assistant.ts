@@ -11,7 +11,13 @@ import {
   type F011PrefillFieldKey,
 } from "@/lib/lmnp/services/f011/credit-bridge";
 import { resolveNextF011LoanStepAfterReview } from "./resolve-next-f011-loan-step";
-import { reconcileFieldSourcesWithPendingLoan } from "@/lib/lmnp/services/f011/f011-field-sources";
+import {
+  buildLoanProvenance,
+  reconcileFieldDocumentIdsWithPendingLoan,
+  reconcileFieldSourcesWithPendingLoan,
+  restoreFieldMapsFromLoanProvenance,
+  withoutFieldDocumentId,
+} from "@/lib/lmnp/services/f011/f011-field-sources";
 import {
   createInitialF011State,
   shouldResumeF011,
@@ -349,6 +355,13 @@ function snapshotState(state: F011State): F011HistorySnapshot {
  * fonctionne uniformément, y compris à la frontière prêt N → prêt N-1.
  * Miroir de `advance()` (F010).
  */
+/** La provenance figée vit sur le prêt confirmé ; le prêt en cours de saisie la restaure dans `fieldSources`/`fieldDocumentIds`. */
+function withoutProvenance(loan: Partial<F011LoanDraft>): Partial<F011LoanDraft> {
+  const rest = { ...loan };
+  delete rest.provenance;
+  return rest;
+}
+
 function advance(state: F011State, patch: Partial<F011State>, nextStep: F011State["step"]): F011State {
   return {
     ...state,
@@ -389,6 +402,7 @@ export class F011FinancementAssistant {
       loans: persisted.loans,
       pendingLoan: persisted.pendingLoan,
       fieldSources: persisted.fieldSources,
+      fieldDocumentIds: persisted.fieldDocumentIds,
       history: persisted.history,
       analyzingDocumentId: persisted.analyzingDocumentId,
       pendingExtraction: persisted.pendingExtraction,
@@ -489,6 +503,7 @@ export class F011FinancementAssistant {
               // jusqu'ici inchangé, laissant des provenances "extracted"
               // périmées survivre à un changement de nombre de prêts.
               fieldSources: reconcileFieldSourcesWithPendingLoan(state.fieldSources, {}),
+              fieldDocumentIds: reconcileFieldDocumentIdsWithPendingLoan(state.fieldDocumentIds, {}),
               // Correctif Cycle 10 — relance la collecte au prêt 0 : sans ce
               // compteur, un retour en arrière jusqu'ici puis un nouveau choix
               // retomberait sur le même `currentLoanIndex` qu'une tentative de
@@ -547,8 +562,16 @@ export class F011FinancementAssistant {
         // Chaque champ effectivement appliqué (jamais un champ en conflit, qui
         // reste sous la provenance de la valeur déjà là tant qu'il n'est pas résolu).
         const mergedFieldSources: Partial<Record<string, FieldSource>> = { ...state.fieldSources };
+        // Provenance persistante — le document qui vient de fournir la valeur est retenu champ par champ
+        // (un second document ne réécrit que les champs qu'il applique réellement, jamais ceux en conflit).
+        const mergedFieldDocumentIds: Partial<Record<string, string>> = { ...state.fieldDocumentIds };
         for (const key of Object.keys(application.patch) as F011PrefillFieldKey[]) {
           mergedFieldSources[key] = "extracted";
+          mergedFieldDocumentIds[key] = action.documentId;
+        }
+        // `capitalInitialOffre` n'est pas dans `fieldSources` (toujours documentaire) : seul son document est suivi.
+        if (action.prefill.capitalInitialOffre !== undefined) {
+          mergedFieldDocumentIds.capitalInitialOffre = action.documentId;
         }
         // Correctif Cycle 9 — un montant `guaranteeFees` vu dans le document
         // reste en `unmapped` (nature jamais déduite, voir credit-bridge.ts),
@@ -566,6 +589,7 @@ export class F011FinancementAssistant {
             {
               pendingLoan: mergedPendingLoan,
               fieldSources: mergedFieldSources,
+              fieldDocumentIds: mergedFieldDocumentIds,
               // R1 — les lignes du tableau vivent sur `pendingLoan.echeancesDocument` : jamais une seconde copie
               // persistée ici (chaque instantané d'historique la re-sérialiserait).
               pendingExtraction: { documentId: action.documentId, prefill: { ...action.prefill, installments: undefined } },
@@ -634,9 +658,16 @@ export class F011FinancementAssistant {
           ...state.fieldSources,
           [action.field]: action.choice === "use_document" ? "extracted" : "user_correction",
         };
+        // Provenance persistante — "use_document" : c'est ce document qui fournit désormais la valeur.
+        // "keep_existing" : aucun document n'est ajouté (ne fabrique jamais de provenance documentaire) ;
+        // un document déjà retenu pour ce champ (extraction antérieure corrigée) reste son document d'origine.
+        const fieldDocumentIds: Partial<Record<string, string>> = { ...state.fieldDocumentIds };
+        if (action.choice === "use_document" && state.pendingExtraction?.documentId) {
+          fieldDocumentIds[action.field] = state.pendingExtraction.documentId;
+        }
         messages.push(this.buildReviewExtractionMessage(pendingLoan ?? {}, fieldSources, remainingConflicts));
         return {
-          state: advance(state, { pendingLoan, fieldSources, extractionConflicts: remainingConflicts }, "loan_review_extraction"),
+          state: advance(state, { pendingLoan, fieldSources, fieldDocumentIds, extractionConflicts: remainingConflicts }, "loan_review_extraction"),
           messages,
           completed: false,
         };
@@ -758,6 +789,7 @@ export class F011FinancementAssistant {
         }
         messages.push(guaranteePrompt(state.detectedGuaranteeFees));
         const nextFieldSources = { ...state.fieldSources };
+        let nextFieldDocumentIds = state.fieldDocumentIds;
         if (action.assuranceAnnuelle !== undefined) {
           // Un montant est porté explicitement par cette action (externe, ou
           // bancaire tout juste saisi par l'utilisateur) — sa provenance doit
@@ -772,6 +804,7 @@ export class F011FinancementAssistant {
           // Le champ redevient absent (montant externe non précisé) — sa
           // provenance ne doit pas rester figée sur "extracted".
           delete nextFieldSources.assuranceAnnuelle;
+          nextFieldDocumentIds = withoutFieldDocumentId(state.fieldDocumentIds, "assuranceAnnuelle");
         }
         // "bancaire" sans montant porté par l'action (bouton direct, montant
         // déjà connu) : la valeur ne change pas, donc sa provenance non plus —
@@ -786,6 +819,7 @@ export class F011FinancementAssistant {
                 assuranceAnnuelle: nextAssuranceAnnuelle,
               },
               fieldSources: nextFieldSources,
+              fieldDocumentIds: nextFieldDocumentIds,
             },
             "loan_guarantee",
           ),
@@ -812,6 +846,7 @@ export class F011FinancementAssistant {
         messages.push(feesPrompt(this.ctx.fiscalYear));
         const nextCommissionCaution = action.typeGarantie === "caution" ? action.commissionCaution : undefined;
         const nextGuaranteeFieldSources = { ...state.fieldSources };
+        let nextGuaranteeFieldDocumentIds = state.fieldDocumentIds;
         if (nextCommissionCaution !== undefined) {
           // Correctif Cycle 9 — même vocabulaire que les autres champs
           // (extracted/manual/user_correction), calculé contre le montant vu
@@ -823,6 +858,7 @@ export class F011FinancementAssistant {
           );
         } else {
           delete nextGuaranteeFieldSources.commissionCaution;
+          nextGuaranteeFieldDocumentIds = withoutFieldDocumentId(state.fieldDocumentIds, "commissionCaution");
         }
         return {
           state: advance(
@@ -834,6 +870,7 @@ export class F011FinancementAssistant {
                 commissionCaution: nextCommissionCaution,
               },
               fieldSources: nextGuaranteeFieldSources,
+              fieldDocumentIds: nextGuaranteeFieldDocumentIds,
             },
             "loan_fees",
           ),
@@ -852,6 +889,7 @@ export class F011FinancementAssistant {
         messages.push(iraPrompt(this.ctx.fiscalYear));
         const nextFraisDossier = action.souscritCetExercice ? action.fraisDossier : undefined;
         const nextFeesFieldSources = { ...state.fieldSources };
+        let nextFeesFieldDocumentIds = state.fieldDocumentIds;
         if (nextFraisDossier !== undefined) {
           nextFeesFieldSources.fraisDossier = classifyManualSource(
             state.fieldSources,
@@ -861,6 +899,7 @@ export class F011FinancementAssistant {
           );
         } else {
           delete nextFeesFieldSources.fraisDossier;
+          nextFeesFieldDocumentIds = withoutFieldDocumentId(state.fieldDocumentIds, "fraisDossier");
         }
         return {
           state: advance(
@@ -872,6 +911,7 @@ export class F011FinancementAssistant {
                 fraisDossier: nextFraisDossier,
               },
               fieldSources: nextFeesFieldSources,
+              fieldDocumentIds: nextFeesFieldDocumentIds,
             },
             "loan_ira",
           ),
@@ -900,7 +940,14 @@ export class F011FinancementAssistant {
       case "confirm_loan": {
         if (!state.pendingLoan) return { state, messages, completed: false };
         messages.push({ role: "user", content: "Valider ce prêt" });
-        const loans = [...state.loans, state.pendingLoan as F011LoanDraft];
+        // Provenance persistante — figée SUR le prêt (jamais dans une table globale) : elle voyage avec lui
+        // jusqu'à `creditFinancing.loans[]`. Absente si rien n'est prouvé (clé omise, jamais `{}`).
+        const provenance = buildLoanProvenance(state.pendingLoan, state.fieldSources, state.fieldDocumentIds);
+        const confirmedLoan: F011LoanDraft = {
+          ...(withoutProvenance(state.pendingLoan) as F011LoanDraft),
+          ...(provenance ? { provenance } : {}),
+        };
+        const loans = [...state.loans, confirmedLoan];
         const targetCount = state.nombrePrets ?? 1;
 
         if (loans.length < targetCount) {
@@ -916,7 +963,7 @@ export class F011FinancementAssistant {
               // saisie manuelle neuve serait vue comme une "correction").
               // Correctif Cycle 9 — même raison : un montant de garantie vu
               // pour le prêt N ne doit jamais être proposé pour le prêt N+1.
-              { loans, pendingLoan: {}, fieldSources: {}, currentLoanIndex: nextIndex, detectedGuaranteeFees: undefined },
+              { loans, pendingLoan: {}, fieldSources: {}, fieldDocumentIds: {}, currentLoanIndex: nextIndex, detectedGuaranteeFees: undefined },
               "loan_source_choice",
             ),
             messages,
@@ -952,12 +999,11 @@ export class F011FinancementAssistant {
             {
               loans: remainingLoans,
               currentLoanIndex: remainingLoans.length,
-              pendingLoan: { ...target },
-              // Cycle 6 §11 — même raison que confirm_loan : le prêt confirmé
-              // ne porte pas sa provenance par champ, donc on ne peut pas la
-              // restaurer. Repartir de {} plutôt que de garder la map d'un
-              // autre prêt (jamais fabriquer une provenance qu'on n'a pas).
-              fieldSources: {},
+              pendingLoan: withoutProvenance(target),
+              // Cycle 6 §11 — jamais la map d'un autre prêt. La provenance est restaurée depuis CE prêt
+              // (`provenance` figée à `confirm_loan`) ; un prêt confirmé avant son introduction n'en porte pas
+              // → maps vides, jamais de provenance fabriquée.
+              ...restoreFieldMapsFromLoanProvenance(target.provenance),
               result: undefined,
               // Correctif Cycle 9 — même raison : un montant de garantie
               // détecté pour un autre prêt ne doit jamais s'appliquer ici.
@@ -1008,6 +1054,7 @@ export class F011FinancementAssistant {
           // Ne touche jamais un champ dont `pendingLoan` porte encore une
           // valeur réelle — jamais de correction d'une provenance valide.
           fieldSources: reconcileFieldSourcesWithPendingLoan(state.fieldSources, previous.pendingLoan),
+          fieldDocumentIds: reconcileFieldDocumentIdsWithPendingLoan(state.fieldDocumentIds, previous.pendingLoan),
           analyzingDocumentId: previous.analyzingDocumentId,
           pendingExtraction: previous.pendingExtraction,
           extractionConflicts: previous.extractionConflicts,
