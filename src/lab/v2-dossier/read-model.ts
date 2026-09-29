@@ -270,6 +270,13 @@ function loanLabel(index: number, bank: string | null): string {
   return bank ? `Prêt ${index + 1} (${bank})` : `Prêt ${index + 1}`;
 }
 
+// Contract fact → key of `LoanProfile.provenance` (F011 field names). Both dates come from the same F011 answer.
+const LOAN_FACT_PROVENANCE_KEY: Record<string, string> = {
+  loanType: "typePret", borrowedAmount: "capitalInitial", capitalInitialOffre: "capitalInitialOffre",
+  rate: "tauxNominal", durationMonths: "dureeMois", startDate: "datePremiereMensualite",
+  firstPaymentDate: "datePremiereMensualite", insurance: "assuranceAnnuelle",
+};
+
 function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as Activity/Property: the whole dossier stays unsupported, never partial.
   if (isMultiProperty(workspace)) {
@@ -287,10 +294,11 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
     ? draft?.financementCharges : undefined;
   const excludedLoanIds = new Set(financementCharges?.excludedLoanIds ?? []);
   const sourceDocument = workspace.documents.find(doc => doc.id === draft?.creditDocumentId);
-  // R3.6 — F011's fieldSources is scoped to whichever loan the assistant was last editing (reset on
-  // every loan change, see assistant.ts): with several loans it cannot be attributed to a specific
-  // one without risk of misattribution. Uncertain provenance is never attached to a fact — only the
-  // known document (sourceDocument above) is exposed as a source for this domain.
+  // R3.6 — F011's financementCharges.fieldSources is scoped to whichever loan the assistant was last editing
+  // (reset on every loan change, see assistant.ts): with several loans it cannot be attributed to a specific
+  // one without risk of misattribution, so it is never read. The only provenance attached to a fact is the one
+  // carried BY the loan itself (LoanProfile.provenance, frozen at confirm_loan, replaced together with the loan);
+  // without it, only the known document (sourceDocument above) is exposed as a source for this domain.
 
   // Never merge, average, or pick loans[0]: every declared loan is projected on its own, matched by id.
   const facts: V3Fact[] = loans.flatMap((loan, index): V3Fact[] => {
@@ -307,7 +315,13 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
       // Deliberately distinct from startDate — never conflated with the first-payment date.
       { id: `loan-${index}-firstPaymentDate`, label: `${label} · Date de première mensualité`, value: known(loan.firstPaymentDate) },
       { id: `loan-${index}-insurance`, label: `${label} · Assurance contractuelle (annuelle)`, value: money(loan.insurance) },
-    ];
+    ].map((fact): V3Fact => {
+      // Provenance travels WITH the loan (LoanProfile.provenance): never looked up by id, never taken from another loan
+      // nor from financementCharges.fieldSources. No entry → no evidence (unknown, never invented).
+      const key = LOAN_FACT_PROVENANCE_KEY[fact.id.slice(`loan-${index}-`.length)];
+      const evidence = fact.value !== null && key ? fieldSourceLabel(loan.provenance?.[key]?.source) : undefined;
+      return evidence ? { ...fact, evidence } : fact;
+    });
 
     const pret = financementCharges?.prets.find(p => p.pretId === loan.id);
     const exerciseYear = financementCharges?.exerciceFiscal ?? workspace.fiscalYear.year;
@@ -330,12 +344,24 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
   const summary = loans.length === 0
     ? draft?.creditDeclaredNoneAt ? "Aucun financement déclaré" : "Aucun financement enregistré"
     : status === "complete" ? "Financement analysé" : "Financement à compléter";
+  // Documents that actually provided (or first proposed, before a user correction) a loan value, restricted to documents
+  // still present in the workspace. When any loan carries provenance it is authoritative: the dossier-level
+  // creditDocumentId is only the fallback for dossiers without per-loan provenance.
+  const provenanceDocumentIds = [...new Set(loans.flatMap(loan =>
+    Object.values(loan.provenance ?? {}).flatMap(entry => entry?.documentId ? [entry.documentId] : [])))];
+  const hasLoanProvenance = loans.some(loan => Object.keys(loan.provenance ?? {}).length > 0);
+  const sources = hasLoanProvenance
+    ? provenanceDocumentIds.flatMap(id => {
+      const doc = workspace.documents.find(d => d.id === id);
+      return doc ? [{ id: doc.id, label: doc.fileName }] : [];
+    })
+    : sourceDocument ? [{ id: sourceDocument.id, label: sourceDocument.fileName }] : [];
   return {
     id: "financing", label: "Financement", owner: "F011", status,
     summary,
     facts,
-    sources: sourceDocument ? [{ id: sourceDocument.id, label: sourceDocument.fileName }] : [],
-    provenance: sourceDocument ? "partial" : "unavailable",
+    sources,
+    provenance: sources.length > 0 || facts.some(fact => fact.evidence !== undefined) ? "partial" : "unavailable",
     missing: facts.filter(fact => fact.value === null).map(fact => fact.label),
   };
 }

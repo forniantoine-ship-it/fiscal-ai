@@ -1183,3 +1183,105 @@ test("Declaration L — REAL sans données : aucune chaîne du scénario demo ne
   assert.deepEqual(model?.deliverables, []);
   assert.deepEqual(model?.blockers, buildMissingItems(buildDossierSteps(undefined, input.fiscalYear.year)).map(item => item.label));
 });
+
+// ── F-011 provenance persistante par prêt (LoanProfile.provenance) ─────────────────────────────────────────
+function offerDocument(id: string, fileName: string, fiscalYearId: string): PersistedWorkspace["documents"][number] {
+  return {
+    id, fiscalYearId, fileName, mimeType: "application/pdf", sizeBytes: 100, category: "autre",
+    documentType: "unknown", status: "analyzed", uploadedAt: "2026-01-01",
+  };
+}
+
+function financingWorkspace(loans: LoanProfile[], docs: { id: string; fileName: string }[] = []): PersistedWorkspace {
+  const input = workspace();
+  input.documents = docs.map(doc => offerDocument(doc.id, doc.fileName, input.fiscalYear.id));
+  input.declarationDraft = {
+    completedSteps: [],
+    creditFinancing: { loans, summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] },
+  };
+  return input;
+}
+
+test("Financing P1 — provenance par prêt : chaque fait porte l'origine de son propre champ, les documents sont listés", () => {
+  const input = financingWorkspace([loan({
+    provenance: {
+      capitalInitial: { source: "extracted", documentId: "doc-1" },
+      tauxNominal: { source: "user_correction", documentId: "doc-1" },
+      dureeMois: { source: "manual" },
+    },
+  })], [{ id: "doc-1", fileName: "Tableau réel.pdf" }]);
+  const before = structuredClone(input);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, "Extrait");
+  assert.equal(financingFact(model, "loan-0-rate")?.evidence, "Corrigé");
+  assert.equal(financingFact(model, "loan-0-durationMonths")?.evidence, "Saisi");
+  assert.equal(financingFact(model, "loan-0-loanType")?.evidence, undefined, "aucune provenance pour ce champ : aucune évidence inventée");
+  assert.deepEqual(model.financing.sources, [{ id: "doc-1", label: "Tableau réel.pdf" }]);
+  assert.equal(model.financing.provenance, "partial");
+  assert.ok(model.financing.facts.every(f => f.evidence !== "Estimé"), "reconstruction ≠ estimation (KS F-011)");
+  assert.deepEqual(input, before);
+});
+
+test("Financing P2 — deux prêts, deux documents : chaque prêt ne montre que sa propre provenance", () => {
+  const input = financingWorkspace([
+    loan({ id: "pret-1", bank: "Banque A", provenance: { capitalInitial: { source: "extracted", documentId: "doc-A" } } }),
+    loan({ id: "pret-2", bank: "Banque B", provenance: { capitalInitial: { source: "user_correction", documentId: "doc-B" }, tauxNominal: { source: "manual" } } }),
+    loan({ id: "pret-3", bank: "Banque C" }),
+  ], [{ id: "doc-A", fileName: "A.pdf" }, { id: "doc-B", fileName: "B.pdf" }]);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, "Extrait");
+  assert.equal(financingFact(model, "loan-0-rate")?.evidence, undefined, "le prêt A n'hérite jamais du taux saisi du prêt B");
+  assert.equal(financingFact(model, "loan-1-borrowedAmount")?.evidence, "Corrigé");
+  assert.equal(financingFact(model, "loan-1-rate")?.evidence, "Saisi");
+  assert.ok(model.financing.facts.filter(f => f.id.startsWith("loan-2-")).every(f => f.evidence === undefined), "prêt sans provenance : aucune évidence");
+  assert.deepEqual(model.financing.sources, [{ id: "doc-A", label: "A.pdf" }, { id: "doc-B", label: "B.pdf" }]);
+});
+
+test("Financing P3 — document supprimé : l'origine reste affichée sans document, et le document dossier n'est PAS substitué", () => {
+  const input = financingWorkspace(
+    [loan({ provenance: { capitalInitial: { source: "extracted", documentId: "doc-gone" } } })],
+    [{ id: "doc-other", fileName: "Autre.pdf" }],
+  );
+  input.declarationDraft = { ...input.declarationDraft!, creditDocumentId: "doc-other" };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, "Extrait");
+  assert.deepEqual(model.financing.sources, [], "aucune source fabriquée : ni le document supprimé, ni creditDocumentId");
+  assert.equal(model.financing.provenance, "partial");
+});
+
+test("Financing P4 — dossier sans provenance par prêt : comportement historique, fieldSources F011 toujours ignoré (R3.6)", () => {
+  const input = financingWorkspace([loan()], [{ id: "doc-offer", fileName: "Offre.pdf" }]);
+  input.declarationDraft = {
+    ...input.declarationDraft!, creditDocumentId: "doc-offer",
+    financementCharges: financementChargesOutput({ fieldSources: { capitalInitial: "extracted" } }),
+    // La provenance d'un ÉTAT d'assistant n'est jamais lue : seule celle portée par le prêt canonique compte.
+    financementAssistantState: {
+      step: "complete", currentLoanIndex: 1, fieldSources: {}, updatedAt: "2026-01-01T00:00:00Z",
+      loans: [{ pretId: "loan-1", typePret: "amortissable", capitalInitial: 140000, tauxNominal: 0.0345, dureeMois: 240, datePremiereMensualite: "2024-04-05",
+        provenance: { capitalInitial: { source: "extracted", documentId: "doc-offer" } } }],
+    },
+  };
+  const model = buildV3DossierDetailReadModel(input);
+  assert.ok(model.financing.facts.every(f => f.evidence === undefined));
+  assert.deepEqual(model.financing.sources, [{ id: "doc-offer", label: "Offre.pdf" }]);
+  assert.equal(model.financing.provenance, "partial");
+});
+
+test("Financing P5 — jamais d'évidence sur un fait absent, même si le prêt porte une provenance pour ce champ", () => {
+  const input = financingWorkspace([loan({
+    firstPaymentDate: "",
+    provenance: { datePremiereMensualite: { source: "extracted", documentId: "doc-1" } },
+  })], [{ id: "doc-1", fileName: "T.pdf" }]);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-firstPaymentDate")?.value, null);
+  assert.equal(financingFact(model, "loan-0-firstPaymentDate")?.evidence, undefined);
+  assert.equal(financingFact(model, "loan-0-startDate")?.evidence, "Extrait", "startDate est renseignée et vient du même champ F011");
+});
+
+test("Financing P6 — saisie purement manuelle : évidence 'Saisi', aucune source documentaire, provenance partielle", () => {
+  const input = financingWorkspace([loan({ provenance: { capitalInitial: { source: "manual" }, tauxNominal: { source: "manual" } } })]);
+  const model = buildV3DossierDetailReadModel(input);
+  assert.equal(financingFact(model, "loan-0-borrowedAmount")?.evidence, "Saisi");
+  assert.deepEqual(model.financing.sources, []);
+  assert.equal(model.financing.provenance, "partial");
+});
