@@ -42,7 +42,7 @@ function orientationPrompt(): F010Message {
   return {
     role: "assistant",
     content:
-      "Décrivons votre logement pour calculer ce qu'il vous fait économiser chaque année. " +
+      "Décrivons votre logement pour déterminer sa valeur amortissable et calculer l'amortissement correspondant. " +
       "Pour commencer : comment avez-vous acquis ce bien ?",
     suggestions: NATURE_SUGGESTIONS,
   };
@@ -179,10 +179,15 @@ const F010_MISSING_FIELD_ORDER: readonly F010FieldKey[] = [
  * les mêmes règles (7 champs, même ordre, `undefined` = manquant).
  */
 function nextMissingF010Field(state: F010State): F010FieldKey | null {
-  for (const field of F010_MISSING_FIELD_ORDER) {
-    if (state[field] === undefined) return field;
-  }
-  return null;
+  return remainingF010Fields(state)[0] ?? null;
+}
+
+/**
+ * Liste COMPLÈTE des champs F010 encore à demander, dans l'ordre exact de `F010_MISSING_FIELD_ORDER` (`undefined` =
+ * manquant ; `montantMobilier: 0` est présent). Source unique de la règle : `nextMissingF010Field` en est le premier élément.
+ */
+export function remainingF010Fields(state: Pick<F010State, (typeof F010_MISSING_FIELD_ORDER)[number]>): F010FieldKey[] {
+  return F010_MISSING_FIELD_ORDER.filter((field) => state[field] === undefined);
 }
 
 function stepForF010Field(field: F010FieldKey): F010Step {

@@ -115,7 +115,7 @@ export function percent(value: number | undefined): string | null {
   return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} %` : null;
 }
 
-const PROPERTY_TYPE_LABELS: Record<string, string> = {
+export const PROPERTY_TYPE_LABELS: Record<string, string> = {
   appartement: "Appartement", maison: "Maison", "meuble-tourisme": "Meublé de tourisme",
   "chambre-hote": "Chambre d’hôte", "non-classe": "Non classé",
 };

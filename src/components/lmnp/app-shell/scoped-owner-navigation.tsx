@@ -17,6 +17,18 @@ export function useScopedOwnerHref(href: string): string | null {
  * Under the V3 shell, an exit to the legacy dashboard is a return to Mon dossier: it runs the confirmed-save
  * mechanism instead of navigating. The wrapper keeps its children (text or a Button) exactly as the panel wrote them.
  */
+export type V3DossierExitControl = { active: boolean; status: "idle" | "saving" | "error"; run: () => Promise<void> };
+
+/**
+ * For panels that render an exit as a real `Button` (no nested link): under the V3 shell the exit is the confirmed-save
+ * return to Mon dossier (`useV3CorrectionReturn`); outside it, `active` is false and the panel keeps its own href.
+ */
+export function useV3DossierExit(): V3DossierExitControl {
+  const scope = useV3CorrectionScope();
+  const { status, run } = useV3CorrectionReturn();
+  return { active: scope?.shell === "v3", status, run };
+}
+
 function V3DossierExit({ children, className, style }: Pick<ComponentProps<typeof Link>, "children" | "className" | "style">) {
   const { status, run } = useV3CorrectionReturn();
   // A nested Button already carries the interactive semantics; bare text needs its own.

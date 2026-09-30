@@ -11,7 +11,7 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LogementExtractionFallbackCard } from "@/components/lmnp/logement/LogementExtractionFallbackCard";
-import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
+import { useScopedOwnerHref, useV3DossierExit, type V3DossierExitControl } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { ingestExtractionIntoStore, lockGovernedField } from "@/lib/documents/cross-tunnel-prefill";
 import { readGovernedFieldStore } from "@/lib/lmnp/services/governed-field-prefill";
 import {
@@ -25,6 +25,13 @@ import {
   type F010ExtractionOutcome,
   type RunF010UploadFlowResult,
 } from "@/lib/lmnp/services/f010/f010-document-prefill";
+import {
+  F010_REVIEW_FIELD_ORDER,
+  collectF010ReviewConflictFields,
+  computeF010ReviewVisibleEntries,
+  f010ReviewFieldCurrentValue,
+  isF010ReviewFieldConflict,
+} from "@/lib/lmnp/services/f010/f010-review-conflicts";
 import { shouldFlushF010PersistedStep } from "@/lib/lmnp/services/f010/f010-critical-persist";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
@@ -492,14 +499,6 @@ export function mapF010TypeBienToPropertyType(typeBien: TypeBien): "appartement"
 }
 
 /** Ordre d'affichage de l'écran de review (Cycle 4C2) — imposé par la demande produit. */
-const F010_REVIEW_FIELD_ORDER: readonly F010ReviewFieldKey[] = [
-  "prixAcquisition",
-  "dateAcquisition",
-  "typeBien",
-  "surface",
-  "adresse",
-  "fraisNotaire",
-];
 
 const F010_REVIEW_FIELD_LABELS: Record<F010ReviewFieldKey, string> = {
   prixAcquisition: "Prix d'achat",
@@ -555,10 +554,6 @@ export function formatF010ReviewValue(field: F010ReviewFieldKey, raw: string): s
   }
 }
 
-export function f010ReviewFieldCurrentValue(state: F010State, field: F010ReviewFieldKey): string | undefined {
-  const value = state[field];
-  return value === undefined ? undefined : String(value);
-}
 
 /** IMPORTANT : aucun score de confiance — seule la provenance réelle (extracted/estimated) porte un badge, "manual"/"user_correction" n'en affichent aucun. */
 export function f010ReviewProvenanceLabel(source: FieldSource | undefined): string | null {
@@ -567,51 +562,20 @@ export function f010ReviewProvenanceLabel(source: FieldSource | undefined): stri
   return null;
 }
 
-/** Champs "unavailable" jamais affichés (pas de fausse carte vide) — resolveNextMissingF010Field s'en charge plus tard. */
-export function computeF010ReviewVisibleEntries(
-  review: F010ExtractionReview | undefined,
-): (readonly [F010ReviewFieldKey, F010ExtractionReviewField])[] {
-  if (!review) return [];
-  return F010_REVIEW_FIELD_ORDER.map((field) => [field, review.fields[field]] as const).filter(
-    ([, entry]) => entry.status !== "unavailable",
-  );
-}
 
 export function computeF010ReviewHasMissingFields(review: F010ExtractionReview | undefined): boolean {
   if (!review) return false;
   return F010_REVIEW_FIELD_ORDER.some((field) => review.fields[field].status === "unavailable");
 }
 
-/**
- * Un champ "pending" est en conflit quand une valeur était déjà confirmée
- * (session précédente ou saisie manuelle) et que la nouvelle proposition du
- * document diffère — jamais un écrasement silencieux (règle Cycle 3, réutilisée
- * telle quelle, jamais réinterprétée).
- */
-export function isF010ReviewFieldConflict(
-  state: F010State,
-  field: F010ReviewFieldKey,
-  entry: F010ExtractionReviewField,
-): boolean {
-  if (entry.status !== "pending") return false;
-  if (state.confirmed?.[field] !== true) return false;
-  const currentValue = f010ReviewFieldCurrentValue(state, field);
-  return currentValue !== undefined && currentValue !== entry.proposedValue;
-}
-
-/** Champs en conflit sur l'écran de review (Cycle 4E6A-C2). */
-export function collectF010ReviewConflictFields(
-  state: F010State,
-  visibleEntries: (readonly [F010ReviewFieldKey, F010ExtractionReviewField])[] = computeF010ReviewVisibleEntries(
-    state.review,
-  ),
-): F010ReviewFieldKey[] {
-  return visibleEntries
-    .filter(([field, entry]) => isF010ReviewFieldConflict(state, field, entry))
-    .map(([field]) => field);
-}
-
 /** Nouveaux conflits depuis la dernière annonce (transition false → true). */
+export {
+  collectF010ReviewConflictFields,
+  computeF010ReviewVisibleEntries,
+  f010ReviewFieldCurrentValue,
+  isF010ReviewFieldConflict,
+};
+
 export function detectF010NewConflictFields(
   alreadyAnnounced: ReadonlySet<F010ReviewFieldKey>,
   currentConflictFields: readonly F010ReviewFieldKey[],
@@ -816,11 +780,36 @@ export function computeF010LocalFormSync(next: F010State): F010LocalFormSyncValu
   };
 }
 
+/**
+ * Sortie « tableau de bord ». Parcours legacy : le bouton garde son href historique (scopé). Sous la coque V3 (R15.1) :
+ * retour à Mon dossier par la sauvegarde confirmée, jamais un lien silencieux vers l'ancien dashboard.
+ */
+function DashboardExitButton({
+  dashboardHref, exit, variant, className,
+}: { dashboardHref: string | null; exit: V3DossierExitControl; variant: "ghost" | "secondary"; className: string }) {
+  if (exit.active) {
+    return (
+      <>
+        <Button variant={variant} className={className} disabled={exit.status === "saving"} onClick={() => void exit.run()}>
+          Retour au tableau de bord
+        </Button>
+        {exit.status === "error" ? <span role="alert"> La sauvegarde n’a pas pu être confirmée. Réessayez avant de revenir.</span> : null}
+      </>
+    );
+  }
+  return (
+    <Button href={dashboardHref ?? undefined} variant={variant} className={className}>
+      Retour au tableau de bord
+    </Button>
+  );
+}
+
 export function F010LogementAssistantPanel() {
   const { workspace, dispatch, getFile, flushWorkspace } = useLmnp();
   const activiteHref = useScopedOwnerHref(LMNP_ROUTES.activite);
   const financementHref = useScopedOwnerHref(LMNP_ROUTES.financement);
   const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
+  const dashboardExit = useV3DossierExit();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
 
@@ -1588,7 +1577,7 @@ export function F010LogementAssistantPanel() {
           Calculons l&apos;amortissement de votre bien
         </h1>
         <p className="mt-2" style={{ ...typography.body.desktop, color: colors.text.secondary }}>
-          Exercice {fiscalYear} — nous estimons ce que votre logement vous fait économiser chaque année.
+          Exercice {fiscalYear} — nous allons déterminer la valeur amortissable de votre logement et calculer l’amortissement correspondant.
         </p>
       </header>
 
@@ -1650,9 +1639,7 @@ export function F010LogementAssistantPanel() {
               >
                 Choisir un autre type d&apos;acquisition
               </Button>
-              <Button href={dashboardHref ?? undefined} className={`w-full ${F010_FOCUS_BUTTON_CLASS}`} variant="ghost">
-                Retour au tableau de bord
-              </Button>
+              <DashboardExitButton dashboardHref={dashboardHref} exit={dashboardExit} variant="ghost" className={`w-full ${F010_FOCUS_BUTTON_CLASS}`} />
             </div>
           ) : null}
 
@@ -2256,13 +2243,7 @@ export function F010LogementAssistantPanel() {
               <Button href={activiteHref ?? undefined} disabled={!activiteHref} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
                 Aller à l&apos;Activité
               </Button>
-              <Button
-                href={dashboardHref ?? undefined}
-                variant="secondary"
-                className={`w-full ${F010_FOCUS_BUTTON_CLASS}`}
-              >
-                Retour au tableau de bord
-              </Button>
+              <DashboardExitButton dashboardHref={dashboardHref} exit={dashboardExit} variant="secondary" className={`w-full ${F010_FOCUS_BUTTON_CLASS}`} />
             </div>
           ) : null}
 
@@ -2299,9 +2280,7 @@ export function F010LogementAssistantPanel() {
                 <Button href={financementHref ?? undefined} disabled={!financementHref} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
                   Continuer vers Financement
                 </Button>
-                <Button href={dashboardHref ?? undefined} variant="ghost" className={F010_FOCUS_BUTTON_CLASS}>
-                  Retour au tableau de bord
-                </Button>
+                <DashboardExitButton dashboardHref={dashboardHref} exit={dashboardExit} variant="ghost" className={F010_FOCUS_BUTTON_CLASS} />
               </div>
               <Button
                 variant="ghost"

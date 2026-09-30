@@ -60,7 +60,7 @@ function scopedRouteRequiresProperty(pathname: string): boolean | undefined {
   return OWNER_ROUTES[pathname] ?? (/^\/declarations\/\d{4}$/.test(pathname) ? true : undefined);
 }
 
-function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {
+export function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {
   if (propertyIds.length === 0 && properties.length === 0) return { kind: "not_applicable" };
   if (propertyIds.length === 1 && properties.length === 1 && properties[0]?.id === propertyIds[0]) {
     return { kind: "required", propertyId: propertyIds[0]! };
