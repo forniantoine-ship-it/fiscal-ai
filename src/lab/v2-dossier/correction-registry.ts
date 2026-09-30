@@ -16,6 +16,8 @@ interface V3CorrectionRegistryEntry {
   owner: string;
   route: string;
   precision: "domain";
+  /** R15.3 — route used instead of `route` when the verified scope carries the V3 shell marker. */
+  v3ShellRoute?: string;
   factKind: V3CorrectionFactKind;
   actionKind: V3CorrectionActionKind;
   actionLabel: string;
@@ -30,6 +32,8 @@ const V3_CORRECTION_REGISTRY: Readonly<Record<V3DomainId, V3CorrectionRegistryEn
   // (see V3ActivityRoute.tsx). Legacy /assistants/activite is unaffected.
   activity: {
     owner: "F009", route: "/lab/v2-dossier/real/activity", precision: "domain",
+    // R15.3 — under the V3 shell (R15.1) the same owner engine is opened on its own route, wrapped by the common shell.
+    v3ShellRoute: "/assistants/activite",
     factKind: "input", actionKind: "modifier", actionLabel: "Revoir l’activité",
   },
   property: {
@@ -70,7 +74,7 @@ export interface V3CorrectionAction {
  */
 export function v3CorrectionActionFor(domainId: V3DomainId, scope: V3CorrectionScope | null): V3CorrectionAction | null {
   const entry = V3_CORRECTION_REGISTRY[domainId];
-  const href = v3CorrectionHrefForResolvedScope(entry.route, scope);
+  const href = v3CorrectionHrefForResolvedScope(scope?.shell === "v3" && entry.v3ShellRoute ? entry.v3ShellRoute : entry.route, scope);
   if (!href) return null;
   return { owner: entry.owner, kind: entry.actionKind, label: entry.actionLabel, href };
 }

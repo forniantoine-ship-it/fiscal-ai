@@ -4,6 +4,7 @@ import { useRef, type ReactNode } from "react";
 import { Button } from "@/design-system/components/Button";
 import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { Card } from "@/design-system/components/Card";
+import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 import { F009_QUESTIONS, hasF009Decisions, isQuestionStep, nextMissingQuestion } from "@/runtime/assistants/f009-activite/assistant";
 import type { F009Action, F009DocumentFieldKey, F009QuestionStep, F009State } from "@/runtime/assistants/f009-activite/types";
 
@@ -74,6 +75,10 @@ function Question({ state, onAction, busy }: Pick<F009ViewProps, "state" | "onAc
 }
 export function F009ActiviteView({ state, year, busy, error, explanation, documents, onAction, onFile, onExistingDocument, onCompanion, companionLabel }: F009ViewProps) {
   const logementHref = useScopedOwnerHref("/assistants/logement");
+  // R15.3 — presentation only: inside the V3 shell the client sees L’Assistant du Réel, never the legacy product name.
+  const v3 = useV3CorrectionScope()?.shell === "v3";
+  const product = v3 ? "L’Assistant du Réel" : "Fiscal AI";
+  const inDossier = v3 ? "votre dossier" : "votre dossier Fiscal AI";
   const picker = useRef<HTMLInputElement>(null);
   const missing = nextMissingQuestion(state);
   const conflicts = Object.entries(state.conflicts ?? {}).filter(([field]) => field !== "establishmentAddress" || !state.conflicts?.siret).filter((entry): entry is [F009DocumentFieldKey, NonNullable<F009State["conflicts"]>[F009DocumentFieldKey] & object] => Boolean(entry[1]));
@@ -93,13 +98,13 @@ export function F009ActiviteView({ state, year, busy, error, explanation, docume
         <div className="grid gap-3">{([["yes", "Oui"], ["no", "Non, pas encore"], ["unknown", "Je ne sais pas"]] as const).map(([value, label]) => <Button key={value} variant={value === "yes" ? "primary" : "secondary"} disabled={busy} onClick={() => onAction({ type: "select_registration", value })}>{label}</Button>)}</div>
       </>}
       {state.step === "document" && <>
-        <Title help="Fiscal AI récupérera automatiquement les informations utiles pour éviter de vous les demander une par une.">{documents.length ? "Un justificatif est déjà dans votre dossier" : "Ajoutez votre justificatif d’immatriculation"}</Title>
+        <Title help={`${product} récupérera automatiquement les informations utiles pour éviter de vous les demander une par une.`}>{documents.length ? "Un justificatif est déjà dans votre dossier" : "Ajoutez votre justificatif d’immatriculation"}</Title>
         {documents.length > 0 && <div className="mb-5 space-y-3">{documents.map((document) => <div key={document.id} className="rounded-xl border border-outline p-4"><p className="mb-3 break-words text-sm text-ink">{document.fileName}</p><Button disabled={busy} onClick={() => onExistingDocument(document.id)}>Utiliser ce document</Button></div>)}</div>}
         <p className="mb-5 text-sm leading-relaxed text-ink-muted">Extrait RNE ou synthèse de dépôt du Guichet unique, en PDF ou en image lisible. Pour les autres justificatifs, seules les informations effectivement reconnues seront proposées.</p>
         <div className="flex flex-wrap gap-3"><Button disabled={busy} variant={documents.length ? "secondary" : "primary"} onClick={openUpload}>{documents.length ? "Ajouter un autre document" : "Ajouter mon document"}</Button><Button variant="secondary" disabled={busy} onClick={() => onAction({ type: "manual" })}>Renseigner manuellement</Button></div>
       </>}
       {state.step === "pending_registration" && <>
-        <Title help={state.registration === "no" ? "Votre activité doit être déclarée via le Guichet unique. Vous pouvez continuer à préparer votre dossier Fiscal AI et finaliser cette formalité ensuite." : "Vous pouvez vérifier si vous avez reçu un justificatif d’immatriculation ou un numéro SIRET. En attendant, vous pouvez continuer à préparer votre dossier."}>{state.registration === "no" ? "Préparez votre dossier à votre rythme" : "Faisons le point sans vous bloquer"}</Title>
+        <Title help={state.registration === "no" ? `Votre activité doit être déclarée via le Guichet unique. Vous pouvez continuer à préparer ${inDossier} et finaliser cette formalité ensuite.` : "Vous pouvez vérifier si vous avez reçu un justificatif d’immatriculation ou un numéro SIRET. En attendant, vous pouvez continuer à préparer votre dossier."}>{state.registration === "no" ? "Préparez votre dossier à votre rythme" : "Faisons le point sans vous bloquer"}</Title>
         <p className="mb-6 text-ink-soft">Le Compagnon INPI vous accompagnera étape par étape. Vous réaliserez et signerez vous-même votre formalité sur le Guichet unique.</p>
         <div className="flex flex-wrap gap-3"><Button disabled={busy} onClick={() => onAction({ type: "defer" })}>Continuer mon dossier</Button><Button variant="secondary" disabled={busy} onClick={() => onAction({ type: "select_registration", value: "yes" })}>J’ai un justificatif ou un numéro</Button></div>
       </>}
@@ -128,9 +133,9 @@ export function F009ActiviteView({ state, year, busy, error, explanation, docume
       </>}
       {completed && <>
         <span className={`mb-4 inline-flex rounded-full px-3 py-1 text-sm font-medium ${state.deferred || missing ? "bg-panel-soft text-ink" : "bg-green-50 text-green-900"}`}>{!state.siret ? "À finaliser — SIRET en attente" : missing ? "À compléter" : "Informations validées"}</span>
-        <Title help="Vos informations sont conservées dans votre dossier Fiscal AI. Cette validation ne réalise aucune formalité administrative.">{missing ? "Votre dossier peut continuer" : "Les informations de votre activité sont validées dans votre dossier"}</Title>
+        <Title help={`Vos informations sont conservées dans ${inDossier}. Cette validation ne réalise aucune formalité administrative.`}>{missing ? "Votre dossier peut continuer" : "Les informations de votre activité sont validées dans votre dossier"}</Title>
         <Summary state={state} />
-        {(!state.siret || state.registration !== "yes") && <div className="mt-6 rounded-2xl bg-panel-soft p-5"><h3 className="font-semibold">Finalisons votre immatriculation</h3><p className="mt-2 text-sm leading-relaxed text-ink-soft">Fiscal AI vous accompagne pendant que vous réalisez et signez votre formalité sur le Guichet unique.</p><div className="mt-4"><Button disabled={busy} onClick={onCompanion}>{companionLabel ?? "Commencer avec le Compagnon INPI"}</Button></div></div>}
+        {(!state.siret || state.registration !== "yes") && <div className="mt-6 rounded-2xl bg-panel-soft p-5"><h3 className="font-semibold">Finalisons votre immatriculation</h3><p className="mt-2 text-sm leading-relaxed text-ink-soft">{product} vous accompagne pendant que vous réalisez et signez votre formalité sur le Guichet unique.</p><div className="mt-4"><Button disabled={busy} onClick={onCompanion}>{companionLabel ?? "Commencer avec le Compagnon INPI"}</Button></div></div>}
         <div className="mt-6 flex flex-wrap gap-3">{logementHref ? <a className="inline-flex min-h-11 items-center rounded-full bg-action px-5 py-3 font-medium text-ink hover:bg-action-hover" href={logementHref}>Continuer vers Logement</a> : null}<Button variant="secondary" disabled={busy} onClick={() => onAction({ type: "edit" })}>Modifier mes réponses</Button></div>
         {state.deferred && <div className="mt-4"><Button variant="ghost" disabled={busy} onClick={() => onAction({ type: "select_registration", value: "yes" })}>J’ai obtenu mon SIRET ou mon justificatif</Button></div>}
       </>}

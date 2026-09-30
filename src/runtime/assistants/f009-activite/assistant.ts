@@ -26,13 +26,18 @@ export function validActivityDate(value?: string): boolean {
 export function hasIdentifier(state: F009State): boolean {
   return Boolean((state.siret && validateSiret({ siret: state.siret }).valid) || (state.siren && isValidSiren(state.siren)));
 }
+/** Every question still needed, in the order the assistant asks them. Single source of the F009 question rules. */
+export function remainingQuestions(state: F009State): F009QuestionStep[] {
+  const questions: F009QuestionStep[] = [];
+  if (!hasIdentifier(state) && !state.deferred) questions.push("identifier");
+  if (!state.lastName?.trim() || !state.firstName?.trim()) questions.push("identity");
+  if (!state.establishmentAddress?.trim() && !state.personalAddress?.trim()) questions.push("address");
+  if (!validActivityDate(state.dateDebutActivite)) questions.push("activity_date");
+  if (!validActivityDate(state.dateMiseEnService)) questions.push("service_date");
+  return questions;
+}
 export function nextMissingQuestion(state: F009State): F009QuestionStep | undefined {
-  if (!hasIdentifier(state) && !state.deferred) return "identifier";
-  if (!state.lastName?.trim() || !state.firstName?.trim()) return "identity";
-  if (!state.establishmentAddress?.trim() && !state.personalAddress?.trim()) return "address";
-  if (!validActivityDate(state.dateDebutActivite)) return "activity_date";
-  if (!validActivityDate(state.dateMiseEnService)) return "service_date";
-  return undefined;
+  return remainingQuestions(state)[0];
 }
 export function hasF009Decisions(state: F009State): boolean {
   return Object.values(state.conflicts ?? {}).some(Boolean) || Boolean(state.review?.siretAmbiguous || state.review?.datesAmbiguous);

@@ -10,15 +10,18 @@ import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { v3CorrectionActionFor } from "@/lab/v2-dossier/correction-registry";
 import type { V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "@/lab/v2-dossier/document-read-model";
+import { buildV3ActivityDetail } from "@/lab/v2-dossier/activity-detail-read-model";
 import { buildV3FinancingDetail } from "@/lab/v2-dossier/financing-detail-read-model";
 import { buildV3DossierDetailReadModel, type V3DomainId, type V3DomainReadModel } from "@/lab/v2-dossier/read-model";
+import { buildActivityView, REVIEW_IN_F009_LABEL } from "./activity-view-model";
+import { RealActivityReport, RealActivityWorkspace } from "./RealActivity";
 import { buildFinancingView, financingRubrique, REVIEW_IN_F011_LABEL } from "./financing-view-model";
 import { RealFinancementReport, RealFinancementWorkspace } from "./RealFinancement";
 import { resolveRealUserActions } from "./real-user-actions";
 import { Drawer } from "./shell";
 import styles from "./prototype.module.css";
 
-type View = "dossier" | "documents" | "financement";
+type View = "dossier" | "documents" | "financement" | "activite";
 
 const DOCUMENT_STATUS: Record<V3DocumentProcessingStatus, string> = {
   uploaded: "Reçu", processing: "Analyse en cours", analyzed: "Analyse terminée", failed: "Analyse à reprendre", unknown: "État non déterminé",
@@ -62,6 +65,11 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     buildV3FinancingDetail(workspace, documents),
     financingAction ? { label: REVIEW_IN_F011_LABEL, href: financingAction.href } : null,
   );
+  const activityAction = v3CorrectionActionFor("activity", scope);
+  const activityView = buildActivityView(
+    buildV3ActivityDetail(workspace, documents),
+    activityAction ? { label: REVIEW_IN_F009_LABEL, href: activityAction.href } : null,
+  );
   const selected = domains.find(domain => domain.id === openDomain);
   // Same statuses as the read model, except that a financing result that exists but cannot yet be secured is not shown as "À compléter".
   const financingState = financingRubrique(financingView, { summary: detail.financing.summary, complete: detail.financing.status === "complete" });
@@ -95,6 +103,7 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     </header>
     <main ref={mainRef} tabIndex={-1} className={styles.main}>
       {view === "financement" ? <RealFinancementWorkspace view={financingView} back={back} />
+        : view === "activite" ? <RealActivityWorkspace view={activityView} back={back} />
         : view === "documents" ? <>
           <header className={styles.pageHead}><p className={styles.eyebrow}>Mes documents {year}</p><h1>Vos documents</h1></header>
           {documents.state === "unknown"
@@ -141,7 +150,12 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     </main>
     {selected ? <Drawer title={selected.label} onClose={() => setOpenDomain(null)}
       status={<span className={`${styles.domainStatus} ${rubrique(selected).ok ? styles.toneOk : styles.toneAttention}`}>{rubrique(selected).summary}</span>}>
-      {selected.id === "financing"
+      {selected.id === "activity"
+        ? <>
+          <RealActivityReport view={activityView} />
+          <div className={styles.drawerActions}><button type="button" className={styles.textButton} onClick={() => go("activite")}>Ouvrir l’espace de travail Activité</button></div>
+        </>
+        : selected.id === "financing"
         ? <>
           <RealFinancementReport view={financingView} />
           <div className={styles.drawerActions}><button type="button" className={styles.textButton} onClick={() => go("financement")}>Ouvrir l’espace de travail Financement</button></div>
