@@ -124,7 +124,8 @@ test("R15 real — espace de travail : ce que je sais / ce qu'il me manque / mes
   const html = plain(renderToStaticMarkup(<RealFinancementWorkspace view={view} back={<span>retour</span>} />));
   for (const zone of ["Ce que je sais", "Ce qu’il me manque", "Mes pièces"]) assert.ok(html.includes(zone), zone);
   assert.ok(html.includes("Prêt 1 · Date de première mensualité"), "manque réel du prêt 1");
-  assert.ok(html.includes("Prêt exclu du calcul : date de première mensualité inconnue."));
+  assert.ok(html.includes("La date de première mensualité du prêt n’est pas connue."), "cause réelle, sans « exclu du calcul »");
+  assert.equal(/exclu du calcul/i.test(html), false);
   assert.ok(html.includes(REVIEW_IN_F011_LABEL));
   assert.equal(html.includes("Ajouter une pièce"), false);
   assert.equal(html.includes("Renseigner manuellement"), false, "aucune saisie inline");

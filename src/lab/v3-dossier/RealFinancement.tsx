@@ -6,7 +6,7 @@
  * vers le chemin propriétaire F011 déjà scopé.
  */
 import type { ReactNode } from "react";
-import type { FinancingAction, FinancingView, LoanFactView, LoanView } from "./financing-view-model";
+import type { FinancingAction, FinancingView, HeadlineView, LoanFactView, LoanView, VerificationView } from "./financing-view-model";
 import { PiecesList, RestitutionTable, ResultHeadline, SourceLink, StatusMark, type Column } from "./restitution";
 import styles from "./prototype.module.css";
 
@@ -30,7 +30,7 @@ export function ReviewLink({ action, variant = "secondary" }: { action: Financin
 function LoanBlock({ loan, showExercise }: { loan: LoanView; showExercise: boolean }) {
   return <section className={styles.panelSection} aria-label={loan.label}>
     <h3 className={styles.eyebrow}>{loan.label}</h3>
-    {loan.attention.length > 0 ? <ul className={styles.findings}>{loan.attention.map(text => <li key={text}><span aria-hidden="true">!</span>{text}</li>)}</ul> : null}
+    {loan.notices.length > 0 ? <ul className={styles.findings}>{loan.notices.map(text => <li key={text}><span aria-hidden="true">!</span>{text}</li>)}</ul> : null}
     <RestitutionTable caption={`Informations retenues pour ${loan.label}`} columns={FACT_COLUMNS} rows={loan.facts} rowKey={row => row.id} />
     {showExercise && loan.exercise.length > 0 ? <dl className={styles.calcDetail}>
       {loan.exercise.map(line => <div key={line.label}><dt>{line.label}</dt><dd>{line.value}</dd></div>)}
@@ -59,6 +59,29 @@ function ScheduleSection({ view }: { view: FinancingView }) {
   </section>;
 }
 
+/** Résultat, ventilation qui reconstitue le total, puis charges antérieures à la mise en service (séparées du total). */
+function HeadlineBlock({ headline }: { headline: HeadlineView }) {
+  return <>
+    <ResultHeadline amount={headline.amount} caption={headline.caption}
+      breakdown={headline.lines.map(item => ({ amount: item.amount, label: item.label }))} />
+    {headline.reconciliationNote ? <p className={styles.tableNote} role="status">{headline.reconciliationNote}</p> : null}
+    {headline.preExploitation ? <section className={styles.panelSection} aria-label={headline.preExploitation.title}>
+      <h3 className={styles.eyebrow}>{headline.preExploitation.title}</h3>
+      <ul className={styles.breakdown}>
+        {headline.preExploitation.lines.map(item => <li key={item.label}><strong>{item.amount}</strong><span>{item.label}</span></li>)}
+      </ul>
+      <p className={styles.tableNote}>{headline.preExploitation.note}</p>
+    </section> : null}
+  </>;
+}
+
+function VerificationBlock({ verification }: { verification: VerificationView }) {
+  return <section className={styles.panelSection} aria-label={verification.title}>
+    <p className={styles.eyebrow}>{verification.title}</p>
+    {verification.paragraphs.map(text => <p key={text} className={styles.impact} role="status">{text}</p>)}
+  </section>;
+}
+
 function StateNotice({ view, children }: { view: FinancingView; children?: ReactNode }) {
   if (view.state === "unsupported") return <p className={styles.panelLead}>Ce dossier concerne plusieurs biens : le financement n’est pas présenté ici.</p>;
   if (view.state === "none") return <>
@@ -78,11 +101,9 @@ export function RealFinancementReport({ view }: { view: FinancingView }) {
   }
   return <>
     {view.headline
-      ? <>
-        <ResultHeadline amount={view.headline.amount} caption={view.headline.caption} breakdown={view.headline.breakdown} />
-        {view.headline.note ? <p className={styles.tableNote}>{view.headline.note}</p> : null}
-      </>
+      ? <HeadlineBlock headline={view.headline} />
       : <p className={styles.panelLead}>Le résultat de financement de l’exercice {view.year} n’est pas encore disponible pour ce dossier.</p>}
+    {view.verification ? <VerificationBlock verification={view.verification} /> : null}
     {view.loans.map(loan => <LoanBlock key={loan.id} loan={loan} showExercise />)}
     <ScheduleSection view={view} />
     <section className={styles.panelSection} aria-labelledby="v3r-pieces">
@@ -119,10 +140,11 @@ export function RealFinancementWorkspace({ view, back }: { view: FinancingView; 
       <section className={styles.zone} aria-labelledby="v3r-ws-missing">
         <h2 id="v3r-ws-missing" className={styles.zoneTitle}>Ce qu’il me manque</h2>
         {view.state === "known"
-          ? (view.missing.length > 0 || view.loans.some(loan => loan.attention.length > 0))
+          ? (view.missing.length > 0 || view.verification)
             ? <>
+              {view.verification ? <VerificationBlock verification={view.verification} /> : null}
               {view.missing.length > 0 ? <ul className={styles.findings}>{view.missing.map(text => <li key={text}><span aria-hidden="true">·</span>{text}</li>)}</ul> : null}
-              {view.loans.flatMap(loan => loan.attention.map(text => <p key={`${loan.id}-${text}`} className={styles.panelLead}>{loan.label} · {text}</p>))}
+              {view.loans.flatMap(loan => loan.notices.map(text => <p key={`${loan.id}-${text}`} className={styles.panelLead}>{loan.label} · {text}</p>))}
             </>
             : <p className={styles.panelLead}>Rien ne manque dans les informations enregistrées.</p>
           : <p className={styles.panelLead}>{view.state === "none" ? "Rien : sans prêt, il n’y a pas de charge de financement." : "Les informations de financement restent à renseigner dans l’Assistant Financement."}</p>}

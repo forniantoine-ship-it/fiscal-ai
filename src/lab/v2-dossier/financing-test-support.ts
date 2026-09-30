@@ -14,7 +14,11 @@ export const TEST_YEAR = 2026;
 const ctx = { dossierId: "test", fiscalYear: TEST_YEAR, route: "/assistants/financement" };
 const TS = "2026-07-01T09:00:00.000Z";
 
-export const newAssistant = () => new F011FinancementAssistant(ctx, { dateMiseEnService: "2025-06-01" });
+export const newAssistant = (dateMiseEnService = "2025-06-01") => new F011FinancementAssistant(ctx, { dateMiseEnService });
+
+/** Assistant for another exercise (used to reproduce the real-dossier figures on 2025). */
+export const assistantFor = (fiscalYear: number, dateMiseEnService: string) =>
+  new F011FinancementAssistant({ dossierId: "test", fiscalYear, route: "/assistants/financement" }, { dateMiseEnService });
 
 export function documentPrefill(documentId: string, extraction: Parameters<typeof mapCreditExtractionToF011Prefill>[0]) {
   return mapCreditExtractionToF011Prefill(extraction, documentId, TS);
@@ -32,15 +36,30 @@ export async function startLoans(a: F011FinancementAssistant, count: number): Pr
 }
 
 /** Imports one document then walks the loan to confirmation (fees re-affirmed as extracted). */
-export async function confirmLoanFromDocument(a: F011FinancementAssistant, state: F011State, documentId: string, extraction = FULL_DOCUMENT): Promise<F011State> {
+export type LoanExtras = {
+  /** Caution commission (deductible only when the loan is declared subscribed this exercise). */
+  guarantee?: number;
+  /** Early-repayment indemnity. */
+  ira?: number;
+  /** `null` = "not subscribed this year" (no frais de dossier answer); default = subscribed with 500 € of frais. */
+  fees?: number | null;
+};
+
+export async function confirmLoanFromDocument(a: F011FinancementAssistant, state: F011State, documentId: string, extraction = FULL_DOCUMENT, extras: LoanExtras = {}): Promise<F011State> {
   let turn = await a.handle(state, { type: "choose_loan_source", source: "document" });
   turn = await a.handle(turn.state, { type: "upload_document", documentId });
   turn = await a.handle(turn.state, { type: "analysis_success", documentId, prefill: documentPrefill(documentId, extraction) });
   turn = await a.handle(turn.state, { type: "confirm_extraction" });
   turn = await a.handle(turn.state, { type: "set_insurance", assuranceType: "bancaire" });
-  turn = await a.handle(turn.state, { type: "set_guarantee", typeGarantie: "aucune" });
-  turn = await a.handle(turn.state, { type: "set_fees", souscritCetExercice: true, fraisDossier: 500 });
-  turn = await a.handle(turn.state, { type: "set_ira", remboursementAnticipe: false });
+  turn = await a.handle(turn.state, extras.guarantee
+    ? { type: "set_guarantee", typeGarantie: "caution", commissionCaution: extras.guarantee }
+    : { type: "set_guarantee", typeGarantie: "aucune" });
+  turn = await a.handle(turn.state, extras.fees === null
+    ? { type: "set_fees", souscritCetExercice: false }
+    : { type: "set_fees", souscritCetExercice: true, fraisDossier: extras.fees ?? 500 });
+  turn = await a.handle(turn.state, extras.ira
+    ? { type: "set_ira", remboursementAnticipe: true, montant: extras.ira }
+    : { type: "set_ira", remboursementAnticipe: false });
   turn = await a.handle(turn.state, { type: "confirm_loan" });
   return turn.state;
 }
@@ -83,7 +102,7 @@ export function documentRow(id: string, fileName: string, status: LmnpDocument["
 }
 
 /** Real persisted workspace from a confirmed F011 state (the same builders as the panel's `persistCompletion`). */
-export function workspaceFromState(state: F011State, documents: LmnpDocument[] = [], overrides: Partial<DeclarationDraft> = {}): PersistedWorkspace {
+export function workspaceFromState(state: F011State, documents: LmnpDocument[] = [], overrides: Partial<DeclarationDraft> = {}, year: number = TEST_YEAR): PersistedWorkspace {
   const result = state.result;
   if (!result) throw new Error("state has no result: the last loan must be confirmed");
   const financementCharges = buildFinancementCharges(result.charges, state.fieldSources, TS);
@@ -93,13 +112,13 @@ export function workspaceFromState(state: F011State, documents: LmnpDocument[] =
     creditConfirmedAt: TS,
     creditFinancing: {
       loans: state.loans.map((loan, index) => buildCreditFinancingLoanFromF011(loan, index, result.charges.prets[index]?.capitalRestantDu31_12 ?? 0)),
-      summary: { fiscalYearLabel: String(TEST_YEAR), annualInterest: result.charges.totalInteretsEmprunt, annualInsurance: result.charges.totalAssurance, remainingCapital: 0 },
+      summary: { fiscalYearLabel: String(year), annualInterest: result.charges.totalInteretsEmprunt, annualInsurance: result.charges.totalAssurance, remainingCapital: 0 },
       installments: documentaryInstallmentsForCreditFinancing(state.loans),
     },
     ...overrides,
   };
   return {
-    fiscalYear: { id: "fy-2026", dossierId: "dossier-1", year: TEST_YEAR, status: "draft", regime: "reel", propertyIds: ["home-1"], createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+    fiscalYear: { id: `fy-${year}`, dossierId: "dossier-1", year, status: "draft", regime: "reel", propertyIds: ["home-1"], createdAt: "2026-01-01", updatedAt: "2026-01-01" },
     properties: [{ id: "home-1", label: "Logement", address: "1 rue X", city: "Lyon", postalCode: "69001" }],
     documents, extractions: [], validationItems: [], ledgerEntries: [], declarationDraft: draft,
   };

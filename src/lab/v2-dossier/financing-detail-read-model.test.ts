@@ -47,16 +47,22 @@ test("R15 detail — totaux et exercice = les valeurs persistées, jamais recalc
   const workspace = await oneDocumentLoan();
   const output = workspace.declarationDraft!.financementCharges!;
   const detail = buildV3FinancingDetail(workspace);
+  const pret = output.prets[0]!;
   assert.deepEqual(detail.totals, {
     total: output.totalChargesFinancementExercice, interets: output.totalInteretsEmprunt, assurance: output.totalAssurance,
     capitalRembourse: output.totalCapitalRembourse, interetsPreExploitation: output.totalInteretsPreExploitation,
     ...(output.totalAssurancePreExploitation !== undefined ? { assurancePreExploitation: output.totalAssurancePreExploitation } : {}),
+    components: {
+      interets: output.totalInteretsEmprunt, assurance: output.totalAssurance,
+      fraisDossier: pret.fraisDossierDeductibles, garantie: pret.garantieDeductible, ira: pret.iraDeductible,
+    },
+    reconciled: true,
   });
-  const pret = output.prets[0]!;
   assert.equal(detail.loans[0]!.exercise?.interets, pret.interetsEmpruntExercice);
   assert.equal(detail.loans[0]!.exercise?.assurance, pret.assuranceEmpruntExercice);
   assert.equal(detail.loans[0]!.exercise?.fraisDossier, pret.fraisDossierDeductibles);
   assert.equal(detail.loans[0]!.exercise?.capitalRestantDu, pret.capitalRestantDu31_12);
+  assert.equal(detail.loans[0]!.computed, true);
 });
 
 test("R15 detail — deux prêts : chacun garde ses données et sa provenance, sans contamination", async () => {
@@ -138,20 +144,21 @@ test("R15 detail — vraie cause d'exclusion, ou aucune cause supposée", async 
   const workspace = await oneDocumentLoan();
   const noDate = structuredClone(workspace);
   noDate.declarationDraft!.creditFinancing!.loans[0]!.firstPaymentDate = "";
-  assert.deepEqual(buildV3FinancingDetail(noDate).loans[0]!.exclusion.map(cause => cause.code), ["first_payment_date_missing"]);
+  assert.deepEqual(buildV3FinancingDetail(noDate).loans[0]!.blockers.map(cause => cause.code), ["first_payment_date_missing"]);
 
   const fees = structuredClone(workspace);
   const loan = fees.declarationDraft!.creditFinancing!.loans[0]!;
   loan.loanApplicationFees = 500;
   delete loan.souscritCetExercice;
-  assert.deepEqual(buildV3FinancingDetail(fees).loans[0]!.exclusion.map(cause => cause.code), ["subscription_year_unknown"]);
+  assert.deepEqual(buildV3FinancingDetail(fees).loans[0]!.blockers.map(cause => cause.code), ["subscription_year_unknown"]);
 
   const undetermined = structuredClone(workspace);
   undetermined.declarationDraft!.financementCharges = { ...undetermined.declarationDraft!.financementCharges!, prets: [], excludedLoanIds: [undetermined.declarationDraft!.creditFinancing!.loans[0]!.id] };
   const detail = buildV3FinancingDetail(undetermined);
-  assert.deepEqual(detail.loans[0]!.exclusion, []);
-  assert.equal(detail.loans[0]!.exclusionUndetermined, true, "cause non re-dérivable : libellé neutre");
+  assert.deepEqual(detail.loans[0]!.blockers, []);
+  assert.equal(detail.loans[0]!.blockersUndetermined, true, "cause non re-dérivable : libellé neutre");
   assert.equal(detail.loans[0]!.exercise, undefined);
+  assert.equal(detail.loans[0]!.computed, false, "rien de persisté pour ce prêt : réellement non calculé");
 });
 
 function monthlyRows(year: number): LoanInstallment[] {

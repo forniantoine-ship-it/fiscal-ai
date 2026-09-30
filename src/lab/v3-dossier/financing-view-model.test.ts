@@ -22,26 +22,26 @@ async function twoLoans() {
   return workspaceFromState(state, [documentRow("doc-1", "A.pdf"), documentRow("doc-2", "B.pdf", "uploaded")]);
 }
 
-test("R15 view — résultat = totalChargesFinancementExercice réel, ventilation = totaux persistés uniquement", async () => {
+test("R15 view — résultat = totalChargesFinancementExercice réel, ventilation = composants persistés qui le reconstituent", async () => {
   const workspace = await twoLoans();
   const output = workspace.declarationDraft!.financementCharges!;
   const view = buildFinancingView(buildV3FinancingDetail(workspace), ACTION);
   const format = (value: number) => `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} €`;
   assert.equal(view.headline?.amount, format(output.totalChargesFinancementExercice));
   assert.equal(view.headline?.caption, `de charges de financement en ${TEST_YEAR}`);
-  const labels = view.headline!.breakdown.map(line => line.label);
+  const labels = view.headline!.lines.map(item => item.label);
   assert.deepEqual(labels.slice(0, 2), ["Intérêts d’emprunt", "Assurance emprunteur"]);
-  assert.equal(view.headline!.breakdown[0]!.amount, format(output.totalInteretsEmprunt));
-  assert.equal(view.headline!.breakdown[1]!.amount, format(output.totalAssurance));
+  assert.equal(view.headline!.lines[0]!.value, output.totalInteretsEmprunt);
+  assert.equal(view.headline!.lines[1]!.value, output.totalAssurance);
+  assert.equal(view.headline!.reconciliation, "exact");
   assert.ok(labels.every(label => !/Calculé|Estimé/i.test(label)), "aucun nouveau vocabulaire « calculé »");
 });
 
-test("R15 view — frais, garantie et IRA : détaillés par prêt, avec une note ; jamais sommés en tête", async () => {
+test("R15 view — frais, garantie et IRA : dans la ventilation de tête (somme des valeurs persistées) et par prêt", async () => {
   const view = buildFinancingView(buildV3FinancingDetail(await twoLoans()), ACTION);
-  const withFees = view.loans[0]!.exercise.find(line => line.label === "Frais de dossier");
-  assert.ok(withFees, "le prêt 1 a des frais de dossier déductibles");
-  assert.equal(view.headline?.note, "Les frais, la garantie et les IRA éventuels sont détaillés prêt par prêt.");
-  assert.equal(view.headline!.breakdown.some(line => /Frais|Garantie|IRA/.test(line.label)), false);
+  assert.ok(view.loans[0]!.exercise.find(item => item.label === "Frais de dossier"), "le prêt 1 a des frais de dossier déductibles");
+  assert.ok(view.headline!.lines.some(item => item.label === "Frais de dossier"), "et ils sont dans la ventilation qui reconstitue le total");
+  assert.equal(view.headline!.lines.some(item => item.label === "Garantie" || item.label.includes("IRA")), false, "composantes à zéro : absentes");
 });
 
 test("R15 view — deux prêts : 'Prêt 1', 'Prêt 2', provenance Extrait puis Corrigé, pièces avec état réel", async () => {
@@ -86,20 +86,21 @@ test("R15 view — échéancier : tableau réel (mois, mensualité, intérêts, 
   assert.equal(table.schedule.rows[0]!.month, "Janvier 2026");
 });
 
-test("R15 view — prêt exclu : vraie cause ou libellé neutre, jamais 'date inconnue' par défaut", async () => {
+test("R15 view — prêt à vérifier : vraie cause ou libellé neutre, jamais « exclu du calcul » quand des montants existent", async () => {
   const a = newAssistant();
   const state = await confirmLoanFromDocument(a, await startLoans(a, 1), "doc-1");
   const workspace = workspaceFromState(state, [documentRow("doc-1", "T.pdf")]);
   const undetermined = structuredClone(workspace);
   undetermined.declarationDraft!.financementCharges = { ...undetermined.declarationDraft!.financementCharges!, prets: [], excludedLoanIds: [undetermined.declarationDraft!.creditFinancing!.loans[0]!.id] };
   const view = buildFinancingView(buildV3FinancingDetail(undetermined), ACTION);
-  assert.deepEqual(view.loans[0]!.attention, ["Prêt exclu du calcul : cause non déterminable à partir des données enregistrées."]);
+  assert.deepEqual(view.loans[0]!.notices, ["Ce prêt n’est pas pris en compte dans le calcul enregistré ; la cause n’est pas déterminable à partir des données enregistrées."]);
 
   const noDate = structuredClone(workspace);
   noDate.declarationDraft!.creditFinancing!.loans[0]!.firstPaymentDate = "";
   const withCause = buildFinancingView(buildV3FinancingDetail(noDate), ACTION);
-  assert.deepEqual(withCause.loans[0]!.attention, ["Prêt exclu du calcul : date de première mensualité inconnue."]);
+  assert.deepEqual(withCause.loans[0]!.notices, ["La date de première mensualité du prêt n’est pas connue."], "des montants existent : jamais « exclu »");
   assert.ok(withCause.missing.includes("Prêt 1 · Date de première mensualité"));
+  for (const notice of [...view.loans[0]!.notices, ...withCause.loans[0]!.notices]) assert.equal(/exclu du calcul/i.test(notice), false);
 });
 
 test("R15 view — none / missing / unsupported : aucune donnée fabriquée, action conservée", async () => {

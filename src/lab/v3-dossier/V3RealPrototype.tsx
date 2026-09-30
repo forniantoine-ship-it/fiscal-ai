@@ -12,7 +12,7 @@ import type { V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "@/lab/v2-dossier/document-read-model";
 import { buildV3FinancingDetail } from "@/lab/v2-dossier/financing-detail-read-model";
 import { buildV3DossierDetailReadModel, type V3DomainId, type V3DomainReadModel } from "@/lab/v2-dossier/read-model";
-import { buildFinancingView, REVIEW_IN_F011_LABEL } from "./financing-view-model";
+import { buildFinancingView, financingRubrique, REVIEW_IN_F011_LABEL } from "./financing-view-model";
 import { RealFinancementReport, RealFinancementWorkspace } from "./RealFinancement";
 import { resolveRealUserActions } from "./real-user-actions";
 import { Drawer } from "./shell";
@@ -63,6 +63,16 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     financingAction ? { label: REVIEW_IN_F011_LABEL, href: financingAction.href } : null,
   );
   const selected = domains.find(domain => domain.id === openDomain);
+  // Same statuses as the read model, except that a financing result that exists but cannot yet be secured is not shown as "À compléter".
+  const financingState = financingRubrique(financingView, { summary: detail.financing.summary, complete: detail.financing.status === "complete" });
+  const rubrique = (domain: V3DomainReadModel) => {
+    if (domain.id === "financing") {
+      const verification = financingView.verification !== undefined && financingView.headline !== undefined;
+      return { summary: financingState.summary, ok: financingState.tone === "ok", status: financingState.tone === "ok" ? "Complet" : verification ? "Vérification nécessaire" : "À compléter" };
+    }
+    const ok = domain.status === "complete";
+    return { summary: domain.summary, ok, status: ok ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : "À compléter" };
+  };
 
   function go(next: View) {
     setView(next);
@@ -116,12 +126,12 @@ export function V3RealPrototype({ workspace, scope, documents }: {
             <section className={styles.domains} aria-labelledby="v3r-domains-title">
               <h2 id="v3r-domains-title" className={styles.sectionTitle}>Votre dossier en six rubriques</h2>
               <ul className={styles.domainGrid}>{domains.map(domain => {
-                const ok = domain.status === "complete";
+                const { ok, status, summary } = rubrique(domain);
                 return <li key={domain.id}>
                   <button type="button" className={styles.domainCard} onClick={() => setOpenDomain(domain.id)} aria-haspopup="dialog">
                     <span className={styles.domainName}>{domain.label}</span>
-                    <span className={`${styles.domainStatus} ${ok ? styles.toneOk : styles.toneAttention}`}><span aria-hidden="true">{ok ? "✓" : "!"}</span> {domain.status === "complete" ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : "À compléter"}</span>
-                    <span className={styles.domainMain}>{domain.summary}</span>
+                    <span className={`${styles.domainStatus} ${ok ? styles.toneOk : styles.toneAttention}`}><span aria-hidden="true">{ok ? "✓" : "!"}</span> {status}</span>
+                    <span className={styles.domainMain}>{summary}</span>
                     <span className={styles.domainChevron} aria-hidden="true">›</span>
                   </button>
                 </li>;
@@ -130,7 +140,7 @@ export function V3RealPrototype({ workspace, scope, documents }: {
           </>}
     </main>
     {selected ? <Drawer title={selected.label} onClose={() => setOpenDomain(null)}
-      status={<span className={`${styles.domainStatus} ${selected.status === "complete" ? styles.toneOk : styles.toneAttention}`}>{selected.summary}</span>}>
+      status={<span className={`${styles.domainStatus} ${rubrique(selected).ok ? styles.toneOk : styles.toneAttention}`}>{rubrique(selected).summary}</span>}>
       {selected.id === "financing"
         ? <>
           <RealFinancementReport view={financingView} />

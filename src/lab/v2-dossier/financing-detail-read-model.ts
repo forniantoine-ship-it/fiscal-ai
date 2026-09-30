@@ -1,5 +1,6 @@
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
+import { buildDossierSteps } from "@/lib/lmnp/services/validation-profile";
 import { resolveCreditFinancingLoanEcheances } from "@/lib/lmnp/services/f011/f011-documentary-installments";
 import type { LoanProfile } from "@/lib/lmnp/types/domain";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
@@ -49,18 +50,33 @@ export interface V3LoanDetail {
   label: string;
   facts: V3LoanFactDetail[];
   exercise?: V3LoanExerciseDetail;
-  exclusion: { code: V3LoanExclusionCode; label: string }[];
-  /** True when the persisted output flags this loan as excluded although no cause can be re-derived. */
-  exclusionUndetermined: boolean;
+  /**
+   * True when F011 produced amounts for this loan (it is present in the persisted `prets[]`), including by
+   * reconstruction from the loan terms. False only when the persisted output carries nothing for it.
+   */
+  computed: boolean;
+  /** Real data/documentary reasons the loan is not (or not yet) reliable for the declaration, re-derived from the stored loan. */
+  blockers: { code: V3LoanExclusionCode; label: string }[];
+  /** True when the persisted output flags this loan as not calculated although no cause can be re-derived. */
+  blockersUndetermined: boolean;
 }
 
 export interface V3FinancingTotals {
+  /** Persisted `totalChargesFinancementExercice`, transported as is. */
   total: number;
   interets: number;
   assurance: number;
   capitalRembourse: number;
   interetsPreExploitation?: number;
   assurancePreExploitation?: number;
+  /**
+   * Every component the F011 engine adds into `total` (interets + assurance + frais + garantie + IRA). The last three
+   * exist only per loan in the persisted output: they are shown here as the plain sum of those persisted values, never
+   * recomputed from loan terms.
+   */
+  components: { interets: number; assurance: number; fraisDossier: number; garantie: number; ira: number };
+  /** True only when the components add up exactly (to the cent) to the persisted `total`. */
+  reconciled: boolean;
 }
 
 export interface V3ScheduleRow {
@@ -84,6 +100,8 @@ export interface V3FinancingDocument {
 
 export interface V3FinancingDetail {
   state: V3FinancingState;
+  /** Existing dossier step status for the credit rubrique (the same rule the whole dossier uses to allow the declaration). */
+  stepStatus: "complete" | "incomplete";
   year: number;
   loans: V3LoanDetail[];
   totals?: V3FinancingTotals;
@@ -93,7 +111,9 @@ export interface V3FinancingDetail {
 
 /** Exact euros (cents kept when present): a restitution never rounds a stored amount. */
 function exactMoney(value: number | undefined): string | null {
-  return typeof value === "number" ? `${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(value)} €` : null;
+  return typeof value === "number"
+    ? `${new Intl.NumberFormat("fr-FR", { minimumFractionDigits: Number.isInteger(value) ? 0 : 2, maximumFractionDigits: 2 }).format(value)} €`
+    : null;
 }
 
 function capitalise(value: string): string {
@@ -147,10 +167,33 @@ function processingStatusFor(id: string, documents: V3DocumentsReadModel | undef
   return documents.documents.find(item => item.id === id)?.processingStatus ?? "unknown";
 }
 
+const cents = (value: number | undefined) => Math.round((value ?? 0) * 100);
+
+/**
+ * Transport of the persisted exercise output. The only operation is adding the persisted per-loan frais / garantie / IRA
+ * so that every component of `total` is shown; the sum is then CHECKED against the persisted total and never substituted for it.
+ */
+function buildTotals(output: NonNullable<PersistedWorkspace["declarationDraft"]>["financementCharges"] & object): V3FinancingTotals {
+  const sum = (pick: (pret: (typeof output.prets)[number]) => number | undefined) => output.prets.reduce((acc, pret) => acc + cents(pick(pret)), 0) / 100;
+  const components = {
+    interets: output.totalInteretsEmprunt, assurance: output.totalAssurance,
+    fraisDossier: sum(pret => pret.fraisDossierDeductibles), garantie: sum(pret => pret.garantieDeductible), ira: sum(pret => pret.iraDeductible),
+  };
+  const reconciled = cents(components.interets) + cents(components.assurance) + cents(components.fraisDossier) +
+    cents(components.garantie) + cents(components.ira) === cents(output.totalChargesFinancementExercice);
+  return {
+    total: output.totalChargesFinancementExercice, interets: output.totalInteretsEmprunt, assurance: output.totalAssurance,
+    capitalRembourse: output.totalCapitalRembourse, interetsPreExploitation: output.totalInteretsPreExploitation,
+    ...(output.totalAssurancePreExploitation !== undefined ? { assurancePreExploitation: output.totalAssurancePreExploitation } : {}),
+    components, reconciled,
+  };
+}
+
 export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?: V3DocumentsReadModel): V3FinancingDetail {
   const year = workspace.fiscalYear.year;
+  const stepStatus = buildDossierSteps(workspace.declarationDraft, year).find(step => step.id === "credit")?.status ?? "incomplete";
   const empty = (state: V3FinancingState): V3FinancingDetail => ({
-    state, year, loans: [], schedule: { state: "unavailable", reason: "absent" }, documents: [],
+    state, stepStatus, year, loans: [], schedule: { state: "unavailable", reason: "absent" }, documents: [],
   });
   if (isMultiProperty(workspace)) return empty("unsupported");
 
@@ -178,8 +221,9 @@ export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?
           fraisDossier: pret.fraisDossierDeductibles, garantie: pret.garantieDeductible, ira: pret.iraDeductible,
         },
       } : {}),
-      exclusion: causes.map(code => ({ code, label: capitalise(V3_LOAN_EXCLUSION_PHRASES[code]) })),
-      exclusionUndetermined: causes.length === 0 && !pret && flagged.has(loan.id),
+      computed: pret !== undefined,
+      blockers: causes.map(code => ({ code, label: capitalise(V3_LOAN_EXCLUSION_PHRASES[code]) })),
+      blockersUndetermined: causes.length === 0 && !pret && flagged.has(loan.id),
     };
   });
 
@@ -210,14 +254,8 @@ export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?
   }
 
   return {
-    state: "known", year, loans: loanDetails,
-    ...(output ? {
-      totals: {
-        total: output.totalChargesFinancementExercice, interets: output.totalInteretsEmprunt, assurance: output.totalAssurance,
-        capitalRembourse: output.totalCapitalRembourse, interetsPreExploitation: output.totalInteretsPreExploitation,
-        ...(output.totalAssurancePreExploitation !== undefined ? { assurancePreExploitation: output.totalAssurancePreExploitation } : {}),
-      },
-    } : {}),
+    state: "known", stepStatus, year, loans: loanDetails,
+    ...(output ? { totals: buildTotals(output) } : {}),
     schedule, documents: usedDocuments,
   };
 }
