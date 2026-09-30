@@ -105,7 +105,7 @@ function processingStatusFor(id: string, documents: V3DocumentsReadModel | undef
  * the real date: the date is known FROM THE DRAFT (what F013 reads), is not being changed, and was confirmed (F009
  * completion) no later than the F013 computation. Anything else: hidden.
  */
-function derivedFromRealDate(serviceDate: V3PropertyServiceDate, draftConfirmedAt: string | undefined, computedAt: string | undefined): boolean {
+export function derivedFromRealDate(serviceDate: V3PropertyServiceDate, draftConfirmedAt: string | undefined, computedAt: string | undefined): boolean {
   if (serviceDate.status !== "known" || !serviceDate.origins.includes("draft") || serviceDate.unconfirmedChange !== undefined) return false;
   const confirmed = draftConfirmedAt ? Date.parse(draftConfirmedAt) : Number.NaN;
   const computed = computedAt ? Date.parse(computedAt) : Number.NaN;
