@@ -475,7 +475,7 @@ function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadMod
   };
 }
 
-const AMORTISSEMENT_PROFIL_LABELS: Record<string, string> = {
+export const AMORTISSEMENT_PROFIL_LABELS: Record<string, string> = {
   "PROF-001": "Première année d’amortissement",
   "PROF-002": "Plan repris sans nouvel élément",
   "PROF-003": "Plan repris avec de nouveaux éléments",
