@@ -12,9 +12,17 @@ import { round2 } from "./types";
  * par la reconstruction : `non_exploitable`, à l'appelant de bloquer (le raccordement « import
  * partiel + reconstruction des segments manquants » du KS n'est pas implémenté).
  *
+ * F011-R1 — la validité est évaluée POUR L'EXERCICE demandé : le tableau certifie « l'exercice N est sécurisé », pas
+ * « toute la durée du prêt est parfaite ». Une ligne datée après le 31/12/N n'alimente aucun calcul ni contrôle de N
+ * (le moteur ne lit que les lignes ≤ 31/12/N) : elle n'est ni validée ni comptée, et n'est jamais modifiée. Une
+ * anomalie située DANS N, ou dans la fenêtre d'ancrage qui y mène, reste bloquante.
+ *
  * Contrôles purement structurels, sans aucune tolérance chiffrée :
- * - chaque ligne est datée (AAAA-MM-JJ) et porte des montants finis et positifs ;
- * - une échéance par mois, sans trou ni doublon (le moteur de reconstruction est lui aussi mensuel) ;
+ * - chaque ligne est datée (AAAA-MM-JJ) — une date illisible ne peut être située nulle part : elle bloque toujours ;
+ * - chaque ligne ≤ 31/12/N porte des montants finis et positifs ;
+ * - une échéance par mois, sans trou ni doublon, sur la fenêtre requise (le moteur de reconstruction est lui aussi
+ *   mensuel) : de l'entrée dans N (la ligne de décembre N−1 doit exister si le prêt est antérieur à N — c'est l'ancre
+ *   qui relie N à l'historique) jusqu'à la dernière ligne de N ; un trou plus ancien n'affecte aucun calcul de N ;
  * - l'exercice est couvert : le tableau ne commence en cours d'exercice que si (R1.x, VER option 2) sa
  *   première ligne est IMPRIMÉE comme échéance n° 1 ET que le capital d'origine qu'elle implique (CRD
  *   imprimé + capital remboursé) égale le capital lu sur un document DISTINCT (offre / contrat de prêt) —
@@ -62,6 +70,8 @@ function isAmount(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
+const NON_MONTHLY_REASON = "échéancier non mensuel, lacunaire ou comportant des doublons";
+
 function nonExploitable(reason: string): DocumentaryEcheancesResolution {
   return { status: "non_exploitable", reason };
 }
@@ -69,31 +79,33 @@ function nonExploitable(reason: string): DocumentaryEcheancesResolution {
 export function resolveDocumentaryEcheances(input: ResolveDocumentaryEcheancesInput): DocumentaryEcheancesResolution {
   if (!input.rows?.length) return { status: "absent" };
 
-  const parsed: { row: DocumentaryInstallment; month: number }[] = [];
-  for (const row of input.rows) {
-    const month = monthIndex(row.date);
-    const crdOk = row.remainingCapital === undefined || isAmount(row.remainingCapital);
-    if (month === null || !isAmount(row.principal) || !isAmount(row.interest) || !isAmount(row.insurance) || !crdOk) {
-      return nonExploitable("ligne d'échéance illisible (date ou montant)");
-    }
-    parsed.push({ row, month });
-  }
-  parsed.sort((a, b) => a.month - b.month);
-
-  for (let i = 1; i < parsed.length; i += 1) {
-    if (parsed[i]!.month - parsed[i - 1]!.month !== 1) {
-      return nonExploitable("échéancier non mensuel, lacunaire ou comportant des doublons");
-    }
-  }
-
   const janN = input.exerciceFiscal * 12;
   const decN = janN + 11;
-  const first = parsed[0]!;
-  const last = parsed[parsed.length - 1]!;
-  const upToYearEnd = parsed.filter((p) => p.month <= decN);
+
+  // Une date illisible ne permet pas de savoir si la ligne précède ou suit N : jamais devinée, toujours bloquante.
+  const dated: { row: DocumentaryInstallment; month: number }[] = [];
+  for (const row of input.rows) {
+    const month = monthIndex(row.date);
+    if (month === null) return nonExploitable("ligne d'échéance illisible (date ou montant)");
+    dated.push({ row, month });
+  }
+  dated.sort((a, b) => a.month - b.month);
+
+  // F011-R1 — les lignes postérieures au 31/12/N sortent du périmètre de validation de N (jamais modifiées).
+  const parsed = dated.filter((p) => p.month <= decN);
+  const tableContinuesAfterN = parsed.length < dated.length;
+  for (const { row } of parsed) {
+    const crdOk = row.remainingCapital === undefined || isAmount(row.remainingCapital);
+    if (!isAmount(row.principal) || !isAmount(row.interest) || !isAmount(row.insurance) || !crdOk) {
+      return nonExploitable("ligne d'échéance illisible (date ou montant)");
+    }
+  }
+
+  const first = parsed[0];
+  const upToYearEnd = parsed;
   const anchor = upToYearEnd.at(-1);
 
-  if (!anchor) return nonExploitable("le tableau ne couvre pas l'exercice");
+  if (!first || !anchor) return nonExploitable("le tableau ne couvre pas l'exercice");
   if (anchor.row.remainingCapital === undefined) {
     return nonExploitable("capital restant dû au 31/12 non lu sur le tableau");
   }
@@ -115,8 +127,22 @@ export function resolveDocumentaryEcheances(input: ResolveDocumentaryEcheancesIn
       return nonExploitable("capital d'origine du tableau contredit par l'offre ou le contrat de prêt");
     }
   }
-  if (last.month >= janN && last.month < decN && last.row.remainingCapital !== 0) {
+  if (!tableContinuesAfterN && anchor.month >= janN && anchor.month < decN && anchor.row.remainingCapital !== 0) {
     return nonExploitable("tableau interrompu en cours d'exercice");
+  }
+
+  // F011-R1 — continuité mensuelle sur la fenêtre requise pour N, jamais sur toute la durée du prêt :
+  // - prêt soldé avant N : le tableau entier (aucune ligne de N) doit être continu, comme avant ;
+  // - sinon, de l'ancre d'entrée (décembre N−1 si le prêt est antérieur à N ; 1re ligne s'il démarre en N)
+  //   jusqu'à la dernière ligne de N. Si le tableau continue après N, décembre N doit être présent.
+  if (tableContinuesAfterN && anchor.month !== decN) {
+    return nonExploitable(NON_MONTHLY_REASON);
+  }
+  const requiredFrom = anchor.month < janN ? first.month : first.month < janN ? janN - 1 : first.month;
+  const perMonth = new Map<number, number>();
+  for (const { month } of parsed) perMonth.set(month, (perMonth.get(month) ?? 0) + 1);
+  for (let month = requiredFrom; month <= anchor.month; month += 1) {
+    if (perMonth.get(month) !== 1) return nonExploitable(NON_MONTHLY_REASON);
   }
 
   const inYear = upToYearEnd.filter((p) => p.month >= janN);
