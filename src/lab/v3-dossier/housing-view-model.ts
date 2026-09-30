@@ -16,7 +16,7 @@ export type HousingAction = { label: string; href: string };
 export const REVIEW_IN_F010_LABEL = "Revoir dans l’Assistant Logement";
 export const NOT_SUPPORTED_YET = "Non supporté actuellement";
 
-type StateLabel = "À confirmer" | "Retenu" | "Saisi" | "Extrait" | "Corrigé" | "Estimé" | "Choix de jugement" | "Dérivé";
+export type StateLabel = "À confirmer" | "Retenu" | "Saisi" | "Extrait" | "Corrigé" | "Estimé" | "Choix de jugement" | "Dérivé";
 
 export type HousingFactView = {
   id: string;
@@ -59,11 +59,12 @@ const SCOPE_MESSAGES: Record<V3HousingScopeReason, string> = {
   no_property: "Aucun logement n’est enregistré pour ce dossier.",
 };
 
-const ORIGIN_SOURCE_LABEL: Record<string, string> = {
+/** Convention de provenance V3 commune (Logement, Revenus…). */
+export const ORIGIN_SOURCE_LABEL: Record<string, string> = {
   manual: "Saisi par vous", extracted: "Extrait d’un document", user_correction: "Corrigé par vous", estimated: "Estimé",
   judgment: "Choix de jugement", derived: "Dérivé",
 };
-const ORIGIN_STATE_LABEL: Record<string, StateLabel> = {
+export const ORIGIN_STATE_LABEL: Record<string, StateLabel> = {
   manual: "Saisi", extracted: "Extrait", user_correction: "Corrigé", estimated: "Estimé", judgment: "Choix de jugement", derived: "Dérivé",
 };
 

@@ -12,19 +12,22 @@ import type { V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "@/lab/v2-dossier/document-read-model";
 import { buildV3ActivityDetail } from "@/lab/v2-dossier/activity-detail-read-model";
 import { buildV3HousingDetail } from "@/lab/v2-dossier/housing-detail-read-model";
+import { buildV3RevenueDetail } from "@/lab/v2-dossier/revenue-detail-read-model";
 import { buildV3FinancingDetail } from "@/lab/v2-dossier/financing-detail-read-model";
 import { buildV3DossierDetailReadModel, type V3DomainId, type V3DomainReadModel } from "@/lab/v2-dossier/read-model";
 import { buildActivityView, REVIEW_IN_F009_LABEL } from "./activity-view-model";
 import { RealActivityReport, RealActivityWorkspace } from "./RealActivity";
 import { buildHousingView, REVIEW_IN_F010_LABEL } from "./housing-view-model";
 import { RealHousingReport, RealHousingWorkspace } from "./RealHousing";
+import { buildRevenueView, REVIEW_IN_F013_LABEL } from "./revenue-view-model";
+import { RealRevenueReport, RealRevenueWorkspace } from "./RealRevenue";
 import { buildFinancingView, financingRubrique, REVIEW_IN_F011_LABEL } from "./financing-view-model";
 import { RealFinancementReport, RealFinancementWorkspace } from "./RealFinancement";
 import { resolveRealUserActions } from "./real-user-actions";
 import { Drawer } from "./shell";
 import styles from "./prototype.module.css";
 
-type View = "dossier" | "documents" | "financement" | "activite" | "logement";
+type View = "dossier" | "documents" | "financement" | "activite" | "logement" | "revenus";
 
 const DOCUMENT_STATUS: Record<V3DocumentProcessingStatus, string> = {
   uploaded: "Reçu", processing: "Analyse en cours", analyzed: "Analyse terminée", failed: "Analyse à reprendre", unknown: "État non déterminé",
@@ -80,6 +83,12 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     buildV3HousingDetail(workspace, housingPropertyId, documents),
     housingAction ? { label: REVIEW_IN_F010_LABEL, href: housingAction.href } : null,
   );
+  // Same verified property as Logement: the F013 output is attributed to it only when it is the exercise's single property.
+  const revenueAction = v3CorrectionActionFor("revenues", scope);
+  const revenueView = buildRevenueView(
+    buildV3RevenueDetail(workspace, housingPropertyId, documents),
+    revenueAction ? { label: REVIEW_IN_F013_LABEL, href: revenueAction.href } : null,
+  );
   const selected = domains.find(domain => domain.id === openDomain);
   // Same statuses as the read model, except that a financing result that exists but cannot yet be secured is not shown as "À compléter".
   const financingState = financingRubrique(financingView, { summary: detail.financing.summary, complete: detail.financing.status === "complete" });
@@ -115,6 +124,7 @@ export function V3RealPrototype({ workspace, scope, documents }: {
       {view === "financement" ? <RealFinancementWorkspace view={financingView} back={back} />
         : view === "activite" ? <RealActivityWorkspace view={activityView} back={back} />
         : view === "logement" ? <RealHousingWorkspace view={housingView} back={back} />
+        : view === "revenus" ? <RealRevenueWorkspace view={revenueView} back={back} />
         : view === "documents" ? <>
           <header className={styles.pageHead}><p className={styles.eyebrow}>Mes documents {year}</p><h1>Vos documents</h1></header>
           {documents.state === "unknown"
@@ -170,6 +180,11 @@ export function V3RealPrototype({ workspace, scope, documents }: {
         ? <>
           <RealHousingReport view={housingView} />
           {housingView.state === "known" ? <div className={styles.drawerActions}><button type="button" className={styles.textButton} onClick={() => go("logement")}>Ouvrir l’espace de travail Logement</button></div> : null}
+        </>
+        : selected.id === "revenues"
+        ? <>
+          <RealRevenueReport view={revenueView} />
+          {revenueView.state === "known" ? <div className={styles.drawerActions}><button type="button" className={styles.textButton} onClick={() => go("revenus")}>Ouvrir l’espace de travail Revenus</button></div> : null}
         </>
         : selected.id === "financing"
         ? <>

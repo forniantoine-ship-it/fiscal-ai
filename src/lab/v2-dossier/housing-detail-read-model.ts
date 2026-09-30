@@ -2,17 +2,16 @@ import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-
 import {
   F010_REVIEW_FIELD_ORDER, collectF010ReviewConflictFields, f010ReviewFieldCurrentValue,
 } from "@/lib/lmnp/services/f010/f010-review-conflicts";
-import { isAvailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
-import {
-  resolveExternalOpeningProofFromFiscalYear, resolvePriorHistoryEligibility,
-} from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { Property } from "@/lib/lmnp/types";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
 import { createInitialF010State, remainingF010Fields } from "@/runtime/assistants/f010-logement/assistant";
 import type { F010FieldKey, F010ReviewFieldKey, F010State, F010Step } from "@/runtime/assistants/f010-logement/types";
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./document-read-model";
-import { propertyScopeFor } from "./correction-scope";
+import {
+  projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
+  type V3PropertyEntry, type V3PropertyScopeReason,
+} from "./v3-property-scope";
 import { PROPERTY_TYPE_LABELS } from "./read-model";
 import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./property-service-date";
 
@@ -25,7 +24,10 @@ import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./prop
  * sont attribuées au bien que s'il est le seul de l'exercice (`support: "full"`). Sinon (`facts_only`) seuls les faits
  * portés par l'objet `Property` lui-même sont exposés ; le reste est « non supporté actuellement ».
  */
-export type V3HousingScopeReason = "no_property_id" | "unknown_property" | "not_in_fiscal_year" | "ambiguous" | "no_property";
+export type V3HousingScopeReason = V3PropertyScopeReason;
+export type V3HousingEntry = V3PropertyEntry;
+/** R15.6 — la résolution de scope est commune (`v3-property-scope.ts`) ; ré-export pour la compatibilité R15.5. */
+export const resolveV3HousingScope = resolveV3PropertyScope;
 
 export type V3HousingFactId =
   | "address" | "propertyType" | "surface" | "acquisitionDate" | "acquisitionPrice" | "notaryFees" | "feesTreatment"
@@ -40,15 +42,6 @@ export interface V3HousingFact {
   value: string;
   status: V3HousingFactStatus;
   origin: V3HousingOrigin;
-}
-
-/** Situation d'entrée du bien — PROJECTION en lecture seule des données existantes, jamais persistée. */
-export interface V3HousingEntry {
-  kind: "takeover" | "first_declaration" | "continuation" | "undetermined";
-  /** Pourquoi « non déterminée » quand c'est le cas. */
-  reason?: "not_attributable_to_property" | "answer_required" | "takeover_declared_not_validated" | "continuity_missing" | "claim_without_continuity";
-  /** Reprise validée : actifs de l'Opening rattachés à CE bien / sans bien renseigné (jamais attribués). */
-  openingAssets?: { attributed: number; unattributed: number };
 }
 
 export type V3HousingDecision =
@@ -127,47 +120,6 @@ const FACT_FIELDS: Array<{ id: V3HousingFactId; field: F010FieldKey }> = [
   { id: "furniture", field: "montantMobilier" }, { id: "landShare", field: "ratioTerrain" },
 ];
 
-/** Scope resolution, fail-closed. Never picks a property: it only verifies the one it is given. */
-export function resolveV3HousingScope(
-  workspace: PersistedWorkspace,
-  propertyId: string | null | undefined,
-): { ok: true; property: Property } | { ok: false; reason: V3HousingScopeReason } {
-  if (typeof propertyId !== "string" || !propertyId.trim()) return { ok: false, reason: "no_property_id" };
-  if (workspace.properties.length === 0) return { ok: false, reason: "no_property" };
-  const matching = workspace.properties.filter(item => item.id === propertyId);
-  const inYear = workspace.fiscalYear.propertyIds.filter(id => id === propertyId);
-  if (matching.length > 1 || inYear.length > 1) return { ok: false, reason: "ambiguous" };
-  if (matching.length === 0) return { ok: false, reason: "unknown_property" };
-  if (inYear.length === 0) return { ok: false, reason: "not_in_fiscal_year" };
-  return { ok: true, property: matching[0]! };
-}
-
-function projectEntry(workspace: PersistedWorkspace, propertyId: string, support: "full" | "facts_only"): V3HousingEntry {
-  if (support !== "full") return { kind: "undetermined", reason: "not_attributable_to_property" };
-  const fiscalYear = workspace.fiscalYear;
-  const eligibility = resolvePriorHistoryEligibility(fiscalYear, resolveExternalOpeningProofFromFiscalYear(fiscalYear));
-  if (eligibility.eligible) {
-    if (eligibility.status === "EXTERNAL_HISTORY") {
-      const assets = fiscalYear.externalTakeoverOpening?.opening.assets;
-      const list = assets && isAvailable(assets) ? assets.value : [];
-      return {
-        kind: "takeover",
-        openingAssets: {
-          attributed: list.filter(asset => asset.propertyId === propertyId).length,
-          unattributed: list.filter(asset => !asset.propertyId).length,
-        },
-      };
-    }
-    return { kind: eligibility.status === "FIRST_REAL_YEAR" ? "first_declaration" : "continuation" };
-  }
-  switch (eligibility.reason) {
-    case "ANSWER_REQUIRED": return { kind: "undetermined", reason: "answer_required" };
-    case "EXTERNAL_HISTORY_DECLARED": return { kind: "undetermined", reason: "takeover_declared_not_validated" };
-    case "FISCAL_AI_CLAIM_WITHOUT_CONTINUITY": return { kind: "undetermined", reason: "claim_without_continuity" };
-    case "NATIVE_CONTINUITY_MISSING": return { kind: "undetermined", reason: "continuity_missing" };
-  }
-}
-
 function processingStatusFor(id: string, documents: V3DocumentsReadModel | undefined): V3HousingDocument["status"] {
   if (!documents || documents.state !== "known") return "unknown";
   return documents.documents.find(item => item.id === id)?.processingStatus ?? "unknown";
@@ -184,15 +136,14 @@ export function buildV3HousingDetail(
   documents?: V3DocumentsReadModel,
 ): V3HousingDetail {
   const year = workspace.fiscalYear.year;
-  const scope = resolveV3HousingScope(workspace, propertyId);
+  const scope = resolveV3PropertyScope(workspace, propertyId);
   if (!scope.ok) return { state: "scope_unresolved", reason: scope.reason, year };
   const { property } = scope;
   const id = property.id;
 
-  const exerciseScope = propertyScopeFor(workspace.fiscalYear.propertyIds, workspace.properties);
-  const support: "full" | "facts_only" = exerciseScope?.kind === "required" && exerciseScope.propertyId === id ? "full" : "facts_only";
+  const support = resolveV3PropertySupport(workspace, id);
   const serviceDate = resolveV3PropertyServiceDate(workspace, id);
-  const entry = projectEntry(workspace, id, support);
+  const entry = projectV3PropertyEntry(workspace, id, support);
   const base = { state: "known" as const, propertyId: id, year, label: property.label, address: addressOf(property), support, entry, serviceDate };
 
   // Facts carried by the Property record itself: attributable to this property in every case.
