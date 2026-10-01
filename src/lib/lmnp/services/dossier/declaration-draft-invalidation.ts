@@ -137,7 +137,9 @@ export function buildDownstreamInvalidationPatch(
     );
   }
 
-  // C' — nouvel output F011 → F012 recouvrement périmé + F014 si présent
+  // C' — nouvel output F011 → F012 recouvrement périmé. F014 n'est PAS invalidé : le plan d'amortissements ne lit ni
+  // intérêts, ni assurance, ni capital, ni CRD (ses entrées sont la date de mise en service, le plan et le prorata logement
+  // F010, et les composants F012 — voir A, B, B' et D ci-dessus, qui restent les seules invalidations de F014).
   if (financementOutputChanged) {
     if (
       !("chargesConfirmedAt" in patch) &&
@@ -145,10 +147,6 @@ export function buildDownstreamInvalidationPatch(
         current.chargesAssistant?.recouvrementFraisDossierF011)
     ) {
       invalidation.chargesConfirmedAt = undefined;
-    }
-    if (!("amortissementAssistant" in patch) && current.amortissementAssistant) {
-      invalidation.amortissementAssistant = undefined;
-      if (!("amortissementConfirmedAt" in patch)) invalidation.amortissementConfirmedAt = undefined;
     }
   }
 
