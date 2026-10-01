@@ -11,10 +11,7 @@ import {
 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { snapshotImmobilisationsFromGeneratedRfs } from "@/lib/lmnp/services/dossier/immobilisations-comptables";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import {
-  serializeWorkspaceSnapshot,
-  WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
-} from "@/lib/lmnp/store/workspace-snapshot";
+import { serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import type { FiscalYear } from "@/lib/lmnp/types/domain";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
@@ -144,9 +141,10 @@ export function prepareFiscalYearTransitionCandidate(input: {
     closedFiscalYear: closedFiscalYearIdentity,
     nextWorkspace,
     closedNPayload: closedSerialized.envelope,
-    closedNSchemaVersion: WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+    // R2B.2a — version portée par chaque enveloppe (v1 mono inchangé ; v2 seulement pour un workspace scopé).
+    closedNSchemaVersion: closedSerialized.envelope.schemaVersion,
     nextPayload: nextSerialized.envelope,
-    nextSchemaVersion: WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+    nextSchemaVersion: nextSerialized.envelope.schemaVersion,
     sourceAlreadyClosed,
   };
 }

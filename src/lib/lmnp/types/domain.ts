@@ -975,6 +975,15 @@ export interface DeclarationDraft {
    * mono-bien, lu comme un BienDraft unique par projection (`readBienDrafts`). Aucun écrivain production en R1.
    */
   biens?: Record<string, import("@/lib/lmnp/dossier/bien-draft").BienDraft>;
+  /**
+   * R2B.2a — option frais d'acquisition (JUG-001), GLOBALE à l'activité : deux biens d'un même exercice ne peuvent pas
+   * avoir deux options. Absente en legacy mono (le choix y reste dans l'état F010) ; posée par ADD_PROPERTY depuis le
+   * choix existant du bien historique, puis immuable. Aucune règle fiscale n'est modifiée.
+   */
+  optionFraisAcquisition?: {
+    choix: "integration" | "deduction";
+    sourcePropertyId: string;
+  };
   /** Résultat fiscal produit par le Fiscal Engine (F-006). */
   fiscalResult?: FiscalEngineOutput;
   fiscalResultConfirmedAt?: string;

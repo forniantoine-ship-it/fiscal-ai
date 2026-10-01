@@ -131,14 +131,20 @@ describe("R1 — Oracle 1 : dossier mono historique lu comme un BienDraft unique
     for (const confirmation of ["logementConfirmedAt", "chargesConfirmedAt", "revenusConfirmedAt", "amortissementConfirmedAt"] as const) {
       assert.ok(bien[confirmation], `${confirmation} reste confirmé`);
     }
-    const allowed = new Set<string>(["propertyId", "documentIds", "completedSteps", ...BIEN_DRAFT_FIELDS]);
+    const allowed = new Set<string>(["propertyId", "completedSteps", ...BIEN_DRAFT_FIELDS]);
     for (const [key, value] of Object.entries(bien)) {
       assert.ok(allowed.has(key), `clé inattendue ${key}`);
       if (BIEN_DRAFT_FIELDS.includes(key as never)) assert.notEqual(value, undefined, `aucune clé vide inventée (${key})`);
     }
     assert.equal(bien.suiviAmortissementsDifferes, undefined, "aucun suivi ARD inventé");
     assert.deepEqual(bien.completedSteps, draft.completedSteps.filter((step) => BIEN_STEP_IDS.includes(step as never)));
-    assert.deepEqual(bien.documentIds, ["doc-legacy", "doc-explicit"], "documents propres rattachés au bien unique");
+    // R2B.2a — aucune liste de documents dans le bien : la vérité reste documents[].propertyId (résolveur R1).
+    assert.equal("documentIds" in bien, false);
+    for (const item of workspace.documents) {
+      assert.deepEqual(resolveDocumentScope(workspace, item).kind === "property" && resolveDocumentScope(workspace, item), {
+        kind: "property", propertyId, via: item.propertyId ? "explicit" : "mono_legacy",
+      }, `${item.id} rattaché au bien unique`);
+    }
   });
 
   it("propertyId absent ou explicite : même BienDraft en mono", async () => {

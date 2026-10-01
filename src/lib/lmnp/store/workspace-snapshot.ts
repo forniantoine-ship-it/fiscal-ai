@@ -1,5 +1,5 @@
 /**
- * P0 Lot 1 — snapshot v1 serialization frontier.
+ * P0 Lot 1 — snapshot serialization frontier (v1 legacy mono ; v2 scopé multi-bien, R2B.2a).
  *
  * Distinct from LMNP_SCHEMA_VERSION (IndexedDB object-store version).
  * Callers must pass toPersistedWorkspace(...), never a React state object
@@ -8,7 +8,19 @@
 import type { DeclarationDraft } from "../types";
 import type { PersistedWorkspace } from "./persistence";
 
+/** Version d'un workspace legacy mono (champs à plat) — inchangée pour tout dossier existant. */
 export const WORKSPACE_SNAPSHOT_SCHEMA_VERSION = 1;
+/** R2B.2a — version d'un workspace scopé multi-bien (`declarationDraft.biens`). */
+export const WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION = 2;
+/** Plus haute version que ce client sait lire et écrire. */
+export const WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION = WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION;
+
+/** v2 si et seulement si le workspace est scopé ; un dossier mono reste en v1. */
+export function workspaceSnapshotSchemaVersion(workspace: Pick<PersistedWorkspace, "declarationDraft">): number {
+  return workspace.declarationDraft?.biens !== undefined
+    ? WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION
+    : WORKSPACE_SNAPSHOT_SCHEMA_VERSION;
+}
 
 export type WorkspaceSnapshotEnvelope = {
   schemaVersion: number;
@@ -116,7 +128,7 @@ export function serializeWorkspaceSnapshot(
   }
   try {
     const envelope: WorkspaceSnapshotEnvelope = {
-      schemaVersion: WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+      schemaVersion: workspaceSnapshotSchemaVersion(persisted),
       workspace: persisted,
     };
     const sanitized = JSON.parse(JSON.stringify(envelope)) as WorkspaceSnapshotEnvelope;
@@ -137,19 +149,23 @@ export function parseWorkspaceSnapshot(payload: unknown): ParseWorkspaceSnapshot
   if (typeof raw.schemaVersion !== "number" || !Number.isInteger(raw.schemaVersion)) {
     return { ok: false, reason: "invalid_payload" };
   }
-  if (raw.schemaVersion > WORKSPACE_SNAPSHOT_SCHEMA_VERSION) {
+  if (raw.schemaVersion > WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION) {
     return { ok: false, reason: "unsupported_schema_version", schemaVersion: raw.schemaVersion };
   }
-  if (raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCHEMA_VERSION) {
+  if (raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCHEMA_VERSION && raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION) {
     return { ok: false, reason: "invalid_payload", schemaVersion: raw.schemaVersion };
   }
   if (!isValidPersistedWorkspace(raw.workspace)) {
     return { ok: false, reason: "invalid_workspace", schemaVersion: raw.schemaVersion };
   }
+  // R2B.2a — la version DOIT correspondre à la forme : v1 jamais scopé, v2 toujours scopé.
+  if (raw.schemaVersion !== workspaceSnapshotSchemaVersion(raw.workspace)) {
+    return { ok: false, reason: "invalid_workspace", schemaVersion: raw.schemaVersion };
+  }
   return {
     ok: true,
     envelope: {
-      schemaVersion: WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+      schemaVersion: raw.schemaVersion,
       workspace: raw.workspace,
     },
   };

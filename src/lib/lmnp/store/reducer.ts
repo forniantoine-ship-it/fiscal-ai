@@ -1,7 +1,17 @@
 import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
 import { invalidateExpensesForDocument } from "@/runtime/capabilities/f012/expense";
 import { buildDownstreamInvalidationPatch } from "@/lib/lmnp/services/dossier/declaration-draft-invalidation";
-import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { resolveDocumentScope, resolveMonoPropertyId, resolvePropertyScope } from "@/lib/lmnp/dossier/property-scope";
+import {
+  TUNNEL_A_FROZEN_FIELDS,
+  addPropertyToWorkspace,
+  isBienDraftField,
+  isBienStep,
+  isTunnelAFrozenField,
+  scatterBienView,
+  scopedBienView,
+  scopedInvariantViolation,
+} from "@/lib/lmnp/dossier/bien-draft";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import {
   createLedgerEntryFromField,
@@ -17,6 +27,7 @@ import type {
   Extraction,
   FiscalYearStatus,
   LmnpDocument,
+  Property,
   PropertyBackgroundExtraction,
   PropertyType,
   PriorHistoryDeclarationStatus,
@@ -150,7 +161,8 @@ export type LmnpAction =
   /** Payment V1 — miroir LOCAL de l'entitlement serveur (jamais une autorité). `paidAt` absent = non payé. */
   | { type: "JOURNEY_SYNC_PAID_FROM_SERVER"; paidAt?: string }
   | { type: "JOURNEY_MARK_TRANSMITTED" }
-  | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft> }
+  /** R2B.2a — `propertyId` : obligatoire en mode scopé pour toute clé propre au bien ; ignoré en legacy mono. */
+  | { type: "DECLARATION_PATCH_DRAFT"; patch: Partial<DeclarationDraft>; propertyId?: string }
   | {
       type: "APPLY_GOVERNED_EXTRACTION";
       sourceTunnel: FiscalTunnel;
@@ -159,7 +171,7 @@ export type LmnpAction =
       extractedBy: GovernedFieldExtractedBy;
       payload: Record<string, unknown>;
     }
-  | { type: "DECLARATION_COMPLETE_STEP"; stepId: string }
+  | { type: "DECLARATION_COMPLETE_STEP"; stepId: string; propertyId?: string }
   | { type: "CREATE_NEW_DECLARATION" }
   /**
    * P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — distinct de CREATE_NEW_DECLARATION :
@@ -220,11 +232,13 @@ export type LmnpAction =
       };
       backgroundExtraction?: PropertyBackgroundExtraction;
       documentId?: string;
+      propertyId?: string;
     }
   | {
       type: "CONFIRM_CREDIT_FINANCING";
       financing: CreditFinancingData;
       documentId?: string;
+      propertyId?: string;
     }
   | {
       type: "CONFIRM_AMORTISSEMENT";
@@ -251,7 +265,9 @@ export type LmnpAction =
       suggestionId: string;
       suggestion?: ChargesAmortizationSuggestion;
     }
-  | { type: "DECLARE_NO_CREDIT" }
+  | { type: "DECLARE_NO_CREDIT"; propertyId?: string }
+  /** R2B.2a — seul déclencheur de la migration legacy mono → scopé. Dormant : aucune interface ne l'appelle encore. */
+  | { type: "ADD_PROPERTY"; property: Property }
   | { type: "COMPLETE_DOCUMENT_JOURNEY_STEP"; stepId: string }
   | { type: "START_DOCUMENT_JOURNEY" }
   | { type: "ADD_AI_ACTIVITY_EVENT"; event: AiActivityEvent }
@@ -585,7 +601,7 @@ function finalizeState(state: LmnpState): LmnpState {
   return { ...state, ...applyWorkspaceProgress(state) };
 }
 
-export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
+function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
   switch (action.type) {
     case "HYDRATE": {
       console.log("[hydration-restore-only]", { scope: "workspace", action: "HYDRATE" });
@@ -1410,8 +1426,9 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "CONFIRM_LOGEMENT_PROFILE": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
-      // R1 — écriture propre au bien : bien unique en mono, sinon aucune écriture (jamais le premier bien).
-      const propertyId = resolveMonoPropertyId(state);
+      // R1 — écriture propre au bien : bien explicite vérifié, sinon bien unique en mono ; jamais le premier bien.
+      const resolution = resolvePropertyScope(state, action.propertyId);
+      const propertyId = resolution.ok ? resolution.propertyId : undefined;
       if (propertyId === undefined) return state;
       const properties = state.properties.map((p) =>
         p.id === propertyId
@@ -1715,6 +1732,102 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
     default:
       return state;
   }
+}
+
+// ---------------------------------------------------------------------------
+// R2B.2a — routage multi-bien (DORMANT : seul ADD_PROPERTY crée un dossier scopé et aucune interface ne l'appelle).
+// Legacy mono : réducteur historique strictement inchangé. Mode scopé : une écriture propre à un bien est appliquée à la
+// vue « exercice + ce bien » par le réducteur historique (mêmes règles, mêmes invalidations qu'en mono), puis
+// redistribuée ; les autres biens ne sont jamais touchés. Toute transition violant l'invariant scopé est refusée.
+// ---------------------------------------------------------------------------
+
+/** Actions qui REMPLACENT l'état (hydratation, changement de session ou d'exercice) : jamais une écriture à arbitrer. */
+const STATE_REPLACEMENT_ACTIONS: ReadonlySet<LmnpAction["type"]> = new Set<LmnpAction["type"]>([
+  "HYDRATE", "AUTH_SESSION_RESET", "CREATE_NEW_DECLARATION", "CREATE_NEXT_FISCAL_YEAR", "CLOSE_FISCAL_YEAR_AND_CREATE_NEXT",
+]);
+
+/** Actions émises uniquement par le Tunnel A, bloqué en mode scopé (décision PO R2B.1). */
+const TUNNEL_A_ONLY_ACTIONS: ReadonlySet<LmnpAction["type"]> = new Set<LmnpAction["type"]>([
+  "CONFIRM_AMORTISSEMENT", "CONFIRM_REVENUS", "CONFIRM_CHARGES", "APPLY_GOVERNED_EXTRACTION", "APPLY_DOCUMENT_ANALYSIS",
+  "TRANSFER_CHARGES_AMORTIZATION_SUGGESTION", "KEEP_CHARGES_AMORTIZATION_SUGGESTION", "COMPLETE_DOCUMENT_JOURNEY_STEP",
+]);
+
+export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
+  if (action.type === "ADD_PROPERTY") {
+    const result = addPropertyToWorkspace(state, action.property);
+    return result.ok ? finalizeState(result.workspace) : state;
+  }
+  if (STATE_REPLACEMENT_ACTIONS.has(action.type)) return lmnpBaseReducer(state, action);
+  if (state.declarationDraft?.biens === undefined) {
+    // Legacy mono : seul ADD_PROPERTY peut introduire `biens` ou l'option frais globale.
+    if (action.type === "DECLARATION_PATCH_DRAFT" && ("biens" in action.patch || "optionFraisAcquisition" in action.patch)) {
+      return state;
+    }
+    return lmnpBaseReducer(state, action);
+  }
+  return scopedReducer(state, action);
+}
+
+function scopedReducer(state: LmnpState, action: LmnpAction): LmnpState {
+  if (TUNNEL_A_ONLY_ACTIONS.has(action.type)) return state;
+  let next: LmnpState;
+  switch (action.type) {
+    case "DECLARATION_PATCH_DRAFT": {
+      const keys = Object.keys(action.patch);
+      if (keys.includes("biens") || keys.some(isTunnelAFrozenField)) return state;
+      next = keys.some(isBienDraftField) ? throughBienView(state, action.propertyId, action) : lmnpBaseReducer(state, action);
+      break;
+    }
+    case "CONFIRM_LOGEMENT_PROFILE":
+    case "CONFIRM_CREDIT_FINANCING":
+    case "DECLARE_NO_CREDIT":
+      next = throughBienView(state, action.propertyId, action);
+      break;
+    case "DECLARATION_COMPLETE_STEP":
+      next = isBienStep(action.stepId) ? throughBienView(state, action.propertyId, action) : lmnpBaseReducer(state, action);
+      break;
+    case "REMOVE_DOCUMENT": {
+      // Le bien concerné est celui du document (résolveur R1) ; document commun ou non attribué : aucun bien touché.
+      const document = state.documents.find((item) => item.id === action.documentId);
+      const scope = document ? resolveDocumentScope(state, document) : undefined;
+      next = scope?.kind === "property" ? throughBienView(state, scope.propertyId, action) : lmnpBaseReducer(state, action);
+      break;
+    }
+    default:
+      next = lmnpBaseReducer(state, action);
+  }
+  return next === state || acceptsScopedTransition(state, next) ? next : state;
+}
+
+/** Action historique appliquée à la vue « exercice + ce bien », puis redistribuée. `propertyId` explicite obligatoire. */
+function throughBienView(state: LmnpState, propertyId: string | undefined, action: LmnpAction): LmnpState {
+  if (!propertyId) return state;
+  const resolution = resolvePropertyScope(state, propertyId);
+  if (!resolution.ok || resolution.via !== "explicit") return state;
+  const scoped = state.declarationDraft!;
+  const view = scopedBienView(scoped, propertyId);
+  if (!view) return state;
+  const viewState: LmnpState = { ...state, declarationDraft: view };
+  const flat = lmnpBaseReducer(viewState, action);
+  if (flat === viewState) return state;
+  return { ...flat, declarationDraft: scatterBienView(scoped, propertyId, flat.declarationDraft ?? view) };
+}
+
+function acceptsScopedTransition(previous: LmnpState, next: LmnpState): boolean {
+  if (scopedInvariantViolation(next) !== null) return false;
+  const before = previous.declarationDraft!;
+  const after = next.declarationDraft!;
+  // Tunnel A : ses données historiques restent gelées, jamais réécrites.
+  if (TUNNEL_A_FROZEN_FIELDS.some((field) => before[field] !== after[field])) return false;
+  // Option frais d'acquisition : une fois établie, immuable.
+  if (before.optionFraisAcquisition !== undefined &&
+    JSON.stringify(before.optionFraisAcquisition) !== JSON.stringify(after.optionFraisAcquisition)) return false;
+  // Nouveau document de prêt d'un bien : il doit exister (l'invariant vérifie son rattachement à CE bien).
+  for (const [propertyId, bien] of Object.entries(after.biens ?? {})) {
+    const changed = bien.creditDocumentId !== undefined && bien.creditDocumentId !== before.biens?.[propertyId]?.creditDocumentId;
+    if (changed && !next.documents.some((document) => document.id === bien.creditDocumentId)) return false;
+  }
+  return true;
 }
 
 export function selectWorkspace(state: LmnpState) {

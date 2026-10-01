@@ -11,7 +11,7 @@
  */
 import { buildDownstreamInvalidationPatch } from "../services/dossier/declaration-draft-invalidation";
 import type { PersistedWorkspace } from "../store/persistence";
-import type { DeclarationDraft } from "../types";
+import type { DeclarationDraft, Property } from "../types";
 import { resolveDocumentScope, resolveExerciseScope, resolvePropertyScope, type PropertyScopeFailure } from "./property-scope";
 
 /** Champs F010–F014 propres au bien, avec leurs types d'origine (aucune duplication). */
@@ -32,6 +32,11 @@ export const BIEN_DRAFT_FIELDS = [
   "revenusConfirmedAt",
   "amortissementAssistant",
   "amortissementConfirmedAt",
+  // R2B.2a — crédit et faits d'acquisition propres au bien (décision PO R2B.1).
+  "creditFinancing",
+  "creditGptSession",
+  "creditDocumentId",
+  "propertyBackgroundExtraction",
 ] as const satisfies readonly (keyof DeclarationDraft)[];
 
 export type BienDraftField = (typeof BIEN_DRAFT_FIELDS)[number];
@@ -61,10 +66,17 @@ export type SuiviAmortissementsDifferes =
   | { status: "non_etabli"; raison: string }
   | { status: "etabli"; exercice: number; fractionEcartee: number; source: string };
 
+/**
+ * R2B.2a — les charges d'un dossier mono historique mêlent possiblement des charges réellement communes : leur nature
+ * n'est pas connue. Après ADD_PROPERTY elles restent sur A, intactes, mais marquées à revoir — jamais ventilées.
+ */
+export type ChargesNatureReview = { status: "needs_review"; reason: "legacy_mono_charges_nature_unknown" };
+
+/** La vérité du rattachement documentaire reste `documents[].propertyId` : aucune liste de documents ici. */
 export type BienDraft = Partial<Pick<DeclarationDraft, BienDraftField>> & {
   propertyId: string;
   suiviAmortissementsDifferes?: SuiviAmortissementsDifferes;
-  documentIds: string[];
+  chargesNatureReview?: ChargesNatureReview;
   completedSteps: string[];
 };
 
@@ -81,20 +93,11 @@ type BienWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "doc
 const STEP_SET: ReadonlySet<string> = new Set(BIEN_STEP_IDS);
 
 export function createBienDraft(propertyId: string): BienDraft {
-  return { propertyId, documentIds: [], completedSteps: [] };
+  return { propertyId, completedSteps: [] };
 }
 
 function hasLegacyBienData(draft: DeclarationDraft | undefined): boolean {
   return draft !== undefined && BIEN_DRAFT_FIELDS.some((field) => draft[field] !== undefined);
-}
-
-function documentIdsFor(workspace: BienWorkspace, propertyId: string): string[] {
-  return workspace.documents
-    .filter((document) => {
-      const scope = resolveDocumentScope(workspace, document);
-      return scope.kind === "property" && scope.propertyId === propertyId;
-    })
-    .map((document) => document.id);
 }
 
 /** Projection pure d'un draft historique à plat vers le BienDraft du bien unique. Seules les valeurs présentes. */
@@ -102,7 +105,6 @@ function projectLegacyMonoBien(workspace: BienWorkspace, propertyId: string): Bi
   const draft = workspace.declarationDraft;
   const bien: BienDraft = {
     propertyId,
-    documentIds: documentIdsFor(workspace, propertyId),
     completedSteps: (draft?.completedSteps ?? []).filter((step) => STEP_SET.has(step)),
   };
   for (const field of BIEN_DRAFT_FIELDS) {
@@ -261,6 +263,7 @@ export type ConsolidationBlock =
   | "no_property"
   | "multi_property_consolidation_not_supported"
   | "unattributed_documents"
+  | "legacy_charges_nature_unreviewed"
   | BienDraftFailure;
 
 /**
@@ -278,6 +281,9 @@ export function resolveConsolidationInput(workspace: BienWorkspace): Consolidati
   }
   const view = readBienDrafts(workspace);
   const draft = workspace.declarationDraft ?? { completedSteps: [] };
+  if (view.mode === "scoped" && Object.values(view.biens).some((bien) => bien.chargesNatureReview?.status === "needs_review")) {
+    reasons.push("legacy_charges_nature_unreviewed");
+  }
   let single: ConsolidationInput | undefined;
   if (view.mode === "unresolved") reasons.unshift(view.reason);
   else if (view.mode === "none") reasons.unshift("no_property");
@@ -294,4 +300,242 @@ export function resolveConsolidationInput(workspace: BienWorkspace): Consolidati
   }
   if (reasons.length > 0 || !single) return { kind: "blocked", reasons };
   return single;
+}
+
+// ---------------------------------------------------------------------------
+// R2B.2a — fondation d'écriture (dormante : seul ADD_PROPERTY fait passer un dossier en mode scopé).
+// ---------------------------------------------------------------------------
+
+/**
+ * Champs du Tunnel A historique. Après migration ils restent GELÉS à la racine (aucune perte de donnée legacy), mais
+ * le Tunnel A est bloqué en mode scopé : toute mutation de ces champs y est refusée.
+ */
+export const TUNNEL_A_FROZEN_FIELDS = [
+  "logementDocumentId",
+  "logementWorkspaceForm",
+  "creditWorkspaceForm",
+  "creditUserValidatedFields",
+  "amortissementExistingActivity",
+  "amortissementContinuityDocumentIds",
+  "amortissementTravauxDocumentIds",
+  "amortissementMobilierDocumentIds",
+  "amortissementDocumentIds",
+  "amortissementVentilation",
+  "amortissementExtractedInvoices",
+  "revenusDocumentIds",
+  "revenusExtraction",
+  "chargesDocumentIds",
+  "chargesCrossStepRecoveryEnabled",
+  "chargesExtraction",
+  "chargesAmortizationDecisions",
+  "amortissementFromCharges",
+] as const satisfies readonly (keyof DeclarationDraft)[];
+
+const BIEN_FIELD_SET: ReadonlySet<string> = new Set(BIEN_DRAFT_FIELDS);
+const TUNNEL_A_FIELD_SET: ReadonlySet<string> = new Set(TUNNEL_A_FROZEN_FIELDS);
+
+export function isBienDraftField(key: string): key is BienDraftField {
+  return BIEN_FIELD_SET.has(key);
+}
+
+export function isTunnelAFrozenField(key: string): boolean {
+  return TUNNEL_A_FIELD_SET.has(key);
+}
+
+export function isBienStep(stepId: string): boolean {
+  return STEP_SET.has(stepId);
+}
+
+type F009StateLike = {
+  step?: string;
+  dateMiseEnService?: string;
+  confirmed?: Record<string, unknown>;
+  inputs?: Record<string, Record<string, string> | undefined>;
+};
+
+/** F009 porte-t-il encore une représentation de la date de mise en service (propre au bien) ? */
+function f009CarriesServiceDate(state: F009StateLike | undefined): boolean {
+  return state !== undefined && (
+    state.dateMiseEnService !== undefined || state.confirmed?.dateMiseEnService !== undefined || state.inputs?.service_date !== undefined
+  );
+}
+
+/** Une saisie F009 de la date est en cours et diffère de la date retenue : la migrer la perdrait. */
+function f009ServiceDatePending(state: F009StateLike | undefined, retained: string | undefined): boolean {
+  if (!state) return false;
+  if (state.step === "service_date") return true;
+  if (state.dateMiseEnService !== undefined && state.dateMiseEnService !== retained) return true;
+  const typed = state.inputs?.service_date?.date;
+  return typed !== undefined && typed !== retained;
+}
+
+/** Retire de l'état F009 toute représentation de la date de mise en service ; le reste est conservé. */
+function withoutF009ServiceDate<T>(state: T): T {
+  const next = { ...(state as F009StateLike) };
+  delete next.dateMiseEnService;
+  if (next.confirmed) {
+    const confirmed = { ...next.confirmed };
+    delete confirmed.dateMiseEnService;
+    next.confirmed = confirmed;
+  }
+  if (next.inputs) {
+    const inputs = { ...next.inputs };
+    delete inputs.service_date;
+    next.inputs = inputs;
+  }
+  return next as T;
+}
+
+export type OptionFraisAcquisition = NonNullable<DeclarationDraft["optionFraisAcquisition"]>;
+
+/**
+ * Option frais d'acquisition du bien historique, lue telle quelle dans l'état F010 : choix courant, sinon choix
+ * historique déjà traité. Deux sources contradictoires → `contradiction` (jamais un choix automatique).
+ */
+function legacyAcquisitionOption(draft: DeclarationDraft):
+  | { kind: "none" }
+  | { kind: "found"; choix: OptionFraisAcquisition["choix"] }
+  | { kind: "contradiction" } {
+  const state = draft.logementAssistantState;
+  const current = state?.choixTraitementFrais;
+  const historical = state?.fraisAcquisitionHistoriques?.traitement;
+  if (current !== undefined && historical !== undefined && current !== historical) return { kind: "contradiction" };
+  const choix = current ?? historical;
+  return choix === undefined ? { kind: "none" } : { kind: "found", choix };
+}
+
+function hasChargesData(bien: BienDraft, draft: DeclarationDraft): boolean {
+  return bien.chargesAssistant !== undefined || bien.chargesAssistantState !== undefined ||
+    bien.chargesConfirmedAt !== undefined || draft.chargesExtraction !== undefined;
+}
+
+type AddPropertyWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "documents" | "declarationDraft">;
+
+export type AddPropertyFailure =
+  | "fiscal_year_locked"
+  | "invalid_property"
+  | "property_exists"
+  | "pending_service_date_change"
+  | "acquisition_option_ambiguous"
+  | "invariant_violation"
+  | BienDraftFailure
+  | "not_mono"
+  | "unsupported_scope";
+
+/**
+ * ADD_PROPERTY — transition ATOMIQUE et pure. Legacy mono A → scopé A + B : A garde exactement ses valeurs (déplacées,
+ * jamais copiées), l'option frais devient globale, la date de mise en service quitte F009, les charges de A sont
+ * marquées à revoir, les documents sans bien sont rattachés à A (seul bien jusqu'ici), B démarre vide. Scopé : ajout
+ * de B seul. Toute précondition non remplie → échec, rien n'est produit.
+ */
+export function addPropertyToWorkspace<W extends AddPropertyWorkspace>(
+  workspace: W,
+  property: Property,
+): { ok: true; workspace: W } | { ok: false; reason: AddPropertyFailure } {
+  const fiscalYear = workspace.fiscalYear;
+  if (fiscalYear.status === "closed" || fiscalYear.paidAt || fiscalYear.transmittedAt) {
+    return { ok: false, reason: "fiscal_year_locked" };
+  }
+  if (typeof property?.id !== "string" || !property.id.trim()) return { ok: false, reason: "invalid_property" };
+  if (workspace.properties.some((item) => item.id === property.id) || fiscalYear.propertyIds.includes(property.id)) {
+    return { ok: false, reason: "property_exists" };
+  }
+
+  const view = readBienDrafts(workspace);
+  if (view.mode === "unresolved") return { ok: false, reason: view.reason };
+  if (view.mode !== "legacy_mono" && view.mode !== "scoped") return { ok: false, reason: "unsupported_scope" };
+  const current = workspace.declarationDraft ?? { completedSteps: [] };
+
+  let draft: DeclarationDraft;
+  let documents = workspace.documents;
+  if (view.mode === "legacy_mono") {
+    const [existingId] = Object.keys(view.biens);
+    if (existingId === undefined) return { ok: false, reason: "not_mono" };
+    const f009 = current.activiteAssistantState as F009StateLike | undefined;
+    if (f009ServiceDatePending(f009, current.dateMiseEnService)) return { ok: false, reason: "pending_service_date_change" };
+    const option = legacyAcquisitionOption(current);
+    if (option.kind === "contradiction") return { ok: false, reason: "acquisition_option_ambiguous" };
+
+    const migrated = migrateLegacyMonoToBiens(workspace);
+    if (!migrated.ok) return { ok: false, reason: migrated.reason === "already_scoped" ? "unsupported_scope" : migrated.reason };
+    const existing = migrated.draft.biens![existingId]!;
+    const reviewed: BienDraft = hasChargesData(existing, current)
+      ? { ...existing, chargesNatureReview: { status: "needs_review", reason: "legacy_mono_charges_nature_unknown" } }
+      : existing;
+    draft = {
+      ...migrated.draft,
+      ...(f009 ? { activiteAssistantState: withoutF009ServiceDate(current.activiteAssistantState) } : {}),
+      ...(option.kind === "found" ? { optionFraisAcquisition: { choix: option.choix, sourcePropertyId: existingId } } : {}),
+      biens: { ...migrated.draft.biens, [existingId]: reviewed },
+    };
+    // Mono historique : un document sans bien appartenait déterministement au seul bien (contrat R1).
+    documents = workspace.documents.map((document) =>
+      document.propertyId === undefined ? { ...document, propertyId: existingId } : document);
+  } else {
+    draft = { ...current };
+  }
+
+  draft = { ...draft, biens: { ...draft.biens, [property.id]: createBienDraft(property.id) } };
+  for (const field of CONSOLIDATED_FIELDS) delete draft[field];
+  const next: W = {
+    ...workspace,
+    properties: [...workspace.properties, property],
+    documents,
+    fiscalYear: { ...fiscalYear, propertyIds: [...fiscalYear.propertyIds, property.id], declarationGeneratedAt: undefined },
+    declarationDraft: draft,
+  };
+  if (scopedInvariantViolation(next) !== null) return { ok: false, reason: "invariant_violation" };
+  return { ok: true, workspace: next };
+}
+
+/** Vue « à plat » (exercice + ce bien) d'un dossier scopé, pour réutiliser telles quelles les règles historiques. */
+export function scopedBienView(draft: DeclarationDraft, propertyId: string): DeclarationDraft | undefined {
+  const bien = draft.biens?.[propertyId];
+  return bien ? exerciseViewOfBien(draft, bien) : undefined;
+}
+
+/**
+ * Inverse de `scopedBienView` : redistribue une vue modifiée — champs du bien et étapes du bien → `biens[propertyId]`,
+ * le reste → racine. Les autres biens sont repris à l'identique (même référence).
+ */
+export function scatterBienView(scopedDraft: DeclarationDraft, propertyId: string, view: DeclarationDraft): DeclarationDraft {
+  const previous = scopedDraft.biens?.[propertyId];
+  const bien: BienDraft = {
+    propertyId,
+    completedSteps: view.completedSteps.filter((step) => STEP_SET.has(step)),
+    ...(previous?.suiviAmortissementsDifferes ? { suiviAmortissementsDifferes: previous.suiviAmortissementsDifferes } : {}),
+    ...(previous?.chargesNatureReview ? { chargesNatureReview: previous.chargesNatureReview } : {}),
+  };
+  const root: DeclarationDraft = { ...view, completedSteps: view.completedSteps.filter((step) => !STEP_SET.has(step)) };
+  for (const field of BIEN_DRAFT_FIELDS) {
+    if (view[field] !== undefined) Object.assign(bien, { [field]: view[field] });
+    delete root[field];
+  }
+  return { ...root, biens: { ...scopedDraft.biens, [propertyId]: bien } };
+}
+
+export type ScopedInvariantViolation =
+  | "not_scoped"
+  | "flat_bien_field"
+  | "f009_service_date"
+  | "credit_document_scope";
+
+/**
+ * Invariant ABSOLU d'un dossier scopé : lisible en mode scopé (aucun conflit, biens connus de l'exercice), aucun champ
+ * du bien à plat, aucune date de mise en service dans F009, chaque document de prêt rattaché à SON bien.
+ */
+export function scopedInvariantViolation(workspace: BienWorkspace): ScopedInvariantViolation | null {
+  const draft = workspace.declarationDraft;
+  if (!draft?.biens || readBienDrafts(workspace).mode !== "scoped") return "not_scoped";
+  if (BIEN_DRAFT_FIELDS.some((field) => draft[field] !== undefined)) return "flat_bien_field";
+  if (f009CarriesServiceDate(draft.activiteAssistantState as F009StateLike | undefined)) return "f009_service_date";
+  for (const [propertyId, bien] of Object.entries(draft.biens)) {
+    if (bien.creditDocumentId === undefined) continue;
+    const document = workspace.documents.find((item) => item.id === bien.creditDocumentId);
+    // Référence historique vers un document supprimé : aucune attribution à contredire (REMOVE_DOCUMENT ne l'efface pas).
+    if (!document) continue;
+    const scope = resolveDocumentScope(workspace, document);
+    if (scope.kind !== "property" || scope.propertyId !== propertyId) return "credit_document_scope";
+  }
+  return null;
 }

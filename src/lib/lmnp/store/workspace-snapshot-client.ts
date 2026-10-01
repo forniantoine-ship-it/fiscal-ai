@@ -9,9 +9,24 @@
 import type { PersistedWorkspace } from "./persistence";
 import {
   serializeWorkspaceSnapshot,
-  WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
+  WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION,
 } from "./workspace-snapshot";
 import type { WorkspaceSnapshotRecord } from "./workspace-snapshot-resolve";
+
+/**
+ * R2B.2a — garde CLIENT (lecture puis écriture : non atomique ; la protection robuste est le trigger SQL
+ * `lmnp_prevent_snapshot_schema_downgrade`). Refuse d'écrire si la version stockée est plus récente que ce client, ou
+ * plus récente que la version écrite (jamais un v2 scopé réécrit en v1 à plat).
+ */
+export function snapshotWriteRejection(
+  existing: { schema_version: number; closed_at?: string | null } | null,
+  nextSchemaVersion: number,
+): string | null {
+  if (!existing) return null;
+  if (existing.schema_version > WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION) return "workspace snapshot schema is newer than this client";
+  if (existing.schema_version > nextSchemaVersion) return "workspace snapshot schema downgrade refused";
+  return null;
+}
 
 export type WorkspaceSnapshotSyncGate = "unknown" | "ready" | "blocked";
 
@@ -167,9 +182,8 @@ function createSupabaseStore(): WorkspaceSnapshotStore {
       if (existing?.closed_at) {
         throw new Error("lmnp_snapshot_closed: snapshot is closed");
       }
-      if (existing && existing.schema_version > WORKSPACE_SNAPSHOT_SCHEMA_VERSION) {
-        throw new Error("workspace snapshot schema is newer than this client");
-      }
+      const rejection = snapshotWriteRejection(existing ?? null, input.schemaVersion);
+      if (rejection) throw new Error(rejection);
       const nextRevision = (existing?.revision ?? 0) + 1;
       const { data, error } = await supabase
         .from("lmnp_workspace_snapshots")

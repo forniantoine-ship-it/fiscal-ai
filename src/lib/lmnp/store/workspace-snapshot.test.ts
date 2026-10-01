@@ -260,11 +260,13 @@ describe("E — schema_version future fail closed", () => {
     assert.equal(decision.workspace?.properties[0]?.city, "LocalCity");
   });
 
-  it("parse refuse un overwrite implicite de v2", () => {
-    const parsed = parseWorkspaceSnapshot({ schemaVersion: 2, workspace: workspace() });
+  it("parse refuse une version future (v2 est la version scopée R2B.2a ; v3 reste future)", () => {
+    const parsed = parseWorkspaceSnapshot({ schemaVersion: 3, workspace: workspace() });
     assert.equal(parsed.ok, false);
     if (parsed.ok) return;
     assert.equal(parsed.reason, "unsupported_schema_version");
+    // Un v2 qui n'est pas un workspace scopé reste refusé (fail closed) — R2B.2a.
+    assert.equal(parseWorkspaceSnapshot({ schemaVersion: 2, workspace: workspace() }).ok, false);
   });
 
   it("snapshot existant mais invalide → fail closed, pas de default ready", () => {
