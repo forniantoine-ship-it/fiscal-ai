@@ -187,13 +187,13 @@ test("Q. multi-biens : facts_only, aucun total ni détail global attribué au bi
 test("R. données fictives du pipeline documentaire : jamais exposées", () => {
   const properties = [property("home-1", { label: "", address: "", city: "", postalCode: "" })];
   const demo = createEmptyRevenueSession(properties, HOUSING_YEAR);
-  assert.match(JSON.stringify(demo), /Bordeaux Gambetta/, "le pipeline fabrique bien ce libellé par défaut");
+  assert.doesNotMatch(JSON.stringify(demo), /Bordeaux|Gambetta/, "R0.7 : le pipeline ne fabrique plus de libellé fictif");
   const state = persistDocumentChannel(stateOf({ properties, ...withDate }), demo, [], { confirmAfterBridge: true });
   const mono = JSON.stringify(buildV3RevenueDetail(workspaceOf(state), "home-1"));
   assert.doesNotMatch(mono, /Bordeaux|Gambetta|Lyon Part-Dieu|Studio/);
   const twoProperties = [property("home-1", { label: "", address: "", city: "", postalCode: "" }), property("home-2", { label: "", address: "", city: "", postalCode: "" })];
   const multiDemo = createEmptyRevenueSession(twoProperties, HOUSING_YEAR);
-  assert.match(JSON.stringify(multiDemo), /Studio Lyon Part-Dieu/);
+  assert.doesNotMatch(JSON.stringify(multiDemo), /Studio Lyon Part-Dieu/, "R0.7 : aucun second logement fictif");
   const multi = persistDocumentChannel(stateOf({ properties: twoProperties, ...withDate }), multiDemo, []);
   assert.doesNotMatch(JSON.stringify(buildV3RevenueDetail(workspaceOf(multi), "home-1")), /Bordeaux|Gambetta|Lyon Part-Dieu|Studio/);
 });

@@ -30,7 +30,6 @@ import {
   isTravauxDocument,
   mapExtractionResultToAnalysisResult,
   mapExtractionResultToInvoice,
-  MOCK_EXTRACTED_INVOICES,
   recalculateVentilationSummary,
   ventilationFromDraft,
   type AmortissementComponent,
@@ -1082,7 +1081,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
     setManualMode(true);
     aiAnimationDoneSourceRef.current = "manual-continue";
     setAiAnimationDone(true);
-    setExtractedInvoices(MOCK_EXTRACTED_INVOICES);
+    // Mode manuel : seules les factures réellement extraites sont reprises, jamais un jeu fictif.
     setVentilation(
       buildVentilationFromDossier(
         {
@@ -1094,7 +1093,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
           ledgerEntries: workspace.ledgerEntries,
           declarationDraft: workspace.declarationDraft,
         },
-        MOCK_EXTRACTED_INVOICES,
+        extractedInvoices,
       ),
     );
   }

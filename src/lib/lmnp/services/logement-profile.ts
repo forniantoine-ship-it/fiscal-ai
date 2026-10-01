@@ -137,29 +137,3 @@ export function normalizeLogementFormValues(
 export function logementFromWorkspace(ws: LogementWorkspace): LogementFormValues {
   return propertyToFormValues(ws.properties[0]);
 }
-
-export const MOCK_LOGEMENT_BACKGROUND: PropertyBackgroundExtraction = {
-  acquisitionPrice: 245_000,
-  notaryFees: 18_500,
-  furnitureAmount: 12_000,
-  coproReferences: "Lot 42 — Tantièmes 45/1000",
-  amortizationHints: "Bâtiment 85 % · Mobilier 15 %",
-  creditHints: "Prêt immobilier détecté — 180 000 €",
-};
-
-export const MOCK_LOGEMENT_FORM: LogementFormValues = {
-  label: "Appartement Bordeaux Gambetta",
-  address: "42 cours Gambetta",
-  addressLine2: "",
-  city: "Bordeaux",
-  postalCode: "33000",
-  propertyType: "appartement",
-  coproperty: true,
-  surface: "62",
-  propertyPurchasePrice: "245000",
-  notaryFees: "18500",
-  acquisitionDate: "2022-09-14",
-  status: "Loué meublé",
-};
-
-export const MOCK_LOGEMENT_UNCERTAIN_FIELDS: LogementFieldKey[] = ["addressLine2"];

@@ -1,7 +1,6 @@
 import type {
   DeclarationDraft,
   LmnpDocument,
-  Property,
   RevenueEvent,
   RevenusExtractionData,
   RevenusPropertyData,
@@ -13,7 +12,6 @@ import {
   monthLabelFromKey,
   recalculateRevenusExtraction,
   revenueCategoryLabel,
-  rebuildPropertyAggregation,
 } from "./revenue-aggregation";
 
 export type { RevenusExtractionData, RevenusMonthlyEntry, RevenusPropertyData, RevenueEvent } from "../types";
@@ -55,165 +53,6 @@ export function resolveRevenusDocuments(
   return [...documents]
     .filter((doc) => isRevenusDocument(doc, linkedDocumentIds))
     .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
-}
-
-function propertyLabel(property: Property | undefined, fallback: string): string {
-  if (property?.label?.trim()) return property.label.trim();
-  if (property?.city?.trim()) {
-    return `Appartement ${property.city}${property.address ? ` ${property.address.split(" ")[0]}` : ""}`;
-  }
-  return fallback;
-}
-
-function event(partial: Omit<RevenueEvent, "id"> & { id?: string }): RevenueEvent {
-  return {
-    id: partial.id ?? crypto.randomUUID(),
-    ...partial,
-  };
-}
-
-function buildMonthlyRentEvents(fiscalYear: number, rentAmount = 1500, feeMonths: number[] = []): RevenueEvent[] {
-  const events: RevenueEvent[] = [];
-
-  for (let month = 1; month <= 12; month += 1) {
-    const date = `${String(month).padStart(2, "0")}/05/${fiscalYear}`;
-    events.push(
-      event({
-        date,
-        amount: rentAmount,
-        category: "rent",
-        sourceType: "Relevé bancaire",
-        label: "Virement loyer",
-        confidence: 92,
-        recurrence: "monthly",
-      }),
-    );
-
-    if (month === 1) {
-      events.push(
-        event({
-          date,
-          amount: rentAmount,
-          category: "rent",
-          sourceType: "Quittance",
-          label: "Loyer janvier",
-          confidence: 84,
-          recurrence: "monthly",
-        }),
-      );
-    }
-
-    if (feeMonths.includes(month)) {
-      events.push(
-        event({
-          date,
-          amount: 40,
-          category: "charges",
-          sourceType: "Quittance",
-          label: "Charges locatives",
-          confidence: 88,
-        }),
-      );
-    }
-  }
-
-  return events;
-}
-
-function buildPrimaryPropertyEvents(fiscalYear: number, property?: Property): RevenueEvent[] {
-  const events = buildMonthlyRentEvents(fiscalYear, 1500, [1, 3, 5, 8, 10, 12]);
-  events.push(
-    event({
-      date: `15/07/${fiscalYear}`,
-      amount: 980,
-      category: "platform_payout",
-      sourceType: "Export Airbnb",
-      label: "Versement juillet",
-      confidence: 79,
-      recurrence: "one_shot",
-    }),
-    event({
-      date: `15/07/${fiscalYear}`,
-      amount: 120,
-      category: "fee",
-      sourceType: "Export Airbnb",
-      label: "Commission plateforme",
-      confidence: 81,
-    }),
-    event({
-      date: `01/06/${fiscalYear}`,
-      amount: 1500,
-      category: "refund",
-      sourceType: "Attestation",
-      label: "Dépôt de garantie encaissé",
-      confidence: 70,
-      recurrence: "one_shot",
-    }),
-  );
-
-  if (property?.label?.toLowerCase().includes("airbnb")) {
-    return events.filter((item) => item.category !== "rent" || item.sourceType !== "Quittance");
-  }
-
-  return events;
-}
-
-function buildSecondaryPropertyEvents(fiscalYear: number): RevenueEvent[] {
-  return buildMonthlyRentEvents(fiscalYear, 800, [2, 6, 10]).slice(0, 20);
-}
-
-export function buildRevenusExtraction(
-  properties: Property[],
-  fiscalYear = new Date().getFullYear() - 1,
-): RevenusExtractionData {
-  const primary = properties[0];
-  const primaryProperty: RevenusPropertyData = rebuildPropertyAggregation(
-    {
-      id: primary?.id ?? "property-1",
-      propertyId: primary?.id,
-      label: propertyLabel(primary, "Appartement Bordeaux Gambetta"),
-      events: buildPrimaryPropertyEvents(fiscalYear, primary),
-      annualRevenue: 0,
-      rentCount: 0,
-      detectedFees: 0,
-      months: [],
-      annualTotalHint: 18_420,
-    },
-    fiscalYear,
-  );
-
-  const allProperties =
-    properties.length > 1
-      ? [
-          primaryProperty,
-          rebuildPropertyAggregation(
-            {
-              id: properties[1].id,
-              propertyId: properties[1].id,
-              label: propertyLabel(properties[1], "Studio Lyon Part-Dieu"),
-              events: buildSecondaryPropertyEvents(fiscalYear),
-              annualRevenue: 0,
-              rentCount: 0,
-              detectedFees: 0,
-              months: [],
-            },
-            fiscalYear,
-          ),
-        ]
-      : [primaryProperty];
-
-  return recalculateRevenusExtraction(
-    {
-      properties: allProperties,
-      summary: {
-        totalRevenue: 0,
-        rentCount: 0,
-        totalFees: 0,
-        hasSecurityDeposit: false,
-      },
-    },
-    fiscalYear,
-  );
 }
 
 export function hydrateRevenusExtraction(

@@ -33,7 +33,6 @@ import {
   isLogementDocument,
   isLogementProfileIncomplete,
   logementBackgroundFromFormValues,
-  MOCK_LOGEMENT_BACKGROUND,
   suggestsMultipleProperties,
 } from "@/lib/lmnp/services/logement-profile";
 import { ingestExtractionIntoStore } from "@/lib/documents/cross-tunnel-prefill";
@@ -1194,7 +1193,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   function handleConfirm() {
     const backgroundExtraction = logementBackgroundFromFormValues(
       formValues,
-      workspace.declarationDraft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+      workspace.declarationDraft?.propertyBackgroundExtraction,
     );
     dispatch({
       type: "CONFIRM_LOGEMENT_PROFILE",
@@ -1298,7 +1297,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
             title="✓ Logement configuré"
             rows={buildLogementConfiguredSummary(
               formValues,
-              draft?.propertyBackgroundExtraction ?? MOCK_LOGEMENT_BACKGROUND,
+              draft?.propertyBackgroundExtraction,
             )}
             onEdit={() => {
               setIsEditing(true);

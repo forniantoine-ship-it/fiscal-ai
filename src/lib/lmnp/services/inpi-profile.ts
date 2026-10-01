@@ -75,20 +75,6 @@ export function buildInpiDetection(
   return { profile: merged, checks };
 }
 
-export function withActiviteMockFallbacks(profile: InpiProfile): InpiProfile {
-  return {
-    ...profile,
-    siren: profile.siren ?? "829456123",
-    firstName: profile.firstName ?? "Marie",
-    lastName: profile.lastName ?? "Dupont",
-    email: profile.email ?? "marie.dupont@example.com",
-    telephone: profile.telephone ?? "06 12 34 56 78",
-    personalAddress: profile.personalAddress ?? "4 allée Malbec",
-    personalCity: profile.personalCity ?? "Saint-Médard-d'Eyrans",
-    personalPostalCode: profile.personalPostalCode ?? "33650",
-  };
-}
-
 export function profileFromDraft(ws: PersistedWorkspace): InpiProfile {
   const draft = ws.declarationDraft ?? { completedSteps: [] };
 

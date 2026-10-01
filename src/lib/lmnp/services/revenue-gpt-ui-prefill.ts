@@ -24,12 +24,13 @@ import {
 
 export type { RevenueGptSession, RevenueMonthlyGridRow, RevenuePropertySession } from "../types";
 
-function propertyLabel(property: Property | undefined, fallback: string): string {
-  if (property?.label?.trim()) return property.label.trim();
-  if (property?.city?.trim()) {
-    return `Appartement ${property.city}${property.address ? ` ${property.address.split(" ")[0]}` : ""}`;
+/** Libellé d'affichage : données réelles du bien, sinon désignation neutre par rang (jamais un logement inventé). */
+function propertyLabel(property: Property, index: number): string {
+  if (property.label?.trim()) return property.label.trim();
+  if (property.city?.trim()) {
+    return `Logement ${property.city}${property.address ? ` ${property.address.split(" ")[0]}` : ""}`;
   }
-  return fallback;
+  return `Logement ${index + 1}`;
 }
 
 export function buildMonthKeys(fiscalYear: number): string[] {
@@ -41,14 +42,14 @@ export function buildMonthKeys(fiscalYear: number): string[] {
 export { createEmptyGridRows } from "./revenue-transactions";
 
 export function createEmptyPropertySession(
-  property: Property | undefined,
+  property: Property,
   fiscalYear: number,
-  fallbackLabel: string,
+  index: number,
 ): RevenuePropertySession {
   return {
-    id: property?.id ?? "property-1",
-    propertyId: property?.id,
-    label: propertyLabel(property, fallbackLabel),
+    id: property.id,
+    propertyId: property.id,
+    label: propertyLabel(property, index),
     rows: createEmptyGridRows(fiscalYear),
     transactions: [],
     lowConfidenceTransactions: [],
@@ -62,14 +63,10 @@ export function createEmptyRevenueSession(
   fiscalYear: number,
   mode: RevenueGptSession["mode"] = "manual",
 ): RevenueGptSession {
-  const primary = properties[0];
-  const sessions =
-    properties.length > 1
-      ? [
-          createEmptyPropertySession(primary, fiscalYear, "Appartement Bordeaux Gambetta"),
-          createEmptyPropertySession(properties[1], fiscalYear, "Studio Lyon Part-Dieu"),
-        ]
-      : [createEmptyPropertySession(primary, fiscalYear, "Appartement Bordeaux Gambetta")];
+  // Dette R1 : plafond historique à deux biens conservé tel quel ; sa levée relève du socle multi-bien.
+  const sessions = properties
+    .slice(0, 2)
+    .map((property, index) => createEmptyPropertySession(property, fiscalYear, index));
 
   return {
     properties: sessions,

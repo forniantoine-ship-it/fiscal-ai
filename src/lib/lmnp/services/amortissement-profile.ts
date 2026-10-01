@@ -102,53 +102,6 @@ function computeAnnual(amount: number, durationYears: number, allocation: Amorti
   return Math.round(amount / durationYears);
 }
 
-export const MOCK_EXTRACTED_INVOICES: ExtractedInvoice[] = [
-  {
-    id: "inv-cuisine",
-    label: "Cuisine IKEA",
-    supplier: "IKEA",
-    amount: 2300,
-    category: "Cuisine",
-    allocation: "immobilisation",
-    durationYears: 10,
-    type: "mobilier",
-    purchaseDate: "2024-03-12",
-  },
-  {
-    id: "inv-canape",
-    label: "Canapé",
-    supplier: "Maisons du Monde",
-    amount: 890,
-    category: "Mobilier",
-    allocation: "immobilisation",
-    durationYears: 7,
-    type: "mobilier",
-    purchaseDate: "2024-05-08",
-  },
-  {
-    id: "inv-peinture",
-    label: "Peinture salon",
-    supplier: "Artisan Dupuis",
-    amount: 420,
-    category: "Travaux",
-    allocation: "charge-immediate",
-    durationYears: 0,
-    type: "travaux",
-    purchaseDate: "2024-06-20",
-  },
-  {
-    id: "inv-fenetres",
-    label: "Remplacement fenêtres",
-    supplier: "Leroy Merlin",
-    amount: 4800,
-    category: "Travaux",
-    allocation: "immobilisation",
-    durationYears: 15,
-    type: "travaux",
-    purchaseDate: "2024-02-15",
-  },
-];
-
 // ---------------------------------------------------------------------------
 // Extraction mappers — convert server ExtractDocumentResult to the types
 // needed by APPLY_DOCUMENT_ANALYSIS and the ventilation workflow.
@@ -248,7 +201,7 @@ export function mapExtractionResultToInvoice(
   };
 }
 
-function baseDossierComponents(acquisitionPrice = 185000): AmortissementComponent[] {
+function baseDossierComponents(acquisitionPrice: number): AmortissementComponent[] {
   const terrain = Math.round(acquisitionPrice * 0.15);
   const buildable = acquisitionPrice - terrain;
 
@@ -347,10 +300,11 @@ function invoiceToComponent(invoice: ExtractedInvoice): AmortissementComponent {
 
 export function buildVentilationFromDossier(
   workspace: PersistedWorkspace,
-  invoices: ExtractedInvoice[] = MOCK_EXTRACTED_INVOICES,
+  invoices: ExtractedInvoice[],
 ): AmortissementVentilationData {
-  const acquisitionPrice = workspace.declarationDraft?.propertyBackgroundExtraction?.acquisitionPrice ?? 185000;
-  const base = baseDossierComponents(acquisitionPrice);
+  // Prix d'acquisition inconnu → aucun composant dérivé : l'absence reste une absence.
+  const acquisitionPrice = workspace.declarationDraft?.propertyBackgroundExtraction?.acquisitionPrice;
+  const base = acquisitionPrice == null ? [] : baseDossierComponents(acquisitionPrice);
   const invoiceComponents = invoices
     .filter((inv) => inv.allocation === "immobilisation")
     .map(invoiceToComponent);
