@@ -5,6 +5,7 @@ import { parseAddressComponents } from "@/lib/documents/facts/derivation/rules/a
 import { extractAddressLine, formatAddressLine, type F009DocumentProjection } from "@/lib/documents/facts/f009-fact-projection";
 import { validateSiret } from "../../capabilities/f009/validate-siret";
 import { validateActiviteDates } from "../../capabilities/f009/validate-activite-dates";
+import { isIsoCalendarDate, validateServiceDate } from "../../capabilities/f009/validate-service-date";
 import { explainMiseEnService } from "../../capabilities/f009/explain-mise-en-service";
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import { ALL_F009_DOCUMENT_FIELD_KEYS, toF009PersistedState, type F009Action, type F009AssistantTurn, type F009DocumentFieldKey, type F009PersistedState, type F009QuestionStep, type F009State, type F009Step } from "./types";
@@ -19,9 +20,7 @@ export const F009_QUESTIONS: Record<F009QuestionStep, { title: string; help: str
 };
 export function isQuestionStep(step: F009Step): step is F009QuestionStep { return step in F009_QUESTIONS; }
 export function validActivityDate(value?: string): boolean {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T12:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  return isIsoCalendarDate(value);
 }
 export function hasIdentifier(state: F009State): boolean {
   return Boolean((state.siret && validateSiret({ siret: state.siret }).valid) || (state.siren && isValidSiren(state.siren)));
@@ -33,7 +32,7 @@ export function remainingQuestions(state: F009State): F009QuestionStep[] {
   if (!state.lastName?.trim() || !state.firstName?.trim()) questions.push("identity");
   if (!state.establishmentAddress?.trim() && !state.personalAddress?.trim()) questions.push("address");
   if (!validActivityDate(state.dateDebutActivite)) questions.push("activity_date");
-  if (!validActivityDate(state.dateMiseEnService)) questions.push("service_date");
+  if (!state.serviceDateOwnedByProperty && !validActivityDate(state.dateMiseEnService)) questions.push("service_date");
   return questions;
 }
 export function nextMissingQuestion(state: F009State): F009QuestionStep | undefined {
@@ -127,6 +126,14 @@ export function restoreF009(draft?: DeclarationDraft, status?: InpiStatus): F009
   // An absent legacy session value must never erase a value in the dossier.
   for (const [key, value] of Object.entries(known)) if (state[key as keyof F009State] === undefined) Object.assign(state, { [key]: value });
   state.version = 2;
+  if (draft?.biens !== undefined) {
+    // R2B.2b — dossier scopé : la date de mise en service appartient à chaque bien, jamais à F009.
+    state.serviceDateOwnedByProperty = true;
+    state.dateMiseEnService = undefined;
+    state.propertyServiceDates = Object.values(draft.biens)
+      .map((bien) => bien.dateMiseEnService)
+      .filter((value): value is string => value !== undefined);
+  }
   state.conflicts = { ...state.conflicts, email: undefined, telephone: undefined };
   state.step = LEGACY_STEPS[state.step] ?? state.step;
   state.history = (saved?.history ?? []).map((step) => LEGACY_STEPS[step] ?? step).filter((step) => step !== "analyzing");
@@ -158,7 +165,9 @@ export function f009DraftPatch(state: F009State, now: string, completed: boolean
   const entries = {
     siret: state.siret, siren: state.siret && validateSiret({ siret: state.siret }).valid ? state.siret.slice(0, 9) : state.siren,
     exploitantLastName: state.lastName, exploitantFirstName: state.firstName, exploitantEmail: state.email, exploitantTelephone: state.telephone,
-    activityStartDate: state.dateDebutActivite, dateMiseEnService: state.dateMiseEnService, activityType: "LMNP" as const,
+    activityStartDate: state.dateDebutActivite, activityType: "LMNP" as const,
+    // R2B.2b — en mode scopé la date de mise en service appartient au bien : jamais écrite par F009.
+    ...(state.serviceDateOwnedByProperty ? {} : { dateMiseEnService: state.dateMiseEnService }),
   };
   Object.assign(patch, Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined && value !== "")));
   for (const prefix of ["personal", "establishment"] as const) {
@@ -229,9 +238,10 @@ export class F009ActiviteAssistant {
             next = setValue(state, "dateDebutActivite", values.date);
             break;
           case "service_date":
-            if (!validActivityDate(values.date)) return fail(state, "Indiquez la date à laquelle le logement était disponible à la location.");
-            if (values.date > new Date().toISOString().slice(0, 10)) return fail(state, "Cette date est dans le futur. Vous pourrez compléter la disponibilité effective plus tard ; aucune date prévisionnelle ne sera utilisée.");
-            next.dateMiseEnService = values.date;
+            if (state.serviceDateOwnedByProperty) return fail(state, "La date de mise en service se renseigne dans chaque logement.");
+            const serviceDate = validateServiceDate({ date: values.date, today: new Date().toISOString().slice(0, 10) });
+            if (!serviceDate.valid) return fail(state, serviceDate.message);
+            next.dateMiseEnService = serviceDate.date;
             next.confirmed = { ...next.confirmed, dateMiseEnService: true };
             break;
           default: return turn(state);
@@ -304,6 +314,14 @@ export class F009ActiviteAssistant {
         const next = { ...state, confirmed };
         const missing = nextMissingQuestion(next);
         if (missing) return turn(advance(next, missing));
+        if (next.serviceDateOwnedByProperty) {
+          // R2B.2b — mode scopé : seule la cohérence avec les dates des biens est vérifiée ; rien n'est réparé.
+          for (const serviceDate of next.propertyServiceDates ?? []) {
+            const check = validateActiviteDates({ dateDebutActivite: next.dateDebutActivite!, dateMiseEnService: serviceDate });
+            if (!check.valid) return fail(state, `La date de début d’activité est incompatible avec la mise en service d’un logement : ${check.issues.join(" ")}`);
+          }
+          return turn(advance(next, "complete", { deferred: !next.siret }), true);
+        }
         if (next.dateMiseEnService! > new Date().toISOString().slice(0, 10)) return fail(state, "La disponibilité effective est dans le futur. Modifiez cette information ou complétez-la plus tard.");
         const dates = validateActiviteDates({ dateDebutActivite: next.dateDebutActivite!, dateMiseEnService: next.dateMiseEnService! });
         if (!dates.valid) return fail(state, dates.issues.join(" "));

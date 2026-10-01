@@ -67,10 +67,16 @@ import {
   runDocumentRemoval,
 } from "@/lib/lmnp/dossier";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { bienScopeFor, resolveActivePropertyId, withActivePropertyId } from "@/lib/lmnp/dossier/bien-scope";
 
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
   dispatch: (action: LmnpAction) => void;
+  /**
+   * R2B.2b — bien actif : bien explicite du scope V3, sinon bien unique d'un exercice mono cohérent, sinon aucun
+   * (`resolveActivePropertyId`). Jamais le premier bien implicite ; aucune écriture, aucune migration.
+   */
+  activePropertyId: string | undefined;
   getFile: (documentId: string) => File | undefined;
   isReady: boolean;
   autosaveStatus: AutosaveStatus;
@@ -546,6 +552,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
   }, [isReady, correctionScope]);
 
   const workspace = useMemo(() => selectWorkspace(state), [state]);
+  const activePropertyId = useMemo(() => resolveActivePropertyId(correctionScope, workspace), [correctionScope, workspace]);
 
   const getFile = useCallback(
     (documentId: string) => {
@@ -736,6 +743,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     () => ({
       workspace,
       dispatch: dispatchWithPersistence,
+      activePropertyId,
       getFile,
       isReady,
       autosaveStatus,
@@ -755,6 +763,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     [
       workspace,
       dispatchWithPersistence,
+      activePropertyId,
       getFile,
       isReady,
       autosaveStatus,
@@ -804,4 +813,29 @@ export function useLmnp(): LmnpContextValue {
   const ctx = useContext(LmnpContext);
   if (!ctx) throw new Error("useLmnp must be used within LmnpProvider");
   return ctx;
+}
+
+/**
+ * R2B.2b — scope du bien actif pour un panel F010–F014 : brouillon lu (legacy : le brouillon lui-même ; scopé : la vue
+ * du bien actif) et dispatch qui porte le bien actif sur les actions propres au bien. Bloqué en scopé sans bien actif :
+ * aucune vue de repli, et `BienScopeGate` ne monte alors pas le panel.
+ */
+const EMPTY_BIEN_DRAFT: DeclarationDraft = Object.freeze({ completedSteps: [] }) as DeclarationDraft;
+
+export function useBienScope() {
+  const { workspace, dispatch, activePropertyId } = useLmnp();
+  const scope = useMemo(() => bienScopeFor(workspace, activePropertyId), [workspace, activePropertyId]);
+  const propertyId = scope.status === "ready" ? scope.propertyId : undefined;
+  const scopedDispatch = useCallback(
+    (action: LmnpAction) => dispatch(withActivePropertyId(action, propertyId)),
+    [dispatch, propertyId],
+  );
+  return {
+    scope,
+    propertyId,
+    // Bloqué : brouillon VIDE (jamais une vue à plat de repli) — `BienScopeGate` ne monte d'ailleurs pas le panel.
+    draft: scope.status === "ready" ? scope.draft : EMPTY_BIEN_DRAFT,
+    property: propertyId === undefined ? undefined : workspace.properties.find((item) => item.id === propertyId),
+    dispatch: scopedDispatch,
+  };
 }

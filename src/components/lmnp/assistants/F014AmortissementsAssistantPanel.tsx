@@ -10,7 +10,7 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import { mergeComposantsF012 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   F014AmortissementsAssistant,
@@ -22,7 +22,7 @@ import {
   type F014Result,
   type F014State,
 } from "@/runtime";
-import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
+import { BienScopeGate } from "./BienScopeGate";
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
@@ -116,11 +116,22 @@ function suggestionToAction(suggestionId: string): F014Action | null {
 }
 
 export function F014AmortissementsAssistantPanel() {
+  return (
+    <BienScopeGate>
+      <F014AmortissementsAssistantPanelBody />
+    </BienScopeGate>
+  );
+}
+
+function F014AmortissementsAssistantPanelBody() {
   const logementHref = useScopedOwnerHref(LMNP_ROUTES.logement);
   const chargesHref = useScopedOwnerHref(LMNP_ROUTES.chargesAssistant);
-  const { workspace, dispatch } = useLmnp();
+  const { workspace } = useLmnp();
+  // R2B.2b — lecture ET écriture du bien actif (legacy mono : brouillon historique inchangé).
+  const bienScope = useBienScope();
+  const dispatch = bienScope.dispatch;
   const fiscalYear = workspace.fiscalYear.year;
-  const draft = workspace.declarationDraft;
+  const draft = bienScope.draft;
   // P0-B — un composant F-012 créé un exercice antérieur doit continuer à
   // s'amortir sans que `chargesAssistant` (vidé à chaque N+1) ait besoin de
   // le reporter : la base persistée (`Property.amortissementBase`, mise à
@@ -128,7 +139,7 @@ export function F014AmortissementsAssistantPanel() {
   // désormais ces composants. Fusion par id — jamais un doublon si les deux
   // sources se recoupent (même exercice où F-012 vient de créer le
   // composant, avant toute transition).
-  const amortissementBase = resolveMonoProperty(workspace)?.amortissementBase;
+  const amortissementBase = bienScope.property?.amortissementBase;
   const composantsNouveaux = useMemo(
     () => mergeComposantsF012(draft?.chargesAssistant?.composantsNouveaux, amortissementBase),
     [draft?.chargesAssistant?.composantsNouveaux, amortissementBase],

@@ -10,7 +10,8 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useBienScope, useLmnp } from "@/lib/lmnp/store";
+import { BienScopeGate } from "./BienScopeGate";
 import { buildRecettesFromRevenusAssistant } from "@/lib/lmnp/services/f013/f013-build-recettes-from-draft";
 import {
   F013RevenusAssistant,
@@ -280,9 +281,20 @@ function VacanceForm({
 }
 
 export function F013RevenusAssistantPanel() {
-  const { workspace, dispatch } = useLmnp();
+  return (
+    <BienScopeGate>
+      <F013RevenusAssistantPanelBody />
+    </BienScopeGate>
+  );
+}
+
+function F013RevenusAssistantPanelBody() {
+  const { workspace } = useLmnp();
+  // R2B.2b — lecture ET écriture du bien actif (legacy mono : brouillon historique inchangé).
+  const bienScope = useBienScope();
+  const dispatch = bienScope.dispatch;
   const fiscalYear = workspace.fiscalYear.year;
-  const draft = workspace.declarationDraft;
+  const draft = bienScope.draft;
 
   const assistant = useMemo(
     () =>

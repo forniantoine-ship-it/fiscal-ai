@@ -29,6 +29,7 @@ import type {
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
 import { resolveMonoPropertyId } from "../../dossier/property-scope";
+import { scopedBienView, type BienDraft } from "../../dossier/bien-draft";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
 import type { PatrimonialState, RanSituation } from "@/runtime/capabilities/bilan/types";
 import {
@@ -777,6 +778,7 @@ export function buildNextExerciseFromClosedYear(input: {
  * jamais un clone de N (P3-SOCLE-CYCLE-FISCAL §12 + Lot 4 Phase 12).
  */
 export function createNextDeclarationDraft(previousDraft: DeclarationDraft | undefined): DeclarationDraft {
+  if (previousDraft?.biens !== undefined) return createNextScopedDeclarationDraft(previousDraft);
   const logementAssistantState = seedLogementAssistantForNextYear(previousDraft);
   const financementAssistantState = seedFinancementAssistantForNextYear(previousDraft);
 
@@ -785,6 +787,33 @@ export function createNextDeclarationDraft(previousDraft: DeclarationDraft | und
     ...extractIdentity(previousDraft),
     ...(logementAssistantState ? { logementAssistantState } : {}),
     ...(financementAssistantState ? { financementAssistantState } : {}),
+  };
+}
+
+/**
+ * R2B.2b — N+1 d'un dossier scopé : la racine porte l'identité globale et l'option frais d'acquisition ; chaque bien
+ * garde SA date de mise en service et SES états F010/F011 ensemencés depuis SA vue (mêmes règles qu'en mono). Aucun
+ * champ de bien à plat, aucune donnée d'un bien vers un autre ; le reste (charges, revenus, sorties) repart à vide.
+ */
+function createNextScopedDeclarationDraft(previousDraft: DeclarationDraft): DeclarationDraft {
+  const biens: Record<string, BienDraft> = {};
+  for (const [propertyId, bien] of Object.entries(previousDraft.biens ?? {})) {
+    const view = scopedBienView(previousDraft, propertyId);
+    const logementAssistantState = seedLogementAssistantForNextYear(view);
+    const financementAssistantState = seedFinancementAssistantForNextYear(view);
+    biens[propertyId] = {
+      propertyId,
+      completedSteps: [],
+      ...(bien.dateMiseEnService !== undefined ? { dateMiseEnService: bien.dateMiseEnService } : {}),
+      ...(logementAssistantState ? { logementAssistantState } : {}),
+      ...(financementAssistantState ? { financementAssistantState } : {}),
+    };
+  }
+  return {
+    completedSteps: [],
+    ...extractIdentity(previousDraft),
+    ...(previousDraft.optionFraisAcquisition ? { optionFraisAcquisition: previousDraft.optionFraisAcquisition } : {}),
+    biens,
   };
 }
 

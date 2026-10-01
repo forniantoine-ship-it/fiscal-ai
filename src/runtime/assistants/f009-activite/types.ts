@@ -99,6 +99,13 @@ export interface F009State extends F009V2Progress {
   fieldSources: Partial<Record<string, F009FieldSource>>;
   explanation?: string;
   prorataPercent?: number;
+  /**
+   * R2B.2b — TRANSITOIRE (jamais persisté, dérivé du brouillon à la restauration) : dossier multi-bien scopé, la date de
+   * mise en service appartient à chaque bien (F010) ; F009 ne la demande, ne l'exige ni ne l'écrit.
+   */
+  serviceDateOwnedByProperty?: boolean;
+  /** R2B.2b — TRANSITOIRE : dates de mise en service des biens, pour signaler une incohérence avec le début d'activité. */
+  propertyServiceDates?: string[];
 
   // --- Profile fields (nom/prénom/email/téléphone/adresses), sourced from the same
   // INPI document, jalon "préremplissage" — same fusion/confirm/correct machinery

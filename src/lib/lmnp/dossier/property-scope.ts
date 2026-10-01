@@ -96,10 +96,12 @@ export type DocumentScope =
   | { kind: "unresolved"; reason: PropertyScopeFailure };
 
 export function resolveDocumentScope(
-  workspace: ScopeWorkspace,
-  document: { propertyId?: string | null },
+  workspace: ScopeWorkspace & { declarationDraft?: { inpiDocumentId?: string } },
+  document: { id?: string; propertyId?: string | null },
 ): DocumentScope {
   if (document.propertyId === null) return { kind: "common" };
+  // R2B.2b — le document d'activité (lien F009 explicite) est commun à l'exercice, jamais propre à un bien.
+  if (document.id !== undefined && document.id === workspace.declarationDraft?.inpiDocumentId) return { kind: "common" };
   const resolution = resolvePropertyScope(workspace, document.propertyId);
   return resolution.ok
     ? { kind: "property", propertyId: resolution.propertyId, via: resolution.via }

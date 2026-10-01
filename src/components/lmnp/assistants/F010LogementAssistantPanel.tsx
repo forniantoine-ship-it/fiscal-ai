@@ -34,7 +34,7 @@ import {
 } from "@/lib/lmnp/services/f010/f010-review-conflicts";
 import { shouldFlushF010PersistedStep } from "@/lib/lmnp/services/f010/f010-critical-persist";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import {
   F010LogementAssistant,
   suggestFrais,
@@ -52,7 +52,7 @@ import {
   type Localisation,
   type TypeBien,
 } from "@/runtime";
-import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { BienScopeGate } from "./BienScopeGate";
 
 /** Cycle 4E6A-B — ids stables des champs de formulaire (tests + htmlFor). */
 export const F010_FORM_FIELD_IDS = {
@@ -66,6 +66,8 @@ export const F010_FORM_FIELD_IDS = {
   mobilierMontant: "f010-mobilier-montant",
   ventilationLocalisation: "f010-ventilation-localisation",
   ventilationRatio: "f010-ventilation-ratio",
+  /** R2B.2b.1 — date de mise en service du logement actif (mode scopé uniquement). */
+  serviceDate: "f010-service-date",
 } as const;
 
 export const F010_SUBMIT_HINT_IDS = {
@@ -133,6 +135,7 @@ export function collectF010LabeledFieldSpecs(): readonly { id: string; labelFor:
     { id: F010_FORM_FIELD_IDS.mobilierMontant, labelFor: F010_FORM_FIELD_IDS.mobilierMontant },
     { id: F010_FORM_FIELD_IDS.ventilationLocalisation, labelFor: F010_FORM_FIELD_IDS.ventilationLocalisation },
     { id: F010_FORM_FIELD_IDS.ventilationRatio, labelFor: F010_FORM_FIELD_IDS.ventilationRatio },
+    { id: F010_FORM_FIELD_IDS.serviceDate, labelFor: F010_FORM_FIELD_IDS.serviceDate },
   ];
 }
 
@@ -806,21 +809,41 @@ function DashboardExitButton({
 }
 
 export function F010LogementAssistantPanel() {
-  const { workspace, dispatch, getFile, flushWorkspace } = useLmnp();
+  return (
+    <BienScopeGate>
+      <F010LogementAssistantPanelBody />
+    </BienScopeGate>
+  );
+}
+
+function F010LogementAssistantPanelBody() {
+  const { workspace, getFile, flushWorkspace } = useLmnp();
+  // R2B.2b — lecture ET écriture du bien actif (legacy mono : brouillon historique inchangé).
+  const bienScope = useBienScope();
+  const dispatch = bienScope.dispatch;
   const activiteHref = useScopedOwnerHref(LMNP_ROUTES.activite);
   const financementHref = useScopedOwnerHref(LMNP_ROUTES.financement);
   const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
   const dashboardExit = useV3DossierExit();
   const fiscalYear = workspace.fiscalYear.year;
-  const draft = workspace.declarationDraft;
+  const draft = bienScope.draft;
+  const optionFraisAcquisition = draft?.optionFraisAcquisition?.choix;
+  // R2B.2b.1 — scopé : la date de mise en service est celle du logement actif, collectée ici (jamais dans F009).
+  // Legacy mono : aucune dep supplémentaire, F009 reste propriétaire de la date (comportement historique).
+  const collectServiceDate = bienScope.scope.status === "ready" && bienScope.scope.mode === "scoped";
+  const dateDebutActivite = collectServiceDate ? draft?.activityStartDate : undefined;
 
   const assistant = useMemo(
     () =>
       new F010LogementAssistant(
         { dossierId: workspace.fiscalYear.id, fiscalYear, route: "/assistants/logement" },
-        { dateMiseEnService: draft?.dateMiseEnService },
+        {
+          dateMiseEnService: draft?.dateMiseEnService,
+          optionFraisAcquisition,
+          ...(collectServiceDate ? { collectServiceDate, dateDebutActivite } : {}),
+        },
       ),
-    [fiscalYear, workspace.fiscalYear.id, draft?.dateMiseEnService],
+    [fiscalYear, workspace.fiscalYear.id, draft?.dateMiseEnService, optionFraisAcquisition, collectServiceDate, dateDebutActivite],
   );
 
   // Cycle 2 — reprise. Ordre imposé (contrainte #5) : shouldResumeF010 AVANT le
@@ -1005,8 +1028,12 @@ export function F010LogementAssistantPanel() {
   );
   const [fraisSource, setFraisSource] = useState<FieldSource>("manual");
   const [choixFrais, setChoixFrais] = useState<"integration" | "deduction">(
-    () => initialBienState.choixTraitementFrais ?? "integration",
+    // R2B.2b — option frais globale établie : verrouillée, jamais un second choix contradictoire.
+    () => optionFraisAcquisition ?? initialBienState.choixTraitementFrais ?? "integration",
   );
+
+  // blocked_missing_date (scopé) — date de mise en service du logement actif.
+  const [serviceDate, setServiceDate] = useState(() => draft?.dateMiseEnService ?? "");
 
   // collect_mobilier
   const [mobilier, setMobilier] = useState(() =>
@@ -1129,6 +1156,11 @@ export function F010LogementAssistantPanel() {
         if (consumesPending) {
           setAnalyzingDocumentId(undefined);
           setPendingExtraction(undefined);
+        }
+        // R2B.2b.1 — date acceptée par le runtime : écrite dans le BienDraft du logement actif (dispatch scopé),
+        // avant la persistance de session pour que la sauvegarde critique de `review_plan` l'emporte.
+        if (turn.serviceDate !== undefined) {
+          dispatch({ type: "DECLARATION_PATCH_DRAFT", patch: { dateMiseEnService: turn.serviceDate } });
         }
         persistSession(turn.state, nextAnalyzingDocumentId, nextPendingExtraction);
 
@@ -1347,7 +1379,7 @@ export function F010LogementAssistantPanel() {
           dossierId: workspace.fiscalYear.dossierId ?? "",
           fiscalYear: workspace.fiscalYear.year,
           documentRole: "durable_reference",
-          propertyId: resolveMonoPropertyId(workspace),
+          propertyId: bienScope.propertyId,
         });
         const documentId = uploadResult.documentIds[0];
         const storagePath = uploadResult.filePaths[0];
@@ -2078,7 +2110,7 @@ export function F010LogementAssistantPanel() {
                 <Button
                   type="button"
                   variant={choixFrais === "integration" ? "primary" : "secondary"}
-                  disabled={busy}
+                  disabled={busy || optionFraisAcquisition !== undefined}
                   aria-pressed={choixFrais === "integration"}
                   className={F010_FOCUS_BUTTON_CLASS}
                   onClick={() => setChoixFrais("integration")}
@@ -2088,7 +2120,7 @@ export function F010LogementAssistantPanel() {
                 <Button
                   type="button"
                   variant={choixFrais === "deduction" ? "primary" : "secondary"}
-                  disabled={busy}
+                  disabled={busy || optionFraisAcquisition !== undefined}
                   aria-pressed={choixFrais === "deduction"}
                   className={F010_FOCUS_BUTTON_CLASS}
                   onClick={() => setChoixFrais("deduction")}
@@ -2239,7 +2271,37 @@ export function F010LogementAssistantPanel() {
             </form>
           ) : null}
 
-          {step === "blocked_missing_date" ? (
+          {step === "blocked_missing_date" && collectServiceDate ? (
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void runAction({ type: "submit_service_date", date: serviceDate });
+              }}
+            >
+              <F010FieldLabel htmlFor={F010_FORM_FIELD_IDS.serviceDate}>Date de mise en service de ce logement</F010FieldLabel>
+              <Input
+                id={F010_FORM_FIELD_IDS.serviceDate}
+                type="date"
+                value={serviceDate}
+                onChange={(e) => setServiceDate(e.target.value)}
+              />
+              <Button type="submit" disabled={busy || !serviceDate} className={F010_FOCUS_BUTTON_CLASS}>
+                Calculer mon amortissement
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                className={F010_FOCUS_BUTTON_CLASS}
+                onClick={() => void runAction({ type: "go_back" })}
+              >
+                Précédent
+              </Button>
+            </form>
+          ) : null}
+
+          {step === "blocked_missing_date" && !collectServiceDate ? (
             <div className="flex flex-col gap-3 sm:flex-row">
               <Button href={activiteHref ?? undefined} disabled={!activiteHref} className={`w-full flex-1 ${F010_FOCUS_BUTTON_CLASS}`}>
                 Aller à l&apos;Activité

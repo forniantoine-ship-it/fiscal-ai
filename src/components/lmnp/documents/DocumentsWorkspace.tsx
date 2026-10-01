@@ -35,6 +35,7 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { isTunnelAAvailable } from "@/lib/lmnp/dossier/bien-scope";
 
 const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   uploaded: "En attente d'analyse",
@@ -413,6 +414,16 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
 export function DocumentsWorkspace() {
   console.log("[render-checkpoint]", "DocumentsWorkspace", "entry");
   const searchParams = useSearchParams();
+  const { workspace } = useLmnp();
+  // R2B.2b — Tunnel A (parcours historique mono) : inaccessible pour un dossier multi-bien scopé. Aucune étape, aucune
+  // zone de dépôt n'est montée ; le reducer reste la seconde barrière (actions Tunnel A refusées).
+  if (!isTunnelAAvailable(workspace)) {
+    return (
+      <div role="status" className="rounded-lg border p-4 text-sm text-ink-muted">
+        Ce parcours documentaire n’est pas disponible pour un dossier comportant plusieurs logements.
+      </div>
+    );
+  }
   const stepId = resolveStepId(searchParams.get("step"));
   const activeTunnel = resolvePersistedTunnel(stepId);
 

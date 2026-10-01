@@ -1,2 +1,2 @@
-export { LmnpProvider, useLmnp } from "./provider";
+export { LmnpProvider, useBienScope, useLmnp } from "./provider";
 export type { LmnpAction } from "./reducer";

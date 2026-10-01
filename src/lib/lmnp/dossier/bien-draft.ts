@@ -37,6 +37,8 @@ export const BIEN_DRAFT_FIELDS = [
   "creditGptSession",
   "creditDocumentId",
   "propertyBackgroundExtraction",
+  // R2B.2b — verrous de champs issus des documents du bien (tunnels Logement / Crédit : acte, prêt).
+  "governedFields",
 ] as const satisfies readonly (keyof DeclarationDraft)[];
 
 export type BienDraftField = (typeof BIEN_DRAFT_FIELDS)[number];
@@ -329,6 +331,8 @@ export const TUNNEL_A_FROZEN_FIELDS = [
   "chargesExtraction",
   "chargesAmortizationDecisions",
   "amortissementFromCharges",
+  // R2B.2b — progression du parcours documentaire Tunnel A (lue uniquement par ce parcours).
+  "documentStepsCompleted",
 ] as const satisfies readonly (keyof DeclarationDraft)[];
 
 const BIEN_FIELD_SET: ReadonlySet<string> = new Set(BIEN_DRAFT_FIELDS);
@@ -468,9 +472,10 @@ export function addPropertyToWorkspace<W extends AddPropertyWorkspace>(
       ...(option.kind === "found" ? { optionFraisAcquisition: { choix: option.choix, sourcePropertyId: existingId } } : {}),
       biens: { ...migrated.draft.biens, [existingId]: reviewed },
     };
-    // Mono historique : un document sans bien appartenait déterministement au seul bien (contrat R1).
+    // Mono historique : un document sans bien appartenait déterministement au seul bien (contrat R1) — sauf le
+    // document d'activité (lien F009 explicite `inpiDocumentId`), qui reste commun à l'exercice.
     documents = workspace.documents.map((document) =>
-      document.propertyId === undefined ? { ...document, propertyId: existingId } : document);
+      document.propertyId === undefined && document.id !== current.inpiDocumentId ? { ...document, propertyId: existingId } : document);
   } else {
     draft = { ...current };
   }
@@ -514,11 +519,20 @@ export function scatterBienView(scopedDraft: DeclarationDraft, propertyId: strin
   return { ...root, biens: { ...scopedDraft.biens, [propertyId]: bien } };
 }
 
+/** Choix de traitement des frais portés par l'état F010 d'un bien (choix courant et choix historique N+1). */
+export function acquisitionChoicesOf(bien: BienDraft): Array<"integration" | "deduction"> {
+  const state = bien.logementAssistantState;
+  return [state?.choixTraitementFrais, state?.fraisAcquisitionHistoriques?.traitement]
+    .filter((choix): choix is "integration" | "deduction" => choix !== undefined);
+}
+
 export type ScopedInvariantViolation =
   | "not_scoped"
   | "flat_bien_field"
   | "f009_service_date"
-  | "credit_document_scope";
+  | "credit_document_scope"
+  | "acquisition_option_divergence"
+  | "foreign_revenue_session";
 
 /**
  * Invariant ABSOLU d'un dossier scopé : lisible en mode scopé (aucun conflit, biens connus de l'exercice), aucun champ
@@ -529,7 +543,21 @@ export function scopedInvariantViolation(workspace: BienWorkspace): ScopedInvari
   if (!draft?.biens || readBienDrafts(workspace).mode !== "scoped") return "not_scoped";
   if (BIEN_DRAFT_FIELDS.some((field) => draft[field] !== undefined)) return "flat_bien_field";
   if (f009CarriesServiceDate(draft.activiteAssistantState as F009StateLike | undefined)) return "f009_service_date";
+  // Option frais globale (une seule vérité) : établie → aucun choix de bien ne la contredit ; non établie → deux
+  // biens confirmés ne peuvent pas porter deux choix différents.
+  const option = draft.optionFraisAcquisition;
+  const confirmedChoices = new Set<string>();
+  for (const bien of Object.values(draft.biens)) {
+    const choices = acquisitionChoicesOf(bien);
+    if (option && choices.some((choix) => choix !== option.choix)) return "acquisition_option_divergence";
+    if (bien.logementConfirmedAt !== undefined || bien.logementAmortissement !== undefined) choices.forEach((choix) => confirmedChoices.add(choix));
+  }
+  if (confirmedChoices.size > 1) return "acquisition_option_divergence";
   for (const [propertyId, bien] of Object.entries(draft.biens)) {
+    // La session de revenus d'un bien ne représente que ce bien.
+    if ((bien.revenueGptSession?.properties ?? []).some((session) => session.propertyId !== undefined && session.propertyId !== propertyId)) {
+      return "foreign_revenue_session";
+    }
     if (bien.creditDocumentId === undefined) continue;
     const document = workspace.documents.find((item) => item.id === bien.creditDocumentId);
     // Référence historique vers un document supprimé : aucune attribution à contredire (REMOVE_DOCUMENT ne l'efface pas).

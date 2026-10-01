@@ -4,6 +4,7 @@ import { buildDownstreamInvalidationPatch } from "@/lib/lmnp/services/dossier/de
 import { resolveDocumentScope, resolveMonoPropertyId, resolvePropertyScope } from "@/lib/lmnp/dossier/property-scope";
 import {
   TUNNEL_A_FROZEN_FIELDS,
+  acquisitionChoicesOf,
   addPropertyToWorkspace,
   isBienDraftField,
   isBienStep,
@@ -1810,7 +1811,30 @@ function throughBienView(state: LmnpState, propertyId: string | undefined, actio
   const viewState: LmnpState = { ...state, declarationDraft: view };
   const flat = lmnpBaseReducer(viewState, action);
   if (flat === viewState) return state;
-  return { ...flat, declarationDraft: scatterBienView(scoped, propertyId, flat.declarationDraft ?? view) };
+  const draft = scatterBienView(scoped, propertyId, flat.declarationDraft ?? view);
+  // Tunnel A gelé : les effets de bord d'une action partagée (ex. `logementDocumentId`, `documentStepsCompleted`)
+  // sont ignorés — l'écriture explicite de ces champs reste refusée en amont.
+  for (const field of TUNNEL_A_FROZEN_FIELDS) {
+    if (scoped[field] === undefined) delete draft[field];
+    else Object.assign(draft, { [field]: scoped[field] });
+  }
+  return { ...flat, declarationDraft: withEstablishedAcquisitionOption(draft, propertyId) };
+}
+
+/**
+ * Option frais d'acquisition globale absente : le premier F010 CONFIRMÉ d'un bien l'établit pour l'activité (une seule
+ * fois ; l'invariant scopé refuse ensuite toute divergence). Aucune règle fiscale n'est modifiée.
+ */
+function withEstablishedAcquisitionOption(draft: DeclarationDraft, propertyId: string): DeclarationDraft {
+  if (draft.optionFraisAcquisition !== undefined) return draft;
+  const bien = draft.biens?.[propertyId];
+  const choix = bien?.logementAssistantState?.choixTraitementFrais;
+  const confirmed = bien?.logementConfirmedAt !== undefined || bien?.logementAmortissement !== undefined;
+  if (choix === undefined || !confirmed) return draft;
+  // Un autre bien porte déjà un choix différent : rien n'est tranché automatiquement (l'invariant refuse ensuite
+  // toute confirmation divergente).
+  const contradicted = Object.values(draft.biens ?? {}).some((other) => acquisitionChoicesOf(other).some((value) => value !== choix));
+  return contradicted ? draft : { ...draft, optionFraisAcquisition: { choix, sourcePropertyId: propertyId } };
 }
 
 function acceptsScopedTransition(previous: LmnpState, next: LmnpState): boolean {

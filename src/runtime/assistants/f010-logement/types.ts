@@ -233,6 +233,14 @@ export type F010Action =
       localisation?: Localisation;
       source?: FieldSource;
     }
+  | {
+      /**
+       * R2B.2b.1 — date de mise en service du LOGEMENT ACTIF, saisie dans F010 (mode scopé uniquement, depuis
+       * `blocked_missing_date`). Ignorée en legacy mono : F009 y reste propriétaire de la date.
+       */
+      type: "submit_service_date";
+      date: string;
+    }
   | { type: "confirm" }
   | { type: "restart" }
   | { type: "go_back" };
@@ -241,12 +249,29 @@ export interface F010AssistantTurn {
   state: F010State;
   messages: F010Message[];
   completed: boolean;
+  /**
+   * R2B.2b.1 — date de mise en service acceptée (`submit_service_date`, déjà validée) que l'appelant écrit dans le
+   * bien actif. Jamais conservée dans `F010State` : le brouillon du bien reste l'unique vérité.
+   */
+  serviceDate?: string;
 }
 
 /** Dépendances issues des Assistants amont (F-009). */
 export interface F010Deps {
   /** date_mise_en_service produite par F-009 (TRF-0011). */
   dateMiseEnService?: string;
+  /**
+   * R2B.2b — option frais d'acquisition GLOBALE à l'activité (JUG-001), déjà établie : F010 ne peut confirmer qu'elle.
+   * Absente en legacy mono (le choix y reste demandé par F010, comportement historique).
+   */
+  optionFraisAcquisition?: "integration" | "deduction";
+  /**
+   * R2B.2b.1 — dossier scopé : la date de mise en service appartient au bien actif et F010 la collecte (F009 ne la
+   * demande plus). Absent en legacy mono : F010 ne la demande jamais (comportement historique).
+   */
+  collectServiceDate?: boolean;
+  /** R2B.2b.1 — début d'activité (global, F009) : borne inférieure de la date de mise en service saisie dans F010. */
+  dateDebutActivite?: string;
 }
 
 export function createInitialF010State(): F010State {

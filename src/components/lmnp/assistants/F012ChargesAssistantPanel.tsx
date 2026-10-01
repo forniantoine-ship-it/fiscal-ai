@@ -60,7 +60,7 @@ import {
   TaxeFonciereReviewForm,
 } from "./F012FamilyCapture";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import {
   F012ChargesAssistant,
   toF012PersistedStateWithRegistry,
@@ -76,7 +76,7 @@ import {
 } from "@/runtime";
 import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
 import { buildChargesAssistantOutput } from "@/lib/lmnp/services/f012/charges-assistant-output";
-import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { BienScopeGate } from "./BienScopeGate";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -743,13 +743,24 @@ function CategoryForm({
 }
 
 export function F012ChargesAssistantPanel() {
-  const { workspace, dispatch, flushWorkspace, getFile } = useLmnp();
-  // R1 — bien unique en mono ; plusieurs biens : aucun rattachement implicite des documents déposés.
-  const monoPropertyId = resolveMonoPropertyId(workspace);
-  const fiscalYear = workspace.fiscalYear.year;
-  const draft = workspace.declarationDraft;
+  return (
+    <BienScopeGate>
+      <F012ChargesAssistantPanelBody />
+    </BienScopeGate>
+  );
+}
 
-  const knownCopropriete = resolveMonoProperty(workspace)?.coproperty;
+function F012ChargesAssistantPanelBody() {
+  const { workspace, flushWorkspace, getFile } = useLmnp();
+  // R2B.2b — lecture ET écriture du bien actif (legacy mono : brouillon historique inchangé).
+  const bienScope = useBienScope();
+  const dispatch = bienScope.dispatch;
+  // R1 — bien unique en mono ; plusieurs biens : aucun rattachement implicite des documents déposés.
+  const activePropertyId = bienScope.propertyId;
+  const fiscalYear = workspace.fiscalYear.year;
+  const draft = bienScope.draft;
+
+  const knownCopropriete = bienScope.property?.coproperty;
   const dateMiseEnService = draft?.dateMiseEnService;
   // Cycle 3 — sortie F-011 déjà validée, réutilisée pour détecter un doublon
   // assurance emprunteur dans "Charges diverses" (RAI-000). Champs primitifs
@@ -1124,7 +1135,7 @@ export function F012ChargesAssistantPanel() {
       try {
         const result = await analyzeImpotsDocument(file, fiscalYear, {
           dossierId: workspace.fiscalYear.dossierId ?? "",
-          propertyId: monoPropertyId,
+          propertyId: activePropertyId,
         });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
@@ -1164,7 +1175,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, monoPropertyId],
+    [assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, activePropertyId],
   );
 
   const analyzePaperFile = useCallback(
@@ -1196,7 +1207,7 @@ export function F012ChargesAssistantPanel() {
       try {
         const result = await analyzeDocumentaryReview(file, familyId, fiscalYear, {
           dossierId: workspace.fiscalYear.dossierId ?? "",
-          propertyId: monoPropertyId,
+          propertyId: activePropertyId,
         });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
@@ -1240,7 +1251,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, monoPropertyId],
+    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, activePropertyId],
   );
 
   const handleSuggestion = useCallback(

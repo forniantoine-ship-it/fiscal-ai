@@ -28,7 +28,7 @@ import { shouldInvalidateCreditConfirmation } from "@/lib/lmnp/services/f011/f01
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { supabase } from "@/lib/supabase";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import {
   F011FinancementAssistant,
   toF011PersistedState,
@@ -39,7 +39,7 @@ import {
   type F011State,
 } from "@/runtime";
 import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
-import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { BienScopeGate } from "./BienScopeGate";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -340,13 +340,24 @@ function GoBackControl({
 }
 
 export function F011FinancementAssistantPanel() {
+  return (
+    <BienScopeGate>
+      <F011FinancementAssistantPanelBody />
+    </BienScopeGate>
+  );
+}
+
+function F011FinancementAssistantPanelBody() {
   // R15.1 — wording of the "home" only ("Mon dossier" under the V3 shell); no assistant logic depends on it.
   const words = useShellVocabulary();
-  const { workspace, dispatch, flushWorkspace, getFile } = useLmnp();
+  const { workspace, flushWorkspace, getFile } = useLmnp();
+  // R2B.2b — lecture ET écriture du bien actif (legacy mono : brouillon historique inchangé).
+  const bienScope = useBienScope();
+  const dispatch = bienScope.dispatch;
   // R1 — bien unique en mono ; plusieurs biens : aucun rattachement implicite des documents déposés.
-  const monoPropertyId = resolveMonoPropertyId(workspace);
+  const activePropertyId = bienScope.propertyId;
   const fiscalYear = workspace.fiscalYear.year;
-  const draft = workspace.declarationDraft;
+  const draft = bienScope.draft;
 
   const assistant = useMemo(
     () =>
@@ -757,7 +768,7 @@ export function F011FinancementAssistantPanel() {
           dossierId: workspace.fiscalYear.dossierId ?? "",
           fiscalYear: workspace.fiscalYear.year,
           documentRole: "annual_evidence",
-          propertyId: monoPropertyId,
+          propertyId: activePropertyId,
         });
         const uploadedFile = uploadedFiles[0];
         if (!uploadedFile) return;
@@ -788,7 +799,7 @@ export function F011FinancementAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, workspace.fiscalYear.year, workspace.fiscalYear.dossierId, monoPropertyId],
+    [assistant, applyTurn, dispatch, workspace.fiscalYear.year, workspace.fiscalYear.dossierId, activePropertyId],
   );
 
   const openFilePicker = useCallback(() => {

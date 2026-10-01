@@ -1,5 +1,6 @@
 import type { RuntimeContext } from "../../contracts/RuntimeContext";
 import { computeAmortizationPlan } from "../../capabilities/f010/compute-amortization-plan";
+import { validateServiceDate } from "../../capabilities/f009/validate-service-date";
 import type { TypeBien } from "../../capabilities/f010/types";
 import { explainPlan } from "../../presentation/explain-plan";
 import type { F010ActePrefill } from "@/lib/lmnp/services/f010/acte-to-assistant";
@@ -49,10 +50,11 @@ function orientationPrompt(): F010Message {
 }
 
 /**
- * Miroir F-011 (`blockedMissingDatePrompt`) : dateMiseEnService (F-009,
- * RAI-003) est la seule source légitime de cette date — F010 ne la demande
- * jamais lui-même et ne l'invente jamais (ni 01/01, ni la date d'acquisition,
- * ni la date de début d'activité).
+ * Miroir F-011 (`blockedMissingDatePrompt`) : en legacy mono, dateMiseEnService
+ * (F-009, RAI-003) est la seule source légitime de cette date — F010 ne la
+ * demande jamais lui-même et ne l'invente jamais (ni 01/01, ni la date
+ * d'acquisition, ni la date de début d'activité). En scopé, voir
+ * `serviceDateQuestionPrompt` (R2B.2b.1).
  */
 function blockedMissingDatePrompt(): F010Message {
   return {
@@ -61,6 +63,20 @@ function blockedMissingDatePrompt(): F010Message {
       "Il me manque la date de mise en service du logement pour calculer correctement l'amortissement " +
       "(elle détermine le prorata de la première année). " +
       "Complétez d'abord l'étape Activité, puis revenez ici — je ne peux pas deviner cette date.",
+  };
+}
+
+/**
+ * R2B.2b.1 — dossier scopé : la date appartient au logement actif et se renseigne ici, jamais dans l'Activité.
+ * Toujours la vraie date, jamais devinée (mêmes règles de saisie que F009, `validateServiceDate`).
+ */
+function serviceDateQuestionPrompt(): F010Message {
+  return {
+    role: "assistant",
+    content:
+      "À quelle date ce logement a-t-il été mis en service ? " +
+      "Il s'agit de la date à laquelle ce logement était disponible à la location ; " +
+      "elle détermine le prorata d'amortissement de la première année.",
   };
 }
 
@@ -292,6 +308,11 @@ export class F010LogementAssistant {
     private readonly deps: F010Deps = {},
   ) {}
 
+  /** Legacy : renvoi historique vers l'Activité (F009 propriétaire). Scopé : question sur la date de CE logement. */
+  private missingDatePrompt(): F010Message {
+    return this.deps.collectServiceDate ? serviceDateQuestionPrompt() : blockedMissingDatePrompt();
+  }
+
   start(): F010AssistantTurn {
     return {
       state: createInitialF010State(),
@@ -349,7 +370,7 @@ export class F010LogementAssistant {
     if (state.step === "blocked_missing_date") {
       const result = this.computePlan(state);
       if (!result) {
-        return { state, messages: [blockedMissingDatePrompt()], completed: false };
+        return { state, messages: [this.missingDatePrompt()], completed: false };
       }
       return {
         state: { ...state, step: "review_plan", result },
@@ -370,7 +391,7 @@ export class F010LogementAssistant {
       if (!result) {
         return {
           state: { ...state, step: "blocked_missing_date" },
-          messages: [blockedMissingDatePrompt()],
+          messages: [this.missingDatePrompt()],
           completed: false,
         };
       }
@@ -563,6 +584,20 @@ export class F010LogementAssistant {
       }
 
       case "submit_frais": {
+        const option = this.deps.optionFraisAcquisition;
+        if (option !== undefined && action.choixTraitementFrais !== option) {
+          // R2B.2b — l'option est globale à l'activité : un second choix contradictoire n'est jamais confirmé.
+          return {
+            state,
+            messages: [{
+              role: "assistant",
+              content: option === "integration"
+                ? "Le traitement des frais d'acquisition est déjà fixé pour votre activité : ils sont ajoutés à la valeur des biens."
+                : "Le traitement des frais d'acquisition est déjà fixé pour votre activité : ils sont déduits immédiatement.",
+            }],
+            completed: false,
+          };
+        }
         const source = action.source ?? "manual";
         messages.push({
           role: "user",
@@ -631,6 +666,27 @@ export class F010LogementAssistant {
           confirmed: { ...state.confirmed, ratioTerrain: true },
         };
         return this.advanceToNextStep(staged, messages);
+      }
+
+      case "submit_service_date": {
+        // Legacy mono : F009 reste seul propriétaire de la date — jamais acceptée ici (aucun effet, aucun message).
+        if (!this.deps.collectServiceDate || state.step !== "blocked_missing_date") {
+          return { state, messages, completed: false };
+        }
+        const check = validateServiceDate({
+          date: action.date,
+          today: new Date().toISOString().slice(0, 10),
+          dateDebutActivite: this.deps.dateDebutActivite,
+        });
+        if (!check.valid) {
+          // Refus : état inchangé, rien à écrire.
+          return { state, messages: [{ role: "assistant", content: check.message }], completed: false };
+        }
+        const result = this.computePlan(state, check.date);
+        // Défensif : `blocked_missing_date` n'est atteint qu'avec toutes les réponses F010 connues.
+        if (!result) return { state, messages, completed: false };
+        messages.push({ role: "user", content: `Mise en service : ${check.date.split("-").reverse().join("/")}` });
+        return { ...this.planTurn(state, result, messages), serviceDate: check.date };
       }
 
       case "confirm": {
@@ -759,9 +815,14 @@ export class F010LogementAssistant {
     // précondition F-009 — jamais un plan fictif basé sur une date inventée.
     const result = this.computePlan(state);
     if (!result) {
-      messages.push(blockedMissingDatePrompt());
+      messages.push(this.missingDatePrompt());
       return { state: advance(state, {}, "blocked_missing_date"), messages, completed: false };
     }
+    return this.planTurn(state, result, messages);
+  }
+
+  /** Atterrissage sur `review_plan` avec un plan calculé — partagé par le chemin séquentiel et la date du bien. */
+  private planTurn(state: F010State, result: F010Result, messages: F010Message[]): F010AssistantTurn {
     const next = advance(state, { result }, "review_plan");
     messages.push({ role: "assistant", content: result.explanation });
     if (!result.planValide) {
@@ -821,7 +882,7 @@ export class F010LogementAssistant {
       // "review_plan" avec un résultat fictif ou absent silencieusement.
       const result = this.computePlan(state);
       if (!result) {
-        return { state: advance(state, {}, "blocked_missing_date"), message: blockedMissingDatePrompt() };
+        return { state: advance(state, {}, "blocked_missing_date"), message: this.missingDatePrompt() };
       }
       return { state: advance(state, { result }, "review_plan") };
     }
@@ -830,7 +891,7 @@ export class F010LogementAssistant {
   }
 
   /** Orchestration TRF-0001 → TRF-0014 + explication (couche présentation). */
-  private computePlan(state: F010State): F010Result | null {
+  private computePlan(state: F010State, dateMiseEnService = this.deps.dateMiseEnService): F010Result | null {
     if (
       state.prixAcquisition === undefined ||
       state.fraisNotaire === undefined ||
@@ -842,15 +903,16 @@ export class F010LogementAssistant {
     }
 
     // Arbitrage dateMiseEnService (F-009/F-010, Option B) : cette date n'est
-    // jamais collectée ni devinée ici — F-010 est seul consommateur, F-009
-    // reste seul propriétaire (RAI-003). Sans elle, aucun plan n'est produit
+    // jamais devinée ici — en legacy F-010 est seul consommateur, F-009 reste
+    // seul propriétaire (RAI-003) ; en scopé (R2B.2b.1) elle est celle du bien
+    // actif, déjà validée par `submit_service_date` ou lue dans son brouillon. Sans elle, aucun plan n'est produit
     // (jamais `${fiscalYear}-01-01`, jamais dateAcquisition/dateDebutActivite
     // en substitut) : le seul appelant légitime a déjà vérifié cette
     // précondition avant d'arriver ici (cf. "submit_ventilation",
     // `leaveReviewIfComplete`, `resume`) et route vers `blocked_missing_date`
     // s'il manque — ce `null` reste une défense structurelle, pas le chemin
     // normal.
-    if (this.deps.dateMiseEnService === undefined) {
+    if (dateMiseEnService === undefined) {
       return null;
     }
 
@@ -863,7 +925,7 @@ export class F010LogementAssistant {
       typeBien: state.typeBien,
       ratioTerrain: state.ratioTerrain,
       mobilierMode: state.mobilierMode ?? "lot",
-      dateMiseEnService: this.deps.dateMiseEnService,
+      dateMiseEnService,
       exerciceFiscal: this.ctx.fiscalYear,
     });
 
