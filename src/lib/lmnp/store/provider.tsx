@@ -66,6 +66,8 @@ import {
   runCreateNewDeclaration,
   runDocumentRemoval,
 } from "@/lib/lmnp/dossier";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
   dispatch: (action: LmnpAction) => void;
@@ -350,7 +352,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
           supabaseDocuments,
           fiscalYearId: baseWorkspace.fiscalYear.id,
           fiscalYear: baseWorkspace.fiscalYear.year,
-          propertyId: baseWorkspace.fiscalYear.propertyIds[0],
+          propertyId: resolveMonoPropertyId(baseWorkspace),
           localBlobDocumentIds: new Set(localFileRegistry.keys()),
           localExtractedDocumentIds: new Set(baseWorkspace.extractions.map((e) => e.documentId)),
         });

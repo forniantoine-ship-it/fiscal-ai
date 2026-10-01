@@ -64,6 +64,7 @@ import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { RevenueGptSession } from "@/lib/lmnp/types";
 import type { RevenueSupervisionStatus } from "@/lib/lmnp/services/revenue-supervision";
+import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const REVENUS_UPLOAD_CATEGORY = "revenus" as const;
 
@@ -268,7 +269,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
           setPipelineError(pipelineResult.error ?? null);
           if (pipelineResult.supervision) setExtractionSupervision(pipelineResult.supervision);
 
-          const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";
+          const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Revenus locatifs";
           dispatch({
             type: "ADD_AI_ACTIVITY_EVENT",
             event: makeAnalysisFailedEvent(
@@ -304,7 +305,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
           (acc, lines) => acc + lines.length,
           0,
         );
-        const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";
+        const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Revenus locatifs";
         if (lineCount > 0) {
           dispatch({
             type: "ADD_AI_ACTIVITY_EVENT",
@@ -443,7 +444,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: workspace.fiscalYear.propertyIds[0],
+      propertyId: resolveMonoPropertyId(workspace),
     });
     if (uploadedFiles.length === 0) return;
 
@@ -536,7 +537,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       patch: { revenusAssistant: { ...bridged.revenusAssistant, anomalies: bridged.anomalies } },
     });
 
-    const propertyLabel = workspace.properties[0]?.label?.trim() || "Revenus locatifs";
+    const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Revenus locatifs";
     dispatch({
       type: "ADD_AI_ACTIVITY_EVENT",
       event: makeValidationEvent(

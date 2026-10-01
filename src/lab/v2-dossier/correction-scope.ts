@@ -1,5 +1,6 @@
 import type { RealWorkspaceLoad } from "./real-workspace";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
+import { resolveExerciseScope } from "@/lib/lmnp/dossier/property-scope";
 
 /**
  * F009 (activité) is legitimately owned before any Property exists — see
@@ -61,10 +62,9 @@ function scopedRouteRequiresProperty(pathname: string): boolean | undefined {
 }
 
 export function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {
-  if (propertyIds.length === 0 && properties.length === 0) return { kind: "not_applicable" };
-  if (propertyIds.length === 1 && properties.length === 1 && properties[0]?.id === propertyIds[0]) {
-    return { kind: "required", propertyId: propertyIds[0]! };
-  }
+  const scope = resolveExerciseScope({ properties, fiscalYear: { propertyIds } });
+  if (scope.kind === "none") return { kind: "not_applicable" };
+  if (scope.kind === "mono") return { kind: "required", propertyId: scope.propertyId };
   return null; // ambiguous or mismatched — the whole scope stays unresolved, for every owner.
 }
 

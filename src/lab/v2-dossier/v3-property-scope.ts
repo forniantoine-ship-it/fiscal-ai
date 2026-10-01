@@ -4,7 +4,7 @@ import { isAvailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fac
 import {
   resolveExternalOpeningProofFromFiscalYear, resolvePriorHistoryEligibility,
 } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
-import { propertyScopeFor } from "./correction-scope";
+import { readBienDrafts } from "@/lib/lmnp/dossier/bien-draft";
 
 /**
  * R15.6 — résolution COMMUNE du bien pour les read models V3 de domaines du bien (Logement, Revenus, futurs Charges /
@@ -68,8 +68,11 @@ export function projectV3PropertyEntry(workspace: PersistedWorkspace, propertyId
   }
 }
 
-/** `full` : le bien vérifié est le seul de l'exercice (mêmes règles que `propertyScopeFor`). Sinon `facts_only`. */
+/**
+ * `full` : le bien vérifié est le seul de l'exercice ET ses données sont encore à plat (dossier historique mono, lu par
+ * projection R1 `readBienDrafts`). Sinon `facts_only` : un dossier scopé (`draft.biens`) n'est jamais lu à plat.
+ */
 export function resolveV3PropertySupport(workspace: PersistedWorkspace, propertyId: string): V3PropertySupport {
-  const exerciseScope = propertyScopeFor(workspace.fiscalYear.propertyIds, workspace.properties);
-  return exerciseScope?.kind === "required" && exerciseScope.propertyId === propertyId ? "full" : "facts_only";
+  const view = readBienDrafts(workspace);
+  return view.mode === "legacy_mono" && view.biens[propertyId] !== undefined ? "full" : "facts_only";
 }

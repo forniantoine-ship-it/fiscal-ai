@@ -113,6 +113,7 @@ import { WorkflowInspector } from "@/components/lmnp/dev/WorkflowInspector";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { DeclarationDraft, LmnpDocument } from "@/lib/lmnp/types";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const SECTION_REVEAL_DELAYS_MS = [0, 400];
 const CREDIT_UPLOAD_CATEGORY = getDocumentJourneyStep("credit-immobilier").category;
@@ -1491,7 +1492,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: workspace.fiscalYear.propertyIds[0],
+      propertyId: resolveMonoPropertyId(workspace),
     });
     if (uploadedFiles.length === 0) return;
 

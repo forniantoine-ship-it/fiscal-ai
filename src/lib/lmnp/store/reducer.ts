@@ -1,6 +1,7 @@
 import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
 import { invalidateExpensesForDocument } from "@/runtime/capabilities/f012/expense";
 import { buildDownstreamInvalidationPatch } from "@/lib/lmnp/services/dossier/declaration-draft-invalidation";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 import type { DocumentAnalysisResult } from "../ocr/map-to-extractions";
 import {
   createLedgerEntryFromField,
@@ -405,7 +406,7 @@ function upsertValidationFromExtraction(
     : {
         id: crypto.randomUUID(),
         fiscalYearId: state.fiscalYear.id,
-        propertyId: state.fiscalYear.propertyIds[0],
+        propertyId: resolveMonoPropertyId(state),
         fieldKey: extraction.fieldKey,
         label,
         proposedValue: extraction.normalizedValue,
@@ -659,7 +660,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
           fiscalYearId: state.fiscalYear.id,
           fiscalYear: fiscalYear ?? state.fiscalYear.year,
           documentRole: documentRole ?? "annual_evidence",
-          propertyId: state.fiscalYear.propertyIds[0],
+          propertyId: resolveMonoPropertyId(state),
           fileName: file.name,
           mimeType: file.type || "application/octet-stream",
           sizeBytes: file.size,
@@ -1031,7 +1032,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       );
       const regimeEntry = createLedgerEntryFromField({
         fiscalYearId: state.fiscalYear.id,
-        propertyId: state.fiscalYear.propertyIds[0],
+        propertyId: resolveMonoPropertyId(state),
         fieldKey: "fiscal.regime",
         value: regimeToLedgerValue(action.regime),
         origin: "manual",
@@ -1174,7 +1175,7 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
       const immobilisationsComptables = snapshotImmobilisationsFromGeneratedRfs({
         immobilisations: state.declarationDraft?.rfs?.immobilisations,
         exerciceFiscal: state.fiscalYear.year,
-        propertyId: state.fiscalYear.propertyIds[0],
+        propertyId: resolveMonoPropertyId(state),
       });
       const closedFiscalYear = closeFiscalYear(
         touchFiscalYear(state.fiscalYear, "closed"),
@@ -1409,7 +1410,9 @@ export function lmnpReducer(state: LmnpState, action: LmnpAction): LmnpState {
 
     case "CONFIRM_LOGEMENT_PROFILE": {
       const draft = state.declarationDraft ?? { completedSteps: [] };
-      const propertyId = state.fiscalYear.propertyIds[0];
+      // R1 — écriture propre au bien : bien unique en mono, sinon aucune écriture (jamais le premier bien).
+      const propertyId = resolveMonoPropertyId(state);
+      if (propertyId === undefined) return state;
       const properties = state.properties.map((p) =>
         p.id === propertyId
           ? {

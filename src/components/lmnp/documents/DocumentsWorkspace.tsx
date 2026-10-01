@@ -34,6 +34,7 @@ import { logPipelineEntry, logPipelineEntryEarlyReturn } from "@/lib/lmnp/servic
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   uploaded: "En attente d'analyse",
@@ -371,7 +372,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
           hint={step.uploadHint}
           fiscalYear={workspace.fiscalYear.year}
           dossierId={workspace.fiscalYear.dossierId}
-          propertyId={workspace.fiscalYear.propertyIds[0]}
+          propertyId={resolveMonoPropertyId(workspace)}
           onFiles={handleUpload}
         />
         <div className="mt-4 flex items-center justify-between gap-4">

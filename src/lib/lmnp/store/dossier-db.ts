@@ -42,6 +42,7 @@ import {
   extractIdentity,
 } from "../services/dossier/fiscal-year-cycle";
 import { snapshotImmobilisationsFromGeneratedRfs } from "../services/dossier/immobilisations-comptables";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 /**
  * Récupère le Dossier existant, ou le construit une seule fois depuis le
@@ -338,7 +339,7 @@ export async function persistFiscalYearClosureAndTransition(params: {
   const immobilisationsComptables = snapshotImmobilisationsFromGeneratedRfs({
     immobilisations: workspace.declarationDraft?.rfs?.immobilisations,
     exerciceFiscal: workspace.fiscalYear.year,
-    propertyId: workspace.fiscalYear.propertyIds[0],
+    propertyId: resolveMonoPropertyId(workspace),
   });
 
   const closedFiscalYearIdentity = closeFiscalYear(

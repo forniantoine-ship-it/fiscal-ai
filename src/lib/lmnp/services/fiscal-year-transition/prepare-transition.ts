@@ -16,6 +16,7 @@ import {
   WORKSPACE_SNAPSHOT_SCHEMA_VERSION,
 } from "@/lib/lmnp/store/workspace-snapshot";
 import type { FiscalYear } from "@/lib/lmnp/types/domain";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 export type PrepareTransitionFailure =
   | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" };
@@ -84,7 +85,7 @@ export function prepareFiscalYearTransitionCandidate(input: {
     : snapshotImmobilisationsFromGeneratedRfs({
         immobilisations: workspace.declarationDraft?.rfs?.immobilisations,
         exerciceFiscal: workspace.fiscalYear.year,
-        propertyId: workspace.fiscalYear.propertyIds[0],
+        propertyId: resolveMonoPropertyId(workspace),
       });
 
   const closedFiscalYearIdentity: FiscalYear = sourceAlreadyClosed

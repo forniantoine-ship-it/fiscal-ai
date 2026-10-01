@@ -5,6 +5,7 @@
  * mêmes écritures que `persistCompletion` du panel.
  */
 import "./test-public-env";
+import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
 import { mergeComposantsF012 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { lmnpReducer, type LmnpState } from "@/lib/lmnp/store/reducer";
 import { F014AmortissementsAssistant } from "@/runtime/assistants/f014-amortissements/assistant";
@@ -14,10 +15,10 @@ import { HOUSING_YEAR, NOW, SERVICE_DATE, assistantFor, confirmedState, handle, 
 
 export { HOUSING_YEAR, NOW };
 
-/** Dépendances F014 exactement telles que le panel les assemble (`properties[0]` compris : les tests sont mono-bien). */
+/** Dépendances F014 exactement telles que le panel les assemble (bien unique résolu : les tests sont mono-bien). */
 export function panelDeps(state: LmnpState): F014Deps {
   const draft = state.declarationDraft;
-  const amortissementBase = state.properties[0]?.amortissementBase;
+  const amortissementBase = resolveMonoProperty(state)?.amortissementBase;
   const composantsNouveaux = mergeComposantsF012(draft?.chargesAssistant?.composantsNouveaux, amortissementBase);
   return {
     dateMiseEnService: draft?.dateMiseEnService,

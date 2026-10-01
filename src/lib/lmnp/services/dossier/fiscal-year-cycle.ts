@@ -28,6 +28,7 @@ import type {
   StocksOuvertureResult,
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
+import { resolveMonoPropertyId } from "../../dossier/property-scope";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
 import type { PatrimonialState, RanSituation } from "@/runtime/capabilities/bilan/types";
 import {
@@ -147,7 +148,8 @@ export function resolveImmobilisationsContinuityForGeneration(input: {
   continuiteNativeVerifiee?: FiscalYear["continuiteNativeVerifiee"];
   propertyId?: string;
 } {
-  const propertyId = input.propertyIds[0];
+  // R1.1 — bien unique d'un exercice mono cohérent (résolveur central R1), sinon aucun : jamais le premier de la liste.
+  const propertyId = resolveMonoPropertyId({ properties: input.properties, fiscalYear: { propertyIds: input.propertyIds } });
   const property = propertyId
     ? input.properties.find((p) => p.id === propertyId)
     : undefined;

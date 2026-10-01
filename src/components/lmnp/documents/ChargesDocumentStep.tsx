@@ -58,6 +58,7 @@ import { useLmnp } from "@/lib/lmnp/store";
 import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
+import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const CHARGES_UPLOAD_CATEGORY = "charges" as const;
 
@@ -122,7 +123,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
     [chargesDocs],
   );
   const crossStepRecoveryEnabled = Boolean(draft?.chargesCrossStepRecoveryEnabled);
-  const primaryPropertyLabel = workspace.properties[0]?.label?.trim() || "Bien locatif";
+  const primaryPropertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Bien locatif";
   const canOfferCrossStepRecovery = useMemo(
     () =>
       uploadedCount > 0 &&
@@ -544,7 +545,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         });
 
         const propertyLabel =
-          workspaceRef.current.properties[0]?.label?.trim() || "Charges déductibles";
+          resolveMonoProperty(workspaceRef.current)?.label?.trim() || "Charges déductibles";
 
         if (result.succeeded > 0) {
           dispatch({
@@ -662,7 +663,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: workspace.fiscalYear.propertyIds[0],
+      propertyId: resolveMonoPropertyId(workspace),
     });
 
     if (uploadedFiles.length === 0) {
@@ -840,7 +841,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       documentIds,
     });
 
-    const propertyLabel = workspace.properties[0]?.label?.trim() || "Charges déductibles";
+    const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Charges déductibles";
     dispatch({
       type: "ADD_AI_ACTIVITY_EVENT",
       event: makeValidationEvent(

@@ -970,6 +970,11 @@ export interface DeclarationDraft {
   revenusAssistant?: RevenusAssistantOutput;
   /** Validation du plan d'amortissement produite par l'Assistant Amortissements (F-014). */
   amortissementAssistant?: AmortissementAssistantOutput;
+  /**
+   * R1 — données propres à chaque bien, par `propertyId` (socle multi-bien). Absent pour tout dossier historique
+   * mono-bien, lu comme un BienDraft unique par projection (`readBienDrafts`). Aucun écrivain production en R1.
+   */
+  biens?: Record<string, import("@/lib/lmnp/dossier/bien-draft").BienDraft>;
   /** Résultat fiscal produit par le Fiscal Engine (F-006). */
   fiscalResult?: FiscalEngineOutput;
   fiscalResultConfirmedAt?: string;

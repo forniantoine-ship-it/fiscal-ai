@@ -76,6 +76,7 @@ import {
 } from "@/runtime";
 import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
 import { buildChargesAssistantOutput } from "@/lib/lmnp/services/f012/charges-assistant-output";
+import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -743,10 +744,12 @@ function CategoryForm({
 
 export function F012ChargesAssistantPanel() {
   const { workspace, dispatch, flushWorkspace, getFile } = useLmnp();
+  // R1 — bien unique en mono ; plusieurs biens : aucun rattachement implicite des documents déposés.
+  const monoPropertyId = resolveMonoPropertyId(workspace);
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;
 
-  const knownCopropriete = workspace.properties[0]?.coproperty;
+  const knownCopropriete = resolveMonoProperty(workspace)?.coproperty;
   const dateMiseEnService = draft?.dateMiseEnService;
   // Cycle 3 — sortie F-011 déjà validée, réutilisée pour détecter un doublon
   // assurance emprunteur dans "Charges diverses" (RAI-000). Champs primitifs
@@ -1121,7 +1124,7 @@ export function F012ChargesAssistantPanel() {
       try {
         const result = await analyzeImpotsDocument(file, fiscalYear, {
           dossierId: workspace.fiscalYear.dossierId ?? "",
-          propertyId: workspace.fiscalYear.propertyIds[0],
+          propertyId: monoPropertyId,
         });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
@@ -1161,7 +1164,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds],
+    [assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, monoPropertyId],
   );
 
   const analyzePaperFile = useCallback(
@@ -1193,7 +1196,7 @@ export function F012ChargesAssistantPanel() {
       try {
         const result = await analyzeDocumentaryReview(file, familyId, fiscalYear, {
           dossierId: workspace.fiscalYear.dossierId ?? "",
-          propertyId: workspace.fiscalYear.propertyIds[0],
+          propertyId: monoPropertyId,
         });
         if (result.status === "not_authenticated") {
           alert("Utilisateur non connecté");
@@ -1237,7 +1240,7 @@ export function F012ChargesAssistantPanel() {
         setBusy(false);
       }
     },
-    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, workspace.fiscalYear.propertyIds],
+    [analyzeImpotsReupload, assistant, applyTurn, dispatch, fiscalYear, workspace.fiscalYear.dossierId, monoPropertyId],
   );
 
   const handleSuggestion = useCallback(

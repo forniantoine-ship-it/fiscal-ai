@@ -12,6 +12,7 @@ import { projectDocumentFactsToF009 } from "@/lib/documents/facts/f009-fact-proj
 import { F009ActiviteAssistant, f009DraftPatch, nextMissingQuestion } from "@/runtime/assistants/f009-activite/assistant";
 import type { F009Action } from "@/runtime/assistants/f009-activite/types";
 import { F009ActiviteView } from "./F009ActiviteView";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 export function F009ActiviteAssistantPanel() {
   const services = useLmnp();
@@ -112,7 +113,7 @@ export function F009ActiviteAssistantPanel() {
         dossierId: workspace.fiscalYear.dossierId ?? "",
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence",
-        propertyId: workspace.fiscalYear.propertyIds[0],
+        propertyId: resolveMonoPropertyId(workspace),
       });
       if (!result.documentIds[0] || !result.filePaths[0]) throw new Error("L’import a échoué. Réessayez ou renseignez les informations manuellement.");
       const documentId = result.documentIds[0];

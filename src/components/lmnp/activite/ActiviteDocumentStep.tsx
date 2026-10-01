@@ -67,6 +67,7 @@ import { useLmnp } from "@/lib/lmnp/store";
 import type { LmnpDocument } from "@/lib/lmnp/types";
 import { uploadFilesForUser } from "@/lib/uploadDocument";
 import { supabase } from "@/lib/supabase";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const EXTRACTED_CARD_STYLE = {
   borderRadius: radius.lg,
@@ -484,7 +485,7 @@ export function ActiviteDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: workspace.fiscalYear.propertyIds[0],
+      propertyId: resolveMonoPropertyId(workspace),
     });
 
     if (uploadedFiles.length === 0) {

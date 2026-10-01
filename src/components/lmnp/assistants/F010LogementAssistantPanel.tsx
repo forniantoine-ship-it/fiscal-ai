@@ -52,6 +52,7 @@ import {
   type Localisation,
   type TypeBien,
 } from "@/runtime";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 /** Cycle 4E6A-B — ids stables des champs de formulaire (tests + htmlFor). */
 export const F010_FORM_FIELD_IDS = {
@@ -1346,7 +1347,7 @@ export function F010LogementAssistantPanel() {
           dossierId: workspace.fiscalYear.dossierId ?? "",
           fiscalYear: workspace.fiscalYear.year,
           documentRole: "durable_reference",
-          propertyId: workspace.fiscalYear.propertyIds[0],
+          propertyId: resolveMonoPropertyId(workspace),
         });
         const documentId = uploadResult.documentIds[0];
         const storagePath = uploadResult.filePaths[0];

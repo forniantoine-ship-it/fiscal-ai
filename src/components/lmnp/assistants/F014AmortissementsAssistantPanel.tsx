@@ -22,6 +22,7 @@ import {
   type F014Result,
   type F014State,
 } from "@/runtime";
+import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
 
 function fmtEur(value: number): string {
   return `${Math.round(value).toLocaleString("fr-FR")} €`;
@@ -127,7 +128,7 @@ export function F014AmortissementsAssistantPanel() {
   // désormais ces composants. Fusion par id — jamais un doublon si les deux
   // sources se recoupent (même exercice où F-012 vient de créer le
   // composant, avant toute transition).
-  const amortissementBase = workspace.properties[0]?.amortissementBase;
+  const amortissementBase = resolveMonoProperty(workspace)?.amortissementBase;
   const composantsNouveaux = useMemo(
     () => mergeComposantsF012(draft?.chargesAssistant?.composantsNouveaux, amortissementBase),
     [draft?.chargesAssistant?.composantsNouveaux, amortissementBase],

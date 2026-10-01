@@ -54,6 +54,7 @@ import { AiActivityFeed } from "@/components/lmnp/ai-activity";
 import { useLmnp } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
+import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 type ExistingActivityAnswer = "yes" | "no" | null;
 
@@ -711,7 +712,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         });
         console.log("[extract] batch complete", { succeeded, failed });
 
-        const propertyLabel = workspace.properties[0]?.label?.trim() || "Amortissements";
+        const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Amortissements";
 
         if (succeeded > 0) {
           dispatch({
@@ -1140,7 +1141,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
       ventilation,
     });
 
-    const propertyLabel = workspace.properties[0]?.label?.trim() || "Amortissements";
+    const propertyLabel = resolveMonoProperty(workspace)?.label?.trim() || "Amortissements";
     const componentCount = ventilation.components.length;
     dispatch({
       type: "ADD_AI_ACTIVITY_EVENT",
@@ -1224,7 +1225,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={workspace.fiscalYear.propertyIds[0]}
+        propertyId={resolveMonoPropertyId(workspace)}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "continuity", meta)}
         canContinue={continuityCanContinue}
         onContinue={() => handleSectionContinue("continuity")}
@@ -1241,7 +1242,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={workspace.fiscalYear.propertyIds[0]}
+        propertyId={resolveMonoPropertyId(workspace)}
         onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
         canContinue={travauxCanContinue}
         onContinue={() => handleSectionContinue("travaux")}
@@ -1267,7 +1268,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={workspace.fiscalYear.propertyIds[0]}
+        propertyId={resolveMonoPropertyId(workspace)}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "mobilier", meta)}
         canContinue={showMobilierLaunchAnalysis}
         onContinue={() => handleSectionContinue("mobilier")}

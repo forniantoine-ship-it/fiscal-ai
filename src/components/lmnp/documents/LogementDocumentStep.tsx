@@ -85,6 +85,7 @@ import {
   LogementStaticRoot,
   logementEffectiveVisibleSections,
 } from "@/components/lmnp/logement/logement-visual-isolation";
+import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const SECTION_REVEAL_DELAYS_MS = [0, 400];
 const LOGEMENT_UPLOAD_CATEGORY = getDocumentJourneyStep("logement").category;
@@ -1035,7 +1036,7 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "durable_reference",
-      propertyId: workspace.fiscalYear.propertyIds[0],
+      propertyId: resolveMonoPropertyId(workspace),
     });
 
     if (uploadedFiles.length === 0) {
