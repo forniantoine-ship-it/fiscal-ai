@@ -10,7 +10,7 @@ import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./prop
 import { derivedFromRealDate } from "./revenue-detail-read-model";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport,
+  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft,
 } from "./v3-property-scope";
 
 /**
@@ -237,7 +237,7 @@ export function buildV3ChargesDetail(
     return { ...base, ...none, confirmed: false, total: { state: "not_attributable" }, registry: "absent" };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = v3BienDraft(workspace, property.id);
   const output: ChargesAssistantOutput | undefined =
     draft?.chargesAssistant && isAnnualOutputForActiveYear(draft.chargesAssistant, year) && Number.isFinite(draft.chargesAssistant.totalDeductible)
       ? draft.chargesAssistant : undefined;

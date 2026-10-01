@@ -313,13 +313,15 @@ describe("R1 — Oracle 7 : non-régression fiscale mono", () => {
     assert.deepEqual(twice.draft, once.draft);
   });
 
-  it("V3 : le support « full » reste réservé au mono historique ; un dossier scopé n'est jamais lu à plat", async () => {
+  it("V3 : support « full » réservé au mono ; un mono scopé est lu depuis draft.biens (R2A), jamais à plat", async () => {
     const workspace = await legacyMonoWorkspace();
     const propertyId = workspace.properties[0]!.id;
     assert.equal(resolveV3PropertySupport(workspace, propertyId), "full");
     const migrated = migrateLegacyMonoToBiens(workspace);
     assert.ok(migrated.ok);
-    assert.equal(resolveV3PropertySupport({ ...workspace, declarationDraft: migrated.draft }, propertyId), "facts_only");
+    for (const field of BIEN_DRAFT_FIELDS) assert.equal(migrated.draft[field], undefined, `${field} n'existe plus à plat`);
+    // R1 : facts_only (V3 ne savait lire qu'à plat). R2A : la lecture passe par BienDraft — voir r2a-bien-read-cutover.test.ts.
+    assert.equal(resolveV3PropertySupport({ ...workspace, declarationDraft: migrated.draft }, propertyId), "full");
   });
 });
 

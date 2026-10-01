@@ -10,7 +10,7 @@ import type { F010FieldKey, F010ReviewFieldKey, F010State, F010Step } from "@/ru
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./document-read-model";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason,
+  type V3PropertyEntry, type V3PropertyScopeReason, v3BienDraft,
 } from "./v3-property-scope";
 import { PROPERTY_TYPE_LABELS } from "./read-model";
 import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./property-service-date";
@@ -165,8 +165,8 @@ export function buildV3HousingDetail(
     return { ...base, confirmed: false, facts, remaining: [], toConfirm: [], decisions: serviceDateDecisions(serviceDate), documents: [] };
   }
 
-  // Full support: the single-property F010 outputs belong to this property.
-  const draft = workspace.declarationDraft;
+  // Full support: the F010 outputs are this property's, read through BienDraft (R2A).
+  const draft = v3BienDraft(workspace, id);
   const session: F010State | undefined = draft?.logementAssistantState;
   const output = isAnnualOutputForActiveYear(draft?.logementAmortissement, year) ? draft?.logementAmortissement : undefined;
   const confirmed = output !== undefined;

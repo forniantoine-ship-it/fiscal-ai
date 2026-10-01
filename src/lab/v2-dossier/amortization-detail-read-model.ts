@@ -8,7 +8,7 @@ import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./prop
 import { AMORTISSEMENT_PROFIL_LABELS } from "./read-model";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport,
+  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft,
 } from "./v3-property-scope";
 
 /**
@@ -130,7 +130,7 @@ export function buildV3AmortizationDetail(
     return { ...base, total: { state: "takeover" } };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = v3BienDraft(workspace, property.id);
   const output: AmortissementAssistantOutput | undefined =
     draft?.amortissementAssistant && isAnnualOutputForActiveYear(draft.amortissementAssistant, year)
     && Number.isFinite(draft.amortissementAssistant.totalDotations)

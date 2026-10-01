@@ -1,6 +1,7 @@
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { validActivityDate } from "@/runtime/assistants/f009-activite/assistant";
 import { propertyScopeFor } from "./correction-scope";
+import { resolveBienDraftForRead } from "@/lib/lmnp/dossier/bien-draft";
 
 /**
  * R15.5 — accessor PUR de la date de mise en service, présentée comme donnée du BIEN sans migrer son stockage.
@@ -43,11 +44,15 @@ function clean(value: string | undefined): string | undefined {
 
 export function resolveV3PropertyServiceDate(workspace: PersistedWorkspace, propertyId: string): V3PropertyServiceDate {
   const ignored: V3ServiceDateIgnored[] = [];
-  const draft = workspace.declarationDraft;
   const property = workspace.properties.find(item => item.id === propertyId);
   const scope = propertyScopeFor(workspace.fiscalYear.propertyIds, workspace.properties);
-  // The global draft value belongs to this property only when it is the exercise's single property.
-  const globalAttributable = property !== undefined && scope?.kind === "required" && scope.propertyId === propertyId;
+  // R2A — the bien's values are read through BienDraft (legacy mono projection or draft.biens). They are attributable
+  // only when the exercise's single property resolves; otherwise (multi, inconsistent, flat+scoped conflict) the
+  // exercise draft is consulted solely to report its values as not attributable — never as this property's date.
+  const read = resolveBienDraftForRead(workspace, propertyId);
+  const draft = read.status === "resolved" ? read.view : workspace.declarationDraft;
+  const globalAttributable =
+    property !== undefined && read.status === "resolved" && scope?.kind === "required" && scope.propertyId === propertyId;
 
   const reliable: V3ServiceDateCandidate[] = [];
   const consider = (source: V3ServiceDateSource, raw: string | undefined, attributable: boolean, into: V3ServiceDateCandidate[]) => {

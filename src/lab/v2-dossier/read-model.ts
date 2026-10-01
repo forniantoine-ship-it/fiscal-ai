@@ -4,6 +4,7 @@ import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/valida
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
 import { LOAN_FACT_PROVENANCE_KEY, exclusionFactValue, loanExclusionCauses } from "./financing-shared";
+import { resolveV3MonoBienSource } from "./v3-property-scope";
 
 export type V3DomainId = "activity" | "property" | "financing" | "revenues" | "charges" | "depreciation";
 export type V3DomainStatus = "complete" | "incomplete" | "unsupported";
@@ -197,7 +198,9 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadMo
   ];
 
   // Same mono-property contract as Activity: never aggregate or pick a first property silently.
-  if (isMultiProperty(workspace)) {
+  // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
+  const source = resolveV3MonoBienSource(workspace);
+  if (isMultiProperty(workspace) || source.kind === "unsupported") {
     return {
       id: "property", label: "Logement", owner: "F010", status: "unsupported",
       summary: "Dossier multi-biens non pris en charge dans ce lot.",
@@ -206,7 +209,7 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadMo
     };
   }
 
-  const property = workspace.properties[0];
+  const property = source.kind === "bien" ? workspace.properties.find(item => item.id === source.propertyId) : undefined;
   if (!property) {
     return {
       id: "property", label: "Logement", owner: "F010", status: "incomplete",
@@ -216,7 +219,7 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadMo
     };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   // Exercise-scoped F010 output: only trusted for the active fiscal year, same guard as isLogementComplete.
   const amortissement = isAnnualOutputForActiveYear(draft?.logementAmortissement, workspace.fiscalYear.year)
     ? draft?.logementAmortissement : undefined;
@@ -273,7 +276,9 @@ function loanLabel(index: number, bank: string | null): string {
 
 function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as Activity/Property: the whole dossier stays unsupported, never partial.
-  if (isMultiProperty(workspace)) {
+  // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
+  const source = resolveV3MonoBienSource(workspace);
+  if (isMultiProperty(workspace) || source.kind === "unsupported") {
     return {
       id: "financing", label: "Financement", owner: "F011", status: "unsupported",
       summary: "Dossier multi-biens non pris en charge dans ce lot.",
@@ -281,7 +286,7 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
     };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   const loans = draft?.creditFinancing?.loans ?? [];
   // Exercise-scoped F011 output: only trusted for the active fiscal year, same guard as isCreditComplete.
   const financementCharges = isAnnualOutputForActiveYear(draft?.financementCharges, workspace.fiscalYear.year)
@@ -362,7 +367,9 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
 
 function buildV3RevenueReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as Activity/Property/Financing: never a partial aggregate.
-  if (isMultiProperty(workspace)) {
+  // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
+  const source = resolveV3MonoBienSource(workspace);
+  if (isMultiProperty(workspace) || source.kind === "unsupported") {
     return {
       id: "revenues", label: "Loyers", owner: "F013", status: "unsupported",
       summary: "Dossier multi-biens non pris en charge dans ce lot.",
@@ -370,7 +377,7 @@ function buildV3RevenueReadModel(workspace: PersistedWorkspace): V3DomainReadMod
     };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   // Exercise-scoped F013 output: only trusted for the active fiscal year, same guard as isRevenusComplete.
   const revenus = isAnnualOutputForActiveYear(draft?.revenusAssistant, workspace.fiscalYear.year)
     ? draft?.revenusAssistant : undefined;
@@ -414,7 +421,9 @@ const CHARGE_CATEGORY_IDS = Object.keys(CHARGE_CATEGORY_LABELS);
 
 function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as the other domains: never a partial aggregate.
-  if (isMultiProperty(workspace)) {
+  // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
+  const source = resolveV3MonoBienSource(workspace);
+  if (isMultiProperty(workspace) || source.kind === "unsupported") {
     return {
       id: "charges", label: "Dépenses", owner: "F012", status: "unsupported",
       summary: "Dossier multi-biens non pris en charge dans ce lot.",
@@ -422,7 +431,7 @@ function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadMod
     };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   // Exercise-scoped F012 output: only trusted for the active fiscal year, same guard as isChargesComplete.
   const charges = isAnnualOutputForActiveYear(draft?.chargesAssistant, workspace.fiscalYear.year)
     ? draft?.chargesAssistant : undefined;
@@ -483,7 +492,9 @@ export const AMORTISSEMENT_PROFIL_LABELS: Record<string, string> = {
 
 function buildV3AmortizationReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
   // Same mono-property contract as the other domains: never a partial aggregate.
-  if (isMultiProperty(workspace)) {
+  // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
+  const source = resolveV3MonoBienSource(workspace);
+  if (isMultiProperty(workspace) || source.kind === "unsupported") {
     return {
       id: "depreciation", label: "Amortissements", owner: "F014", status: "unsupported",
       summary: "Dossier multi-biens non pris en charge dans ce lot.",
@@ -491,7 +502,7 @@ function buildV3AmortizationReadModel(workspace: PersistedWorkspace): V3DomainRe
     };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   // Exercise-scoped F014 output: only trusted for the active fiscal year, same guard as isAmortissementComplete.
   const amortissement = isAnnualOutputForActiveYear(draft?.amortissementAssistant, workspace.fiscalYear.year)
     ? draft?.amortissementAssistant : undefined;

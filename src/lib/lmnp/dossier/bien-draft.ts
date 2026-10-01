@@ -212,6 +212,51 @@ export function applyBienPatch(workspace: BienWorkspace, propertyId: string, pat
   };
 }
 
+/**
+ * Vue « à plat » d'UN bien scopé : champs de l'exercice + champs de CE bien. Composition de champs DISJOINTS (en mode
+ * scopé, aucun champ de bien n'existe à plat — sinon conflit), jamais un repli : un champ absent du bien reste absent.
+ */
+function exerciseViewOfBien(draft: DeclarationDraft, bien: BienDraft): DeclarationDraft {
+  const view: DeclarationDraft = { ...draft, completedSteps: [...new Set([...draft.completedSteps, ...bien.completedSteps])] };
+  delete view.biens;
+  for (const field of BIEN_DRAFT_FIELDS) {
+    if (bien[field] !== undefined) Object.assign(view, { [field]: bien[field] });
+  }
+  return view;
+}
+
+export type BienReadFailure = "no_property" | "ambiguous" | "inconsistent" | "conflict" | "unknown_property";
+
+/**
+ * R2A — lecture d'un bien pour les lecteurs propriétaires. `view` a la forme d'un DeclarationDraft :
+ * - legacy mono : le draft historique LUI-MÊME (même objet, aucune copie) ;
+ * - scopé : exercice + `draft.biens[propertyId]`, jamais un champ de bien à plat.
+ * En multi-bien, les champs hors BIEN_DRAFT_FIELDS de `view` restent ceux de l'exercice (non attribuables au bien).
+ * Pure : ne mute ni ne persiste rien ; ne choisit jamais le premier bien.
+ */
+export type BienRead =
+  | { status: "resolved"; propertyId: string; source: "legacy_mono" | "scoped"; bien: BienDraft; view: DeclarationDraft | undefined }
+  | { status: BienReadFailure; reason: BienDraftFailure };
+
+const READ_FAILURES: Record<BienDraftFailure, BienReadFailure> = {
+  no_property: "no_property",
+  ambiguous: "ambiguous",
+  inconsistent_scope: "inconsistent",
+  legacy_and_scoped_conflict: "conflict",
+  unknown_property: "unknown_property",
+  not_in_fiscal_year: "unknown_property",
+  unknown_bien: "unknown_property",
+};
+
+export function resolveBienDraftForRead(workspace: BienWorkspace, requestedPropertyId?: string | null): BienRead {
+  const result = getBienDraft(workspace, requestedPropertyId);
+  if (!result.ok) return { status: READ_FAILURES[result.reason], reason: result.reason };
+  const view = result.source === "legacy_mono"
+    ? workspace.declarationDraft
+    : exerciseViewOfBien(workspace.declarationDraft ?? { completedSteps: [] }, result.bien);
+  return { status: "resolved", propertyId: result.bien.propertyId, source: result.source, bien: result.bien, view };
+}
+
 export type ConsolidationBlock =
   | "no_property"
   | "multi_property_consolidation_not_supported"
@@ -244,12 +289,7 @@ export function resolveConsolidationInput(workspace: BienWorkspace): Consolidati
       reasons.unshift(entries.length === 0 && workspace.fiscalYear.propertyIds.length === 0 ? "no_property" : "multi_property_consolidation_not_supported");
     } else {
       const bien = entries[0]!;
-      const flat: DeclarationDraft = { ...draft, completedSteps: [...new Set([...draft.completedSteps, ...bien.completedSteps])] };
-      delete flat.biens;
-      for (const field of BIEN_DRAFT_FIELDS) {
-        if (bien[field] !== undefined) Object.assign(flat, { [field]: bien[field] });
-      }
-      single = { kind: "single_declaration", fiscalYearId: workspace.fiscalYear.id, propertyIds: [bien.propertyId], draft: flat };
+      single = { kind: "single_declaration", fiscalYearId: workspace.fiscalYear.id, propertyIds: [bien.propertyId], draft: exerciseViewOfBien(draft, bien) };
     }
   }
   if (reasons.length > 0 || !single) return { kind: "blocked", reasons };

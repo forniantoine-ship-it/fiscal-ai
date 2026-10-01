@@ -9,6 +9,7 @@ import {
   LOAN_FACT_PROVENANCE_KEY, V3_LOAN_EXCLUSION_PHRASES, loanExclusionCauses, type V3LoanExclusionCode,
 } from "./financing-shared";
 import { fieldSourceLabel, isMultiProperty, known, percent } from "./read-model";
+import { resolveV3MonoBienSource } from "./v3-property-scope";
 
 /**
  * R15 — structured, per-loan projection of the persisted Financement data for the V3 workspace.
@@ -191,13 +192,16 @@ function buildTotals(output: NonNullable<PersistedWorkspace["declarationDraft"]>
 
 export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?: V3DocumentsReadModel): V3FinancingDetail {
   const year = workspace.fiscalYear.year;
-  const stepStatus = buildDossierSteps(workspace.declarationDraft, year).find(step => step.id === "credit")?.status ?? "incomplete";
+  // R2A — F011 is property-scoped: its values come from the single property's BienDraft (legacy mono: the draft itself).
+  const source = resolveV3MonoBienSource(workspace);
+  const stepDraft = source.kind === "unsupported" ? workspace.declarationDraft : source.draft;
+  const stepStatus = buildDossierSteps(stepDraft, year).find(step => step.id === "credit")?.status ?? "incomplete";
   const empty = (state: V3FinancingState): V3FinancingDetail => ({
     state, stepStatus, year, loans: [], schedule: { state: "unavailable", reason: "absent" }, documents: [],
   });
-  if (isMultiProperty(workspace)) return empty("unsupported");
+  if (isMultiProperty(workspace) || source.kind === "unsupported") return empty("unsupported");
 
-  const draft = workspace.declarationDraft;
+  const draft = source.draft;
   const financing = draft?.creditFinancing;
   const loans = financing?.loans ?? [];
   if (!financing || loans.length === 0) return empty(draft?.creditDeclaredNoneAt ? "none" : "missing");

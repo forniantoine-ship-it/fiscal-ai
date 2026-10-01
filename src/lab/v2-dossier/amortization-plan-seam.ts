@@ -7,7 +7,7 @@ import { determineAmortissementProfil } from "@/runtime/capabilities/f014/determ
 import type { AmortissementProfil, PlanAmortissement } from "@/runtime/capabilities/f014/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { resolveV3PropertyServiceDate } from "./property-service-date";
-import { resolveV3PropertyScope, resolveV3PropertySupport, type V3PropertyScopeReason } from "./v3-property-scope";
+import { resolveV3PropertyScope, resolveV3PropertySupport, type V3PropertyScopeReason, v3BienDraft } from "./v3-property-scope";
 
 /**
  * R15.8 — SEAM PUR vers le moteur propriétaire F014, pour UN bien.
@@ -52,7 +52,7 @@ export function resolveF014Plan(workspace: PersistedWorkspace, propertyId: strin
   const { property } = scope;
   if (resolveV3PropertySupport(workspace, property.id) !== "full") return { ok: false, reason: { kind: "not_attributable" } };
 
-  const draft = workspace.declarationDraft;
+  const draft = v3BienDraft(workspace, property.id);
   const serviceDate = resolveV3PropertyServiceDate(workspace, property.id);
   if (serviceDate.status !== "known") return { ok: false, reason: { kind: "service_date", status: serviceDate.status } };
   // The panel reads the GLOBAL draft date: the plan is only reproducible when that is the retained date.

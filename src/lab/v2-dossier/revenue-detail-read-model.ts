@@ -7,7 +7,7 @@ import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./documen
 import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./property-service-date";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport,
+  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft,
 } from "./v3-property-scope";
 
 /**
@@ -132,7 +132,7 @@ export function buildV3RevenueDetail(
     return { ...base, channel: "unknown", confirmed: false, total: { state: "not_attributable" }, components: [], blocking: [], documents: [] };
   }
 
-  const draft = workspace.declarationDraft;
+  const draft = v3BienDraft(workspace, property.id);
   const channel = channelOf(draft);
   const output: RevenusAssistantOutput | undefined =
     draft?.revenusAssistant && isAnnualOutputForActiveYear(draft.revenusAssistant, year) && Number.isFinite(draft.revenusAssistant.totalRecettes)

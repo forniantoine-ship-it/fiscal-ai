@@ -2,6 +2,7 @@ import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { buildDossierSteps, buildMissingItems, type DossierStepId } from "@/lib/lmnp/services/validation-profile";
 import { FIELD_REGISTRY } from "@/lib/lmnp/types/field-keys";
+import { resolveV3MonoBienSource } from "./v3-property-scope";
 
 export interface V3UserAction {
   id: string;
@@ -40,23 +41,22 @@ function validationDomain(fieldKey: string): DossierStepId | null {
 /** A read-only projection of current user interventions, never a calculation or task store. */
 export function buildV3UserActionReadModel(workspace: PersistedWorkspace): V3UserActionReadModel {
   const year = workspace.fiscalYear;
-  const propertyIds = year.propertyIds;
-  const property = workspace.properties[0];
-  // An unsupported or inconsistent entity scope cannot justify a zero-action claim.
-  if (!year.id || !Number.isInteger(year.year) ||
-    workspace.properties.length > 1 || propertyIds.length > 1 ||
-    (propertyIds.length === 1 && property?.id !== propertyIds[0]) ||
-    (propertyIds.length === 0 && workspace.properties.length > 0)) {
+  // An unsupported or inconsistent entity scope cannot justify a zero-action claim. R2A — the exercise's single
+  // property (or none) is resolved centrally and its values are read through BienDraft; any other scope is unknown.
+  const source = resolveV3MonoBienSource(workspace);
+  if (!year.id || !Number.isInteger(year.year) || source.kind === "unsupported") {
     return { state: "unknown", actions: [] };
   }
+  const propertyId = source.kind === "bien" ? source.propertyId : undefined;
+  const draft = source.draft;
 
-  const missing = buildMissingItems(buildDossierSteps(workspace.declarationDraft, year.year));
+  const missing = buildMissingItems(buildDossierSteps(draft, year.year));
   const firstMissing = DOMAIN_ORDER.map(domain => missing.find(item => item.id === domain)).find(Boolean);
   const preciseByDomain = new Map<DossierStepId, V3UserAction>();
 
   for (const item of workspace.validationItems) {
     if (item.status !== "pending" || item.fiscalYearId !== year.id) continue;
-    if (item.propertyId && item.propertyId !== property?.id) continue;
+    if (item.propertyId && item.propertyId !== propertyId) continue;
     const domain = validationDomain(item.fieldKey);
     if (!domain || !item.id) return { state: "unknown", actions: [] };
     // The existing validation inbox owns this confirmation, including items without a document.
@@ -73,8 +73,8 @@ export function buildV3UserActionReadModel(workspace: PersistedWorkspace): V3Use
     if (precise) return [precise];
     if (firstMissing?.id !== domain) return [];
     const contested = domain === "amortissement" &&
-      workspace.declarationDraft?.amortissementAssistant?.status === "contested" &&
-      workspace.declarationDraft.amortissementAssistant.exerciceFiscal === year.year;
+      draft?.amortissementAssistant?.status === "contested" &&
+      draft.amortissementAssistant.exerciceFiscal === year.year;
     return [{
       id: domain, domain,
       label: contested ? "Revoir le plan d’amortissement" : GENERIC_LABELS[domain],
