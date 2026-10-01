@@ -16,8 +16,8 @@ import {
   type LiasseFromRfs,
 } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
-import { financementChargesForGeneration } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import { resolveEmpruntsForRfs } from "./resolve-emprunts-for-rfs";
+import { buildFiscalEngineInputs, draftAmortissementForGeneration } from "./generation-inputs";
 import {
   TAXE_FONCIERE_INTEGRITY_CHECK_VERSION,
   detectTaxeFonciereLegacyRisk,
@@ -240,13 +240,7 @@ export function runDeclarationGeneration(
 
   // Lot 4F.2 / P0-2A — Opening actifs disponibles → DN ancrée + inventaire
   // historique conservé pour la RFS. Assets unavailable (stocks-only) → draft.
-  let amortissementAssistant = draft?.amortissementAssistant
-    ? {
-        exerciceFiscal: draft.amortissementAssistant.exerciceFiscal,
-        totalDotations: draft.amortissementAssistant.totalDotations,
-        status: draft.amortissementAssistant.status,
-      }
-    : undefined;
+  let amortissementAssistant = draftAmortissementForGeneration(draft);
   let appliedOpeningPlan: AmortissementPlan | undefined;
   let openingTerrainBrut = 0;
   let openingCurrentYearAcquisitions: ComposantNouveau[] | undefined;
@@ -369,7 +363,7 @@ export function runDeclarationGeneration(
     };
   }
 
-  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — dérivé en direct depuis
+  // NEXT-2 (F011-CREDIT-SILENT-LOAN-EXCLUSION) — financement dérivé en direct depuis
   // `creditFinancing.loans` (donnée source, toujours persistée) plutôt que
   // depuis un champ calculé au moment de la confirmation Tunnel A : protège
   // aussi les dossiers confirmés avant le correctif UI, sans exiger une
@@ -381,33 +375,25 @@ export function runDeclarationGeneration(
   // financement dès que « aucun crédit » est établi (voir credit-state.ts) ; sinon `draft.financementCharges`.
   // R1.x (P0-B) — composition unique partagée avec le panneau F-006 : bloque aussi un échéancier
   // documentaire courant que les charges persistées (périmées ou absentes) ne reflètent pas.
-  const financementCharges = financementChargesForGeneration(draft, fiscalYear);
-
+  //
   // P0-2A.1 — reprise EXTERNAL_HISTORY : fraisEnCharges du draft F-010 ne doit
   // jamais contaminer F-006 (acquisition déjà traitée historiquement — JUG-001 /
   // TRF-0001 hors exercice N). Source = Opening external_takeover, pas le draft.
+  //
+  // R2C.1 — composition extraite telle quelle dans `buildFiscalEngineInputs` (source unique, réutilisée par la
+  // contribution d'un bien à la consolidation multi-bien).
   const usesTakeoverHistory =
     fiscalYearOpening?.source.kind === "external_takeover" || continuedTakeover !== undefined;
-  const logementAmortissementForF006 =
-    draft?.logementAmortissement && usesTakeoverHistory
-      ? { ...draft.logementAmortissement, fraisEnCharges: 0 }
-      : draft?.logementAmortissement;
 
-  const fiscalComputation = produceFiscalResult({
-    exerciceFiscal: fiscalYear,
-    activite: {
-      siret: draft?.siret,
-      dateMiseEnService: draft?.dateMiseEnService,
-      activityType: draft?.activityType,
-    },
-    logementAmortissement: logementAmortissementForF006,
-    financementCharges,
-    chargesAssistant: draft?.chargesAssistant,
-    revenusAssistant: draft?.revenusAssistant,
-    amortissementAssistant,
-    stockDeficitsAnterieurs: openingFiscalStocks?.deficits,
-    stockAmortissementsReportes: openingFiscalStocks?.amortissementsReportes,
-  });
+  const fiscalComputation = produceFiscalResult(
+    buildFiscalEngineInputs({
+      draft,
+      fiscalYear,
+      amortissementAssistant,
+      usesTakeoverHistory,
+      openingFiscalStocks,
+    }),
+  );
 
   if (!fiscalComputation.result) {
     return { status: "blocked", anomalies: fiscalComputation.anomalies };
