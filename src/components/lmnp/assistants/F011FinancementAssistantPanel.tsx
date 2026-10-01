@@ -13,7 +13,8 @@ import { shadows } from "@/design-system/theme/shadows";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import type { F011PrefillFieldKey } from "@/lib/lmnp/services/f011/credit-bridge";
-import { runF011UploadFlow } from "@/lib/lmnp/services/f011/f011-document-analysis";
+import { runF011UploadFlowWithStatusLifecycle } from "@/lib/lmnp/services/f011/f011-document-lifecycle";
+import { reportDocumentExtractionStatus } from "@/lib/lmnp/dossier/document-extraction-status-client";
 import { shouldFlushF011PersistedStep } from "@/lib/lmnp/services/f011/f011-critical-persist";
 import { resolveF011ResumeDecision } from "@/lib/lmnp/services/f011/f011-resume";
 import {
@@ -683,7 +684,7 @@ export function F011FinancementAssistantPanel() {
    * Analyse réelle d'un document Crédit — chemin unique pour un upload frais,
    * "Réessayer", et la reprise d'une analyse interrompue par un refresh
    * (déclenchée par l'effet ci-dessous dans les trois cas). Ne réimplémente
-   * ni OCR ni GPT : délègue à `runF011UploadFlow` (pont Cycle 4 inclus).
+   * ni OCR ni GPT : délègue à `runF011UploadFlow` (pont Cycle 4 inclus), via le cycle de vie du statut du document (F011-R2).
    */
   const analyzeDocument = useCallback(
     async (documentId: string, file: File) => {
@@ -691,11 +692,15 @@ export function F011FinancementAssistantPanel() {
         stateRef.current.step === "loan_analyzing" && stateRef.current.analyzingDocumentId === documentId;
 
       try {
-        const result = await runF011UploadFlow({
+        // F011-R2 — le statut du document suit l'analyse réelle (processing → completed | failed), best-effort.
+        // Sans dossier connu, aucune écriture n'est possible : le flux reste identique.
+        const dossierId = workspace.fiscalYear.dossierId;
+        const result = await runF011UploadFlowWithStatusLifecycle({
           file,
           documentId,
           fiscalYearId: workspace.fiscalYear.id,
           fiscalYear,
+          ...(dossierId ? { reportStatus: (status) => reportDocumentExtractionStatus({ documentId, dossierId, status }) } : {}),
         });
         // L'utilisateur a pu revenir en arrière (GO_BACK) pendant l'analyse —
         // ne jamais appliquer un résultat devenu obsolète à un état différent.
@@ -716,7 +721,7 @@ export function F011FinancementAssistantPanel() {
         applyTurn(await assistant.handle(stateRef.current, { type: "analysis_failed" }));
       }
     },
-    [assistant, applyTurn, workspace.fiscalYear.id, fiscalYear],
+    [assistant, applyTurn, workspace.fiscalYear.id, workspace.fiscalYear.dossierId, fiscalYear],
   );
 
   // Seul déclencheur de l'analyse réelle — couvre l'upload initial, "Réessayer"
