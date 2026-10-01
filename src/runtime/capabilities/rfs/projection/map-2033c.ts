@@ -1,4 +1,4 @@
-import type { FiscalRepresentation } from "../types";
+import type { FiscalRepresentation, ImmobilisationsRfs } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import {
@@ -170,6 +170,47 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
     trace: { ...baseTrace, path: "fiscalResult.amortCalcule", ksArtifacts: ["TRF-0012", "TRF-0032"] },
   });
 
+  // R2C.2 — répartition des cases d'immobilisations (426 → 576) : logique extraite telle quelle, partagée avec la
+  // consolidation multi-bien (un bloc par bien, puis somme). 572 reste le pass-through de F-006 ci-dessus.
+  const repartition = repartir2033CImmobilisations({ immobilisations: immo, exercice: rfs.exercice, amortCalcule: fr.amortCalcule });
+  cases.push(...repartition.cases);
+  casesNonAlimentees.push(...repartition.casesNonAlimentees);
+
+  // Colonnes de mouvement hors périmètre GO-2 : diminutions (494/574),
+  // jamais alimentées quel que soit l'exercice (aucune notion de cession).
+  casesNonAlimentees.push(
+    { caseId: "494", label: "Diminutions (immobilisations)", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
+    { caseId: "574", label: "Diminutions : amortissements afférents aux éléments sortis de l'actif et reprises", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
+  );
+
+  return {
+    formId: "2033-C-SD",
+    millésime: rfs.exercice,
+    cases,
+    casesNonAlimentees,
+  };
+}
+
+export type Repartition2033C = {
+  cases: CerfaCase[];
+  casesNonAlimentees: CerfaCaseNonAlimentee[];
+};
+
+/**
+ * R2C.2 — répartition des cases 2033-C d'UN bloc d'immobilisations (426, 476, 490, 492, 496, 570, 576), extraite telle
+ * quelle de `map2033CFromRfs` : SEULE logique d'affectation des cases, partagée par le mapper mono et par la
+ * consolidation multi-bien (réconciliation et répartition par bien, puis somme — jamais un bloc fusionné).
+ * `amortCalcule` = dotation de l'exercice du bloc (F-014) ; `exercice` = exercice déclaré.
+ */
+export function repartir2033CImmobilisations(input: {
+  immobilisations: ImmobilisationsRfs | undefined;
+  exercice: number;
+  amortCalcule: number;
+}): Repartition2033C {
+  const immo = input.immobilisations;
+  const cases: CerfaCase[] = [];
+  const casesNonAlimentees: CerfaCaseNonAlimentee[] = [];
+
   // Case 426 — Cadre I, ligne "Terrains", colonne "Valeur brute des
   // immobilisations à la fin de l'exercice". Pass-through pur de
   // rfs.immobilisations.valeurTerrain — AUCUNE garde F-010/F-014 : voir doc
@@ -236,7 +277,7 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
   const amortissementDivergent =
     immo !== undefined &&
     !f012SansDetail &&
-    Math.abs(round2(fr.amortCalcule - (immo.totalAnnuelExercice + dotationF012))) > 0.01;
+    Math.abs(round2(input.amortCalcule - (immo.totalAnnuelExercice + dotationF012))) > 0.01;
 
   const LABEL_490 = "Valeur brute des immobilisations au début de l'exercice";
   const LABEL_492 = "Augmentations (immobilisations)";
@@ -291,8 +332,8 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
       // Lot 5 B2 — réconciliation avant toute publication de 490/492/570/496/576.
       const reconciliation = reconcileImmobilisationsContinuity({
         immobilisations: immo,
-        exercice: rfs.exercice,
-        amortCalcule: fr.amortCalcule,
+        exercice: input.exercice,
+        amortCalcule: input.amortCalcule,
       });
 
       if (reconciliation.status === "fail") {
@@ -497,17 +538,5 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
     }
   }
 
-  // Colonnes de mouvement hors périmètre GO-2 : diminutions (494/574),
-  // jamais alimentées quel que soit l'exercice (aucune notion de cession).
-  casesNonAlimentees.push(
-    { caseId: "494", label: "Diminutions (immobilisations)", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
-    { caseId: "574", label: "Diminutions : amortissements afférents aux éléments sortis de l'actif et reprises", raison: RAISON_MOUVEMENT_DIMINUTIONS, categorie: "donnee_absente" },
-  );
-
-  return {
-    formId: "2033-C-SD",
-    millésime: rfs.exercice,
-    cases,
-    casesNonAlimentees,
-  };
+  return { cases, casesNonAlimentees };
 }
