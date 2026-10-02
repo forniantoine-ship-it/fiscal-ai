@@ -22,8 +22,14 @@ import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types"
 import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import { round2 } from "@/runtime/capabilities/f007/types";
 import { aggregateFiscalInputs } from "@/runtime/capabilities/f006/aggregate-inputs";
-import { sumEuros, toCents } from "@/runtime/capabilities/f006/cents";
+import { sumEuros } from "@/runtime/capabilities/f006/cents";
 import { repartir2033CImmobilisations } from "@/runtime/capabilities/rfs/projection/map-2033c";
+import {
+  consoliderCasesParBien,
+  RAISON_DOTATION_ABSENTE,
+  type CaseConsolidee,
+  type CaseNonAlimenteeConsolidee,
+} from "@/runtime/capabilities/rfs/projection/consolidate-immobilisations";
 import { resolveConservationDetail2033B, type ConservationDetail2033B } from "@/runtime/capabilities/rfs/projection/detail-charges-2033b";
 import {
   enrichImmobilisationsRfs,
@@ -192,19 +198,9 @@ export function buildPropertyImmobilisations(input: PropertyImmobilisationsInput
 // 2033-C consolidée : répartition PAR BIEN (fonction du mapper mono), puis somme
 // ---------------------------------------------------------------------------
 
-export type ConsolidatedCase2033C = {
-  readonly caseId: string;
-  readonly label: string;
-  readonly value: number;
-  readonly contributions: ReadonlyArray<{ propertyId: string; value: number }>;
-};
-
-export type ConsolidatedCaseNonAlimentee2033C = {
-  readonly caseId: string;
-  readonly label: string;
-  /** Raison de CHAQUE bien qui ne publie pas la case (ou raison globale, sans propertyId). */
-  readonly raisons: ReadonlyArray<{ propertyId?: string; raison: string }>;
-};
+/** Cases consolidées : types du helper runtime (une seule logique de somme, partagée avec la 2033-C mono/multi). */
+export type ConsolidatedCase2033C = CaseConsolidee;
+export type ConsolidatedCaseNonAlimentee2033C = CaseNonAlimenteeConsolidee;
 
 export type ConsolidatedImmobilisations = {
   readonly status: "ready" | "blocked";
@@ -220,9 +216,6 @@ export type ConsolidatedImmobilisations = {
 const CASES_IMMOBILISATIONS = ["426", "476", "490", "492", "496", "570", "576"] as const;
 const CASES_MOUVEMENT: ReadonlySet<string> = new Set(["490", "492", "496", "570", "576"]);
 const LABEL_572 = "Dotations de l'exercice (amortissements)";
-const RAISON_DOTATIONS_GLOBALES =
-  "Σ des dotations par bien ≠ amortissement global de l'exercice : les mouvements consolidés ne sont pas fiables (fail-closed).";
-const RAISON_DOTATION_ABSENTE = "Dotation de l'exercice du bien absente : répartition 2033-C impossible pour ce bien.";
 
 export function consolidatePropertyImmobilisations(
   blocks: readonly PropertyImmobilisationsBlock[],
@@ -243,19 +236,21 @@ export function consolidatePropertyImmobilisations(
     seen.add(asset.key);
   }
 
-  const repartitions = blocks.map((block) => ({
-    propertyId: block.propertyId,
-    repartition:
-      block.dotationsExercice === undefined
-        ? undefined
-        : repartir2033CImmobilisations({ immobilisations: block.immobilisations, exercice: block.exerciceFiscal, amortCalcule: block.dotationsExercice }),
-  }));
-
-  const dotations = blocks.map((block) => block.dotationsExercice);
-  const sommeDotations = blocks.length > 0 && dotations.every((value) => value !== undefined) ? sumEuros(dotations as number[]) : undefined;
-  const amortGlobal = options.amortCalculeGlobal !== undefined ? round2(options.amortCalculeGlobal) : sommeDotations;
-  const dotationsCoherentes = sommeDotations !== undefined && amortGlobal !== undefined && toCents(sommeDotations) === toCents(amortGlobal);
-
+  // R2C.3a — même consolidation que le mapper 2033-C multi (helper runtime), jamais une seconde boucle de somme.
+  const consolidation = consoliderCasesParBien({
+    blocs: blocks.map((block) => ({
+      propertyId: block.propertyId,
+      dotationsExercice: block.dotationsExercice,
+      repartition:
+        block.dotationsExercice === undefined
+          ? undefined
+          : repartir2033CImmobilisations({ immobilisations: block.immobilisations, exercice: block.exerciceFiscal, amortCalcule: block.dotationsExercice }),
+    })),
+    caseIds: CASES_IMMOBILISATIONS,
+    casesSoumisesAuxDotations: CASES_MOUVEMENT,
+    ...(options.amortCalculeGlobal !== undefined ? { amortCalculeGlobal: round2(options.amortCalculeGlobal) } : {}),
+  });
+  const amortGlobal = options.amortCalculeGlobal !== undefined ? round2(options.amortCalculeGlobal) : consolidation.sommeDotations;
   const cases: ConsolidatedCase2033C[] = [];
   const casesNonAlimentees: ConsolidatedCaseNonAlimentee2033C[] = [];
   if (amortGlobal !== undefined) {
@@ -266,33 +261,10 @@ export function consolidatePropertyImmobilisations(
       contributions: blocks.map((block) => ({ propertyId: block.propertyId, value: block.dotationsExercice ?? 0 })),
     });
   } else {
-    casesNonAlimentees.push({ caseId: "572", label: LABEL_572, raisons: [{ raison: RAISON_DOTATION_ABSENTE }] });
+    casesNonAlimentees.push({ caseId: "572", label: LABEL_572, categorie: "donnee_absente", raisons: [{ raison: RAISON_DOTATION_ABSENTE }] });
   }
-
-  for (const caseId of CASES_IMMOBILISATIONS) {
-    const perProperty = repartitions.map(({ propertyId, repartition }) => ({
-      propertyId,
-      published: repartition?.cases.find((item) => item.caseId === caseId),
-      missing: repartition?.casesNonAlimentees.find((item) => item.caseId === caseId),
-      noRepartition: repartition === undefined,
-    }));
-    const label = perProperty.map((item) => item.published?.label ?? item.missing?.label).find((value) => value !== undefined) ?? caseId;
-    const raisons: Array<{ propertyId?: string; raison: string }> = perProperty
-      .filter((item) => item.published === undefined)
-      .map((item) => ({ propertyId: item.propertyId, raison: item.noRepartition ? RAISON_DOTATION_ABSENTE : item.missing?.raison ?? caseId }));
-    if (CASES_MOUVEMENT.has(caseId) && !dotationsCoherentes) raisons.push({ raison: RAISON_DOTATIONS_GLOBALES });
-    if (raisons.length > 0 || perProperty.length === 0) {
-      casesNonAlimentees.push({ caseId, label, raisons });
-      continue;
-    }
-    const values = perProperty.map((item) => item.published!.value as number);
-    cases.push({
-      caseId,
-      label,
-      value: sumEuros(values),
-      contributions: perProperty.map((item) => ({ propertyId: item.propertyId, value: item.published!.value as number })),
-    });
-  }
+  cases.push(...consolidation.cases);
+  casesNonAlimentees.push(...consolidation.casesNonAlimentees);
 
   return {
     status: blockingReasons.length > 0 ? "blocked" : "ready",

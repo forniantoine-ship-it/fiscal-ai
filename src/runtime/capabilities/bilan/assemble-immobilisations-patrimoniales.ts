@@ -1,4 +1,6 @@
-import type { ImmobilisationsRfs } from "../rfs/types";
+import type { ImmobilisationsBienRfs, ImmobilisationsRfs } from "../rfs/types";
+import { fromCents, sumEuros, toCents } from "../f006/cents";
+import { blocageBlocsParBien, RAISON_DOTATIONS_GLOBALES } from "../rfs/projection/consolidate-immobilisations";
 import { round2 } from "../f010/types";
 import type { ActifImmobilise, RegistrePatrimonialImmobilisations } from "./types";
 import {
@@ -156,4 +158,42 @@ export function assembleRegistreImmobilisationsPatrimoniales(input: {
       : undefined;
 
   return { actifs, brutTotal, cumuleTotal, netTotal, brutFiable, netFiable, raisons };
+}
+
+/**
+ * R2C.3a — registre patrimonial d'une activité multi-bien : le registre mono (règles inchangées) assemblé PAR BIEN avec
+ * SA dotation, actifs étiquetés de leur bien (ids persistés intacts, jamais dédoublonnés entre biens), totaux sommés en
+ * centimes. Fiabilité = ET des fiabilités par bien ET Σ dotations par bien = amortissement global ; un bien non fiable
+ * n'est jamais compensé par un autre.
+ */
+export function assembleRegistreImmobilisationsPatrimonialesParBien(input: {
+  blocs: readonly ImmobilisationsBienRfs[];
+  amortCalcule: number;
+  /** Un inventaire unique coexiste avec les blocs par bien : source ambiguë. */
+  blocUniquePresent?: boolean;
+}): RegistrePatrimonialImmobilisations {
+  const parBien = input.blocs.map((bloc) => ({
+    propertyId: bloc.propertyId,
+    registre: assembleRegistreImmobilisationsPatrimoniales({ immobilisations: bloc.immobilisations, amortCalcule: bloc.dotationsExercice }),
+  }));
+  const raisons = parBien.flatMap(({ propertyId, registre }) => registre.raisons.map((raison) => `[${propertyId}] ${raison}`));
+  const blocage = blocageBlocsParBien({ propertyIds: input.blocs.map((bloc) => bloc.propertyId), blocUniquePresent: input.blocUniquePresent ?? false });
+  if (blocage) raisons.push(blocage);
+  const dotations = sumEuros(input.blocs.map((bloc) => bloc.dotationsExercice));
+  const dotationsCoherentes = input.blocs.length > 0 && toCents(dotations) === toCents(input.amortCalcule);
+  if (!dotationsCoherentes && !blocage) raisons.push(RAISON_DOTATIONS_GLOBALES);
+  const fiable = blocage === undefined && dotationsCoherentes;
+  const brutFiable = fiable && parBien.every(({ registre }) => registre.brutFiable);
+  const netFiable = brutFiable && parBien.every(({ registre }) => registre.netFiable);
+  const brutTotal = brutFiable ? sumEuros(parBien.map(({ registre }) => registre.brutTotal as number)) : undefined;
+  const cumuleTotal = netFiable ? sumEuros(parBien.map(({ registre }) => registre.cumuleTotal as number)) : undefined;
+  return {
+    actifs: parBien.flatMap(({ propertyId, registre }) => registre.actifs.map((actif) => ({ ...actif, propertyId }))),
+    brutTotal,
+    cumuleTotal,
+    netTotal: brutTotal !== undefined && cumuleTotal !== undefined ? fromCents(toCents(brutTotal) - toCents(cumuleTotal)) : undefined,
+    brutFiable,
+    netFiable,
+    raisons,
+  };
 }

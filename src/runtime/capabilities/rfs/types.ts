@@ -107,6 +107,20 @@ export type ImmobilisationsRfs = AmortissementPlan & {
 };
 
 /**
+ * R2C.3a (ARB-6) — bloc d'immobilisations d'UN bien d'une activité multi-bien : le `ImmobilisationsRfs` mono du bien,
+ * tel quel (sa date de mise en service, son ouverture propre), et sa dotation de l'exercice (F-014 du bien). Données
+ * uniquement : la répartition 2033-C / 2033-A est calculée par les mappers, bien par bien, puis sommée.
+ */
+export type ImmobilisationsBienRfs = {
+  propertyId: string;
+  immobilisations: ImmobilisationsRfs;
+  dotationsExercice: number;
+};
+
+/** Emprunt RFS : le `PretFinancementExercice` F-011 intact ; `propertyId` présent seulement en multi-bien (mono : absent). */
+export type EmpruntRfs = PretFinancementExercice & { propertyId?: string };
+
+/**
  * D'où vient un bloc de la RFS. Un bloc, pas une case individuelle — pour la
  * traçabilité case par case d'un formulaire Cerfa, voir `CaseTrace` (F-007),
  * qui reste le bon niveau de granularité une fois la projection Cerfa faite.
@@ -145,11 +159,17 @@ export type FiscalRepresentation = {
   immobilisations?: ImmobilisationsRfs;
 
   /**
+   * R2C.3a (ARB-6) — activité multi-bien : un bloc PAR BIEN, à la place de `immobilisations` (jamais les deux). Absent en
+   * mono. Persisté et re-projeté tel quel (archive, PDF serveur).
+   */
+  immobilisationsParBien?: ImmobilisationsBienRfs[];
+
+  /**
    * Emprunts — lecture seule de `draft.financementCharges.prets` (F-011, déjà
    * persisté), notamment `capitalRestantDu31_12`. `undefined` si le dossier n'a
    * pas (ou pas encore) de financement déclaré.
    */
-  emprunts?: PretFinancementExercice[];
+  emprunts?: EmpruntRfs[];
 
   /**
    * Socle patrimonial P0 (`capabilities/bilan`) — champ PUREMENT ADDITIF,

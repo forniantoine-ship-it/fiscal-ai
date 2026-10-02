@@ -1,4 +1,5 @@
-import type { FiscalRepresentation } from "../types";
+import type { FiscalRepresentation, ImmobilisationsRfs } from "../types";
+import { blocageBlocsParBien, consoliderCasesParBien, libellesDe, versCasesCerfa } from "./consolidate-immobilisations";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
@@ -326,23 +327,6 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
   // non modifiée).
   const patrimoine = rfs.patrimoine;
 
-  // Lot 5 / P0-2A — avec `composantsDetail` enrichi, 028/030 alignent sur
-  // map-2033c (F-010 + F-012). Sans détail + composantsNouveaux : Cycle 37.
-  const f012Details = immo?.composantsDetail ?? [];
-  const f012SansDetail =
-    immo !== undefined &&
-    (immo.composantsNouveaux?.length ?? 0) > 0 &&
-    f012Details.length === 0;
-  const dotationF012 = round2(f012Details.reduce((acc, d) => acc + d.dotationExercice, 0));
-  const expectedDotation =
-    immo !== undefined && f012Details.length > 0
-      ? round2(immo.totalAnnuelExercice + dotationF012)
-      : immo?.totalAnnuelExercice;
-  const amortissementDivergent =
-    immo !== undefined &&
-    expectedDotation !== undefined &&
-    !f012SansDetail &&
-    Math.abs(round2(fr.amortCalcule - expectedDotation)) > 0.01;
 
   if (patrimoine !== undefined) {
     if (patrimoine.immobilisations.brutTotal !== undefined) {
@@ -375,84 +359,15 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
         categorie: "incoherence_modele",
       });
     }
-  } else if (
-    immo !== undefined &&
-    typeof immo.valeurTerrain === "number" &&
-    !amortissementDivergent &&
-    !f012SansDetail
-  ) {
-    const totals = computeClosingImmobilisationsTotals(immo);
-    if (!totals) {
-      for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
-        casesNonAlimentees.push({
-          caseId,
-          label: `Immobilisations corporelles (${suffixe})`,
-          raison:
-            "Totaux d'immobilisations non fiables (terrain absent ou composants F-012 sans détail enrichi).",
-          categorie: "donnee_absente",
-        });
-      }
-    } else {
-      cases.push({
-        caseId: "028",
-        label: "Immobilisations corporelles (brut)",
-        value: totals.brut,
-        trace: {
-          source: "FiscalResult",
-          path:
-            f012Details.length > 0
-              ? "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant"
-              : "rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain",
-          ksArtifacts: ["TRF-0032"],
-        },
-      });
-      cases.push({
-        caseId: "030",
-        label: "Immobilisations corporelles (amortissements-provisions)",
-        value: totals.amortissementsCumules,
-        trace: {
-          source: "FiscalResult",
-          path:
-            f012Details.length > 0
-              ? "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules"
-              : "Σ rfs.immobilisations.lignes[].amortissementsCumules",
-          ksArtifacts: ["TRF-0032"],
-        },
-      });
-    }
-  } else if (
-    immo !== undefined &&
-    typeof immo.valeurTerrain === "number" &&
-    (amortissementDivergent || f012SansDetail)
-  ) {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
-      casesNonAlimentees.push({
-        caseId,
-        label: `Immobilisations corporelles (${suffixe})`,
-        raison:
-          "fiscalResult.amortCalcule (F-014, source fiscale autoritaire, inclut d'éventuels composantsNouveaux issus de F-012) diverge de rfs.immobilisations.totalAnnuelExercice (F-010 seul, qui ne reçoit jamais ces composants nouveaux). Cette divergence prouve que rfs.immobilisations est incomplet pour ce dossier — au moins un élément amortissable (travaux réintégrés en immobilisation) existe sans que son coût brut ne soit reflété dans totalBrut. Produire 028/030 depuis F-010 seul sous-évaluerait silencieusement le bilan ; aucune reconstruction de la part manquante n'est tentée ici.",
-        categorie: "incoherence_modele",
-      });
-    }
-  } else if (immo !== undefined) {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
-      casesNonAlimentees.push({
-        caseId,
-        label: `Immobilisations corporelles (${suffixe})`,
-        raison:
-          "rfs.immobilisations est présent mais sans valeurTerrain (dossier ou fixture antérieur à l'exposition de cette donnée, Cycle 35) — produire un brut/net sans le terrain sous-évaluerait silencieusement la valeur réelle plutôt que de signaler l'absence.",
-        categorie: "donnee_absente",
-      });
-    }
   } else {
-    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
-      casesNonAlimentees.push({
-        caseId,
-        label: `Immobilisations corporelles (${suffixe})`,
-        raison: "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté).",
-        categorie: "donnee_absente",
-      });
-    }
+    // R2C.3a — 028/030 sans patrimoine : logique extraite telle quelle (`immobilisationsCorporelles2033A`) ; activité
+    // multi-bien : la même logique appliquée à chaque bien, puis somme (mono : inchangé).
+    const repartition =
+      rfs.immobilisationsParBien !== undefined
+        ? immobilisationsCorporelles2033AParBien(rfs)
+        : immobilisationsCorporelles2033A({ immobilisations: immo, amortCalcule: fr.amortCalcule });
+    cases.push(...repartition.cases);
+    casesNonAlimentees.push(...repartition.casesNonAlimentees);
   }
 
   // ------------------------------------------------------------------
@@ -1194,4 +1109,138 @@ export function map2033AFromRfs(rfs: FiscalRepresentation): Form2033A {
     casesNonAlimentees,
     equilibreStatus,
   };
+}
+
+/**
+ * R2C.3a — cases 028/030 (immobilisations corporelles brut / amortissements) d'UN bloc, hors patrimoine : logique extraite
+ * telle quelle de `map2033AFromRfs` (garde F-010/F-014, composants F-012, terrain). Partagée par le mapper mono et par la
+ * consolidation multi-bien (un bloc par bien, puis somme). `amortCalcule` = dotation de l'exercice du bloc.
+ */
+export function immobilisationsCorporelles2033A(input: {
+  immobilisations: ImmobilisationsRfs | undefined;
+  amortCalcule: number;
+}): { cases: CerfaCase[]; casesNonAlimentees: CerfaCaseNonAlimentee[] } {
+  const immo = input.immobilisations;
+  const cases: CerfaCase[] = [];
+  const casesNonAlimentees: CerfaCaseNonAlimentee[] = [];
+
+  // Lot 5 / P0-2A — avec `composantsDetail` enrichi, 028/030 alignent sur
+  // map-2033c (F-010 + F-012). Sans détail + composantsNouveaux : Cycle 37.
+  const f012Details = immo?.composantsDetail ?? [];
+  const f012SansDetail =
+    immo !== undefined &&
+    (immo.composantsNouveaux?.length ?? 0) > 0 &&
+    f012Details.length === 0;
+  const dotationF012 = round2(f012Details.reduce((acc, d) => acc + d.dotationExercice, 0));
+  const expectedDotation =
+    immo !== undefined && f012Details.length > 0
+      ? round2(immo.totalAnnuelExercice + dotationF012)
+      : immo?.totalAnnuelExercice;
+  const amortissementDivergent =
+    immo !== undefined &&
+    expectedDotation !== undefined &&
+    !f012SansDetail &&
+    Math.abs(round2(input.amortCalcule - expectedDotation)) > 0.01;
+
+  if (
+    immo !== undefined &&
+    typeof immo.valeurTerrain === "number" &&
+    !amortissementDivergent &&
+    !f012SansDetail
+  ) {
+    const totals = computeClosingImmobilisationsTotals(immo);
+    if (!totals) {
+      for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
+        casesNonAlimentees.push({
+          caseId,
+          label: `Immobilisations corporelles (${suffixe})`,
+          raison:
+            "Totaux d'immobilisations non fiables (terrain absent ou composants F-012 sans détail enrichi).",
+          categorie: "donnee_absente",
+        });
+      }
+    } else {
+      cases.push({
+        caseId: "028",
+        label: "Immobilisations corporelles (brut)",
+        value: totals.brut,
+        trace: {
+          source: "FiscalResult",
+          path:
+            f012Details.length > 0
+              ? "rfs.immobilisations.totalBrut + valeurTerrain + Σ composantsDetail.montant"
+              : "rfs.immobilisations.totalBrut + rfs.immobilisations.valeurTerrain",
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+      cases.push({
+        caseId: "030",
+        label: "Immobilisations corporelles (amortissements-provisions)",
+        value: totals.amortissementsCumules,
+        trace: {
+          source: "FiscalResult",
+          path:
+            f012Details.length > 0
+              ? "Σ lignes.amortissementsCumules + Σ composantsDetail.amortissementsCumules"
+              : "Σ rfs.immobilisations.lignes[].amortissementsCumules",
+          ksArtifacts: ["TRF-0032"],
+        },
+      });
+    }
+  } else if (
+    immo !== undefined &&
+    typeof immo.valeurTerrain === "number" &&
+    (amortissementDivergent || f012SansDetail)
+  ) {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
+      casesNonAlimentees.push({
+        caseId,
+        label: `Immobilisations corporelles (${suffixe})`,
+        raison:
+          "fiscalResult.amortCalcule (F-014, source fiscale autoritaire, inclut d'éventuels composantsNouveaux issus de F-012) diverge de rfs.immobilisations.totalAnnuelExercice (F-010 seul, qui ne reçoit jamais ces composants nouveaux). Cette divergence prouve que rfs.immobilisations est incomplet pour ce dossier — au moins un élément amortissable (travaux réintégrés en immobilisation) existe sans que son coût brut ne soit reflété dans totalBrut. Produire 028/030 depuis F-010 seul sous-évaluerait silencieusement le bilan ; aucune reconstruction de la part manquante n'est tentée ici.",
+        categorie: "incoherence_modele",
+      });
+    }
+  } else if (immo !== undefined) {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
+      casesNonAlimentees.push({
+        caseId,
+        label: `Immobilisations corporelles (${suffixe})`,
+        raison:
+          "rfs.immobilisations est présent mais sans valeurTerrain (dossier ou fixture antérieur à l'exposition de cette donnée, Cycle 35) — produire un brut/net sans le terrain sous-évaluerait silencieusement la valeur réelle plutôt que de signaler l'absence.",
+        categorie: "donnee_absente",
+      });
+    }
+  } else {
+    for (const [caseId, suffixe] of [["028", "brut"], ["030", "amortissements-provisions"]] as const) {
+      casesNonAlimentees.push({
+        caseId,
+        label: `Immobilisations corporelles (${suffixe})`,
+        raison: "rfs.immobilisations est absent — aucun plan d'amortissement disponible pour ce dossier (F-010 non encore exécuté ou non persisté).",
+        categorie: "donnee_absente",
+      });
+    }
+  }
+
+  return { cases, casesNonAlimentees };
+}
+
+const CASES_IMMOBILISATIONS_2033A = ["028", "030"] as const;
+
+/** R2C.3a — 028/030 d'une activité multi-bien : chaque bien projeté avec SA dotation, puis somme ; aucun bien compensé. */
+function immobilisationsCorporelles2033AParBien(rfs: FiscalRepresentation): { cases: CerfaCase[]; casesNonAlimentees: CerfaCaseNonAlimentee[] } {
+  const parBien = rfs.immobilisationsParBien ?? [];
+  const consolidation = consoliderCasesParBien({
+    blocs: parBien.map((bloc) => ({
+      propertyId: bloc.propertyId,
+      dotationsExercice: bloc.dotationsExercice,
+      repartition: immobilisationsCorporelles2033A({ immobilisations: bloc.immobilisations, amortCalcule: bloc.dotationsExercice }),
+    })),
+    caseIds: CASES_IMMOBILISATIONS_2033A,
+    casesSoumisesAuxDotations: new Set(CASES_IMMOBILISATIONS_2033A),
+    amortCalculeGlobal: rfs.fiscalResult.amortCalcule,
+    labels: libellesDe(immobilisationsCorporelles2033A({ immobilisations: undefined, amortCalcule: rfs.fiscalResult.amortCalcule })),
+    blocage: blocageBlocsParBien({ propertyIds: parBien.map((bloc) => bloc.propertyId), blocUniquePresent: rfs.immobilisations !== undefined }),
+  });
+  return versCasesCerfa(consolidation, "Σ rfs.immobilisationsParBien[] (immobilisations corporelles 2033-A par bien)");
 }

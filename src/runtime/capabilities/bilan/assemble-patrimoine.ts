@@ -1,6 +1,9 @@
 import type { FiscalRepresentation } from "../rfs/types";
 import { round2 } from "../f010/types";
-import { assembleRegistreImmobilisationsPatrimoniales } from "./assemble-immobilisations-patrimoniales";
+import {
+  assembleRegistreImmobilisationsPatrimoniales,
+  assembleRegistreImmobilisationsPatrimonialesParBien,
+} from "./assemble-immobilisations-patrimoniales";
 import { resolveCompteExploitant } from "./compte-exploitant";
 import { resolveRan } from "./ran";
 import { resultatComptable } from "./resultat-comptable";
@@ -83,10 +86,18 @@ function resolveEmprunts(rfs: FiscalRepresentation, inputs: BilanInputs): Emprun
 export function assemblePatrimoine(rfs: FiscalRepresentation, inputs: BilanInputs): PatrimonialState {
   const fr = rfs.fiscalResult;
 
-  const immobilisations = assembleRegistreImmobilisationsPatrimoniales({
-    immobilisations: rfs.immobilisations,
-    amortCalcule: fr.amortCalcule,
-  });
+  // R2C.3a — activité multi-bien : registre assemblé par bien puis sommé (mono : inchangé).
+  const immobilisations =
+    rfs.immobilisationsParBien !== undefined
+      ? assembleRegistreImmobilisationsPatrimonialesParBien({
+          blocs: rfs.immobilisationsParBien,
+          amortCalcule: fr.amortCalcule,
+          blocUniquePresent: rfs.immobilisations !== undefined,
+        })
+      : assembleRegistreImmobilisationsPatrimoniales({
+          immobilisations: rfs.immobilisations,
+          amortCalcule: fr.amortCalcule,
+        });
 
   const tresorerie = resolveTresorerie(inputs.tresorerie);
   const compteExploitant = resolveCompteExploitant(inputs.compteExploitant);

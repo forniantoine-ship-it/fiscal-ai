@@ -19,9 +19,9 @@
 
 import { resultatComptable } from "@/runtime/capabilities/bilan/resultat-comptable";
 import type { FiscalResult, StockDeficit } from "@/runtime/capabilities/f006/types";
-import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
-import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import type { EmpruntRfs, FiscalRepresentation, ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
+import { loanKey } from "@/lib/lmnp/dossier/property-keys";
 
 const CHARGE_CATEGORY_LABELS: Record<string, string> = {
   taxe_fonciere: "Taxe foncière",
@@ -68,6 +68,8 @@ export type LiasseDossierBienDescriptif = {
 
 export type LiasseDossierPretDescriptif = {
   pretId: string;
+  /** R2C.3a — bien du prêt (multi-bien) ; identité = (propertyId, pretId). Absent en mono. */
+  propertyId?: string;
   capitalInitial?: number;
   tauxNominal?: number;
   dureeMois?: number;
@@ -124,6 +126,17 @@ export type LiasseDossierExtras = {
   chargesDescriptives?: LiasseDossierChargesDescriptives;
   /** `FiscalYear.stocksOuverture.stocks` — persisté, jamais dérivé de la clôture N. */
   stocksOuverture?: LiasseDossierStocksOuverture;
+  /** R2C.3a — multi-bien : extras PROPRES à chaque bien (descriptifs groupés, jamais sommés). Absent en mono. */
+  biens?: LiasseDossierBienExtras[];
+};
+
+/** R2C.3a — extras d'UN bien. `label` = `Property.label` réel uniquement (jamais un libellé inventé). */
+export type LiasseDossierBienExtras = {
+  propertyId: string;
+  label?: string;
+  bien?: LiasseDossierBienDescriptif;
+  pretsDescriptifs?: LiasseDossierPretDescriptif[];
+  chargesDescriptives?: LiasseDossierChargesDescriptives;
 };
 
 export type LiasseDossierChargeCategorie = {
@@ -174,6 +187,8 @@ export type LiasseDossierImmobilisationLigne = {
 
 export type LiasseDossierPret = {
   pretId: string;
+  /** R2C.3a — bien du prêt (multi-bien). Absent en mono. */
+  propertyId?: string;
   typePret?: string;
   interetsEmpruntExercice?: number;
   interetsPreExploitation?: number;
@@ -188,6 +203,13 @@ export type LiasseDossierPret = {
   tauxNominal?: number;
   dureeMois?: number;
   datePremiereMensualite?: string;
+};
+
+export type LiasseDossierImmobilisations = {
+  dateMiseEnService?: string;
+  totalBrut?: number;
+  totalDotationExercice?: number;
+  lignes: LiasseDossierImmobilisationLigne[];
 };
 
 export type LiasseDossierDocument = {
@@ -211,15 +233,14 @@ export type LiasseDossierDocument = {
     sourceFiscalResultAt: string;
   };
   bien?: LiasseDossierBienDescriptif;
+  /** R2C.3a — multi-bien : descriptif et charges descriptives de chaque bien. Absent en mono. */
+  biens?: Array<{ propertyId: string; label?: string; bien?: LiasseDossierBienDescriptif; chargesDescriptives?: LiasseDossierChargesDescriptives }>;
   formationDuResultat: LiasseDossierFormationResultat;
   chargesParCategorie: LiasseDossierChargeCategorie[];
   chargesDescriptives?: LiasseDossierChargesDescriptives;
-  immobilisations?: {
-    dateMiseEnService?: string;
-    totalBrut?: number;
-    totalDotationExercice?: number;
-    lignes: LiasseDossierImmobilisationLigne[];
-  };
+  immobilisations?: LiasseDossierImmobilisations;
+  /** R2C.3a — multi-bien : immobilisations présentées PAR BIEN (à la place de `immobilisations`). Absent en mono. */
+  immobilisationsParBien?: Array<{ propertyId: string; label?: string } & LiasseDossierImmobilisations>;
   financement?: {
     prets: LiasseDossierPret[];
   };
@@ -246,7 +267,15 @@ function buildRecettesDetail(fr: FiscalResult): LiasseDossierRecettesDetail | un
   return Object.keys(detail).length > 0 ? detail : undefined;
 }
 
-function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExercice[] | undefined): LiasseDossierChargeCategorie[] {
+/**
+ * R2C.3a — référence d'un prêt dans les catégories et l'index des descriptifs : `pretId` en mono (inchangé) ;
+ * `loanKey(propertyId, pretId)` en multi-bien (A.loan-1 ≠ B.loan-1). Aucun `pretId` persisté n'est réécrit.
+ */
+function pretRef(pret: { pretId: string; propertyId?: string }): string {
+  return pret.propertyId !== undefined ? loanKey(pret.propertyId, pret.pretId) : pret.pretId;
+}
+
+function buildChargesParCategorie(fr: FiscalResult, emprunts: EmpruntRfs[] | undefined): LiasseDossierChargeCategorie[] {
   const detail = fr.charges.detailParCategorie;
   const lignes: LiasseDossierChargeCategorie[] = detail
     ? Object.entries(detail)
@@ -263,7 +292,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
     for (const pret of emprunts) {
       if (pret.interetsEmpruntExercice > 0) {
         lignes.push({
-          categorie: `interets_emprunt:${pret.pretId}`,
+          categorie: `interets_emprunt:${pretRef(pret)}`,
           label: "Intérêts d'emprunt",
           montant: pret.interetsEmpruntExercice,
           source: "financement",
@@ -271,7 +300,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.interetsPreExploitation > 0) {
         lignes.push({
-          categorie: `interets_pre_exploitation:${pret.pretId}`,
+          categorie: `interets_pre_exploitation:${pretRef(pret)}`,
           label: "Intérêts d'emprunt (pré-exploitation)",
           montant: pret.interetsPreExploitation,
           source: "financement",
@@ -279,7 +308,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.assuranceEmpruntExercice > 0) {
         lignes.push({
-          categorie: `assurance_emprunteur:${pret.pretId}`,
+          categorie: `assurance_emprunteur:${pretRef(pret)}`,
           label: "Assurance emprunteur",
           montant: pret.assuranceEmpruntExercice,
           source: "financement",
@@ -287,7 +316,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.assurancePreExploitation > 0) {
         lignes.push({
-          categorie: `assurance_pre_exploitation:${pret.pretId}`,
+          categorie: `assurance_pre_exploitation:${pretRef(pret)}`,
           label: "Assurance emprunteur (pré-exploitation)",
           montant: pret.assurancePreExploitation,
           source: "financement",
@@ -295,7 +324,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.fraisDossierDeductibles > 0) {
         lignes.push({
-          categorie: `frais_dossier:${pret.pretId}`,
+          categorie: `frais_dossier:${pretRef(pret)}`,
           label: "Frais de dossier d'emprunt",
           montant: pret.fraisDossierDeductibles,
           source: "financement",
@@ -303,7 +332,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.garantieDeductible > 0) {
         lignes.push({
-          categorie: `garantie:${pret.pretId}`,
+          categorie: `garantie:${pretRef(pret)}`,
           label: "Commission de garantie / caution",
           montant: pret.garantieDeductible,
           source: "financement",
@@ -311,7 +340,7 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
       }
       if (pret.iraDeductible > 0) {
         lignes.push({
-          categorie: `ira:${pret.pretId}`,
+          categorie: `ira:${pretRef(pret)}`,
           label: "Indemnité de remboursement anticipé",
           montant: pret.iraDeductible,
           source: "financement",
@@ -331,7 +360,10 @@ function buildChargesParCategorie(fr: FiscalResult, emprunts: PretFinancementExe
 }
 
 function buildBien(extras: LiasseDossierExtras | undefined): LiasseDossierBienDescriptif | undefined {
-  const bien = extras?.bien;
+  return buildBienDescriptif(extras?.bien);
+}
+
+function buildBienDescriptif(bien: LiasseDossierBienDescriptif | undefined): LiasseDossierBienDescriptif | undefined {
   if (!bien) return undefined;
   const out: LiasseDossierBienDescriptif = {};
   const adresse = omitEmpty(bien.adresse);
@@ -351,7 +383,12 @@ function buildBien(extras: LiasseDossierExtras | undefined): LiasseDossierBienDe
 function buildChargesDescriptives(
   extras: LiasseDossierExtras | undefined,
 ): LiasseDossierChargesDescriptives | undefined {
-  const raw = extras?.chargesDescriptives;
+  return buildChargesDescriptivesFrom(extras?.chargesDescriptives);
+}
+
+function buildChargesDescriptivesFrom(
+  raw: LiasseDossierChargesDescriptives | undefined,
+): LiasseDossierChargesDescriptives | undefined {
   if (!raw) return undefined;
   const out: LiasseDossierChargesDescriptives = {};
   if (raw.coproLignes && raw.coproLignes.length > 0) out.coproLignes = raw.coproLignes;
@@ -362,7 +399,22 @@ function buildChargesDescriptives(
 }
 
 function buildImmobilisations(rfs: FiscalRepresentation): LiasseDossierDocument["immobilisations"] {
-  const immo = rfs.immobilisations;
+  return buildImmobilisationsBlock(rfs.immobilisations);
+}
+
+/** R2C.3a — immobilisations par bien (multi-bien) : le même bloc que le mono, pour chaque bien, avec son libellé réel. */
+function buildImmobilisationsParBien(
+  rfs: FiscalRepresentation,
+  extras: LiasseDossierExtras | undefined,
+): LiasseDossierDocument["immobilisationsParBien"] {
+  if (rfs.immobilisationsParBien === undefined) return undefined;
+  return rfs.immobilisationsParBien.map((bloc) => {
+    const label = omitEmpty(extras?.biens?.find((bien) => bien.propertyId === bloc.propertyId)?.label);
+    return { propertyId: bloc.propertyId, ...(label ? { label } : {}), ...buildImmobilisationsBlock(bloc.immobilisations)! };
+  });
+}
+
+function buildImmobilisationsBlock(immo: ImmobilisationsRfs | undefined): LiasseDossierImmobilisations | undefined {
   if (!immo) return undefined;
 
   const dateMiseEnService = omitEmpty(immo.dateMiseEnService);
@@ -404,21 +456,30 @@ function buildImmobilisations(rfs: FiscalRepresentation): LiasseDossierDocument[
     }
   }
 
-  const block: NonNullable<LiasseDossierDocument["immobilisations"]> = { lignes };
+  const block: LiasseDossierImmobilisations = { lignes };
   if (dateMiseEnService) block.dateMiseEnService = dateMiseEnService;
   if (isFiniteNumber(immo.totalBrut)) block.totalBrut = immo.totalBrut;
   if (isFiniteNumber(immo.totalAnnuelExercice)) block.totalDotationExercice = immo.totalAnnuelExercice;
   return block;
 }
 
-function descriptiveByPretId(
+/** Descriptifs de prêt indexés par `pretRef` : `pretId` en mono, (propertyId, pretId) en multi — jamais écrasés entre biens. */
+function descriptiveByPretRef(
   extras: LiasseDossierExtras | undefined,
 ): Map<string, LiasseDossierPretDescriptif> {
   const map = new Map<string, LiasseDossierPretDescriptif>();
-  for (const pret of extras?.pretsDescriptifs ?? []) {
-    if (pret.pretId) map.set(pret.pretId, pret);
+  for (const pret of allDescriptifs(extras)) {
+    if (pret.pretId) map.set(pretRef(pret), pret);
   }
   return map;
+}
+
+function allDescriptifs(extras: LiasseDossierExtras | undefined): LiasseDossierPretDescriptif[] {
+  return [
+    ...(extras?.pretsDescriptifs ?? []),
+    ...(extras?.biens ?? []).flatMap((bien) =>
+      (bien.pretsDescriptifs ?? []).map((pret) => ({ ...pret, propertyId: pret.propertyId ?? bien.propertyId }))),
+  ];
 }
 
 function applyDescriptif(row: LiasseDossierPret, descriptif: LiasseDossierPretDescriptif | undefined): void {
@@ -432,9 +493,10 @@ function applyDescriptif(row: LiasseDossierPret, descriptif: LiasseDossierPretDe
   if (typePret && row.typePret === undefined) row.typePret = typePret;
 }
 
-function fromEmpruntRfs(pret: PretFinancementExercice): LiasseDossierPret {
+function fromEmpruntRfs(pret: EmpruntRfs): LiasseDossierPret {
   return {
     pretId: pret.pretId,
+    ...(pret.propertyId !== undefined ? { propertyId: pret.propertyId } : {}),
     typePret: pret.typePret,
     interetsEmpruntExercice: pret.interetsEmpruntExercice,
     interetsPreExploitation: pret.interetsPreExploitation,
@@ -449,7 +511,10 @@ function fromEmpruntRfs(pret: PretFinancementExercice): LiasseDossierPret {
 }
 
 function fromDescriptifOnly(descriptif: LiasseDossierPretDescriptif): LiasseDossierPret {
-  const row: LiasseDossierPret = { pretId: descriptif.pretId };
+  const row: LiasseDossierPret = {
+    pretId: descriptif.pretId,
+    ...(descriptif.propertyId !== undefined ? { propertyId: descriptif.propertyId } : {}),
+  };
   applyDescriptif(row, descriptif);
   return row;
 }
@@ -458,18 +523,18 @@ function buildFinancement(
   rfs: FiscalRepresentation,
   extras: LiasseDossierExtras | undefined,
 ): LiasseDossierDocument["financement"] {
-  const descriptifs = descriptiveByPretId(extras);
+  const descriptifs = descriptiveByPretRef(extras);
 
   if (rfs.emprunts !== undefined) {
     const prets = rfs.emprunts.map((pret) => {
       const row = fromEmpruntRfs(pret);
-      applyDescriptif(row, descriptifs.get(pret.pretId));
+      applyDescriptif(row, descriptifs.get(pretRef(pret)));
       return row;
     });
     return { prets };
   }
 
-  const extrasOnly = extras?.pretsDescriptifs;
+  const extrasOnly = extras?.biens !== undefined ? allDescriptifs(extras) : extras?.pretsDescriptifs;
   if (!extrasOnly || extrasOnly.length === 0) return undefined;
   return { prets: extrasOnly.map(fromDescriptifOnly) };
 }
@@ -564,6 +629,21 @@ export function buildLiasseDossierDocument(
 
   const immobilisations = buildImmobilisations(rfs);
   if (immobilisations) document.immobilisations = immobilisations;
+  const immobilisationsParBien = buildImmobilisationsParBien(rfs, extras);
+  if (immobilisationsParBien) document.immobilisationsParBien = immobilisationsParBien;
+  if (extras?.biens !== undefined) {
+    document.biens = extras.biens.map((item) => {
+      const label = omitEmpty(item.label);
+      const bienDescriptif = buildBienDescriptif(item.bien);
+      const chargesDescriptives = buildChargesDescriptivesFrom(item.chargesDescriptives);
+      return {
+        propertyId: item.propertyId,
+        ...(label ? { label } : {}),
+        ...(bienDescriptif ? { bien: bienDescriptif } : {}),
+        ...(chargesDescriptives ? { chargesDescriptives } : {}),
+      };
+    });
+  }
 
   const financement = buildFinancement(rfs, extras);
   if (financement) document.financement = financement;

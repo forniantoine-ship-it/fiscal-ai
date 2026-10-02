@@ -36,6 +36,7 @@ import { buildFiscalEngineInputs, draftAmortissementForGeneration } from "../ser
 import { resolveTaxeFonciereLegacyIntegrityGenerationBlock } from "../services/declaration/run-declaration-generation";
 import { readBienDrafts, scopedBienView, type BienDraftFailure, type ChargesNatureReview } from "./bien-draft";
 import { resolveDocumentScope } from "./property-scope";
+import { loanKey } from "./property-keys";
 
 // ---------------------------------------------------------------------------
 // Contribution d'un bien
@@ -236,10 +237,8 @@ export function validatePropertyFiscalContribution(
 // Consolidation
 // ---------------------------------------------------------------------------
 
-/** Identité d'un prêt dans la consolidation : (propertyId, pretId). Les `pretId` persistés (`loan-1`…) ne sont jamais réécrits. */
-export function loanKey(propertyId: string, pretId: string): string {
-  return JSON.stringify([propertyId, pretId]);
-}
+/** Identité d'un prêt : (propertyId, pretId) — définie dans `property-keys` (module sans dépendance), ré-exportée ici. */
+export { loanKey } from "./property-keys";
 
 export type ConsolidatedLoan = { readonly key: string; readonly propertyId: string; readonly pret: PretFinancementExercice };
 

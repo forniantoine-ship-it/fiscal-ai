@@ -446,6 +446,8 @@ export type CategorieImmobilisation = "terrain" | "composant" | "travaux";
 
 export type ActifImmobilise = {
   id: string;
+  /** R2C.3a — bien porteur de l'actif (registre multi-bien). Absent en mono ; l'`id` persisté reste inchangé. */
+  propertyId?: string;
   categorie: CategorieImmobilisation;
   label: string;
   coutBrut: number;

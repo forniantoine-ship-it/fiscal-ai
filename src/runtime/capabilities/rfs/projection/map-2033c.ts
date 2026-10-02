@@ -1,6 +1,7 @@
 import type { FiscalRepresentation, ImmobilisationsRfs } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import { blocageBlocsParBien, consoliderCasesParBien, libellesDe, versCasesCerfa } from "./consolidate-immobilisations";
 import {
   computeClosingImmobilisationsTotals,
   reconcileImmobilisationsContinuity,
@@ -172,7 +173,11 @@ export function map2033CFromRfs(rfs: FiscalRepresentation): Form2033C {
 
   // R2C.2 — répartition des cases d'immobilisations (426 → 576) : logique extraite telle quelle, partagée avec la
   // consolidation multi-bien (un bloc par bien, puis somme). 572 reste le pass-through de F-006 ci-dessus.
-  const repartition = repartir2033CImmobilisations({ immobilisations: immo, exercice: rfs.exercice, amortCalcule: fr.amortCalcule });
+  // R2C.3a — activité multi-bien : même répartition, appliquée à CHAQUE bien, puis somme (mono : inchangé).
+  const repartition =
+    rfs.immobilisationsParBien !== undefined
+      ? repartir2033CParBien(rfs)
+      : repartir2033CImmobilisations({ immobilisations: immo, exercice: rfs.exercice, amortCalcule: fr.amortCalcule });
   cases.push(...repartition.cases);
   casesNonAlimentees.push(...repartition.casesNonAlimentees);
 
@@ -539,4 +544,30 @@ export function repartir2033CImmobilisations(input: {
   }
 
   return { cases, casesNonAlimentees };
+}
+
+const CASES_IMMOBILISATIONS_2033C = ["426", "476", "490", "492", "496", "570", "576"] as const;
+const CASES_MOUVEMENT_2033C: ReadonlySet<string> = new Set(["490", "492", "496", "570", "576"]);
+
+/**
+ * R2C.3a — 2033-C d'une activité multi-bien : `repartir2033CImmobilisations` (la logique mono, inchangée) appliquée à
+ * chaque bloc de bien avec SA dotation, puis somme des cases en centimes. 572 reste le pass-through F-006 ; les mouvements
+ * ne sont publiés que si Σ dotations par bien = `amortCalcule` global. Un bien en échec n'est jamais compensé.
+ */
+function repartir2033CParBien(rfs: FiscalRepresentation): Repartition2033C {
+  const parBien = rfs.immobilisationsParBien ?? [];
+  const blocs = parBien.map((bloc) => ({
+    propertyId: bloc.propertyId,
+    dotationsExercice: bloc.dotationsExercice,
+    repartition: repartir2033CImmobilisations({ immobilisations: bloc.immobilisations, exercice: rfs.exercice, amortCalcule: bloc.dotationsExercice }),
+  }));
+  const consolidation = consoliderCasesParBien({
+    blocs,
+    caseIds: CASES_IMMOBILISATIONS_2033C,
+    casesSoumisesAuxDotations: CASES_MOUVEMENT_2033C,
+    amortCalculeGlobal: rfs.fiscalResult.amortCalcule,
+    labels: libellesDe(repartir2033CImmobilisations({ immobilisations: undefined, exercice: rfs.exercice, amortCalcule: rfs.fiscalResult.amortCalcule })),
+    blocage: blocageBlocsParBien({ propertyIds: parBien.map((bloc) => bloc.propertyId), blocUniquePresent: rfs.immobilisations !== undefined }),
+  });
+  return versCasesCerfa(consolidation, "Σ rfs.immobilisationsParBien[] (répartition 2033-C par bien)");
 }

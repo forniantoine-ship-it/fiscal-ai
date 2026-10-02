@@ -1,19 +1,40 @@
 import type { Anomaly } from "../../contracts/Anomaly";
-import type { FiscalEngineInputs, ValidateFiscalInputsOutput } from "./types";
+import type { ActiviteFiscalInput, FiscalEngineInputs, ValidateFiscalInputsOutput } from "./types";
+import { isIsoCalendarDate } from "../f009/validate-service-date";
 import { annualOutputYearMismatchReason } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 
 /**
  * Vérifie que toutes les sorties assistants requises sont disponibles (F-006 préconditions).
  */
+/**
+ * R2C.3a (ARB-5) — dates de mise en service d'une activité multi-bien : `null` = valides ; `undefined` = absentes (message
+ * historique) ; sinon le motif. Liste non vide, un bien = une date réelle, aucun bien en double.
+ */
+function multiPropertyServiceDatesIssue(dates: ActiviteFiscalInput["datesMiseEnService"]): string | null | undefined {
+  if (dates === undefined) return undefined;
+  if (dates.length === 0) return "Dates de mise en service des biens manquantes.";
+  const seen = new Set<string>();
+  for (const entry of dates) {
+    if (!entry.propertyId?.trim()) return "Date de mise en service sans bien identifié.";
+    if (seen.has(entry.propertyId)) return `Plusieurs dates de mise en service pour le même bien (${entry.propertyId}).`;
+    seen.add(entry.propertyId);
+    if (!isIsoCalendarDate(entry.date)) return `Date de mise en service invalide pour le bien ${entry.propertyId}.`;
+  }
+  return null;
+}
+
 export function validateFiscalInputs(input: FiscalEngineInputs): ValidateFiscalInputsOutput {
   const anomalies: Anomaly[] = [];
 
   if (!input.activite.dateMiseEnService) {
-    anomalies.push({
-      severity: "fatal",
-      message: "Date de mise en service manquante (F-009 Activité).",
-      field: "dateMiseEnService",
-    });
+    const multiIssue = multiPropertyServiceDatesIssue(input.activite.datesMiseEnService);
+    if (multiIssue !== null) {
+      anomalies.push({
+        severity: "fatal",
+        message: multiIssue ?? "Date de mise en service manquante (F-009 Activité).",
+        field: "dateMiseEnService",
+      });
+    }
   }
 
   if (!input.revenusAssistant) {

@@ -8,7 +8,7 @@
  */
 
 import type { LiasseDossierExtras } from "./build-liasse-dossier-document";
-import type { DeclarationDraft, FiscalYear } from "@/lib/lmnp/types/domain";
+import type { DeclarationDraft, FiscalYear, Property } from "@/lib/lmnp/types/domain";
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -22,6 +22,8 @@ function omitEmpty(value: string | undefined): string | undefined {
 export type LiasseDossierExtrasSource = {
   declarationDraft?: DeclarationDraft | null;
   fiscalYear?: Pick<FiscalYear, "stocksOuverture"> | null;
+  /** R2C.3a — libellés réels des biens (multi-bien) ; jamais un libellé inventé à défaut. */
+  properties?: ReadonlyArray<Pick<Property, "id" | "label">> | null;
 };
 
 function collectBien(draft: DeclarationDraft): LiasseDossierExtras["bien"] {
@@ -104,6 +106,24 @@ function collectCharges(draft: DeclarationDraft): LiasseDossierExtras["chargesDe
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/** Extras PROPRES à un bien (multi-bien) : descriptifs groupés, jamais sommés ; prêts étiquetés de leur bien. */
+function collectBienExtras(
+  propertyId: string,
+  bienDraft: DeclarationDraft,
+  properties: LiasseDossierExtrasSource["properties"],
+): NonNullable<LiasseDossierExtras["biens"]>[number] {
+  const out: NonNullable<LiasseDossierExtras["biens"]>[number] = { propertyId };
+  const label = omitEmpty(properties?.find((property) => property.id === propertyId)?.label);
+  if (label) out.label = label;
+  const bien = collectBien(bienDraft);
+  if (bien) out.bien = bien;
+  const prets = collectPrets(bienDraft);
+  if (prets) out.pretsDescriptifs = prets.map((pret) => ({ ...pret, propertyId }));
+  const charges = collectCharges(bienDraft);
+  if (charges) out.chargesDescriptives = charges;
+  return out;
+}
+
 function collectStocksOuverture(
   fiscalYear: Pick<FiscalYear, "stocksOuverture"> | null | undefined,
 ): LiasseDossierExtras["stocksOuverture"] {
@@ -138,14 +158,20 @@ export function collectLiasseDossierExtras(source: LiasseDossierExtrasSource): L
     extras.regimeFiscal = regime;
   }
 
-  const bien = draft ? collectBien(draft) : undefined;
-  if (bien) extras.bien = bien;
+  if (draft?.biens !== undefined) {
+    // R2C.3a — multi-bien : les extras propres au bien (logement, prêts, charges) sont collectés DANS chaque bien, jamais
+    // lus à plat (la racine n'en porte plus) ; un bloc par bien, même vide — aucun bien omis silencieusement.
+    extras.biens = Object.entries(draft.biens).map(([propertyId, bienDraft]) => collectBienExtras(propertyId, bienDraft as DeclarationDraft, source.properties));
+  } else {
+    const bien = draft ? collectBien(draft) : undefined;
+    if (bien) extras.bien = bien;
 
-  const prets = draft ? collectPrets(draft) : undefined;
-  if (prets) extras.pretsDescriptifs = prets;
+    const prets = draft ? collectPrets(draft) : undefined;
+    if (prets) extras.pretsDescriptifs = prets;
 
-  const charges = draft ? collectCharges(draft) : undefined;
-  if (charges) extras.chargesDescriptives = charges;
+    const charges = draft ? collectCharges(draft) : undefined;
+    if (charges) extras.chargesDescriptives = charges;
+  }
 
   const stocksOuverture = collectStocksOuverture(source.fiscalYear);
   if (stocksOuverture) extras.stocksOuverture = stocksOuverture;

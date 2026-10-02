@@ -8,6 +8,12 @@ import type { Anomaly } from "../../contracts/Anomaly";
 export type ActiviteFiscalInput = {
   siret?: string;
   dateMiseEnService?: string;
+  /**
+   * R2C.3a (ARB-5) — activité multi-bien : une date de mise en service PAR BIEN, jamais une date globale fabriquée.
+   * Lue uniquement par `validateFiscalInputs` (contrôle de présence/validité) — aucun calcul F-006 n'utilise la date.
+   * Mono : absent, `dateMiseEnService` historique inchangée.
+   */
+  datesMiseEnService?: Array<{ propertyId: string; date: string }>;
   activityType?: "LMNP" | "LMP";
 };
 
