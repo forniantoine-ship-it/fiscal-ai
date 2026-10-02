@@ -269,7 +269,8 @@ describe("R2C.3c1 — panels et moteur", () => {
       "src/components/lmnp/documents/ValidationDocumentStep.tsx",
       "src/components/lmnp/declaration/DeclarationReadyView.tsx",
     ];
-    const diff = execSync(`git diff --name-only 08ac1133caaf05ce12666ba01e21d4c84aecd455 -- ${untouched.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
+    // Ancré sur le commit 3c1 lui-même (08ac113..7c18ece) : l'invariant « 3c1 ne touche pas le moteur » ne dépend pas des slices suivantes.
+    const diff = execSync(`git diff --name-only 08ac1133caaf05ce12666ba01e21d4c84aecd455 7c18eceb6f1a841e7a77a999be13ccb601e23046 -- ${untouched.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
     assert.equal(diff, "");
   });
 

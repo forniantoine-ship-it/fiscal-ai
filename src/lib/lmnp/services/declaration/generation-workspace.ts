@@ -3,7 +3,8 @@
  * de son branchement.
  *
  *   Workspace ─┬─ legacy_mono → runDeclarationGeneration(draft, …)                   (chemin historique, à l'identique)
- *              └─ scoped      → collectPropertyFiscalContributions
+ *              ├─ scoped mono → runDeclarationGeneration(vue plate du bien, …)       (R2C.3c2a : historique, via `resolveConsolidationInput`)
+ *              └─ scoped multi → collectPropertyFiscalContributions
  *                                → consolidateFiscalContributions
  *                                → buildPropertyImmobilisations (par bien) → consolidatePropertyImmobilisations
  *                                → adaptateur consolidé → FiscalEngineInputs
@@ -30,7 +31,7 @@ import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-
 import type { FiscalEngineOutput, FiscalYear } from "@/lib/lmnp/types/domain";
 import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import { readBienDrafts, scopedBienView } from "@/lib/lmnp/dossier/bien-draft";
+import { readBienDrafts, resolveConsolidationInput, scopedBienView } from "@/lib/lmnp/dossier/bien-draft";
 import {
   buildFiscalEngineInputsFromConsolidation,
   collectPropertyFiscalContributions,
@@ -86,6 +87,23 @@ export type WorkspaceGenerationResult =
   | { status: "blocked"; anomalies: Anomaly[]; blockingReasons: WorkspaceBlockingReason[] };
 
 type GenerationWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "documents" | "declarationDraft">;
+
+/**
+ * R2C.3c2a — une `continuity` ne vaut ouverture/continuation que si elle porte un fait d'ouverture : `immobilisationsOuverture`,
+ * `repriseHistoriqueEnContinuite` (seuls champs qui pilotent une ouverture dans `runDeclarationGeneration`), ou un fait de
+ * continuation (`previousFiscalYearId`, `continuiteNativeVerifiee` : un exercice précédent existe — jamais vrai d'un premier
+ * exercice). Choix fail-closed pour le multi : une continuation scalaire n'est attribuable à aucun bien (R2C.5).
+ * Les autres champs (`composantsF012Merged`, `propertyId`) ne sont pas une ouverture : `ValidationDocumentStep` transmet TOUJOURS
+ * cet objet, sa seule existence ne dit rien d'une ouverture non attribuable.
+ */
+function continuityCarriesOpening(continuity: WorkspaceGenerationOptions["continuity"]): boolean {
+  return Boolean(
+    continuity?.immobilisationsOuverture ||
+      continuity?.repriseHistoriqueEnContinuite ||
+      continuity?.previousFiscalYearId ||
+      continuity?.continuiteNativeVerifiee,
+  );
+}
 
 function blockedFromReasons(blockingReasons: WorkspaceBlockingReason[]): WorkspaceGenerationResult {
   return {
@@ -148,11 +166,33 @@ export function runDeclarationGenerationFromWorkspace(
   if (view.mode === "unresolved") return blockedFromReasons([{ code: view.reason }]);
   if (view.mode === "none") return blockedFromReasons([{ code: "no_property" }]);
 
+  // SCOPED MONO (R2C.3c2a) — « scoped != multi » : un dossier scopé à UN seul bien est un dossier mono. Même contrat que
+  // `resolveConsolidationInput` (invariants R1/R2, aucune seconde définition) : sa vue plate canonique alimente le chemin
+  // historique, verbatim. La RFS n'a jamais la forme multi (`immobilisationsParBien`) : le marqueur Cerfa de 3c1 reste fiable.
+  const consolidationInput = resolveConsolidationInput(workspace);
+  if (consolidationInput.kind === "single_declaration") {
+    return runDeclarationGeneration(
+      consolidationInput.draft,
+      workspace.fiscalYear.year,
+      options.stocksOuverture,
+      options.bilanInputs,
+      options.dispense2033AIntake,
+      options.continuity,
+      options.fiscalYearOpening,
+    );
+  }
+  // Scoped mono refusé par ses propres invariants (charges à revoir, documents non attribués…) : refus structuré, jamais
+  // un pipeline multi pour un dossier mono. Seul `multi_property_consolidation_not_supported` désigne un vrai multi.
+  if (!consolidationInput.reasons.includes("multi_property_consolidation_not_supported")) {
+    return blockedFromReasons(consolidationInput.reasons.map((code) => ({ code })));
+  }
+
   // MULTI (dossier scopé) — préparation consolidée.
   const fiscalYear = workspace.fiscalYear;
   const exercice = fiscalYear.year;
-  // Une ouverture d'exercice fournie par l'appelant est globale (scalaire) : elle n'est attribuable à aucun bien (R2C.5).
-  if (options.continuity !== undefined || options.fiscalYearOpening !== undefined) {
+  // Une ouverture d'exercice RÉELLE fournie par l'appelant est globale (scalaire) : elle n'est attribuable à aucun bien (R2C.5).
+  // La simple présence d'un objet `continuity` (toujours transmis par l'écran de validation) n'en est pas une.
+  if (continuityCarriesOpening(options.continuity) || options.fiscalYearOpening !== undefined) {
     return blockedFromReasons([{ code: "exercise_opening_not_attributable" }]);
   }
 
