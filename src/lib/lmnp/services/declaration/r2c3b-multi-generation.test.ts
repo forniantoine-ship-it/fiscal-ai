@@ -147,8 +147,8 @@ function multiWorkspace(options: WorkspaceOptions = {}): PersistedWorkspace {
   } as unknown as PersistedWorkspace;
 }
 
-function monoWorkspace(): PersistedWorkspace {
-  const bien = bienOf(A, SPEC_A);
+function monoWorkspace(spec: BienSpec = SPEC_A): PersistedWorkspace {
+  const bien = bienOf(A, spec);
   const { propertyId: _ignored, completedSteps: _steps, ...flat } = bien;
   void _ignored; void _steps;
   return {
@@ -160,6 +160,26 @@ function monoWorkspace(): PersistedWorkspace {
 }
 
 const STOCKS = { sourceClosureId: "closure-2025", stocks: { deficits: [{ millesime: 2024, montant: 1500 }], amortissementsReportes: 0, deficitsExpires: [] } };
+
+/** Cas fiscaux explicites ; le plan F-010 reste cohérent avec la dotation F-014 pour passer par la RFS réelle. */
+function oracleBien(recettes: number, charges: number, dotations: number): BienSpec {
+  return {
+    date: "2026-04-15",
+    recettes,
+    cats: charges > 0 ? { assurance_pno: charges } : {},
+    credit: "none",
+    dotations,
+    plan: {
+      lignes: dotations > 0
+        ? [{ id: "gros-oeuvre", label: "Gros œuvre", montant: 200000, dureeAnnees: 50, dotationExercice: dotations, amortissementsCumules: dotations }]
+        : [],
+      totalAnnuelExercice: dotations,
+      totalBrut: dotations > 0 ? 200000 : 0,
+    },
+    valeurTerrain: 10000,
+    montantMobilier: 0,
+  };
+}
 
 /** Exécution instrumentée : compte les appels F-006 et capture leurs entrées. */
 async function run(workspace: PersistedWorkspace, options: Record<string, unknown> = {}) {
@@ -327,6 +347,109 @@ describe("R2C.3b — génération multi nominale", () => {
   });
 });
 
+describe("MB-ORACLE-1 — fiscalité consolidée sur le chemin Workspace → F-006 → RFS → 2033-B", () => {
+  it("A — 39 C sur +8 000 avant amortissement, puis imputation unique du déficit antérieur", async () => {
+    const workspace = multiWorkspace({
+      specs: [[A, oracleBien(6000, 1000, 1000)], [B, oracleBien(5000, 2000, 2000)]],
+      fiscalYear: { stocksOuverture: { ...STOCKS, stocks: { ...STOCKS.stocks, deficits: [{ millesime: 2024, montant: 6000 }] } } },
+    });
+    const { result, calls } = await generated(workspace);
+    const fiscal = result.rfs.fiscalResult;
+    const form = result.liasseRfs.form2033B;
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.revenusAssistant?.totalRecettes, 11000);
+    assert.equal(calls[0]!.chargesAssistant?.totalDeductible, 3000);
+    assert.equal(calls[0]!.amortissementAssistant?.totalDotations, 3000);
+    assert.deepEqual(calls[0]!.stockDeficitsAnterieurs, [{ millesime: 2024, montant: 6000 }]);
+    assert.equal(fiscal.resultatAvantAmort, 8000);
+    assert.equal(fiscal.amortDeduct, 3000);
+    assert.equal(fiscal.amortNonDeduitExercice, 0);
+    assert.equal(fiscal.resultatFiscalAvantDeficits, 5000);
+    assert.equal(fiscal.deficitsImputes, 5000);
+    assert.deepEqual(fiscal.stocks.deficits, [{ millesime: 2024, montant: 1000 }]);
+    assert.equal(fiscal.resultatFiscal, 0);
+    assert.equal(caseValue(form, "318"), 0);
+    assert.equal(caseValue(form, "352"), 5000);
+    assert.equal(caseValue(form, "350"), 5000, "observation du mapping actuel ; son analyse IR reste séparée");
+    assert.equal(caseValue(form, "370"), undefined);
+  });
+
+  it("B — déficit courant global sans dotation : aucun ARD ni imputation de déficit antérieur", async () => {
+    const workspace = multiWorkspace({
+      specs: [[A, oracleBien(2000, 1000, 0)], [B, oracleBien(1000, 5000, 0)]],
+      fiscalYear: { stocksOuverture: { ...STOCKS, stocks: { ...STOCKS.stocks, deficits: [{ millesime: 2024, montant: 800 }] } } },
+    });
+    const { result, calls } = await generated(workspace);
+    const fiscal = result.rfs.fiscalResult;
+    const form = result.liasseRfs.form2033B;
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.revenusAssistant?.totalRecettes, 3000);
+    assert.equal(calls[0]!.chargesAssistant?.totalDeductible, 6000);
+    assert.equal(calls[0]!.amortissementAssistant?.totalDotations, 0);
+    assert.deepEqual(calls[0]!.stockDeficitsAnterieurs, [{ millesime: 2024, montant: 800 }]);
+    assert.equal(fiscal.resultatAvantAmort, -3000);
+    assert.equal(fiscal.amortNonDeduitExercice, 0);
+    assert.equal(fiscal.amortReporte, 0);
+    assert.equal(fiscal.stocks.amortissementsReportes, 0);
+    assert.equal(fiscal.deficitsImputes, 0);
+    assert.equal(fiscal.deficitNouveau, 3000);
+    assert.deepEqual(fiscal.stocks.deficits, [{ millesime: 2024, montant: 800 }, { millesime: 2026, montant: 3000 }]);
+    assert.equal(fiscal.resultatFiscalAvantDeficits, -3000);
+    assert.equal(fiscal.resultatFiscal, 0);
+    assert.equal(caseValue(form, "318"), 0);
+    assert.equal(caseValue(form, "354"), 3000);
+    assert.equal(caseValue(form, "372"), undefined);
+    // La ligne 330 n'est pas utilisée ici comme oracle du déficit courant (SAV-031).
+  });
+
+  it("C1/C2 — même +7 000 et 4 000 de dotations : ventilation entre biens sans effet sur le plafond", async () => {
+    const c1 = await generated(multiWorkspace({ specs: [[A, oracleBien(10000, 0, 0)], [B, oracleBien(1000, 4000, 4000)]] }));
+    const c2 = await generated(multiWorkspace({ specs: [[A, oracleBien(3000, 0, 4000)], [B, oracleBien(4000, 0, 0)]] }));
+
+    for (const [label, oracle] of [["C1", c1], ["C2", c2]] as const) {
+      assert.equal(oracle.calls.length, 1, label);
+      const fiscal = oracle.result.rfs.fiscalResult;
+      assert.equal(fiscal.resultatAvantAmort, 7000, label);
+      assert.equal(fiscal.amortCalcule, 4000, label);
+      assert.equal(fiscal.amortDeduct, 4000, label);
+      assert.equal(fiscal.amortNonDeduitExercice, 0, label);
+      assert.equal(fiscal.resultatFiscalAvantDeficits, 3000, label);
+      assert.equal(fiscal.resultatFiscal, 3000, label);
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "318"), 0, label);
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "352"), 3000, label);
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "370"), 3000, label);
+    }
+    assert.equal(c2.result.rfs.fiscalResult.amortDeduct, c1.result.rfs.fiscalResult.amortDeduct);
+    assert.equal(c2.result.rfs.fiscalResult.resultatFiscal, c1.result.rfs.fiscalResult.resultatFiscal);
+  });
+
+  it("D — mêmes totaux : parité mono et multi sur les sorties fiscales globales", async () => {
+    const stocks = { deficits: [{ millesime: 2024, montant: 1000 }], amortissementsReportes: 0, deficitsExpires: [] };
+    const multi = await generated(multiWorkspace({
+      specs: [[A, oracleBien(3000, 0, 4000)], [B, oracleBien(4000, 0, 0)]],
+      fiscalYear: { stocksOuverture: { ...STOCKS, stocks } },
+    }));
+    const mono = withFixedClock(() => runDeclarationGeneration(monoWorkspace(oracleBien(7000, 0, 4000)).declarationDraft, Y, stocks));
+    assert.equal(mono.status, "generated");
+    if (mono.status !== "generated") return;
+
+    assert.equal(multi.calls.length, 1);
+    assert.deepEqual(multi.calls[0]!.stockDeficitsAnterieurs, stocks.deficits);
+    const monoFiscal = mono.rfs.fiscalResult;
+    const multiFiscal = multi.result.rfs.fiscalResult;
+    assert.equal(multiFiscal.deficitsImputes, 1000);
+    assert.equal(multiFiscal.resultatFiscal, 2000);
+    for (const key of ["resultatAvantAmort", "amortCalcule", "amortDeduct", "amortNonDeduitExercice", "resultatFiscalAvantDeficits", "deficitsImputes", "resultatFiscal"] as const) {
+      assert.equal(multiFiscal[key], monoFiscal[key], key);
+    }
+    for (const caseId of ["318", "352", "354", "370", "372"] as const) {
+      assert.equal(caseValue(multi.result.liasseRfs.form2033B, caseId), caseValue(mono.liasseRfs.form2033B, caseId), caseId);
+    }
+  });
+});
+
 // ---------------------------------------------------------------------------
 // G15–G22 : blocages fail-closed (F-006 jamais appelé)
 // ---------------------------------------------------------------------------
@@ -398,6 +521,7 @@ describe("R2C.3b — blocages fail-closed", () => {
     const { result, calls } = await blocked(workspace);
     assert.ok(hasCode(result, "multi_property_39c_allocation_not_supported"));
     assert.equal(calls.length, 1, "le résultat global est calculé une fois, puis le cycle par bien est refusé");
+    assert.ok(produceFiscalResult(calls[0]!).result!.amortNonDeduitExercice > 0, "le cas crée effectivement du non-déduit 39 C");
   });
 
   it("G22 — stock d'amortissements réportés > 0 → bloqué AVANT F-006 (jamais consommé)", async () => {
