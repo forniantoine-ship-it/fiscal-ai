@@ -166,6 +166,12 @@ export type ResultatAvantAmortissement = {
 /** Sortie TRF-0031. */
 export type ApplicationAmortissementStocks = {
   resultatFiscal: number;
+  /**
+   * Résultat fiscal après traitement 39 C (dotation de l'exercice et
+   * consommation du stock d'amortissements réputés différés) et avant
+   * imputation des déficits antérieurs. SAV-030. Positif, nul ou négatif.
+   */
+  resultatFiscalAvantDeficits: number;
   amortDeduct: number;
   amortReporte: number;
   amortReportesUtilises: number;
@@ -252,6 +258,13 @@ export type FiscalResult = {
   amortNonDeduitExercice: number;
   amortReportesUtilises: number;
   resultatFiscal: number;
+  /**
+   * P0-39C — résultat fiscal après le plafond de l'article 39 C et avant
+   * imputation des déficits antérieurs (SAV-030). Pass-through des cases
+   * 2033-B 352/354. Optionnel : les reconstructions manuelles antérieures
+   * à ce champ ne l'ont pas ; le moteur de production le renseigne toujours.
+   */
+  resultatFiscalAvantDeficits?: number;
   deficitNouveau: number;
   deficitsImputes: number;
   perteExceptionnelle: number;

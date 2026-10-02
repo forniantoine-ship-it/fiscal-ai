@@ -19,14 +19,12 @@ import { splitFinancementFor2033B } from "./split-financement-2033b";
  * l'exposition de `FiscalResult.charges.totalNonDeductible` (Cycle 32,
  * transport pur depuis F-012 — voir f006/aggregate-inputs.ts). Formule
  * vérifiée au centime près contre le grand livre comptable réel du dossier
- * de référence. 352/354 restent bloquées : l'audit a identifié DEUX sources
- * indépendantes de désynchronisation entre l'ordre de calcul F-006 (SAV-027 :
- * déficits antérieurs imputés avant l'amortissement de l'exercice) et l'ordre
- * du formulaire officiel — les déficits antérieurs (déjà documentés) et,
- * nouvellement identifié, le stock d'amortissements reportés antérieurs
- * (`stockAmortInitial`, une entrée de `apply-amortissement-stocks.ts` jamais
- * exposée dans `FiscalResult`, qui se trouve mêlée à `amortReporte` sans
- * qu'on puisse l'isoler après coup). 356 est reclassée : ce n'est pas un
+ * de référence. P0-39C — 352/354 sont un pass-through de
+ * `fiscalResult.resultatFiscalAvantDeficits` (SAV-030 : plafond 39 C puis
+ * imputation des déficits). Le scalaire est calculé dans le moteur, où le
+ * stock d'amortissements réputés différés est encore isolable ; il n'est
+ * jamais reconstitué ici. Un FiscalResult antérieur, sans ce champ, laisse
+ * 352/354 bloquées. 356 est reclassée : ce n'est pas un
  * choix de périmètre Fiscal AI, c'est un mécanisme (report en arrière,
  * art. 220 quinquies du CGI) réservé aux entreprises à l'IS — non applicable
  * par nature à un LMNP au réel simplifié (IR).
@@ -262,6 +260,11 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       ? "fiscalResult.amortNonDeduitExercice"
       : "fiscalResult.amortCalcule − fiscalResult.amortDeduct (legacy fallback)";
 
+  const resultatAvantDeficits =
+    typeof fr.resultatFiscalAvantDeficits === "number" && Number.isFinite(fr.resultatFiscalAvantDeficits)
+      ? round2(fr.resultatFiscalAvantDeficits)
+      : undefined;
+
   const cases: CerfaCase[] = [
     {
       caseId: "232",
@@ -446,6 +449,32 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     });
   }
 
+  if (resultatAvantDeficits !== undefined && resultatAvantDeficits > 0) {
+    cases.push({
+      caseId: "352",
+      label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
+      value: resultatAvantDeficits,
+      trace: {
+        ...baseTrace,
+        path: "fiscalResult.resultatFiscalAvantDeficits",
+        ksArtifacts: ["TRF-0031", "TRF-0032", "SAV-030"],
+      },
+    });
+  }
+
+  if (resultatAvantDeficits !== undefined && resultatAvantDeficits < 0) {
+    cases.push({
+      caseId: "354",
+      label: "Résultat fiscal avant imputation des déficits antérieurs — Déficit (col. 2)",
+      value: round2(Math.abs(resultatAvantDeficits)),
+      trace: {
+        ...baseTrace,
+        path: "fiscalResult.resultatFiscalAvantDeficits",
+        ksArtifacts: ["TRF-0031", "TRF-0032", "SAV-030"],
+      },
+    });
+  }
+
   if (fr.resultatFiscal > 0) {
     cases.push({
       caseId: "370",
@@ -472,19 +501,23 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   }
 
   const casesNonAlimentees: CerfaCaseNonAlimentee[] = [
-    {
-      caseId: "352",
-      label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
-      raison:
-        "L'ordre de calcul de F-006 (SAV-027 : déficits antérieurs imputés avant l'amortissement de l'exercice) diffère de celui du formulaire officiel (déficits imputés après les réintégrations, dont l'amortissement excédentaire). Reconstituer cette case exigerait de connaître le stock d'amortissements reportés antérieurs au DÉBUT de l'exercice (`stockAmortInitial`), qui n'est jamais exposé dans FiscalResult — il est mêlé à `amortReporte` sans pouvoir être isolé après coup. Deux sources de désynchronisation identifiées (déficits antérieurs ET stock d'amortissements reportés), pas une seule — même le cas 'sans déficit antérieur imputé cette année' n'est donc pas sûr en général.",
-      categorie: "incoherence_modele",
-    },
-    {
-      caseId: "354",
-      label: "Résultat fiscal avant imputation des déficits antérieurs — Déficit (col. 2)",
-      raison: "Même incohérence que la case 352.",
-      categorie: "incoherence_modele",
-    },
+    ...(resultatAvantDeficits === undefined
+      ? [
+          {
+            caseId: "352",
+            label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
+            raison:
+              "FiscalResult.resultatFiscalAvantDeficits est absent (snapshot antérieur à P0-39C). Le moteur le calcule désormais avant l'imputation des déficits (SAV-030, plafond 39 C indépendant du stock de déficits). Sans ce scalaire, la case n'est pas reconstituite à partir de resultatFiscal et du stock d'amortissements reportés.",
+            categorie: "incoherence_modele" as const,
+          },
+          {
+            caseId: "354",
+            label: "Résultat fiscal avant imputation des déficits antérieurs — Déficit (col. 2)",
+            raison: "Même absence que la case 352.",
+            categorie: "incoherence_modele" as const,
+          },
+        ]
+      : []),
     {
       caseId: "356",
       label: "Déficit de l'exercice reporté en arrière",

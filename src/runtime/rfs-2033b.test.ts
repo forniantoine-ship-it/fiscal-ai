@@ -1110,7 +1110,7 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
     assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal > 0, jamais < 0");
   });
 
-  it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=400 (mouvement annuel), stock final=900, 350=600", () => {
+  it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=0, stock final=300, 350=0", () => {
     const application = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 1000,
@@ -1119,10 +1119,10 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
       stockAmortissementsReportes: 500,
     });
     assert.equal(application.resultatFiscal, 0);
-    assert.equal(application.deficitsImputes, 600);
-    assert.equal(application.amortReporte, 900, "stock final inchangé");
-    assert.equal(application.amortReportesUtilises, 0);
-    assert.equal(application.amortDeduct, 400);
+    assert.equal(application.deficitsImputes, 0);
+    assert.equal(application.amortReporte, 300, "stock final = ARD 500 − 200 consommés dans le plafond");
+    assert.equal(application.amortReportesUtilises, 200);
+    assert.equal(application.amortDeduct, 800);
 
     const fr = fiscalResult({
       resultatAvantAmort: 1000,
@@ -1132,14 +1132,16 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
       amortNonDeduitExercice: round2(800 - application.amortDeduct),
       amortReportesUtilises: application.amortReportesUtilises,
       resultatFiscal: application.resultatFiscal,
+      resultatFiscalAvantDeficits: application.resultatFiscalAvantDeficits,
       deficitNouveau: application.deficitNouveau,
       deficitsImputes: application.deficitsImputes,
     });
     const form = map2033BFromRfs(rfs(fr));
 
-    assert.equal(findCase(form, "318")?.value, 400, "318 = mouvement annuel seul (800 − 400), sans ARD d'ouverture");
+    assert.equal(findCase(form, "318")?.value, 0, "318 = mouvement annuel seul (800 − 800)");
     assert.notEqual(findCase(form, "318")?.value, fr.amortReporte, "318 ≠ stock final");
-    assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
+    assert.equal(findCase(form, "350")?.value, 0, "350 = deficitsImputes = 0");
+    assert.equal(findCase(form, "352"), undefined, "résultat avant déficits nul : 352 non servie");
     assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0 (résultat avant amort positif)");
     assert.equal(findCase(form, "370"), undefined, "370 absente : resultatFiscal = 0, pas > 0");
     assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal = 0, pas < 0");

@@ -5,11 +5,11 @@ type: raisonnement
 status: approved
 version: "1.0"
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-10-02
 owner: product-owner
 tags: [résultat-fiscal, raisonnement, orchestration]
 objectif: "Produire le résultat fiscal à partir des sorties de tous les domaines"
-prémisses: [AX-015, AX-016, AX-017, SAV-027, SAV-028]
+prémisses: [AX-015, AX-016, AX-017, SAV-030, SAV-028]
 conclusion: "Un objet FiscalResult unique contenant le résultat, les stocks mis à jour et la trace"
 condition_de_sortie: "Résultat fiscal calculé, stocks mis à jour, cohérence vérifiée"
 justifie: [TRF-0029, TRF-0030, TRF-0031, TRF-0032]
@@ -25,7 +25,7 @@ Ce Raisonnement est un orchestrateur, pas un simple calcul. Il consomme les sort
 
 1. Collecter les recettes (TRF-0029)
 2. Calculer le résultat avant amortissement (TRF-0030)
-3. Appliquer l'amortissement avec plafonnement et gestion des stocks (TRF-0031)
+3. Appliquer l'amortissement avec plafonnement 39 C, puis imputer les déficits antérieurs (TRF-0031, SAV-030)
 4. Produire le FiscalResult (TRF-0032)
 
 ## Entrées consommées

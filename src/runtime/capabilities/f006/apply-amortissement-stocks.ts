@@ -35,7 +35,12 @@ function expireDeficits(exercice: number, deficits: StockDeficit[]): {
 
 /**
  * TRF-0031 — Application de l'amortissement et gestion des stocks.
- * Séquence SAV-027 / AX-015 / AX-016 / AX-017 — vérifiée contre VER-047 à VER-051.
+ * Séquence SAV-030 / AX-015 / AX-016 / AX-017 — vérifiée contre VER-047 à VER-051.
+ *
+ * P0-39C — le plafond de l'article 39 C est le résultat avant amortissement.
+ * Il ne dépend pas du stock de déficits antérieurs (SAV-027, deprecated).
+ * Ordre : dotation de l'exercice, puis stock d'amortissements réputés différés,
+ * puis imputation des déficits antérieurs sur le bénéfice restant.
  */
 export function applyAmortissementStocks(
   input: ApplyAmortissementStocksInput,
@@ -55,6 +60,7 @@ export function applyAmortissementStocks(
 
     return {
       resultatFiscal: 0,
+      resultatFiscalAvantDeficits: round2(input.resultatAvantAmort),
       amortDeduct: 0,
       amortReporte: round2(input.amortCalcule + stockAmortInitial),
       amortReportesUtilises: 0,
@@ -66,7 +72,14 @@ export function applyAmortissementStocks(
     };
   }
 
-  let reste = input.resultatAvantAmort;
+  const plafond39C = round2(input.resultatAvantAmort);
+  const amortDeduct = round2(Math.min(input.amortCalcule, plafond39C));
+  let reste = round2(plafond39C - amortDeduct);
+
+  const amortReportesUtilises = round2(Math.min(stockAmortInitial, reste));
+  reste = round2(reste - amortReportesUtilises);
+  const resultatFiscalAvantDeficits = reste;
+
   let deficitsImputes = 0;
   const stockDeficitsMisAJour: StockDeficit[] = [];
 
@@ -84,16 +97,11 @@ export function applyAmortissementStocks(
     }
   }
 
-  const amortDeduct = round2(Math.min(input.amortCalcule, reste));
-  reste = round2(reste - amortDeduct);
-
-  const amortReportesUtilises = round2(Math.min(stockAmortInitial, reste));
-  reste = round2(reste - amortReportesUtilises);
-
   const amortReporte = round2(input.amortCalcule - amortDeduct + stockAmortInitial - amortReportesUtilises);
 
   return {
     resultatFiscal: reste,
+    resultatFiscalAvantDeficits,
     amortDeduct,
     amortReporte,
     amortReportesUtilises,

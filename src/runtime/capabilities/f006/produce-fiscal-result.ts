@@ -67,6 +67,11 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
       value: round2(data.amortCalcule - application.amortDeduct),
     },
     { trf: "TRF-0031", label: "Amortissement reporté (stock final)", value: application.amortReporte },
+    {
+      trf: "TRF-0031",
+      label: "Résultat fiscal avant déficits antérieurs",
+      value: application.resultatFiscalAvantDeficits,
+    },
     { trf: "TRF-0031", label: "Déficits imputés", value: application.deficitsImputes },
     { trf: "TRF-0032", label: "Résultat fiscal", value: application.resultatFiscal },
   ];
@@ -111,6 +116,7 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
     amortNonDeduitExercice: round2(data.amortCalcule - application.amortDeduct),
     amortReportesUtilises: application.amortReportesUtilises,
     resultatFiscal: application.resultatFiscal,
+    resultatFiscalAvantDeficits: application.resultatFiscalAvantDeficits,
     deficitNouveau: application.deficitNouveau,
     deficitsImputes: application.deficitsImputes,
     perteExceptionnelle: data.perteExceptionnelle,
@@ -132,7 +138,7 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
         "AX-015",
         "AX-016",
         "AX-017",
-        "SAV-027",
+        "SAV-030",
       ],
       computedAt,
       journal,

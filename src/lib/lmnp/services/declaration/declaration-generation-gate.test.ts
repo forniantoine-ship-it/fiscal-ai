@@ -605,16 +605,12 @@ describe("P0-1 — TEST 6 : correction d'identité après génération → rég�
  * (exercice en continuité, déficits antérieurs/amortissements reportés). La
  * comparaison portait alors sur deux résultats structurellement différents.
  *
- * Fixture volontairement choisie pour que la dérive touche `amortDeduct`/
- * `amortReporte` (les deux champs comparés par cette porte, cf.
- * declaration-generation-gate.ts) : resultatAvantAmort = 7000 (9000 - 2000),
- * amortissement calculé = 8000.
- *  - AVEC le déficit antérieur de 3000 (stock réel) : base disponible après
- *    imputation = 4000 → amortDeduct = 4000, amortReporte = 4000.
- *  - SANS ce déficit (bug — preview `undefined`) : base = 7000 →
- *    amortDeduct = 7000, amortReporte = 1000.
- * Les deux résultats diffèrent bien sur les champs comparés : avant
- * correction, ce test aurait échoué (`canGenerate` serait resté `true`).
+ * Fixture : resultatAvantAmort = 7000 (9000 - 2000), amortissement calculé = 8000,
+ * déficit antérieur = 3000. P0-39C : le plafond 39 C ignore ce déficit, donc
+ * amortDeduct = 7000 et amortReporte = 1000, que le stock soit fourni ou non.
+ * Le stock reste visible sur `stocks.deficits` (3000 non imputés, plus aucun
+ * bénéfice après le 39 C). La porte compare ce stock : un preview qui
+ * l'oublierait divergerait encore.
  */
 describe("P0-1A — cohérence stocksOuverture entre le preview de la porte et la génération réelle", () => {
   const STOCKS_OUVERTURE_DEFICIT = {
@@ -647,8 +643,9 @@ describe("P0-1A — cohérence stocksOuverture entre le preview de la porte et l
     const generation = genererAvecStock(draft);
     // Précondition — confirme que le stock d'ouverture a réellement un effet
     // sur les deux champs comparés (sinon le test ne prouverait rien).
-    assert.equal(generation.fiscalResult.amortDeduct, 4000);
-    assert.equal(generation.fiscalResult.amortReporte, 4000);
+    assert.equal(generation.fiscalResult.amortDeduct, 7000);
+    assert.equal(generation.fiscalResult.amortReporte, 1000);
+    assert.deepEqual(generation.fiscalResult.stocks.deficits, [{ millesime: 2024, montant: 3000 }]);
 
     const draftGenere = { ...draft, fiscalResult: generation.fiscalResult } as DeclarationDraft;
     const gate = resolveDeclarationGenerationGate({

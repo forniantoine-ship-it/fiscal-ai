@@ -54,8 +54,9 @@ describe("R18 — les stocks fiscaux ne modifient jamais le patrimoine par effet
     const report = reporterRanNPlusUn({ situationN: "NATIF", valeurN: 0 });
     assert.equal(report.valeurNPlusUn, 0, "134 reste 0 (C1) indépendamment du résultat de applyAmortissementStocks — aucun effet de bord possible");
 
-    // Les stocks fiscaux eux-mêmes restent inchangés et distincts (non-régression F-006, voir bilan-fiscal-non-regression.test.ts).
-    assert.equal(application.deficitsImputes, 600);
-    assert.equal(application.amortReporte, 900);
+    // Les stocks fiscaux restent des concepts F-006, distincts du patrimoine.
+    // P0-39C : le plafond absorbe 800 de dotation et 200 d'ARD avant le déficit.
+    assert.equal(application.deficitsImputes, 0);
+    assert.equal(application.amortReporte, 300);
   });
 });

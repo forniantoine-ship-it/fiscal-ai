@@ -5,12 +5,12 @@ type: transformation
 status: approved
 version: "1.0"
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-10-02
 owner: product-owner
 tags: [résultat-fiscal, amortissement, stocks, déficits, report]
 catégorie: calcul
 fonde: [AX-015, AX-016, AX-017]
-requiert: [SAV-027]
+requiert: [SAV-030]
 ---
 
 # TRF-0031 — Application de l'amortissement et gestion des stocks
@@ -37,4 +37,6 @@ requiert: [SAV-027]
 
 ## Logique
 
-Voir RAI-014 pour la séquence complète.
+SAV-030. Le plafond 39 C est le résultat avant amortissement. Il ne dépend pas des déficits antérieurs. La dotation de l'exercice, puis le stock d'amortissements réputés différés, sont traités dans ce plafond. Les déficits antérieurs sont imputés ensuite sur le bénéfice restant.
+
+Voir RAI-014 pour la séquence d'orchestration.

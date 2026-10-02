@@ -870,9 +870,9 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
    * porte tournait alors sans ce stock alors que la génération réelle en
    * tenait compte — dérive artificielle, clôture bloquée à tort. Même
    * fixture que declaration-generation-gate.test.ts (P0-1A) : resultatAvantAmort
-   * = 7000, amortissement calculé = 8000, déficit antérieur = 3000 → change
-   * strictement amortDeduct/amortReporte (les deux champs comparés par la
-   * porte) selon que le stock est pris en compte ou non.
+   * = 7000, amortissement calculé = 8000, déficit antérieur = 3000. P0-39C :
+   * ce déficit ne change plus amortDeduct (7000) ni amortReporte (1000) ; il
+   * reste dans stocks.deficits, que la porte compare.
    */
   it("R5 — exercice N+1 en continuité (stocksOuverture réel), aucune modification → canCloseFiscalYear === true (pas de blocage artificiel)", () => {
     const stocksOuverture = { deficits: [{ millesime: 2024, montant: 3000 }], amortissementsReportes: 0 };
@@ -884,10 +884,12 @@ describe("canCloseFiscalYear — drift (P0-1, B1/B2)", () => {
     const generation = runDeclarationGeneration(draft, 2025, stocksOuverture);
     assert.equal(generation.status, "generated");
     if (generation.status !== "generated") throw new Error("unreachable");
-    // Précondition — confirme que le stock change bien amortDeduct/amortReporte
-    // (sinon ce test ne prouverait rien face à la version sans correction).
-    assert.equal(generation.fiscalResult.amortDeduct, 4000);
-    assert.equal(generation.fiscalResult.amortReporte, 4000);
+    // Précondition — le déficit antérieur reste dans le stock de clôture
+    // (P0-39C : il n'entre pas dans le plafond 39 C, et il n'y a plus de
+    // bénéfice à imputer). C'est ce stock que la porte compare.
+    assert.equal(generation.fiscalResult.amortDeduct, 7000);
+    assert.equal(generation.fiscalResult.amortReporte, 1000);
+    assert.deepEqual(generation.fiscalResult.stocks.deficits, [{ millesime: 2024, montant: 3000 }]);
 
     const draftGenere = { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
 

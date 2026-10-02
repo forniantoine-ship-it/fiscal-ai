@@ -619,7 +619,7 @@ describe("Cycle 16 — indemnitesAssurance ventilée dans FiscalResult.recettes"
  * Cycle 32 — audit 2033-B (264/270/310/312/314) : totalNonDeductible est un
  * TRANSPORT pur depuis F-012 (ChargesAssistantOutput.totalNonDeductible),
  * jamais recalculé par F-006. Aucun autre champ FiscalResult n'est affecté ;
- * aucun ordre de calcul (SAV-027) n'est modifié.
+ * aucun ordre de calcul n'est modifié.
  */
 describe("Cycle 32 — FiscalResult.charges.totalNonDeductible : transport pur depuis F-012", () => {
   it("un dossier avec 99,40 € de charges non déductibles expose ~99,40 € dans FiscalResult, sans transformation", () => {
@@ -678,20 +678,12 @@ describe("Cycle 32 — FiscalResult.charges.totalNonDeductible : transport pur d
 });
 
 /**
- * Cycle 32 — STEP 6 (audit de conformité 2033-B) : limitation documentée de
- * la case 318 quand déficits antérieurs ET limitation d'amortissement
- * coexistent la même année. Ce test ne change AUCUNE règle de F-006
- * (SAV-027 reste intact, `applyAmortissementStocks` n'est pas modifié) : il
- * prouve seulement, avec un cas construit, que amortReporte (case 318) et le
- * "résultat fiscal avant imputation des déficits" (case 352/354) divergent
- * de ce qu'un ordre de calcul indépendant des déficits produirait — d'où le
- * blocage volontaire de 352/354 tant que ce n'est pas arbitré.
- * Important : le RÉSULTAT FISCAL FINAL (bottom line) est identique dans les
- * deux ordres — seule la répartition intermédiaire entre "amortissement
- * reporté" et "déficit antérieur restant" diffère.
+ * P0-39C — le plafond 39 C est le résultat avant amortissement (SAV-030).
+ * Les déficits antérieurs sont imputés ensuite. L'ancienne hypothèse SAV-027
+ * (déficits d'abord) est deprecated : elle refusait ici 2 000 € d'amortissement.
  */
-describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (SAV-027) affecte la case 318 en présence de déficits antérieurs", () => {
-  it("déficit antérieur 4000, résultat avant amort 5000, amortissement calculé 3000 : F-006 reporte 2000 d'amortissement, un ordre 'art. 39C indépendant des déficits' n'en reporterait aucun — même résultat final", () => {
+describe("P0-39C — plafond 39 C indépendant des déficits antérieurs", () => {
+  it("déficit antérieur 4000, résultat avant amort 5000, amortissement calculé 3000 : la dotation est intégralement déductible, 2000 € de déficit restent", () => {
     const applicationF006 = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 5000,
@@ -700,47 +692,16 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
       stockAmortissementsReportes: 0,
     });
 
-    // Ordre effectif de F-006 (SAV-027, non modifié) : déficits imputés avant l'amortissement.
-    assert.equal(applicationF006.deficitsImputes, 4000, "le déficit antérieur est intégralement imputé en premier");
-    assert.equal(applicationF006.amortDeduct, 1000, "il ne reste que 1000 de résultat pour l'amortissement");
-    assert.equal(applicationF006.amortReporte, 2000, "3000 calculé − 1000 déduit = 2000 stock final (égal au mouvement annuel si ouverture = 0)");
-    assert.equal(round2(3000 - applicationF006.amortDeduct), 2000, "mouvement annuel / case 318 = 2000");
+    assert.equal(applicationF006.amortDeduct, 3000);
+    assert.equal(round2(3000 - applicationF006.amortDeduct), 0);
+    assert.equal(applicationF006.amortReporte, 0);
+    assert.equal(applicationF006.resultatFiscalAvantDeficits, 2000);
+    assert.equal(applicationF006.deficitsImputes, 2000);
+    assert.equal(applicationF006.stockDeficitsMisAJour[0]?.montant, 2000);
     assert.equal(applicationF006.resultatFiscal, 0);
-
-    // Ordre alternatif "formulaire officiel" (art. 39 C appliqué indépendamment
-    // des déficits antérieurs, calculé ici SANS appeler applyAmortissementStocks
-    // — pure arithmétique de démonstration, pas une nouvelle règle F-006) :
-    const amortDeductFormOrder = Math.min(3000, Math.max(0, 5000)); // limitation sur resultatAvantAmort seul
-    const amortReporteFormOrder = 3000 - amortDeductFormOrder;
-    const resteApresAmortFormOrder = 5000 - amortDeductFormOrder;
-    const deficitImputeFormOrder = Math.min(4000, resteApresAmortFormOrder);
-    const resultatFiscalFormOrder = resteApresAmortFormOrder - deficitImputeFormOrder;
-
-    assert.equal(amortReporteFormOrder, 0, "dans cet ordre, aucune limitation d'amortissement n'aurait lieu");
-    assert.equal(deficitImputeFormOrder, 2000, "seule une partie du déficit antérieur serait imputée cette année");
-    assert.equal(resultatFiscalFormOrder, 0, "le résultat fiscal final est identique dans les deux ordres");
-
-    // La divergence documentée : même résultat final, répartition différente.
-    assert.notEqual(
-      applicationF006.amortReporte,
-      amortReporteFormOrder,
-      "case 318 (amortissements excédentaires) diverge selon l'ordre — raison du blocage de 352/354",
-    );
-    assert.notEqual(applicationF006.deficitsImputes, deficitImputeFormOrder);
   });
 
-  /**
-   * MICRO-JALON R5 — le test ci-dessus (`stockAmortissementsReportes: 0`)
-   * documente déjà la divergence déficits/amortissement de l'exercice, mais
-   * n'exerce jamais l'ARD (stock d'amortissements reportés d'exercices
-   * antérieurs) lui-même. Angle mort identifié par l'audit de couverture
-   * 2033-B précédent (scénario R5 : déficit antérieur ET ARD non nuls
-   * simultanément) : aucun test existant ne le couvrait avant ce jalon.
-   * Comportement actuel documenté, SAV-027 non modifié, aucune règle
-   * fiscale changée — ces deux tests appellent `applyAmortissementStocks`
-   * réellement, ils ne réimplémentent jamais son arithmétique.
-   */
-  it("R5-A — résultat insuffisant pour absorber déficit antérieur ET amortissement : l'ARD préexistant n'est jamais entamé", () => {
+  it("R5-A — le plafond 39 C absorbe la dotation et une fraction d'ARD avant les déficits antérieurs", () => {
     const result = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 1000,
@@ -748,26 +709,19 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
       stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
       stockAmortissementsReportes: 500,
     });
-    // Ordre SAV-027 : déficit antérieur imputé en premier (600, intégral —
-    // le stock est entièrement consommé, aucun reliquat).
-    assert.equal(result.deficitsImputes, 600);
-    assert.equal(result.stockDeficitsMisAJour.length, 0, "le déficit antérieur de 600 est intégralement consommé, aucun reliquat reporté");
-    // Il ne reste que 400 pour l'amortissement de l'exercice (800 calculé) :
-    // seule une partie est déduite, le reste rejoint le stock reporté.
-    assert.equal(result.amortDeduct, 400);
-    // Le `reste` est à 0 avant même d'atteindre l'étape ARD (3ᵉ priorité,
-    // SAV-027) : le stock préexistant de 500 n'est JAMAIS entamé.
-    assert.equal(result.amortReportesUtilises, 0, "l'ARD préexistant (500) n'est pas utilisé : le reste est déjà à 0 après déficit + amortissement");
-    // STOCK FINAL (≠ case 318) = (800 calculé − 400 déduit) + (500 ARD initial − 0 utilisé) = 900.
-    assert.equal(result.amortReporte, 900, "stock final = 400 non déduit de l'exercice + 500 ARD préexistant intact");
-    assert.equal(result.stockAmortissementsReportesMisAJour, 900);
-    // MOUVEMENT ANNUEL (case 318) = amortCalcule − amortDeduct = 400 — indépendant du stock d'ouverture.
-    assert.equal(round2(800 - result.amortDeduct), 400, "318 = mouvement annuel seul, sans stock d'ouverture");
+    assert.equal(result.amortDeduct, 800);
+    assert.equal(round2(800 - result.amortDeduct), 0, "318 = 0 : la dotation tient dans le plafond");
+    assert.equal(result.amortReportesUtilises, 200, "reliquat de plafond 200, consommé sur l'ARD avant les déficits");
+    assert.equal(result.amortReporte, 300, "stock final = 500 − 200");
+    assert.equal(result.stockAmortissementsReportesMisAJour, 300);
+    assert.equal(result.resultatFiscalAvantDeficits, 0);
+    assert.equal(result.deficitsImputes, 0, "plus aucun bénéfice après le 39 C");
+    assert.equal(result.stockDeficitsMisAJour[0]?.montant, 600);
     assert.equal(result.resultatFiscal, 0);
     assert.equal(result.deficitNouveau, 0);
   });
 
-  it("R5-B — résultat suffisant pour absorber les trois niveaux (déficit antérieur, amortissement de l'exercice, ARD) : démonstration complète de la frontière", () => {
+  it("R5-B — bénéfice suffisant : dotation, ARD puis déficits, même résultat final", () => {
     const result = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 2000,
@@ -775,21 +729,14 @@ describe("Cycle 32 — limitation documentée : ordre déficits/amortissement (S
       stockDeficitsAnterieurs: [{ millesime: 2023, montant: 600 }],
       stockAmortissementsReportes: 500,
     });
-    // 1. Déficit antérieur imputé en premier, intégralement (600, reste 1400).
+    assert.equal(result.amortDeduct, 800);
+    assert.equal(result.amortReportesUtilises, 500);
+    assert.equal(result.resultatFiscalAvantDeficits, 700);
     assert.equal(result.deficitsImputes, 600);
     assert.equal(result.stockDeficitsMisAJour.length, 0);
-    // 2. Amortissement de l'exercice déduit en second, intégralement (800, reste 600).
-    assert.equal(result.amortDeduct, 800);
-    // 3. ARD préexistant utilisé en dernier, intégralement (500, reste 100) —
-    // c'est la démonstration explicite de la CONSOMMATION de l'ARD, absente
-    // du scénario R5-A ci-dessus.
-    assert.equal(result.amortReportesUtilises, 500, "l'ARD préexistant est intégralement consommé une fois déficit et amortissement de l'exercice absorbés");
-    // amortReporte (STOCK FINAL) = (800 − 800) + (500 − 500) = 0 : plus aucun stock reporté.
-    // Mouvement annuel (case 318) = 800 − 800 = 0 également.
     assert.equal(result.amortReporte, 0);
-    assert.equal(round2(800 - result.amortDeduct), 0, "318 = 0 quand la dotation N est intégralement déduite");
+    assert.equal(round2(800 - result.amortDeduct), 0);
     assert.equal(result.stockAmortissementsReportesMisAJour, 0);
-    // Résultat fiscal final : 2000 − 600 − 800 − 500 = 100.
     assert.equal(result.resultatFiscal, 100);
     assert.equal(result.deficitNouveau, 0);
   });

@@ -14,7 +14,7 @@ import { round2 } from "../f006/types";
  *
  * Ne jamais confondre avec `FiscalResult.resultatFiscal` (F-006,
  * `applyAmortissementStocks`, TRF-0031) : ce dernier a déjà subi l'imputation
- * des déficits antérieurs et la limitation d'amortissement (SAV-027) — le
+ * des déficits antérieurs et la limitation d'amortissement (SAV-030) — le
  * résultat comptable n'en tient jamais compte, par construction. Voir
  * `bilan-resultat-comptable.test.ts` pour la preuve de non-régression sur
  * les deux mappers.
