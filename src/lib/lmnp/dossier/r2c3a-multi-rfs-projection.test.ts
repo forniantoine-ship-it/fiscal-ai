@@ -462,8 +462,10 @@ describe("R2C.3a — P24, P25 : périmètre", () => {
     assert.deepEqual((rfs.emprunts as Array<{ pretId: string }>).map((item) => item.pretId), ["loan-1", "loan-1"]);
   });
 
-  it("dormant : aucune génération multi, gate et runDeclarationGeneration inchangés par R2C.3a", () => {
-    assert.doesNotMatch(source("src/lib/lmnp/services/declaration/run-declaration-generation.ts"), /immobilisationsParBien|datesMiseEnService/);
+  it("dormant : gate inchangé, runDeclarationGeneration sans date par bien (R2C.3a, ajusté R2C.3b)", () => {
+    // R2C.3b a extrait le shared core (qui transporte `immobilisationsParBien` vers la RFS) : le chemin mono, lui, ne manipule
+    // toujours aucune date de mise en service par bien.
+    assert.doesNotMatch(source("src/lib/lmnp/services/declaration/run-declaration-generation.ts"), /datesMiseEnService/);
     assert.doesNotMatch(source("src/lib/lmnp/services/declaration/declaration-generation-gate.ts"), /immobilisationsParBien/);
   });
 });

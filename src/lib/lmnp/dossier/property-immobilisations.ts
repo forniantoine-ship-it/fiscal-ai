@@ -67,6 +67,7 @@ export type PropertyImmobilisationsReasonCode =
   | "missing_entry_mode"
   | "takeover_without_opening"
   | "dotation_missing"
+  | "property_immobilisations_not_established"
   | "opening_conflict"
   | "foreign_property_asset"
   | "no_property"
@@ -133,6 +134,9 @@ export function buildPropertyImmobilisations(input: PropertyImmobilisationsInput
   if (input.source.kind === "draft") {
     const view = input.source.view;
     dotationsExercice = dotationsExercice ?? view.amortissementAssistant?.totalDotations;
+    // R2C.3b — signal d'établissement existant : le plan F-010 du bien (`logementAmortissement`, sortie de l'assistant
+    // Logement) — F-014 n'est validé qu'à partir de lui. Son absence = inventaire NON établi, jamais « zéro immobilisation ».
+    if (!view.logementAmortissement) reasons.push({ code: "property_immobilisations_not_established", propertyId });
     // Même composition que le parcours natif de `runDeclarationGeneration` (F-010 + F-012 du bien), ici pour CE bien.
     composed = view.logementAmortissement
       ? enrichImmobilisationsRfs({

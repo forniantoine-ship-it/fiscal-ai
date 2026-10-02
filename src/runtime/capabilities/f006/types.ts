@@ -118,7 +118,8 @@ export type FiscalEngineInputs = {
   exerciceFiscal: number;
   activite: ActiviteFiscalInput;
   logementAmortissement?: {
-    computedAt: string;
+    /** R2C.3b — optionnel : l'entrée consolidée d'une activité multi-bien n'a pas d'horodatage propre (jamais lu par F-006). */
+    computedAt?: string;
     /**
      * Lot 4 — millésime de confirmation F-010. Optionnel (legacy) ; lu uniquement
      * par `validateFiscalInputs` pour year-safety, jamais par l'agrégation /

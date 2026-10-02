@@ -15,6 +15,7 @@
 import type { FiscalResult } from "../f006/types";
 import type { IdentiteDeclarante } from "../f007/types";
 import type { AmortissementPlan, PlanLigne } from "../f010/types";
+import type { ConservationDetail2033B } from "./projection/detail-charges-2033b";
 import type { PretFinancementExercice } from "../f011/types";
 import type { ComposantNouveau } from "../f012/types";
 import type { PatrimonialState } from "../bilan/types";
@@ -163,6 +164,13 @@ export type FiscalRepresentation = {
    * mono. Persisté et re-projeté tel quel (archive, PDF serveur).
    */
   immobilisationsParBien?: ImmobilisationsBienRfs[];
+
+  /**
+   * R2C.3b — activité multi-bien : conservation du détail 2033-B vérifiée PAR BIEN puis sommée (A1 : 242 + 244 + 254 = 264),
+   * à la place de la vérification sur le seul `fiscalResult` global (qui laisserait l'excédent d'un bien compenser le déficit
+   * d'un autre). Absent en mono : le mapper 2033-B vérifie alors `fiscalResult.charges`, comme avant.
+   */
+  detailCharges2033B?: ConservationDetail2033B;
 
   /**
    * Emprunts — lecture seule de `draft.financementCharges.prets` (F-011, déjà

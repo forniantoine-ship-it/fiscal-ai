@@ -221,7 +221,7 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   const empruntsTrace: Omit<CaseTrace, "path"> = { source: "Emprunts", ksArtifacts: ["TRF-0016", "TRF-0032"] };
 
   // Cases 242/244 — A1 : détail F-012 (+ frais de dossier F-011 ajoutés ci-dessous à 242/264).
-  const detail = resolveConservationDetail2033B(fr);
+  const detail = rfs.detailCharges2033B ?? resolveConservationDetail2033B(fr);
 
   // Case 264 — charges d'exploitation F-012/F-010 + amortissements + non déductibles
   // + frais de dossier F-011 reclassés en exploitation (présentation ; 310 inchangé car

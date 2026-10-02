@@ -396,6 +396,31 @@ function consolidatedInputs(
   };
 }
 
+/**
+ * R2C.3b — adaptateur minimal : entrées consolidées de l'activité → `FiscalEngineInputs` du SEUL appel F-006 (jamais un
+ * brouillon à plat synthétique). Pas de date de mise en service globale : une date PAR BIEN (`datesMiseEnService`), lue par
+ * la validation F-006 uniquement. Les stocks (déficits, amortissements reportés) sont ceux de l'activité, transportés UNE
+ * fois. Les garde-fous par bien (prêts exclus, péremption des recouvrements F-011/F-012) ont déjà été appliqués à chaque
+ * bien avant la somme (`validatePropertyFiscalContribution`) : ils ne sont donc pas re-transportés ici.
+ */
+export function buildFiscalEngineInputsFromConsolidation(inputs: ConsolidatedFiscalInputs): FiscalEngineInputs {
+  return {
+    exerciceFiscal: inputs.exerciceFiscal,
+    activite: {
+      siret: inputs.activity.siret,
+      datesMiseEnService: inputs.datesMiseEnService.map(({ propertyId, dateMiseEnService }) => ({ propertyId, date: dateMiseEnService })),
+      activityType: inputs.activity.activityType,
+    },
+    logementAmortissement: { exerciceFiscal: inputs.exerciceFiscal, fraisEnCharges: inputs.fraisAcquisitionEnCharges },
+    ...(inputs.financement ? { financementCharges: inputs.financement } : {}),
+    chargesAssistant: inputs.charges,
+    revenusAssistant: inputs.revenus,
+    amortissementAssistant: inputs.amortissement,
+    stockDeficitsAnterieurs: inputs.stockDeficitsAnterieurs,
+    stockAmortissementsReportes: inputs.stockAmortissementsReportes,
+  };
+}
+
 /** Consolidation PURE : aucune mutation, aucune persistance, aucune donnée inventée. Une activité → UNE entrée F-006 future. */
 export function consolidateFiscalContributions(
   activity: ConsolidationActivityInput,

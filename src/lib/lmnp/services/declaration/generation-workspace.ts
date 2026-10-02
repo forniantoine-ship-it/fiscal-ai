@@ -1,0 +1,243 @@
+/**
+ * R2C.3b — entrée de génération PAR WORKSPACE, DORMANTE : aucun appelant de production (tests uniquement). R2C.3c décidera
+ * de son branchement.
+ *
+ *   Workspace ─┬─ legacy_mono → runDeclarationGeneration(draft, …)                   (chemin historique, à l'identique)
+ *              └─ scoped      → collectPropertyFiscalContributions
+ *                                → consolidateFiscalContributions
+ *                                → buildPropertyImmobilisations (par bien) → consolidatePropertyImmobilisations
+ *                                → adaptateur consolidé → FiscalEngineInputs
+ *                                → produceFiscalResult  (EXACTEMENT UNE FOIS, sur l'activité)
+ *                                → produceLiasseStage → assembleGenerationOutput  (SHARED CORE de run-declaration-generation)
+ *
+ * Un seul moteur fiscal : les contributions par bien sont des entrées de consolidation et de traçabilité, jamais un calcul
+ * (ni FiscalResult, ni déficit, ni stock d'amortissements par bien). Aucune date de mise en service globale n'est choisie.
+ * Le service est PUR : il ne dispatche rien, ne persiste rien (ni l'origine d'un bien) et ne lit aucun état d'interface
+ * (`activePropertyId`…). Il retourne un résultat de même forme que le mono, persistable à la racine.
+ *
+ * Bornes de R2C.3b (tous fail-closed, jamais d'allocation) : charges communes, prêt partagé, ouverture d'exercice non
+ * attribuable (R2C.5), stock d'amortissements reportés > 0 (multi_property_historical_ard_not_supported) et amortissement
+ * non déduit de l'exercice > 0 (multi_property_39c_allocation_not_supported : TRF-0035 par bien non implémenté).
+ */
+import type { Anomaly } from "@/runtime";
+import { produceFiscalResult as produceFiscalResultReal } from "@/runtime/capabilities/f006/produce-fiscal-result";
+import { sumEuros } from "@/runtime/capabilities/f006/cents";
+import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
+import type { Dispense2033ADecision } from "@/runtime/capabilities/rfs/dispense-2033a";
+import type { ConservationDetail2033B } from "@/runtime/capabilities/rfs/projection/detail-charges-2033b";
+import type { ImmobilisationsBienRfs } from "@/runtime/capabilities/rfs/types";
+import { identiteFromDeclarationDraft } from "@/lib/lmnp/services/f007/draft-to-liasse-inputs";
+import type { FiscalEngineOutput, FiscalYear } from "@/lib/lmnp/types/domain";
+import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
+import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
+import { readBienDrafts, scopedBienView } from "@/lib/lmnp/dossier/bien-draft";
+import {
+  buildFiscalEngineInputsFromConsolidation,
+  collectPropertyFiscalContributions,
+  consolidateFiscalContributions,
+  type PropertyEntryMode,
+} from "@/lib/lmnp/dossier/fiscal-consolidation";
+import {
+  buildPropertyImmobilisations,
+  consolidatePropertyImmobilisations,
+  resolveMultiPropertyCharges2033BDetail,
+  rfsEmpruntsMulti,
+  type MultiPropertyCharges2033BDetail,
+  type PropertyOpening,
+} from "@/lib/lmnp/dossier/property-immobilisations";
+import {
+  IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED,
+  assembleGenerationOutput,
+  produceLiasseStage,
+  runDeclarationGeneration,
+  type DeclarationGenerationResult,
+} from "./run-declaration-generation";
+
+export const MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED = "multi_property_historical_ard_not_supported";
+export const MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED = "multi_property_39c_allocation_not_supported";
+
+/** Preuve d'un bien, fournie explicitement par l'appelant (jamais déduite de l'ordre ni de l'ancienneté des biens). */
+export type PropertyGenerationProof = {
+  /** Origine établie du bien. Indispensable dès que l'exercice porte un indice de reprise. */
+  entryMode?: PropertyEntryMode;
+  /** Ouverture comptable PROPRE au bien (clôture N-1 du bien) — jamais dérivée d'une ouverture d'exercice scalaire. */
+  opening?: PropertyOpening;
+};
+
+export type WorkspaceGenerationOptions = {
+  // Paramètres historiques de `runDeclarationGeneration` — transmis tels quels au chemin mono.
+  stocksOuverture?: FiscalEngineOutput["stocks"];
+  bilanInputs?: BilanInputs;
+  dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision };
+  continuity?: Parameters<typeof runDeclarationGeneration>[5];
+  fiscalYearOpening?: FiscalYearOpening;
+  // Multi-bien.
+  properties?: Readonly<Record<string, PropertyGenerationProof>>;
+  /** Seam : charges communes explicites — toujours bloquantes (aucun modèle d'allocation). */
+  commonCharges?: readonly unknown[];
+  /** Injection du moteur fiscal (tests : comptage des appels). Défaut : F-006 réel. */
+  engine?: { produceFiscalResult: typeof produceFiscalResultReal };
+};
+
+export type WorkspaceBlockingReason = { code: string; propertyId?: string; field?: string; message?: string };
+
+export type WorkspaceGenerationResult =
+  | DeclarationGenerationResult
+  | { status: "blocked"; anomalies: Anomaly[]; blockingReasons: WorkspaceBlockingReason[] };
+
+type GenerationWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "documents" | "declarationDraft">;
+
+function blockedFromReasons(blockingReasons: WorkspaceBlockingReason[]): WorkspaceGenerationResult {
+  return {
+    status: "blocked",
+    blockingReasons,
+    anomalies: blockingReasons.map((reason) => ({
+      severity: "error" as const,
+      field: reason.field ?? reason.propertyId ?? "workspace",
+      message: `${reason.code}${reason.propertyId ? `@${reason.propertyId}` : ""}${reason.message ? `: ${reason.message}` : ""}`,
+    })),
+  };
+}
+
+/**
+ * O2 (ARB-8, cutover technique) — l'exercice porte-t-il un indice de reprise ? Sans indice, les biens sont natifs ; avec
+ * indice, l'origine d'un bien ne peut venir que d'une preuve propre à ce bien (`options.properties[id].entryMode`).
+ */
+function exerciseCarriesTakeoverIndicium(fiscalYear: FiscalYear): boolean {
+  return Boolean(
+    fiscalYear.externalTakeoverOpening ||
+      fiscalYear.repriseHistoriqueEnContinuite ||
+      fiscalYear.immobilisationsOuverture ||
+      fiscalYear.priorHistoryDeclaration?.status === "EXTERNAL_HISTORY",
+  );
+}
+
+/** Détail 2033-B conservé PAR BIEN (R2C.2) → contrat du mapper 2033-B. Un bien non conservé : 242/244 non publiées. */
+function toConservationDetail(multi: MultiPropertyCharges2033BDetail): ConservationDetail2033B {
+  const attendu = sumEuros(multi.parBien.map((item) => item.detail.attendu));
+  const attribue = sumEuros(multi.parBien.map((item) => item.detail.attribue));
+  return {
+    status: multi.status,
+    attendu,
+    attribue,
+    ecart: sumEuros([attendu, -attribue]),
+    ...(multi.status === "CONSERVE" && multi.ligne244 !== undefined ? { ligne244: multi.ligne244 } : {}),
+    ...(multi.status === "CONSERVE" && multi.ligne242 !== undefined ? { ligne242: multi.ligne242 } : {}),
+    raisons: multi.raisons.map((item) => `bien ${item.propertyId} : ${item.raison}`),
+  };
+}
+
+export function runDeclarationGenerationFromWorkspace(
+  workspace: GenerationWorkspace,
+  options: WorkspaceGenerationOptions = {},
+): WorkspaceGenerationResult {
+  const view = readBienDrafts(workspace);
+
+  // MONO — délégation stricte au chemin historique : ni collecte, ni consolidation, ni adaptateur multi.
+  if (view.mode === "legacy_mono") {
+    return runDeclarationGeneration(
+      workspace.declarationDraft,
+      workspace.fiscalYear.year,
+      options.stocksOuverture,
+      options.bilanInputs,
+      options.dispense2033AIntake,
+      options.continuity,
+      options.fiscalYearOpening,
+    );
+  }
+  if (view.mode === "unresolved") return blockedFromReasons([{ code: view.reason }]);
+  if (view.mode === "none") return blockedFromReasons([{ code: "no_property" }]);
+
+  // MULTI (dossier scopé) — préparation consolidée.
+  const fiscalYear = workspace.fiscalYear;
+  const exercice = fiscalYear.year;
+  // Une ouverture d'exercice fournie par l'appelant est globale (scalaire) : elle n'est attribuable à aucun bien (R2C.5).
+  if (options.continuity !== undefined || options.fiscalYearOpening !== undefined) {
+    return blockedFromReasons([{ code: "exercise_opening_not_attributable" }]);
+  }
+
+  const indicium = exerciseCarriesTakeoverIndicium(fiscalYear);
+  const entryModes: Record<string, PropertyEntryMode> = {};
+  for (const propertyId of fiscalYear.propertyIds) {
+    const mode = options.properties?.[propertyId]?.entryMode ?? (indicium ? undefined : "native");
+    if (mode !== undefined) entryModes[propertyId] = mode;
+  }
+
+  const collection = collectPropertyFiscalContributions(workspace, { entryModes });
+  if (collection.status === "blocked") return blockedFromReasons(collection.reasons);
+  const { contributions } = collection;
+
+  const stocks = options.stocksOuverture
+    ? { deficits: options.stocksOuverture.deficits, amortissementsReportes: options.stocksOuverture.amortissementsReportes }
+    : collection.activity.stocksOuverture;
+  const activity = {
+    ...collection.activity,
+    ...(stocks ? { stocksOuverture: stocks } : {}),
+    ...(options.commonCharges ? { commonCharges: options.commonCharges } : {}),
+  };
+
+  const consolidation = consolidateFiscalContributions(activity, contributions);
+  const reasons: WorkspaceBlockingReason[] = [...consolidation.blockingReasons];
+  // ARB-7 bis : le stock d'amortissements reportés est un stock d'ACTIVITÉ ; sa consommation par bien n'est pas établie.
+  if ((stocks?.amortissementsReportes ?? 0) > 0) reasons.push({ code: MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED, field: "stocksOuverture.amortissementsReportes" });
+  if (consolidation.status === "blocked" || reasons.length > 0) return blockedFromReasons(reasons);
+
+  // F-006 : UN SEUL appel, sur l'activité consolidée.
+  const engine = options.engine?.produceFiscalResult ?? produceFiscalResultReal;
+  const fiscalComputation = engine(buildFiscalEngineInputsFromConsolidation(consolidation.inputs));
+  if (!fiscalComputation.result) return { status: "blocked", anomalies: fiscalComputation.anomalies, blockingReasons: [] };
+  const fiscalResult = fiscalComputation.result;
+
+  // ARB-7 : résultat global calculable, mais le cycle d'amortissement non déduit par bien (TRF-0035) n'est pas supporté.
+  if (fiscalResult.amortNonDeduitExercice > 0) {
+    return blockedFromReasons([{ code: MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED, field: "amortNonDeduitExercice" }]);
+  }
+
+  const root = workspace.declarationDraft ?? { completedSteps: [] };
+  const identite = identiteFromDeclarationDraft(workspace.declarationDraft, exercice);
+  const liasseStage = produceLiasseStage(fiscalResult, identite);
+  if (liasseStage.status === "blocked") return { ...liasseStage, blockingReasons: [] };
+
+  // Immobilisations : un bloc PAR BIEN (règles comptables d'aujourd'hui), réconcilié par bien, jamais fusionné avant.
+  const blocks = contributions.map((contribution) =>
+    buildPropertyImmobilisations({
+      propertyId: contribution.propertyId,
+      origin: contribution.entryMode,
+      exerciceFiscal: exercice,
+      source: { kind: "draft", view: scopedBienView(root, contribution.propertyId)! },
+      ...(options.properties?.[contribution.propertyId]?.opening ? { opening: options.properties[contribution.propertyId]!.opening } : {}),
+    }),
+  );
+  const consolidatedImmobilisations = consolidatePropertyImmobilisations(blocks, { amortCalculeGlobal: fiscalResult.amortCalcule });
+  const immobilisationReasons: WorkspaceBlockingReason[] = consolidatedImmobilisations.blockingReasons.map((reason) => ({ ...reason }));
+  for (const block of blocks) {
+    if (block.reconciliation?.status === "fail") {
+      immobilisationReasons.push({ code: IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED, propertyId: block.propertyId, field: "immobilisations", message: block.reconciliation.reason });
+    }
+  }
+  if (immobilisationReasons.length > 0) return blockedFromReasons(immobilisationReasons);
+
+  // Jamais « zéro » implicite : un bien sans bloc d'immobilisations est déjà bloqué (property_immobilisations_not_established) ;
+  // ce garde-fou refuse toute génération qui publierait des blocs partiels si ce contrat était contourné.
+  const incomplete = blocks.filter((block) => block.immobilisations === undefined || block.dotationsExercice === undefined);
+  if (incomplete.length > 0) {
+    return blockedFromReasons(incomplete.map((block) => ({ code: "property_immobilisations_not_established", propertyId: block.propertyId, field: "immobilisations" })));
+  }
+  const immobilisationsParBien: ImmobilisationsBienRfs[] = blocks.map((block) => ({
+    propertyId: block.propertyId,
+    immobilisations: block.immobilisations!,
+    dotationsExercice: block.dotationsExercice!,
+  }));
+
+  return assembleGenerationOutput({
+    fiscalResult,
+    identite,
+    liasseResult: liasseStage.liasseResult,
+    fiscalYear: exercice,
+    immobilisationsParBien,
+    detailCharges2033B: toConservationDetail(resolveMultiPropertyCharges2033BDetail(contributions)),
+    emprunts: rfsEmpruntsMulti(consolidation.inputs),
+    bilanInputs: options.bilanInputs,
+    dispense2033AIntake: options.dispense2033AIntake,
+  });
+}

@@ -10,7 +10,10 @@ import {
   resolveDispense2033AEligibilite,
   type Dispense2033ADecision,
 } from "@/runtime/capabilities/rfs/dispense-2033a";
-import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import type { FiscalResult } from "@/runtime/capabilities/f006/types";
+import type { ConservationDetail2033B } from "@/runtime/capabilities/rfs/projection/detail-charges-2033b";
+import type { EmpruntRfs, FiscalRepresentation, ImmobilisationsBienRfs, ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
+import type { IdentiteDeclarante } from "@/runtime/capabilities/f007/types";
 import {
   assembleLiasseFromRfs,
   type LiasseFromRfs,
@@ -401,24 +404,9 @@ export function runDeclarationGeneration(
 
   const fiscalResult = fiscalComputation.result;
   const identite = identiteFromDeclarationDraft(draft, fiscalYear);
-  const liasseComputation = produceLiasse({ fiscalResult, identite });
-
-  if (!liasseComputation.liasse) {
-    return { status: "blocked", anomalies: liasseComputation.anomalies };
-  }
-
-  const liasse = liasseComputation.liasse;
-  const form = liasse.formulairesGeneres[0];
-
-  const liasseResult: LiasseEngineOutput = {
-    exercice: liasse.exercice,
-    form2031Generated: true,
-    caseCount: form?.cases.length ?? 0,
-    cases: form?.cases ?? [],
-    formulairesManquants: [...liasse.formulairesManquants],
-    trace: liasse.trace,
-    generatedAt: liasse.trace.generatedAt,
-  };
+  const liasseStage = produceLiasseStage(fiscalResult, identite);
+  if (liasseStage.status === "blocked") return liasseStage;
+  const liasseResult = liasseStage.liasseResult;
 
   // RFS — assemblage pur. P0-2A EXTERNAL_HISTORY : inventaire = Opening appliqué
   // + acquisitions N (F-012). Parcours natif : F-010 + F-012 inchangé.
@@ -524,6 +512,76 @@ export function runDeclarationGeneration(
       ? `Clôture comptable ${continuity?.immobilisationsOuverture?.sourceClosureId} + acquisitions F-012 de l'exercice`
       : undefined;
 
+  return assembleGenerationOutput({
+    fiscalResult,
+    identite,
+    liasseResult,
+    fiscalYear,
+    immobilisations,
+    immobilisationsSource,
+    emprunts,
+    bilanInputs,
+    dispense2033AIntake,
+    fiscalYearOpening,
+  });
+}
+
+/**
+ * R2C.3b — SHARED GENERATION CORE (aval commun mono / multi-bien). Extrait tel quel de `runDeclarationGeneration` :
+ * mêmes appels, même ordre, aucune règle modifiée. Le mono et le multi ne diffèrent qu'en AMONT (préparation des entrées
+ * F-006 et des blocs d'immobilisations / emprunts) ; ils partagent ici l'unique chaîne produceLiasse → RFS → liasseRfs.
+ */
+export function produceLiasseStage(
+  fiscalResult: FiscalResult,
+  identite: IdentiteDeclarante,
+): { status: "blocked"; anomalies: Anomaly[] } | { status: "ok"; liasseResult: LiasseEngineOutput } {
+  const liasseComputation = produceLiasse({ fiscalResult, identite });
+
+  if (!liasseComputation.liasse) {
+    return { status: "blocked", anomalies: liasseComputation.anomalies };
+  }
+
+  const liasse = liasseComputation.liasse;
+  const form = liasse.formulairesGeneres[0];
+
+  const liasseResult: LiasseEngineOutput = {
+    exercice: liasse.exercice,
+    form2031Generated: true,
+    caseCount: form?.cases.length ?? 0,
+    cases: form?.cases ?? [],
+    formulairesManquants: [...liasse.formulairesManquants],
+    trace: liasse.trace,
+    generatedAt: liasse.trace.generatedAt,
+  };
+  return { status: "ok", liasseResult };
+}
+
+export type GenerationOutputInput = {
+  fiscalResult: FiscalResult;
+  identite: IdentiteDeclarante;
+  liasseResult: LiasseEngineOutput;
+  fiscalYear: number;
+  /** Mono : bloc unique. Multi : absent, remplacé par `immobilisationsParBien` (jamais les deux). */
+  immobilisations?: ImmobilisationsRfs;
+  immobilisationsSource?: string;
+  immobilisationsParBien?: ImmobilisationsBienRfs[];
+  detailCharges2033B?: ConservationDetail2033B;
+  emprunts: EmpruntRfs[] | undefined;
+  bilanInputs?: BilanInputs;
+  dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision };
+  fiscalYearOpening?: FiscalYearOpening;
+};
+
+export function assembleGenerationOutput(input: GenerationOutputInput): DeclarationGenerationResult {
+  const {
+    fiscalResult, identite, liasseResult, fiscalYear, immobilisations, immobilisationsSource, immobilisationsParBien,
+    detailCharges2033B, emprunts, bilanInputs, dispense2033AIntake, fiscalYearOpening,
+  } = input;
+  const multiBlocks = {
+    ...(immobilisationsParBien !== undefined ? { immobilisationsParBien } : {}),
+    ...(detailCharges2033B !== undefined ? { detailCharges2033B } : {}),
+  };
+
   // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — correction audit
   // contradictoire : AUCUNE dérivation automatique depuis `dateMiseEnService`
   // (date de mise en service du BIEN, jamais une preuve de l'ancienneté de
@@ -569,6 +627,7 @@ export function runDeclarationGeneration(
     identite,
     immobilisations,
     immobilisationsSource,
+    ...multiBlocks,
     emprunts,
     dispense2033A,
   });
@@ -582,6 +641,7 @@ export function runDeclarationGeneration(
           identite,
           immobilisations,
           immobilisationsSource,
+          ...multiBlocks,
           emprunts,
           patrimoine: assemblePatrimoine(rfsSansPatrimoine, bilanInputs),
           dispense2033A,
