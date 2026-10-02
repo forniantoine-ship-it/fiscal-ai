@@ -17,7 +17,7 @@ import { ValidationGenerateCta } from "@/components/lmnp/validation-workflow/Val
 import { ValidationHero } from "@/components/lmnp/validation-workflow/ValidationHero";
 import { ValidationIncompleteCard } from "@/components/lmnp/validation-workflow/ValidationIncompleteCard";
 import { ValidationInpiBlock } from "@/components/lmnp/validation-workflow/ValidationInpiBlock";
-import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
+import { buildBlockingReasonRows, ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
 import { PatrimonialIntakeCard } from "@/components/lmnp/documents/PatrimonialIntakeCard";
 import { derivePatrimonialRoutage } from "@/lib/lmnp/services/declaration/patrimonial-intake";
 import { Dispense2033AIntakeCard, type Dispense2033AIntakeValue } from "@/components/lmnp/documents/Dispense2033AIntakeCard";
@@ -52,7 +52,8 @@ import {
   formatLiasseCoverageMessage,
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
-import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
+import { isMultiPropertyBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveImmobilisationsContinuityForGeneration } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   canOfferPaymentWithoutCerfa,
@@ -156,18 +157,17 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           continuiteNativeVerifiee: fiscalYear.continuiteNativeVerifiee,
         }),
         priorHistory,
-        // Lot 5.3 — même Opening que runDeclarationGeneration (7e argument).
+        // Lot 5.3 — même Opening que la génération (7e argument de l'historique).
         fiscalYearOpening,
+        // R2C.3c2d — workspace canonique du provider (aucun second assembleur) : documents compris. Mono : sans effet ; scoped
+        // mono : vue plate canonique ; scoped multi : readiness/preview PUR, toujours user-blocked.
+        workspace: { fiscalYear, properties: workspace.properties, documents: workspace.documents, declarationDraft: draft },
       }),
     [
       draft,
-      fiscalYear.immobilisationsOuverture,
-      fiscalYear.repriseHistoriqueEnContinuite,
-      fiscalYear.previousFiscalYearId,
-      fiscalYear.continuiteNativeVerifiee,
-      fiscalYear.propertyIds,
-      fiscalYear.stocksOuverture,
-      fiscalYear.year,
+      // R2C.3c2d — `fiscalYear` entier (le workspace transmis à la gate le porte) : couvre les champs de continuité listés avant.
+      fiscalYear,
+      workspace.documents,
       fiscalYearOpening,
       generated,
       paid,
@@ -176,6 +176,11 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     ],
   );
   const snapshot = gate.snapshot;
+  // R2C.3c2d — raisons structurées d'un dossier multi (propertyId / domain / recoverable conservés jusqu'ici).
+  const multiBlockingRows = useMemo(
+    () => (gate.workspaceReadiness ? buildBlockingReasonRows(gate.workspaceReadiness.blockingReasons, workspace.properties) : undefined),
+    [gate.workspaceReadiness, workspace.properties],
+  );
 
   const [phase, setPhase] = useState<FlowPhase>("idle");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -326,6 +331,12 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   );
 
   const handleGenerationComplete = useCallback(() => {
+    // R2C.3c2d — défense en profondeur : JAMAIS de génération utilisateur multi (la gate interdit déjà canGenerate), ni calcul,
+    // ni persistance, ni version de déclaration.
+    if (isMultiPropertyBlocked(workspace)) {
+      setPhase("idle");
+      return;
+    }
     // P0 — jamais de F-006 avec des stocks d'ouverture par défaut ([] / 0) pour
     // un exercice dont l'antériorité n'est pas établie.
     // Lot 5.3 — même preuve Opening que eligibility / gate / checkout.
@@ -350,16 +361,16 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       previousFiscalYearId: fiscalYear.previousFiscalYearId,
       continuiteNativeVerifiee: fiscalYear.continuiteNativeVerifiee,
     });
-    const outcome = runDeclarationGeneration(
-      draft,
-      fiscalYear.year,
-      fiscalYear.stocksOuverture?.stocks,
-      draft?.bilanPatrimonial,
-      draft?.dispense2033A,
+    // R2C.3c2d — UN seul seam : le service workspace. Legacy mono : délégation verbatim à l'historique (mêmes arguments) ;
+    // scoped mono : historique via sa vue plate canonique (3c2a). Le multi n'arrive jamais ici (garde ci-dessus).
+    const outcome = runDeclarationGenerationFromWorkspace(workspace, {
+      stocksOuverture: fiscalYear.stocksOuverture?.stocks,
+      bilanInputs: draft?.bilanPatrimonial,
+      dispense2033AIntake: draft?.dispense2033A,
       continuity,
       // Lot 5.3 — Opening externe persistée (même objet que eligibility / gate).
       fiscalYearOpening,
-    );
+    });
 
     if (outcome.status === "blocked") {
       setPhase("idle");
@@ -409,7 +420,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
       declarationsHref ?? undefined,
     );
     if (declarationsHref) router.push(declarationsHref);
-  }, [declarationsHref, dispatch, draft, fiscalYear, fiscalYearOpening, router, showSuccess, workspace.properties]);
+  }, [declarationsHref, dispatch, draft, fiscalYear, fiscalYearOpening, router, showSuccess, workspace]);
 
   if (generated && paid && !gate.canGenerate && !priorHistoryBlocked) {
     // P0-2a — le statut affiché ne doit jamais suggérer une "liasse complète"
@@ -642,7 +653,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
           </p>
 
           {snapshot.isMultiProperty ? (
-            <ValidationMultiPropertyBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />
+            <ValidationMultiPropertyBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} reasons={multiBlockingRows} />
           ) : (
             <>
               <ValidationPricingBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} />

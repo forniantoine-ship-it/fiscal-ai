@@ -3,7 +3,7 @@ import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } from "./run-declaration-generation";
 import { runDeclarationGenerationFromWorkspace } from "./generation-workspace";
-import { resolveWorkspaceReadiness } from "./workspace-readiness";
+import { resolveWorkspaceReadiness, type WorkspaceReadiness } from "./workspace-readiness";
 import { resolveConsolidationInput } from "../../dossier/bien-draft";
 import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode } from "../../dossier/multi-property-activation";
 import type { PersistedWorkspace } from "../../store/persistence";
@@ -63,6 +63,12 @@ export type DeclarationGenerationGate = {
    * sont à `false` : ni paiement, ni régénération, ni génération.
    */
   priorHistory?: PriorHistoryEligibility;
+  /**
+   * R2C.3c2d — présent UNIQUEMENT pour un workspace scoped MULTI évalué avec `input.workspace` : readiness technique (complétude par
+   * bien + `blockingReasons` structurées : code, propertyId, domain, recoverable). Information de VISIBILITÉ : n'accorde jamais
+   * `canGenerate` / `canCheckout` / `canRetryAfterPayment` (toujours false en multi).
+   */
+  workspaceReadiness?: WorkspaceReadiness;
 };
 
 const RECOVERY_BY_FIELD: Record<string, MissingDossierItem> = {
@@ -472,9 +478,12 @@ export function resolveDeclarationGenerationGate(input: {
     };
   }
 
-  // R2C.3c2c — scoped multi : fraîcheur évaluée par le preview du service workspace, jamais par le draft à plat.
-  if (input.generated && workspace && isMultiPropertyWorkspace(workspace)) {
-    return resolveMultiPropertyReferenceGeneration(input, snapshot, workspace);
+  // R2C.3c2c/3c2d — scoped multi : évalué par le preview du service workspace (fraîcheur si déjà généré, readiness technique
+  // sinon), jamais par le draft à plat. TOUJOURS user-blocked.
+  if (workspace && isMultiPropertyWorkspace(workspace)) {
+    return input.generated
+      ? resolveMultiPropertyReferenceGeneration(input, snapshot, workspace)
+      : resolveMultiPropertyTechnicalState(input, snapshot, workspace);
   }
 
   if (input.generated) {
@@ -648,11 +657,12 @@ function resolveMultiPropertyReferenceGeneration(
     continuity: input.continuity,
     fiscalYearOpening: input.fiscalYearOpening,
   });
+  const workspaceReadiness = resolveWorkspaceReadiness(workspace, preview);
   if (preview.status === "blocked") {
-    return { ...userBlocked, blockingAnomalies: preview.anomalies, referenceGenerationStatus: "blocked" };
+    return { ...userBlocked, blockingAnomalies: preview.anomalies, referenceGenerationStatus: "blocked", workspaceReadiness };
   }
-  if (!resolveWorkspaceReadiness(workspace, preview).technicalReady) {
-    return { ...userBlocked, referenceGenerationStatus: "incomplete" };
+  if (!workspaceReadiness.technicalReady) {
+    return { ...userBlocked, referenceGenerationStatus: "incomplete", workspaceReadiness };
   }
 
   const drifted =
@@ -666,5 +676,35 @@ function resolveMultiPropertyReferenceGeneration(
     ...userBlocked,
     fiscalResult: preview.fiscalResult,
     referenceGenerationStatus: drifted ? "stale" : "current",
+    workspaceReadiness,
+  };
+}
+
+/**
+ * R2C.3c2d — scoped multi AVANT génération : readiness technique et raisons structurées pour que l'écran COMPRENNE l'état du
+ * dossier. Même preview pur que ci-dessus (aucune persistance, aucun dispatch). Aucune capacité accordée : le multi est reconnu,
+ * jamais activé. `recoveryItems` garde le contenu historique (étapes à plat) ; la lecture fine est dans `workspaceReadiness`.
+ */
+function resolveMultiPropertyTechnicalState(
+  input: Parameters<typeof resolveDeclarationGenerationGate>[0],
+  snapshot: ValidationDossierSnapshot,
+  workspace: GateWorkspace,
+): DeclarationGenerationGate {
+  const draft = input.draft;
+  const preview = runDeclarationGenerationFromWorkspace(workspace, {
+    stocksOuverture: input.stocksOuverture,
+    bilanInputs: draft?.bilanPatrimonial,
+    dispense2033AIntake: draft?.dispense2033A,
+    continuity: input.continuity,
+    fiscalYearOpening: input.fiscalYearOpening,
+  });
+  return {
+    snapshot,
+    canCheckout: false,
+    canRetryAfterPayment: false,
+    canGenerate: false,
+    blockingAnomalies: [],
+    recoveryItems: snapshot.missing,
+    workspaceReadiness: resolveWorkspaceReadiness(workspace, preview),
   };
 }

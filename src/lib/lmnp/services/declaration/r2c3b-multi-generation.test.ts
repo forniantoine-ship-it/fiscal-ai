@@ -580,15 +580,15 @@ describe("R2C.3b — garde-fous source", () => {
     assert.equal((core.match(/= produceLiasse\(\{/g) ?? []).length, 1);
   });
 
-  it("G33 — generation-workspace n'a qu'UN appelant de production : le PREVIEW pur de la gate (R2C.3c2c, fraîcheur multi)", () => {
+  it("G33 — generation-workspace n'a que DEUX appelants de production documentés : le PREVIEW pur de la gate (R2C.3c2c) et le seam de génération mono/scoped mono de l'écran de validation, gardé contre le multi (R2C.3c2d)", () => {
     const offenders = walk(path.join(ROOT, "src")).filter((file) => {
       const relative = path.relative(ROOT, file);
       if (/\.test\.(ts|tsx)$/.test(relative) || relative === WORKSPACE_SERVICE) return false;
       const code = readFileSync(file, "utf8");
       return /generation-workspace|runDeclarationGenerationFromWorkspace/.test(code);
     });
-    // R2C.3c2c : seul appelant autorisé = la gate (preview pur : aucune persistance, aucun dispatch, aucun paiement).
-    assert.deepEqual(offenders.map((file) => path.relative(ROOT, file)), ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    // R2C.3c2c : la gate (preview pur). R2C.3c2d : l'écran de validation (génération mono / scoped mono ; garde multi en tête du handler).
+    assert.deepEqual(offenders.map((file) => path.relative(ROOT, file)), ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
   it("hors scope — paiement, validation, cycle fiscal et panneaux ne référencent pas le nouveau service", () => {

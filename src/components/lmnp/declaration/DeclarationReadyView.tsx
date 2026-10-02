@@ -16,6 +16,8 @@ import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-ai
 import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
+import { isMultiPropertyBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
+import { ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
 import {
   resolveFinalDeclarabilityState,
   FINAL_DECLARABILITY_BLOCKED_MESSAGE,
@@ -71,8 +73,10 @@ export function DeclarationReadyView() {
         fiscalYear,
         declarationDraft: workspace.declarationDraft,
         properties: workspace.properties,
+        // R2C.3c2d — documents du workspace canonique : le preview multi voit les documents non attribués (jamais un faux « à jour »).
+        documents: workspace.documents,
       }),
-    [fiscalYear, workspace.declarationDraft, workspace.properties],
+    [fiscalYear, workspace.declarationDraft, workspace.properties, workspace.documents],
   );
 
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
@@ -116,7 +120,7 @@ export function DeclarationReadyView() {
   // projection incomplète, voir final-declarability.ts.
   const declarability = resolveFinalDeclarabilityState(workspace.declarationDraft?.liasseRfs);
   const canDownloadLiasse = Boolean(
-    rfs && declarationVersionId && !declarationOutOfDate && declarability.deliverable,
+    rfs && declarationVersionId && !declarationOutOfDate && declarability.deliverable && !isMultiPropertyBlocked(workspace),
   );
 
   const handleDownloadLiasseFiscale = async () => {
@@ -145,6 +149,18 @@ export function DeclarationReadyView() {
       setLiasseDownloading(false);
     }
   };
+
+  // R2C.3c2d — un dossier multi n'est JAMAIS présenté comme généré / prêt à transmettre ou à payer, même si des sorties existaient :
+  // état bloqué sans aucun CTA de génération, paiement, téléchargement ni clôture (primitive existante, aucun redesign).
+  if (isMultiPropertyBlocked(workspace)) {
+    return (
+      <div className="relative mx-auto flex w-full max-w-4xl flex-col gap-6 pb-16">
+        <ValidationMultiPropertyBlock
+          cardStyle={{ borderRadius: radius.lg, border: `1px solid ${colors.border.subtle}`, padding: spacing.card.md }}
+        />
+      </div>
+    );
+  }
 
   if (!fiscalResult || !liasseResult) {
     return (

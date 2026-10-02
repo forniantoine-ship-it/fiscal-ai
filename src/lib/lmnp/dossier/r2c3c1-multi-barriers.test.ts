@@ -274,9 +274,9 @@ describe("R2C.3c1 — panels et moteur", () => {
     assert.equal(diff, "");
   });
 
-  it("S22 — seul appelant de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c)", () => {
+  it("S22 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d)", () => {
     const files = execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
     const callers = files.filter((file) => !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") && source(file).includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 });

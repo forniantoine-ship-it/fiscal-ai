@@ -480,7 +480,8 @@ describe("R2C.3c2c — filet A : le reducer efface declarationGeneratedAt ; file
 describe("R2C.3c2c — garde-fous de périmètre", () => {
   const files = () => execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
   const src = (file: string) => readFileSync(path.join(ROOT, file), "utf8");
-  const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
+  // Ancré sur le commit 3c2c lui-même (283ce27..da2d924) : l'invariant « 3c2c ne touche pas ces fichiers » ne dépend pas des slices suivantes.
+  const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} da2d9244cf20c33a31ebfff34915aea4028dbfae -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
   it("C35 — aucun hash / fingerprint / snapshot parallèle ajouté", () => {
     for (const file of ["declaration-generation-gate.ts", "declaration-freshness.ts"]) {
@@ -488,9 +489,9 @@ describe("R2C.3c2c — garde-fous de périmètre", () => {
     }
   });
 
-  it("C37 — le SEUL appelant de production du service workspace est la gate (preview pur, documenté)", () => {
+  it("C37 — la gate est le seul appelant PREVIEW du service workspace ; l'écran de validation (génération mono, R2C.3c2d) est le seul autre appelant", () => {
     const callers = files().filter((file) => !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") && src(file).includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
     const gate = src("src/lib/lmnp/services/declaration/declaration-generation-gate.ts");
     assert.doesNotMatch(gate, /\bdispatch\s*\(|localStorage|indexedDB|\bfetch\s*\(|\.upsert\(|\.insert\(|putScopedWorkspaceRecord|JOURNEY_MARK|appendDeclarationVersion/);
   });
