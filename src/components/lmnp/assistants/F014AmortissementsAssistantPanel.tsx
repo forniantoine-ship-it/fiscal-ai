@@ -10,6 +10,7 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
+import { f014GlobalUsageNoteApplicable } from "@/lib/lmnp/dossier/multi-property-activation";
 import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import { mergeComposantsF012 } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
@@ -304,7 +305,10 @@ function F014AmortissementsAssistantPanelBody() {
   const step = state.step;
   const lastMessage = messages[messages.length - 1];
 
+  const usageNoteApplicable = f014GlobalUsageNoteApplicable(workspace);
   const usageNote = useMemo(() => {
+    // R2C.3c1 — en multi, `fiscalResult` est le résultat GLOBAL : jamais présenté comme celui du bien actif.
+    if (!usageNoteApplicable) return undefined;
     const plan = state.result?.plan;
     const fiscalResult = draft?.fiscalResult;
     if (!plan || !fiscalResult || fiscalResult.exercice !== plan.exercice) return undefined;
@@ -315,7 +319,7 @@ function F014AmortissementsAssistantPanelBody() {
       amortDeduct: fiscalResult.amortDeduct,
       amortNonDeduitExercice: fiscalResult.amortNonDeduitExercice ?? 0,
     });
-  }, [state.result, draft?.fiscalResult]);
+  }, [usageNoteApplicable, state.result, draft?.fiscalResult]);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">

@@ -13,6 +13,11 @@ import {
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
+import {
+  isMultiPropertyRfs,
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  MULTI_PROPERTY_USER_ENABLED,
+} from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveFinalDeclarabilityState } from "@/lib/lmnp/services/declaration/final-declarability";
 import {
   defaultResolveDeliveryAccess,
@@ -120,6 +125,11 @@ export async function handleCerfaPdfRequest(
       { error: "La déclaration ne correspond pas à l'exercice payé.", code: "fiscal_year_mismatch" },
       { status: 403 },
     );
+  }
+  // R2C.3c1 — défense en profondeur (la source de vérité reste le snapshot serveur du checkout/de la transition) :
+  // une RFS portant le marqueur multi n'est jamais livrée tant que l'activation utilisateur est fermée.
+  if (!MULTI_PROPERTY_USER_ENABLED && isMultiPropertyRfs(rfs)) {
+    return NextResponse.json({ status: "blocked", reason: MULTI_PROPERTY_NOT_ENABLED_CODE }, { status: 422 });
   }
   if (!declarationVersionId) {
     return NextResponse.json({ error: "declarationVersionId requis." }, { status: 400 });

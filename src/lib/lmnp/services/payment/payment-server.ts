@@ -15,6 +15,7 @@ import {
   getServerSupabaseForUser,
 } from "@/lib/supabase-server";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
+import { createSupabaseSnapshotReader, type ReadServerSnapshot } from "../server-workspace-snapshot";
 import { GENERATION_PRICE_CENTS, PAYMENT_CURRENCY } from "./price";
 
 /** Configuration de paiement absente : échec fermé, jamais de repli (HTTP 503). */
@@ -293,6 +294,8 @@ export type PaymentDeps = {
   assertOwnership(dossierId: string, userId: string): Promise<void>;
   store: PaymentStore;
   stripe: StripeGateway;
+  /** R2C.3c1 — lecture serveur du snapshot de workspace (barrière multi-bien du checkout). */
+  readWorkspaceSnapshot: ReadServerSnapshot;
   /** Horloge injectable (tests) pour le verrou de clôture d'exercice ; absente ⇒ `new Date()`. */
   now?: () => Date;
 };
@@ -310,6 +313,7 @@ export function createDefaultPaymentDeps(): PaymentDeps {
     assertOwnership: (dossierId, userId) => assertDossierOwnership(client, dossierId, userId),
     store: createSupabasePaymentStore(client),
     stripe: createStripeGateway(new Stripe(stripeKey), webhookSecret),
+    readWorkspaceSnapshot: createSupabaseSnapshotReader(client),
   };
 }
 

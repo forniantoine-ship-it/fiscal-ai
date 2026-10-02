@@ -9,6 +9,7 @@ import { colors } from "@/design-system/theme/colors";
 import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
+import { f006FlatAssistantMountable } from "@/lib/lmnp/dossier/multi-property-activation";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp } from "@/lib/lmnp/store";
 import { financementChargesForGeneration } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
@@ -73,7 +74,31 @@ function suggestionToAction(suggestionId: string): F006Action | null {
   return null;
 }
 
+/**
+ * R2C.3c1 — l'assistant F006 lit le flat draft : faux en scoped multi (le calcul consolidé relève de R2C.3c2).
+ * Mono (legacy ou scoped à un seul bien) : assistant monté, inchangé.
+ */
 export function F006FiscalEnginePanel() {
+  const { workspace } = useLmnp();
+  if (!f006FlatAssistantMountable(workspace)) {
+    return (
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: spacing.scale[6] }}>
+        <Card>
+          <h1 style={{ ...typography.sectionTitle.desktop, marginBottom: spacing.scale[2] }}>Calcul fiscal</h1>
+          <p style={{ ...typography.body.desktop, color: colors.text.secondary }}>
+            Le calcul fiscal des dossiers comportant plusieurs biens n&apos;est pas encore disponible.
+          </p>
+          <Link href={LMNP_ROUTES.dashboard} style={{ ...typography.body.desktop, color: colors.text.primary }}>
+            Retour au tableau de bord
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+  return <F006FlatAssistantView />;
+}
+
+function F006FlatAssistantView() {
   const { workspace, dispatch } = useLmnp();
   const fiscalYear = workspace.fiscalYear.year;
   const draft = workspace.declarationDraft;

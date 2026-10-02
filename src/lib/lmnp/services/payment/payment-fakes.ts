@@ -14,6 +14,7 @@ import type {
   StripeGateway,
 } from "./payment-server";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
+import type { ServerSnapshotRow } from "../server-workspace-snapshot";
 
 export function createFakePaymentEnv() {
   const rows: PaymentRow[] = [];
@@ -22,6 +23,8 @@ export function createFakePaymentEnv() {
   const markPaidCalls: string[] = [];
   const created: CreateCheckoutSessionParams[] = [];
   const expired: string[] = [];
+  const snapshots = new Map<string, ServerSnapshotRow>(); // `${dossierId}:${fiscalYear}`
+  let snapshotReadCount = 0;
   const sessionStates = new Map<string, StripeCheckoutSessionInfo>();
   let seq = 0;
 
@@ -113,6 +116,10 @@ export function createFakePaymentEnv() {
     },
     store,
     stripe,
+    async readWorkspaceSnapshot(dossierId, fiscalYear) {
+      snapshotReadCount += 1;
+      return snapshots.get(`${dossierId}:${fiscalYear}`) ?? null;
+    },
     // Horloge fixe très postérieure : tous les exercices des tests sont « clos ».
     // Les tests du verrou de clôture la remplacent via `setNow`.
     now: () => clock.now,
@@ -128,6 +135,11 @@ export function createFakePaymentEnv() {
     },
     created,
     expired,
+    /** R2C.3c1 — snapshot serveur simulé d'un dossier (absent par défaut = mono historique). */
+    setSnapshot(dossierId: string, fiscalYear: number, row: ServerSnapshotRow) {
+      snapshots.set(`${dossierId}:${fiscalYear}`, row);
+    },
+    snapshotReads: () => snapshotReadCount,
     markPaidCalls,
     sessionStates,
     addUser(token: string, userId: string) {

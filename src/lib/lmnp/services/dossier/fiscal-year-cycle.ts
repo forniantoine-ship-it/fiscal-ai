@@ -28,6 +28,11 @@ import type {
   StocksOuvertureResult,
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
+import {
+  isMultiPropertyBlocked,
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+} from "../../dossier/multi-property-activation";
 import { resolveMonoPropertyId } from "../../dossier/property-scope";
 import { scopedBienView, type BienDraft } from "../../dossier/bien-draft";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
@@ -340,7 +345,14 @@ export function latestClosure(fiscalYear: Pick<FiscalYear, "closures">): FiscalY
   return closures.length > 0 ? closures[closures.length - 1] : undefined;
 }
 
-export type CreateNextFiscalYearPrecondition = { ok: true } | { ok: false; reason: string };
+/** `code` : raison structurée optionnelle (R2C.3c1 : barrière multi-bien). Les refus historiques n'en portent pas. */
+export type CreateNextFiscalYearPrecondition = { ok: true } | { ok: false; reason: string; code?: typeof MULTI_PROPERTY_NOT_ENABLED_CODE };
+
+const MULTI_PROPERTY_REFUSAL: CreateNextFiscalYearPrecondition = {
+  ok: false,
+  reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+  code: MULTI_PROPERTY_NOT_ENABLED_CODE,
+};
 
 /**
  * Préconditions 3/4 de CREATE_NEXT_FISCAL_YEAR (P0-1 v2) : l'exercice courant
@@ -349,7 +361,14 @@ export type CreateNextFiscalYearPrecondition = { ok: true } | { ok: false; reaso
  * la création doit être refusée avant tout effet (aucun dispatch, aucune
  * écriture).
  */
-export function canCreateNextFiscalYear(fiscalYear: FiscalYear): CreateNextFiscalYearPrecondition {
+export function canCreateNextFiscalYear(
+  fiscalYear: FiscalYear,
+  context?: Pick<PersistedWorkspace, "properties" | "declarationDraft">,
+): CreateNextFiscalYearPrecondition {
+  // R2C.3c1 — barrière multi explicite : un exercice source déjà clos ne la contourne jamais.
+  if (isMultiPropertyBlocked({ fiscalYear, properties: context?.properties, declarationDraft: context?.declarationDraft })) {
+    return MULTI_PROPERTY_REFUSAL;
+  }
   if (fiscalYear.status !== "closed") {
     return { ok: false, reason: "L'exercice courant n'est pas clôturé — impossible de créer l'exercice suivant." };
   }
@@ -379,6 +398,9 @@ export function canCloseFiscalYear(input: {
   properties: Property[];
 }): CreateNextFiscalYearPrecondition {
   const { fiscalYear, declarationDraft, properties } = input;
+
+  // R2C.3c1 — refus multi explicite, AVANT tout autre contrôle : indépendant du statut, de la génération et du gate.
+  if (isMultiPropertyBlocked({ fiscalYear, properties, declarationDraft })) return MULTI_PROPERTY_REFUSAL;
 
   if (fiscalYear.status !== "ready_to_close") {
     return { ok: false, reason: "L'exercice n'est pas prêt à être clôturé." };

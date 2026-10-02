@@ -13,10 +13,15 @@ import { snapshotImmobilisationsFromGeneratedRfs } from "@/lib/lmnp/services/dos
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import type { FiscalYear } from "@/lib/lmnp/types/domain";
+import {
+  isMultiPropertyBlocked,
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+} from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 export type PrepareTransitionFailure =
-  | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" };
+  | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" | "multi_property_not_enabled" };
 
 export type PrepareTransitionSuccess = {
   ok: true;
@@ -41,6 +46,11 @@ export function prepareFiscalYearTransitionCandidate(input: {
   nextFiscalYearId?: string;
 }): PrepareTransitionResult {
   const { workspace, dossierId, now } = input;
+  // R2C.3c1 — barrière multi explicite AVANT resolveMonoPropertyId / snapshot mono / préparation N+1 (R2C.5 les rendra
+  // multi-compatibles). Source ouverte ou déjà close : même refus.
+  if (isMultiPropertyBlocked(workspace)) {
+    return { ok: false, reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE };
+  }
   const sourceAlreadyClosed = workspace.fiscalYear.status === "closed";
 
   if (!sourceAlreadyClosed) {
@@ -53,7 +63,7 @@ export function prepareFiscalYearTransitionCandidate(input: {
       return { ok: false, reason: precondition.reason, code: "not_ready" };
     }
   } else {
-    const precondition = canCreateNextFiscalYear(workspace.fiscalYear);
+    const precondition = canCreateNextFiscalYear(workspace.fiscalYear, workspace);
     if (!precondition.ok) {
       return { ok: false, reason: precondition.reason, code: "not_ready" };
     }

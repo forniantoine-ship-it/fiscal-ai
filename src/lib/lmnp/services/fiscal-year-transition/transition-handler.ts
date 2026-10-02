@@ -21,6 +21,15 @@ import {
   getPaymentServiceClient,
   type PaymentStore,
 } from "@/lib/lmnp/services/payment/payment-server";
+import {
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+} from "@/lib/lmnp/dossier/multi-property-activation";
+import {
+  createSupabaseSnapshotReader,
+  isMultiPropertyBarrierActive,
+  type ReadServerSnapshot,
+} from "@/lib/lmnp/services/server-workspace-snapshot";
 import { commitFiscalYearTransition } from "./commit-transition";
 import { commitFiscalYearTransitionViaRpc } from "./supabase-rpc";
 import {
@@ -32,6 +41,8 @@ import {
 export type TransitionHandlerDeps = {
   authenticate: (authToken: string | undefined) => Promise<{ userId: string }>;
   assertOwnership: (dossierId: string, userId: string) => Promise<void>;
+  /** R2C.3c1 — lecture serveur du snapshot source (barrière multi-bien, avant paiement et RPC). */
+  readWorkspaceSnapshot: ReadServerSnapshot;
   /** Lot 6B — entitlement lookup keyed by (dossierId, fiscalYear). */
   paymentStore: Pick<PaymentStore, "getByDossierYear">;
   commit: (input: {
@@ -98,6 +109,8 @@ export function createDefaultTransitionHandlerDeps(): TransitionHandlerDeps {
       await assertDossierOwnership(supabase, dossierId, userId);
     },
     paymentStore,
+    readWorkspaceSnapshot: (dossierId, fiscalYear) =>
+      createSupabaseSnapshotReader(getServerSupabaseUnscoped())(dossierId, fiscalYear),
     commit: async (input) => {
       const supabase = getServerSupabaseUnscoped();
       return commitFiscalYearTransitionViaRpc(supabase, input);
@@ -145,6 +158,10 @@ export function createStoreBackedTransitionHandlerDeps(
     assertOwnership: async (dossierId, userId) => {
       const dossier = await store.getDossier(dossierId);
       if (!dossier || dossier.userId !== userId) throw new OwnershipError();
+    },
+    readWorkspaceSnapshot: async (dossierId, fiscalYear) => {
+      const row = await store.getSnapshot(dossierId, fiscalYear);
+      return row ? { schemaVersion: row.schemaVersion, payload: row.payload } : null;
     },
     paymentStore: options?.paymentStore ?? alwaysPaidPaymentStore(),
     commit: (input) => commitFiscalYearTransition(store, input),
@@ -199,6 +216,17 @@ export async function handleFiscalYearTransitionRequest(
     }
 
     await deps.assertOwnership(dossierId, userId);
+
+    // R2C.3c1 — barrière multi-bien : snapshot SERVEUR de la source ET payloads transmis, AVANT paiement et RPC.
+    if (
+      await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, {
+        dossierId,
+        fiscalYear: fromYear,
+        transmittedPayloads: [closedNPayload, nextPayload],
+      })
+    ) {
+      return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
+    }
 
     // Lot 6B — paiement N (fromYear) obligatoire avant commit. Clé exacte :
     // (dossierId, fromYear). Jamais nextYear, jamais paidAt local.

@@ -1,0 +1,41 @@
+/**
+ * R2C.3c1 — lecture SERVEUR du snapshot de workspace pour les barrières multi-bien (checkout, transition).
+ *
+ * Aucune confiance accordée au client : le mode multi est déduit de `lmnp_workspace_snapshots`. Absence de ligne =
+ * jamais bloquante (mono historique). Erreur de lecture = l'erreur remonte (échec fermé : on ne peut pas prouver
+ * que le dossier n'est pas multi). Aucune écriture.
+ */
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import {
+  isMultiPropertyPayload,
+  isMultiPropertySnapshotRow,
+  MULTI_PROPERTY_USER_ENABLED,
+} from "@/lib/lmnp/dossier/multi-property-activation";
+
+export type ServerSnapshotRow = { schemaVersion: number; payload: unknown };
+export type ReadServerSnapshot = (dossierId: string, fiscalYear: number) => Promise<ServerSnapshotRow | null>;
+
+export function createSupabaseSnapshotReader(client: SupabaseClient): ReadServerSnapshot {
+  return async (dossierId, fiscalYear) => {
+    const { data, error } = await client
+      .from("lmnp_workspace_snapshots")
+      .select("schema_version, payload")
+      .eq("dossier_id", dossierId)
+      .eq("fiscal_year", fiscalYear)
+      .maybeSingle();
+    if (error) throw new Error(`workspace snapshot lookup failed: ${error.message}`);
+    if (!data) return null;
+    return { schemaVersion: Number((data as { schema_version: unknown }).schema_version), payload: (data as { payload: unknown }).payload };
+  };
+}
+
+/** `true` : la barrière multi-bien doit refuser (snapshot serveur multi, et/ou payloads transmis multi). */
+export async function isMultiPropertyBarrierActive(
+  read: ReadServerSnapshot,
+  input: { dossierId: string; fiscalYear: number; transmittedPayloads?: readonly unknown[] },
+): Promise<boolean> {
+  if (MULTI_PROPERTY_USER_ENABLED) return false;
+  if (isMultiPropertySnapshotRow(await read(input.dossierId, input.fiscalYear))) return true;
+  return (input.transmittedPayloads ?? []).some(isMultiPropertyPayload);
+}

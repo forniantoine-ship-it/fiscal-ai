@@ -6,6 +6,8 @@
  *
  *   1. authentification            → 401
  *   2. propriété du dossier        → 403
+ *   2b. dossier multi-bien (snapshot SERVEUR, R2C.3c1) → 409 `multi_property_not_enabled`
+ *       (AVANT toute ligne, toute session Stripe ; jamais un booléen client)
  *   3. exercice terminé            → 409 `fiscal_year_not_closed` (ni ligne, ni session)
  *   4. éligibilité d'antériorité   → 403 `prior_history_not_eligible` (AVANT tout argent)
  *   5. entitlement déjà payé       → 200 `already_paid` (aucun second paiement)
@@ -15,6 +17,11 @@
  * Le prix, la devise et l'identité viennent du serveur ; le client ne fournit
  * que `dossierId`, `fiscalYear` et ses faits de continuité (non fiables).
  */
+import {
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+} from "@/lib/lmnp/dossier/multi-property-activation";
+import { isMultiPropertyBarrierActive } from "../server-workspace-snapshot";
 import {
   isNonEmptyString,
   jsonResponse,
@@ -98,6 +105,10 @@ export async function handleCheckoutRequest(
     }
 
     await deps.assertOwnership(dossierId, userId);
+
+    if (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, { dossierId, fiscalYear })) {
+      return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
+    }
 
     const notClosed = rejectUnclosedFiscalYear(deps, fiscalYear);
     if (notClosed) return notClosed;

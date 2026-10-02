@@ -10,6 +10,10 @@
  *   → SI échec : gate blocked, pas de dispatch éditable, erreur POST-COMMIT
  *     (serveur déjà N+1 — reload/cold restore ; jamais reseed)
  */
+import {
+  isMultiPropertyBlocked,
+  MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+} from "@/lib/lmnp/dossier/multi-property-activation";
 import { prepareFiscalYearTransitionCandidate } from "@/lib/lmnp/services/fiscal-year-transition/prepare-transition";
 import type { TransitionCommitResult } from "@/lib/lmnp/services/fiscal-year-transition/types";
 import { parseWorkspaceSnapshot } from "./workspace-snapshot";
@@ -171,6 +175,13 @@ export async function runServerFiscalYearTransition(
     }
     if (!userId) {
       onError("Utilisateur non identifié — impossible de transitionner l'exercice pour l'instant.");
+      return;
+    }
+
+    // R2C.3c1 — seam local unique des deux gestes (CLOSE_FISCAL_YEAR_AND_CREATE_NEXT / CREATE_NEXT_FISCAL_YEAR) : refus
+    // multi AVANT le flush (écriture du snapshot), le serveur et tout dispatch.
+    if (isMultiPropertyBlocked(workspace)) {
+      onError(MULTI_PROPERTY_NOT_ENABLED_MESSAGE);
       return;
     }
 
