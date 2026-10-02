@@ -2,7 +2,7 @@
 id: SAV-031
 title: "Granularité du plafond 39 C en LMNP multi-bien"
 type: savoir
-status: review
+status: approved
 version: "0.1"
 created: 2026-10-02
 updated: 2026-10-02
