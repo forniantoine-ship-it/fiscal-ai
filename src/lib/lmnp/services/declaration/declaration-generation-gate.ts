@@ -2,10 +2,15 @@ import type { Anomaly } from "@/runtime";
 import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } from "./run-declaration-generation";
+import { runDeclarationGenerationFromWorkspace } from "./generation-workspace";
+import { resolveWorkspaceReadiness } from "./workspace-readiness";
+import { resolveConsolidationInput } from "../../dossier/bien-draft";
+import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode } from "../../dossier/multi-property-activation";
+import type { PersistedWorkspace } from "../../store/persistence";
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
 import type { PriorHistoryEligibility } from "./prior-history-eligibility";
 import type { PatrimonialState } from "@/runtime/capabilities/bilan/types";
-import type { ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
+import type { ImmobilisationsBienRfs, ImmobilisationsRfs } from "@/runtime/capabilities/rfs/types";
 import {
   buildValidationDossierSnapshot,
   type MissingDossierItem,
@@ -352,6 +357,39 @@ function immobilisationsChanged(
 }
 
 /**
+ * R2C.3c2c — projection sémantique des immobilisations PAR BIEN (RFS multi : `immobilisationsParBien`, à la place du bloc mono
+ * `immobilisations`). Un élément par bloc : `propertyId` (identité — A et B ne sont jamais interchangeables ni fusionnés),
+ * `dotationsExercice` (répartition 2033-C) et la projection MONO existante du bloc (mêmes exclusions : libellés, provenance ;
+ * lignes triées par identité). Ordre externe : `propertyId`, puis contenu — indépendant de l'ordre des biens. `undefined` si le
+ * RFS n'est pas multi : une RFS mono-forme face à un workspace multi ne se projette jamais comme « identique ».
+ */
+export function immobilisationsParBienSemanticProjection(blocks: readonly ImmobilisationsBienRfs[] | undefined) {
+  if (!blocks) return undefined;
+  return blocks
+    .map((block) => ({
+      propertyId: block.propertyId,
+      dotationsExercice: block.dotationsExercice,
+      immobilisations: immobilisationsSemanticProjection(block.immobilisations),
+    }))
+    .sort((a, b) => (a.propertyId < b.propertyId ? -1 : a.propertyId > b.propertyId ? 1 : 0) || compareJson(a, b));
+}
+
+function compareJson(a: unknown, b: unknown): number {
+  const left = JSON.stringify(a);
+  const right = JSON.stringify(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function immobilisationsParBienChanged(
+  stored: readonly ImmobilisationsBienRfs[] | undefined,
+  preview: readonly ImmobilisationsBienRfs[] | undefined,
+): boolean {
+  return !isDeepEqualPlainValue(immobilisationsParBienSemanticProjection(stored), immobilisationsParBienSemanticProjection(preview));
+}
+
+type GateWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "documents" | "declarationDraft">;
+
+/**
  * Porte unique entre l'écran de validation et F-006/F-007.
  * Ne change aucune règle fiscale : elle refuse le paiement si la génération
  * serait bloquée, et autorise un nouvel essai si le paiement a déjà été
@@ -407,8 +445,20 @@ export function resolveDeclarationGenerationGate(input: {
    * `runDeclarationGeneration`). Absent = chemins sans reprise externe.
    */
   fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
+  /**
+   * R2C.3c2c — workspace complet, OPTIONNEL : fourni par l'appelant de FRAÎCHEUR (`resolveDeclarationOutOfDate`). Absent = chemin
+   * historique strictement inchangé (écran de validation, `canCloseFiscalYear`). Présent : un scoped mono est évalué sur sa vue
+   * plate canonique (comme un legacy mono) ; un scoped multi est évalué par le service workspace (preview pur) — toujours
+   * USER-BLOCKED (`canGenerate` / `canCheckout` / `canRetryAfterPayment` restent false).
+   */
+  workspace?: GateWorkspace;
 }): DeclarationGenerationGate {
-  const snapshot = buildValidationDossierSnapshot(input.draft, input.properties, input.fiscalYear);
+  const workspace = input.workspace;
+  // Scoped mono : vue plate canonique du bien (même contrat que le service workspace), jamais la racine scopée.
+  const consolidationInput =
+    workspace && resolveWorkspacePropertyMode(workspace).kind === "scoped_mono" ? resolveConsolidationInput(workspace) : undefined;
+  const draft: DeclarationDraft | undefined = consolidationInput?.kind === "single_declaration" ? consolidationInput.draft : input.draft;
+  const snapshot = buildValidationDossierSnapshot(draft, input.properties, input.fiscalYear);
 
   if (input.priorHistory && !input.priorHistory.eligible) {
     return {
@@ -422,8 +472,13 @@ export function resolveDeclarationGenerationGate(input: {
     };
   }
 
+  // R2C.3c2c — scoped multi : fraîcheur évaluée par le preview du service workspace, jamais par le draft à plat.
+  if (input.generated && workspace && isMultiPropertyWorkspace(workspace)) {
+    return resolveMultiPropertyReferenceGeneration(input, snapshot, workspace);
+  }
+
   if (input.generated) {
-    const stored = input.draft?.fiscalResult;
+    const stored = draft?.fiscalResult;
     if (!stored) {
       return {
         snapshot,
@@ -456,11 +511,11 @@ export function resolveDeclarationGenerationGate(input: {
     // en continuité.
     // Lot 5 B2 — même continuité immobilisations que ValidationDocumentStep.
     const preview = runDeclarationGeneration(
-      input.draft,
+      draft,
       input.fiscalYear,
       input.stocksOuverture,
-      input.draft?.bilanPatrimonial,
-      input.draft?.dispense2033A,
+      draft?.bilanPatrimonial,
+      draft?.dispense2033A,
       input.continuity,
       input.fiscalYearOpening,
     );
@@ -478,11 +533,11 @@ export function resolveDeclarationGenerationGate(input: {
 
     const drifted =
       fiscalEngineOutputChanged(stored, preview.fiscalResult) ||
-      identiteChanged(input.draft, input.fiscalYear) ||
-      patrimoineChanged(input.draft?.rfs?.patrimoine, preview.rfs.patrimoine) ||
+      identiteChanged(draft, input.fiscalYear) ||
+      patrimoineChanged(draft?.rfs?.patrimoine, preview.rfs.patrimoine) ||
       // Comme `identiteChanged` : sans RFS stockée, aucun inventaire à comparer.
-      (input.draft?.rfs !== undefined &&
-        immobilisationsChanged(input.draft.rfs.immobilisations, preview.rfs.immobilisations));
+      (draft?.rfs !== undefined &&
+        immobilisationsChanged(draft.rfs.immobilisations, preview.rfs.immobilisations));
 
     if (drifted) {
       return {
@@ -531,11 +586,11 @@ export function resolveDeclarationGenerationGate(input: {
   // Lot 5 B2 — idem : même continuité immobilisations.
   // Lot 4F.2 — idem : même fiscalYearOpening que la génération réelle.
   const preview = runDeclarationGeneration(
-    input.draft,
+    draft,
     input.fiscalYear,
     input.stocksOuverture,
-    input.draft?.bilanPatrimonial,
-    input.draft?.dispense2033A,
+    draft?.bilanPatrimonial,
+    draft?.dispense2033A,
     input.continuity,
     input.fiscalYearOpening,
   );
@@ -558,5 +613,58 @@ export function resolveDeclarationGenerationGate(input: {
     blockingAnomalies: [],
     recoveryItems: [],
     fiscalResult: preview.fiscalResult,
+  };
+}
+
+/**
+ * R2C.3c2c — référence stockée d'un workspace scoped MULTI vs preview courant. Seul NOUVEL appelant de production du service
+ * workspace : PREVIEW pur (aucune persistance, aucun dispatch, aucun paiement, aucun effet serveur ni journey).
+ *
+ * Toutes les capacités utilisateur restent false : le multi est évalué techniquement mais USER-BLOCKED.
+ * Statuts (jamais « current » par défaut) : `absent` (rien à comparer), `blocked` (preview impossible : blocker technique),
+ * `incomplete` (preview possible mais complétude du dossier non établie — readiness 3c2b), `stale`, `current`.
+ */
+function resolveMultiPropertyReferenceGeneration(
+  input: Parameters<typeof resolveDeclarationGenerationGate>[0],
+  snapshot: ValidationDossierSnapshot,
+  workspace: GateWorkspace,
+): DeclarationGenerationGate {
+  const userBlocked = {
+    snapshot,
+    canCheckout: false,
+    canRetryAfterPayment: false,
+    canGenerate: false,
+    blockingAnomalies: [] as Anomaly[],
+    recoveryItems: [] as MissingDossierItem[],
+  };
+  const draft = input.draft;
+  const stored = draft?.fiscalResult;
+  if (!stored) return { ...userBlocked, referenceGenerationStatus: "absent" };
+
+  const preview = runDeclarationGenerationFromWorkspace(workspace, {
+    stocksOuverture: input.stocksOuverture,
+    bilanInputs: draft?.bilanPatrimonial,
+    dispense2033AIntake: draft?.dispense2033A,
+    continuity: input.continuity,
+    fiscalYearOpening: input.fiscalYearOpening,
+  });
+  if (preview.status === "blocked") {
+    return { ...userBlocked, blockingAnomalies: preview.anomalies, referenceGenerationStatus: "blocked" };
+  }
+  if (!resolveWorkspaceReadiness(workspace, preview).technicalReady) {
+    return { ...userBlocked, referenceGenerationStatus: "incomplete" };
+  }
+
+  const drifted =
+    fiscalEngineOutputChanged(stored, preview.fiscalResult) ||
+    identiteChanged(draft, input.fiscalYear) ||
+    patrimoineChanged(draft?.rfs?.patrimoine, preview.rfs.patrimoine) ||
+    (draft?.rfs !== undefined &&
+      (immobilisationsParBienChanged(draft.rfs.immobilisationsParBien, preview.rfs.immobilisationsParBien) ||
+        immobilisationsChanged(draft.rfs.immobilisations, preview.rfs.immobilisations)));
+  return {
+    ...userBlocked,
+    fiscalResult: preview.fiscalResult,
+    referenceGenerationStatus: drifted ? "stale" : "current",
   };
 }

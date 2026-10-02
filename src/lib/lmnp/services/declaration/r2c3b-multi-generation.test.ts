@@ -580,19 +580,19 @@ describe("R2C.3b — garde-fous source", () => {
     assert.equal((core.match(/= produceLiasse\(\{/g) ?? []).length, 1);
   });
 
-  it("G33 — generation-workspace n'a AUCUN appelant de production (tests uniquement)", () => {
+  it("G33 — generation-workspace n'a qu'UN appelant de production : le PREVIEW pur de la gate (R2C.3c2c, fraîcheur multi)", () => {
     const offenders = walk(path.join(ROOT, "src")).filter((file) => {
       const relative = path.relative(ROOT, file);
       if (/\.test\.(ts|tsx)$/.test(relative) || relative === WORKSPACE_SERVICE) return false;
       const code = readFileSync(file, "utf8");
       return /generation-workspace|runDeclarationGenerationFromWorkspace/.test(code);
     });
-    assert.deepEqual(offenders.map((file) => path.relative(ROOT, file)), []);
+    // R2C.3c2c : seul appelant autorisé = la gate (preview pur : aucune persistance, aucun dispatch, aucun paiement).
+    assert.deepEqual(offenders.map((file) => path.relative(ROOT, file)), ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
-  it("hors scope — gate, paiement, validation, cycle fiscal et panneaux ne référencent pas le nouveau service", () => {
+  it("hors scope — paiement, validation, cycle fiscal et panneaux ne référencent pas le nouveau service", () => {
     for (const file of [
-      "src/lib/lmnp/services/declaration/declaration-generation-gate.ts",
       "src/lib/lmnp/services/declaration/payment-readiness.ts",
     ]) {
       assert.doesNotMatch(source(file), /generation-workspace|runDeclarationGenerationFromWorkspace/, file);

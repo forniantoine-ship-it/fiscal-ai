@@ -340,11 +340,11 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
   const files = () => execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
   const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
-  it("A16 — aucun appelant de production de runDeclarationGenerationFromWorkspace", () => {
+  it("A16 — seul appelant de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c)", () => {
     const callers = files().filter((file) =>
       !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") &&
       readFileSync(path.join(ROOT, file), "utf8").includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, []);
+    assert.deepEqual(callers, ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
   it("A17 — MULTI_PROPERTY_USER_ENABLED reste false", () => {
@@ -360,13 +360,14 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
     ]), "");
   });
 
-  it("hors périmètre 3c2b/c/d : gate, validation-profile, readiness, freshness, écrans non modifiés", () => {
-    assert.equal(diffAgainstBaseline([
+  it("hors périmètre 3c2b/c/d : gate, validation-profile, readiness, freshness, écrans non modifiés PAR 3c2a", () => {
+    // Ancré sur le commit 3c2a (7c18ece..04e7e98) : l'invariant ne dépend pas des slices suivantes.
+    assert.equal(execSync(`git diff --name-only ${BASELINE} 04e7e987a19131ea67a7d9185d17e3595461ded5 -- ${[
       "src/lib/lmnp/services/declaration/declaration-generation-gate.ts", "src/lib/lmnp/services/validation-profile.ts",
       "src/lib/lmnp/services/declaration/payment-readiness.ts", "src/lib/lmnp/services/declaration/declaration-freshness.ts",
       "src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/components/lmnp/declaration/DeclarationReadyView.tsx",
       "src/lib/lmnp/services/declaration/run-declaration-generation.ts", "src/lib/lmnp/dossier/fiscal-consolidation.ts",
       "src/lib/lmnp/dossier/property-immobilisations.ts", "src/lib/lmnp/dossier/bien-draft.ts",
-    ]), "");
+    ].join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim(), "");
   });
 });

@@ -541,20 +541,21 @@ describe("R2C.3c2b — séparation technique / activation / paiement ; périmèt
   });
 
   const files = () => execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
-  const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
+  // Ancré sur le commit 3c2b lui-même (04e7e98..283ce27) : l'invariant « 3c2b ne touche pas ces fichiers » ne dépend pas des slices suivantes.
+  const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} 283ce277429a10510d7cb6ecc6861552bf5de92c -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
-  it("B31 — aucun appelant de production de runDeclarationGenerationFromWorkspace", () => {
+  it("B31 — seul appelant de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c)", () => {
     const callers = files().filter((file) =>
       !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") &&
       readFileSync(path.join(ROOT, file), "utf8").includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, []);
+    assert.deepEqual(callers, ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
-  it("aucun consommateur de production des nouveaux modules (dormants)", () => {
+  it("seul consommateur de production des nouveaux modules : la gate (fraîcheur multi, R2C.3c2c) ; aucun écran ni parcours utilisateur", () => {
     const consumers = files().filter((file) =>
       !/\.test\.tsx?$/.test(file) && !/workspace-(readiness|blocking-reasons)\.ts$/.test(file) &&
       /workspace-(readiness|blocking-reasons)/.test(readFileSync(path.join(ROOT, file), "utf8")));
-    assert.deepEqual(consumers, []);
+    assert.deepEqual(consumers, ["src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
   it("B30 — MULTI_PROPERTY_USER_ENABLED reste false", () => {

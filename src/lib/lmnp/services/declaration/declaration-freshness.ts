@@ -18,14 +18,23 @@
 import { resolveDeclarationGenerationGate } from "./declaration-generation-gate";
 import { resolvePersistedExternalTakeoverOpening } from "./prior-history-eligibility";
 import { resolveImmobilisationsContinuityForGeneration } from "../dossier/fiscal-year-cycle";
+import { resolveConsolidationInput } from "../../dossier/bien-draft";
+import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode } from "../../dossier/multi-property-activation";
+import type { LmnpDocument } from "../../types";
 import type { DeclarationDraft, FiscalYear, Property } from "../../types/domain";
 
 export function resolveDeclarationOutOfDate(input: {
   fiscalYear: FiscalYear;
   declarationDraft: DeclarationDraft | undefined;
   properties: Property[];
+  /**
+   * R2C.3c2c — documents du workspace, optionnels (les appelants actuels ne les fournissent pas : comportement inchangé, la
+   * vérification d'attribution des documents du preview multi n'a alors rien à examiner).
+   */
+  documents?: LmnpDocument[];
 }): boolean {
   const { fiscalYear, declarationDraft, properties } = input;
+  const workspace = { fiscalYear, properties, documents: input.documents ?? [], declarationDraft };
 
   // Rien n'a encore été généré : pas de "B" à comparer, donc jamais "périmé"
   // au sens de ce signal (l'écran affiche déjà un autre message dans ce cas).
@@ -55,7 +64,19 @@ export function resolveDeclarationOutOfDate(input: {
     // Lot 5.3 — même Opening que la génération réelle (évite un faux « stale »
     // après reprise externe). Appelant de dérive : pas de priorHistory ici.
     fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
+    // R2C.3c2c — scoped mono : vue plate canonique ; scoped multi : preview du service workspace (gate).
+    workspace,
   });
 
+  // R2C.3c2c — fail-closed UNIQUEMENT pour ce qui ne peut pas être évalué comme un mono : le multi (et un scoped mono refusé par
+  // ses invariants). Une déclaration stockée dont le preview est bloqué, incomplet ou absent n'est JAMAIS déclarée « à jour ».
+  // Mono / scoped mono : sémantique historique (`stale` seulement ; les autres statuts relèvent du reducer, filet A).
+  if (isMultiPropertyWorkspace(workspace) || isScopedMonoRefused(workspace)) {
+    return gate.referenceGenerationStatus !== "current";
+  }
   return gate.referenceGenerationStatus === "stale";
+}
+
+function isScopedMonoRefused(workspace: Parameters<typeof resolveConsolidationInput>[0]): boolean {
+  return resolveWorkspacePropertyMode(workspace).kind === "scoped_mono" && resolveConsolidationInput(workspace).kind === "blocked";
 }

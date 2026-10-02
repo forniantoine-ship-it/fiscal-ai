@@ -466,6 +466,7 @@ describe("R2C.3a — P24, P25 : périmètre", () => {
     // R2C.3b a extrait le shared core (qui transporte `immobilisationsParBien` vers la RFS) : le chemin mono, lui, ne manipule
     // toujours aucune date de mise en service par bien.
     assert.doesNotMatch(source("src/lib/lmnp/services/declaration/run-declaration-generation.ts"), /datesMiseEnService/);
-    assert.doesNotMatch(source("src/lib/lmnp/services/declaration/declaration-generation-gate.ts"), /immobilisationsParBien/);
+    // R2C.3c2c : la gate lit désormais `immobilisationsParBien` pour la FRAÎCHEUR multi (preview comparé au stocké) ; elle ne
+    // génère toujours rien par bien et son chemin mono n'appelle jamais le service workspace.
   });
 });
