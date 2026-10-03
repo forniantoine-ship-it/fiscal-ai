@@ -48,10 +48,12 @@ describe("runStructuralAndMappingGate", () => {
     assert.equal(violations[0].code, "case-sans-mapping-visuel");
   });
 
-  it("bloque sur une case sans mapping ET sans exclusion documentee (352, jamais produite en pratique mais testee ici directement)", () => {
+  it("bloque sur une case sans mapping ET sans exclusion documentee (354 : case officielle volontairement vide par neutralisation SAV-032, absente du registre — sa production reste bloquée)", () => {
+    // Rebasé de 352 (désormais calibrée et produite, SAV-032) vers 354 : le garde case-sans-mapping-visuel reste testé sur
+    // une case réellement inconnue du registre et des exclusions, sans assertion affaiblie.
     const violations = runStructuralAndMappingGate({
       millesime: 2026,
-      forms: [{ form: "2033-B-SD", cases: [cerfaCase("352", 0)] }],
+      forms: [{ form: "2033-B-SD", cases: [cerfaCase("354", 0)] }],
     });
     assert.equal(violations.length, 1);
     assert.equal(violations[0].code, "case-sans-mapping-visuel");

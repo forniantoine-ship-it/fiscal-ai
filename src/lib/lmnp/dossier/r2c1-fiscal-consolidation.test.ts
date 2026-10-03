@@ -302,17 +302,25 @@ describe("R2C.1 — R : extraction du chemin mono à parité exacte", () => {
     assert.doesNotMatch(code, /fraisEnCharges: 0/, "la neutralisation reprise n'est plus recopiée en ligne");
   });
 
-  // R2 → R4 : empreintes SHA-256 du résultat COMPLET (FiscalResult, RFS, liasseRfs, liasse F-007), capturées à HEAD
-  // 912419b sur les mêmes fixtures, horloge figée (harnais scratchpad R2C.1). Toute dérive mono les casse.
+  // R2 → R4 : empreintes SHA-256 du résultat COMPLET (FiscalResult, RFS, liasseRfs, liasse F-007), capturées sur les mêmes
+  // fixtures, horloge figée (harnais scratchpad R2C.1). Toute dérive mono les casse.
+  // RECAPTURES DOCUMENTÉES (jamais en masse — chaque différence a été comparée champ par champ avant recapture) :
+  //  1. 94bb29f (SAV-030, 39 C avant déficits) : ajout de `resultatFiscalAvantDeficits` ; 352/354 produites ; sur
+  //     `rich-external-takeover-stocks-only` seulement, l'ordre de calcul modifie amortReportesUtilises (1 649,18 → 2 500),
+  //     deficitsImputes (1 500 → 649,18) et les stocks finaux — CHANGEMENT ATTENDU (SAV-027 → SAV-030).
+  //  2. MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1 (SAV-032) : fiscalResult / rfs / 2033-A / 2033-C INCHANGÉS ; seuls changent le bloc
+  //     de neutralisation 2033-B (330 : 7 306,98 → 7 319,48 = déficit + 12,50 non déductibles ; 350, 352, 354, 370 ; nouveau
+  //     champ `balancing`) et 2031 (C_L1_COL1 = 0, I_7A = résultat avant déficits) — rattachés aux bugs prouvés : 330 omet les
+  //     non-déductibles, 354 double la perte déjà réintégrée en 330, 350 omet les ARD, 7a pris après imputation.
   const FIXED = Date.parse("2026-06-01T12:00:00.000Z");
   const GOLDEN: Array<[string, () => unknown[], string]> = [
-    ["rich-native", () => [richNative(Y), Y], "fa15d3079968902fc6863c09b17c3050b90b2825b8962f6eb1663cc9e32ac725"],
-    ["rich-native-stocks", () => [richNative(Y), Y, { deficits: [{ millesime: 2023, montant: 2000 }], amortissementsReportes: 4000, deficitsExpires: [] }], "8ceccedd011656239511885c5416021e5684d8e9270af4ec82be6bb81edc9a92"],
+    ["rich-native", () => [richNative(Y), Y], "d7bea6eb9b7c9218c46f1047becb37816db3a8def2c2d29cabd9b07736c5e1c8"],
+    ["rich-native-stocks", () => [richNative(Y), Y, { deficits: [{ millesime: 2023, montant: 2000 }], amortissementsReportes: 4000, deficitsExpires: [] }], "269530ff5eae940eec957753d8ffa060a586f403eba5328b71df0ef5b610f210"],
     ["rich-native-continuation-verified", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, {
       immobilisationsOuverture: { sourceClosureId: "closure-n", brut: 208000, amortissementsCumules: 0, vnc: 208000 },
       previousFiscalYearId: "fy-2025", continuiteNativeVerifiee: true, propertyId: "prop-1",
-    }], "0ce7521a0f1a7c93ad3f76c1fda037f237578419b61867c0268d8bd618f11869"],
-    ["rich-external-takeover-stocks-only", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, undefined, externalTakeoverOpening()], "d75c08d090e018a5770c0a04ef57c7e3ef7d503412997c3216a2f31b630dafce"],
+    }], "125a5e1a447c240a3d69ad6b4281684d9ee88b6e539fad8034ef5d5499e6cade"],
+    ["rich-external-takeover-stocks-only", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, undefined, externalTakeoverOpening()], "4b580554468ddf0cbaa60ccc0474aca60323e3f16cf08a896aa089c28ea60024"],
   ];
   for (const [name, args, expected] of GOLDEN) {
     it(`R2/R3/R4 — ${name} : FiscalResult, RFS, liasse et liasseRfs identiques à HEAD (empreinte)`, () => {
@@ -326,6 +334,60 @@ describe("R2C.1 — R : extraction du chemin mono à parité exacte", () => {
       }
     });
   }
+
+  // SAV-032 — ORACLES de la neutralisation 2033-B / 2031, sur le chemin de production réel (runDeclarationGeneration → F-006
+  // → RFS → liasseRfs). Valeurs attendues posées à la main AVANT code (mission PO), indépendantes des empreintes ci-dessus.
+  type Line = { caseId: string; value: unknown };
+  type Liasse = {
+    form2033B: { cases: Line[]; balancing: { status: string; resultatCalcule: number; resultatImprime: number } };
+    form2031: { cases: Line[] };
+  };
+  const generated = (index: number): Liasse => {
+    mock.timers.enable({ apis: ["Date"], now: FIXED });
+    try {
+      const result = (runDeclarationGeneration as (...a: unknown[]) => { status: string; liasseRfs?: Liasse })(...GOLDEN[index]![1]());
+      assert.equal(result.status, "generated");
+      return result.liasseRfs!;
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  const val = (cases: Line[], id: string) => cases.find((c) => c.caseId === id)?.value;
+
+  it("ORACLE RICH-NATIVE (déficit, ND 12,50) — 314 = 11 863,69 ; 318 = 4 544,21 ; 330 = 7 319,48 ; 350/354/372 vides ; 352 = 370 = 0 ; 7b = 7 306,98 ; bouclage", () => {
+    const { form2033B, form2031 } = generated(0);
+    assert.equal(val(form2033B.cases, "314"), 11863.69);
+    assert.equal(val(form2033B.cases, "318"), 4544.21);
+    assert.equal(val(form2033B.cases, "330"), 7319.48, "7 306,98 de déficit + 12,50 non déductibles");
+    for (const vide of ["350", "354", "372"]) assert.equal(val(form2033B.cases, vide), undefined, `${vide} vide`);
+    assert.equal(val(form2033B.cases, "352"), 0);
+    assert.equal(val(form2033B.cases, "370"), 0);
+    assert.equal(val(form2031.cases, "I_7B"), 7306.98);
+    assert.equal(val(form2031.cases, "I_7A"), undefined);
+    assert.equal(val(form2031.cases, "C_L1_COL1"), 0);
+    // −11 863,69 + 4 544,21 + 7 319,48 = 0
+    assert.ok(Math.abs(-11863.69 + 4544.21 + 7319.48) < 0.005);
+    assert.equal(form2033B.balancing.status, "BALANCED");
+    assert.equal(form2033B.balancing.resultatCalcule, 0);
+  });
+
+  it("ORACLE RICH-TAKEOVER (bénéfice, ARD 2 500, déficits antérieurs, ND 12,50) — 312 = 3 136,68 ; 318 = 0 ; 330 = 12,50 ; 350 = 3 149,18 ; 352 = 370 = 0 ; 7a = 649,18 ; bouclage", () => {
+    const { form2033B, form2031 } = generated(3);
+    assert.equal(val(form2033B.cases, "312"), 3136.68);
+    assert.equal(val(form2033B.cases, "318"), 0);
+    assert.equal(val(form2033B.cases, "330"), 12.5);
+    assert.equal(val(form2033B.cases, "350"), 3149.18, "649,18 avant déficits + 2 500 d'ARD consommés ; jamais ARD + déficits antérieurs");
+    assert.equal(val(form2033B.cases, "352"), 0);
+    assert.equal(val(form2033B.cases, "354"), undefined);
+    assert.equal(val(form2033B.cases, "370"), 0);
+    assert.equal(val(form2033B.cases, "372"), undefined);
+    assert.equal(val(form2031.cases, "I_7A"), 649.18, "résultat AVANT imputation des déficits antérieurs (et non resultatFiscal = 0)");
+    assert.equal(val(form2031.cases, "I_7B"), undefined);
+    assert.equal(val(form2031.cases, "C_L1_COL1"), 0);
+    // 3 136,68 + 12,50 − 3 149,18 = 0
+    assert.ok(Math.abs(3136.68 + 12.5 - 3149.18) < 0.005);
+    assert.equal(form2033B.balancing.status, "BALANCED");
+  });
 });
 
 // ---------------------------------------------------------------------------

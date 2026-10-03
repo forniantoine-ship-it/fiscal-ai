@@ -48,6 +48,14 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
   if (overrides.amortNonDeduitExercice === undefined) {
     merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
   }
+  if (overrides.resultatFiscalAvantDeficits === undefined) {
+    // Reconstruction manuelle fidèle à F-006 (TRF-0031) : année déficitaire → −deficitNouveau ; sinon
+    // resultatFiscal + déficits imputés (resultatFiscal = résultat avant déficits − déficits imputés).
+    merged.resultatFiscalAvantDeficits =
+      merged.deficitNouveau > 0
+        ? -merged.deficitNouveau
+        : Math.round((merged.resultatFiscal + merged.deficitsImputes) * 100) / 100;
+  }
   return merged;
 }
 
@@ -120,24 +128,37 @@ describe("Cycle 30 — TEST 1 à 4 : cases pass-through", () => {
     assert.notEqual(findCase(form, "318")?.value, fr.amortReporte, "318 ne doit plus lire le stock final");
   });
 
-  it("audit fiscal ciblé (case 350) — 350 reprend exactement fiscalResult.deficitsImputes", () => {
-    const fr = fiscalResult({ deficitsImputes: 1234.56 });
+  it("SAV-032 (case 350) — 350 = E = resultatFiscalAvantDeficits + amortReportesUtilises : ARD consommés inclus, déficits antérieurs exclus", () => {
+    // Fixture F-006 réaliste (R5-B) : avant déficits 700 (2 000 − 800 d'amortissement − 500 d'ARD), ARD consommés 500,
+    // déficits antérieurs imputés 600, résultat fiscal 100. E = 700 + 500 = 1 200 (= 2 000 − 800).
+    const fr = fiscalResult({
+      resultatAvantAmort: 2000,
+      amortCalcule: 800,
+      amortDeduct: 800,
+      amortReportesUtilises: 500,
+      resultatFiscalAvantDeficits: 700,
+      resultatFiscal: 100,
+      deficitsImputes: 600,
+    });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "350")?.value, 1234.56);
+    assert.equal(findCase(form, "350")?.value, 1200);
+    assert.notEqual(findCase(form, "350")?.value, fr.deficitsImputes, "350 n'est plus deficitsImputes (ancien mapping, SAV-032)");
+    assert.notEqual(findCase(form, "350")?.value, 600 + 500, "ni ARD + déficits antérieurs : les déficits antérieurs n'apparaissent pas dans la 2033-B");
   });
 
-  it("audit fiscal ciblé (case 350) — deficitsImputes = 0 → 350 alimentée avec 0 (convention identique à 218/254), jamais absente", () => {
-    const fr = fiscalResult({ deficitsImputes: 0 });
-    const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "350")?.value, 0);
-    assert.notEqual(findCase(form, "350"), undefined, "350 doit être présente même à 0, pas bloquée");
+  it("SAV-032 (case 350) — E ≤ 0 → 350 absente (vide, comme le dossier témoin accepté), jamais un 0 imprimé", () => {
+    const form = map2033BFromRfs(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862, resultatAvantAmort: -9862, amortDeduct: 0 })));
+    assert.equal(findCase(form, "350"), undefined);
+    const nul = map2033BFromRfs(rfs(fiscalResult({ resultatAvantAmort: 1500, amortCalcule: 1500, amortDeduct: 1500, resultatFiscal: 0, resultatFiscalAvantDeficits: 0 })));
+    assert.equal(findCase(nul, "350"), undefined, "E = 0 : 350 non imprimée");
   });
 
-  it("audit fiscal ciblé (case 350) — projection informative pure, sans effet sur 370/372", () => {
+  it("SAV-032 (case 350) — neutralisation : 352 = 370 = 0 imprimés quel que soit deficitsImputes ; 354/372 absentes", () => {
     const fr = fiscalResult({ deficitsImputes: 4000, resultatFiscal: 2000, deficitNouveau: 0 });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "350")?.value, 4000);
-    assert.equal(findCase(form, "370")?.value, 2000, "370 reste un report direct de resultatFiscal, non affecté par 350");
+    assert.equal(findCase(form, "352")?.value, 0);
+    assert.equal(findCase(form, "370")?.value, 0, "370 n'est plus un report de resultatFiscal : le résultat 2033-B est neutralisé");
+    assert.equal(findCase(form, "354"), undefined);
     assert.equal(findCase(form, "372"), undefined);
   });
 
@@ -791,11 +812,14 @@ describe("Cycle 32 — 264/270/310/312/314 : projection depuis charges.totalNonD
 });
 
 describe("Cycle 30 — TEST 5 : 370/372, bénéfice et déficit jamais mélangés", () => {
-  it("bénéfice → 370 alimentée, 372 absente du formulaire", () => {
+  it("bénéfice → 350 = E, 352 = 370 = 0 (neutralisation SAV-032), 372 absente du formulaire", () => {
     const fr = fiscalResult({ resultatFiscal: 5500, deficitNouveau: 0 });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "370")?.value, 5500);
+    assert.equal(findCase(form, "350")?.value, 5500);
+    assert.equal(findCase(form, "352")?.value, 0);
+    assert.equal(findCase(form, "370")?.value, 0);
     assert.equal(findCase(form, "372"), undefined, "372 ne doit pas apparaître dans les cases en cas de bénéfice");
+    assert.equal(form.balancing.status, "BALANCED");
   });
 
   it("CORRIGÉ (audit fiscal P0, Cursor/Grok) — déficit LMNP → 330 alimentée, 370 ET 372 absentes du formulaire", () => {
@@ -805,11 +829,32 @@ describe("Cycle 30 — TEST 5 : 370/372, bénéfice et déficit jamais mélangé
     // (voir map-2033b.ts pour le raisonnement complet). F-006 (inchangé)
     // garantit resultatFiscal=0 (jamais négatif) dans ce cas : 372 exige
     // désormais resultatFiscal<0, jamais vrai ici.
+    // SAV-032 : 370 est imprimée à 0 (colonne 1, comme le dossier témoin accepté), jamais absente ; 354/372 vides.
     const fr = fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 });
     const form = map2033BFromRfs(rfs(fr));
-    assert.equal(findCase(form, "330")?.value, 9862, "330 réintègre le déficit LMNP");
+    assert.equal(findCase(form, "330")?.value, 9862, "330 réintègre le déficit LMNP (aucun non-déductible ici)");
     assert.equal(findCase(form, "372"), undefined, "372 ne doit plus jamais recevoir deficitNouveau");
-    assert.equal(findCase(form, "370"), undefined, "370 ne doit pas apparaître dans les cases en cas de déficit");
+    assert.equal(findCase(form, "354"), undefined, "354 vide : le déficit est neutralisé en 330");
+    assert.equal(findCase(form, "352")?.value, 0);
+    assert.equal(findCase(form, "370")?.value, 0, "370 imprimée à 0 par neutralisation");
+  });
+
+  it("SAV-032 — 330 = déficit + charges non déductibles (oracle dossier témoin EDI : 9 862 + 99 = 9 961)", () => {
+    const fr = fiscalResult({
+      resultatFiscal: 0,
+      deficitNouveau: 9862,
+      resultatAvantAmort: -9862,
+      amortCalcule: 3720,
+      amortDeduct: 0,
+      amortReporte: 3720,
+      charges: { totalDeductible: 14963, chargesExploitation: 10361, chargesFinancement: 4602, chargesPreExploitation: 0, totalNonDeductible: 99 },
+    });
+    const form = map2033BFromRfs(rfs(fr));
+    assert.equal(findCase(form, "330")?.value, 9961);
+    assert.equal(findCase(form, "318")?.value, 3720);
+    assert.equal(findCase(form, "314")?.value, 13681);
+    assert.equal(form.balancing.status, "BALANCED");
+    assert.equal(form.balancing.resultatCalcule, 0);
   });
 });
 
@@ -869,15 +914,27 @@ describe("Cycle 30 — TEST 7 : le FiscalResult source n'est jamais reconstruit"
 describe("Cycle 30/32 — TEST 8 : cases bloquées — jamais une valeur inventée", () => {
   const form = map2033BFromRfs(rfs(fiscalResult()));
 
-  it("352, 354, 356, 360 restent dans casesNonAlimentees, pas dans cases — après le déblocage 264/270/310/312/314", () => {
-    const blockedIds = ["352", "354", "356", "360"];
-    for (const id of blockedIds) {
+  it("356 et 360 restent dans casesNonAlimentees (IS uniquement) ; 352 est produite à 0 et 354 est vide (SAV-032)", () => {
+    for (const id of ["356", "360"]) {
       assert.equal(findCase(form, id), undefined, `${id} ne doit jamais recevoir de valeur`);
       assert.ok(findBlocked(form, id), `${id} doit être tracé dans casesNonAlimentees`);
     }
-    // A1 : 242/244 peuvent s'ajouter (conservation non établie, avec raison) — la fixture par défaut n'a
-    // aucune ventilation par catégorie. Les quatre cases structurelles restent exactement 352/354/356/360.
-    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 4, "352/354/356/360 restent bloquées (audit fiscal ciblé : 360 rejoint 356, IS uniquement)");
+    assert.equal(findCase(form, "352")?.value, 0, "352 = 0 par neutralisation du résultat LMNP non professionnel");
+    assert.equal(findCase(form, "354"), undefined, "354 vide");
+    assert.equal(findBlocked(form, "354"), undefined, "354 n'est pas « bloquée » : vide par règle (SAV-032), pas faute de donnée");
+    // A1 : 242/244 peuvent s'ajouter (conservation non établie, avec raison). Les cases structurelles sont 356/360.
+    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 2);
+  });
+
+  it("FiscalResult antérieur à P0-39C (sans resultatFiscalAvantDeficits) : 330/350/352/354/370/372 non alimentées, bouclage UNAVAILABLE", () => {
+    const fr = fiscalResult();
+    delete (fr as { resultatFiscalAvantDeficits?: number }).resultatFiscalAvantDeficits;
+    const legacy = map2033BFromRfs(rfs(fr));
+    for (const id of ["330", "350", "352", "354", "370", "372"]) {
+      assert.equal(findCase(legacy, id), undefined, `${id} ne doit pas être reconstruite`);
+      assert.equal(findBlocked(legacy, id)?.categorie, "incoherence_modele", `${id} doit être tracée avec sa raison`);
+    }
+    assert.equal(legacy.balancing.status, "UNAVAILABLE");
   });
 
   it("chaque case bloquée porte une raison non vide et une catégorie explicite, y compris la nouvelle catégorie non_applicable", () => {
@@ -1036,17 +1093,18 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
     assert.equal(findCase(form, "310")?.value, resultatComptable);
     assert.equal(findCase(form, "312")?.value, resultatComptable > 0 ? resultatComptable : undefined);
     assert.equal(findCase(form, "318")?.value, 300);
-    assert.equal(findCase(form, "370")?.value, 5400);
+    // SAV-032 : 370 est neutralisée (0 imprimé), ce n'est plus un report de resultatFiscal (5 400).
+    assert.equal(findCase(form, "370")?.value, 0);
   });
 
-  it("352/354/356/360 restent bloquées, casesNonAlimentees structurelles toujours 4 (hors 242/244, A1)", () => {
+  it("356/360 restent non_applicables (IS) ; 352 produite à 0 et 354 vide (SAV-032) — casesNonAlimentees structurelles : 2 (hors 242/244, A1)", () => {
     const form = map2033BFromRfs(rfs(fiscalResult()));
-    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 4, "218/254 sont dans cases, pas casesNonAlimentees — 360 rejoint 352/354/356 (audit fiscal ciblé, IS uniquement) ; 242/244 (A1) exclues du décompte structurel");
-    assert.ok(findBlocked(form, "352"));
-    assert.ok(findBlocked(form, "354"));
+    assert.equal(form.casesNonAlimentees.filter((c) => !["242", "244"].includes(c.caseId)).length, 2, "218/254 sont dans cases ; 352/354 ne sont plus « bloquées » (SAV-032) ; 242/244 (A1) exclues du décompte structurel");
+    assert.equal(findCase(form, "352")?.value, 0);
+    assert.equal(findBlocked(form, "352"), undefined);
+    assert.equal(findBlocked(form, "354"), undefined);
     assert.ok(findBlocked(form, "356"));
     assert.ok(findBlocked(form, "360"));
-    assert.equal(findBlocked(form, "352")?.categorie, "incoherence_modele");
     assert.equal(findBlocked(form, "356")?.categorie, "non_applicable");
     assert.equal(findBlocked(form, "360")?.categorie, "non_applicable");
   });
@@ -1075,7 +1133,7 @@ describe("Cycle 47 — non-régression des cases déjà livrées", () => {
  * l'angle mort identifié par l'audit de couverture 2033-B précédent.
  */
 describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sortie F-006 réelle (déficit antérieur + ARD)", () => {
-  it("scénario R5-B (2000/600 déficit/800 amort/500 ARD) : 318=0, 350=600, 370=100, 330 et 372 absentes", () => {
+  it("scénario R5-B (2000/600 déficit/800 amort/500 ARD) : 318=0, 350=E=1 200 (ARD inclus, déficits antérieurs exclus), 352=370=0, 330/354/372 absentes", () => {
     const application = applyAmortissementStocks({
       exercice: 2025,
       resultatAvantAmort: 2000,
@@ -1098,16 +1156,21 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
       amortNonDeduitExercice: 0,
       amortReportesUtilises: application.amortReportesUtilises,
       resultatFiscal: application.resultatFiscal,
+      resultatFiscalAvantDeficits: application.resultatFiscalAvantDeficits,
       deficitNouveau: application.deficitNouveau,
       deficitsImputes: application.deficitsImputes,
     });
     const form = map2033BFromRfs(rfs(fr));
 
+    assert.equal(application.resultatFiscalAvantDeficits, 700, "précondition F-006 inchangé : 2 000 − 800 − 500 d'ARD = 700 avant déficits antérieurs");
     assert.equal(findCase(form, "318")?.value, 0, "318 = mouvement annuel = 0 (dotation N intégralement déduite)");
-    assert.equal(findCase(form, "350")?.value, 600, "350 = deficitsImputes = 600");
-    assert.equal(findCase(form, "370")?.value, 100, "370 = resultatFiscal = 100 (>0)");
-    assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0, pas de déficit LMNP cette année");
-    assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal > 0, jamais < 0");
+    // SAV-032 : E = 700 + 500 (ARD consommés) = 1 200 = 2 000 − 800. Les 600 de déficits antérieurs ne figurent pas dans 350.
+    assert.equal(findCase(form, "350")?.value, 1200, "350 = E = 1 200 (jamais deficitsImputes = 600, ni ARD + déficits)");
+    assert.equal(findCase(form, "352")?.value, 0, "352 = 0 par neutralisation");
+    assert.equal(findCase(form, "370")?.value, 0, "370 = 0 par neutralisation (resultatFiscal 100 n'est pas reporté en 370)");
+    assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0, aucun non-déductible");
+    assert.equal(findCase(form, "354"), undefined);
+    assert.equal(findCase(form, "372"), undefined, "372 absente");
   });
 
   it("scénario R5-A (1000/600 déficit/800 amort/500 ARD) : 318=0, stock final=300, 350=0", () => {
@@ -1140,10 +1203,11 @@ describe("MICRO-JALON R5 — wiring 2033-B (318/330/350/370/372) depuis une sort
 
     assert.equal(findCase(form, "318")?.value, 0, "318 = mouvement annuel seul (800 − 800)");
     assert.notEqual(findCase(form, "318")?.value, fr.amortReporte, "318 ≠ stock final");
-    assert.equal(findCase(form, "350")?.value, 0, "350 = deficitsImputes = 0");
-    assert.equal(findCase(form, "352"), undefined, "résultat avant déficits nul : 352 non servie");
+    // SAV-032 : E = résultat avant déficits (0) + ARD consommés (200) = 200 = 1 000 − 800 → 350 = 200 ; 352 = 370 = 0.
+    assert.equal(findCase(form, "350")?.value, 200, "350 = E = 200 (ARD consommés inclus)");
+    assert.equal(findCase(form, "352")?.value, 0, "352 = 0 par neutralisation");
     assert.equal(findCase(form, "330"), undefined, "330 absente : deficitNouveau = 0 (résultat avant amort positif)");
-    assert.equal(findCase(form, "370"), undefined, "370 absente : resultatFiscal = 0, pas > 0");
-    assert.equal(findCase(form, "372"), undefined, "372 absente : resultatFiscal = 0, pas < 0");
+    assert.equal(findCase(form, "370")?.value, 0, "370 = 0 par neutralisation");
+    assert.equal(findCase(form, "372"), undefined, "372 absente");
   });
 });

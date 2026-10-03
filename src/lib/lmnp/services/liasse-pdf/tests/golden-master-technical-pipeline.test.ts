@@ -74,6 +74,9 @@ export const DOSSIER_TEMOIN_FISCAL_RESULT: FiscalResult = {
   amortNonDeduitExercice: 3720,
   amortReportesUtilises: 0,
   resultatFiscal: 0,
+  // SAV-032 : F-006 produit toujours ce scalaire (résultat avant imputation des déficits antérieurs) ; année déficitaire
+  // → −deficitNouveau. Sans lui, la neutralisation de la 2033-B n'est pas établie (bouclage UNAVAILABLE).
+  resultatFiscalAvantDeficits: -9862,
   deficitNouveau: 9862,
   deficitsImputes: 0,
   perteExceptionnelle: 0,
@@ -160,6 +163,8 @@ describe("Golden master TECHNIQUE — pipeline PDF avec le mapper fiscal actuel 
     // déficit LMNP n'apparaît plus qu'UNE SEULE fois sur le 2031-SD, case 7b
     // (I_7B), conforme désormais au dossier de référence (qui affiche 0 sur
     // C_L1, la case étant réintégrée via 330 du 2033-B-SD).
+    // SAV-032 : la ligne 1 (report de 370 = 0) est imprimée à « 0 » en colonne 1, comme le dossier témoin accepté.
+    assert.ok(form2031SD.cases.some((c) => c.caseId === "C_L1_COL1" && c.value === 0), "C_L1_COL1 = 0 (report de 370)");
     const nineEightSixTwoCount = page1Text.filter((s) => s === "9 862").length;
     assert.equal(
       nineEightSixTwoCount,
@@ -181,29 +186,23 @@ describe("Golden master TECHNIQUE — pipeline PDF avec le mapper fiscal actuel 
     assert.ok(page3Text.includes("4 602"), "case 294 (charges financières)");
     assert.ok(page3Text.includes("(13 681)"), "case 310 (résultat comptable) — négatif entre parenthèses, corrigé P0");
     assert.ok(page3Text.includes("13 681"), "case 314 (report du déficit comptable, col.2)");
-    // CORRIGÉ (audit fiscal P0 + MICRO-JALON calibration 330) : 372
-    // n'apparaît plus du tout sur le PDF (le mapper ne la produit plus pour
-    // ce scénario déficitaire) — le déficit LMNP est désormais réintégré et
-    // RENDU en case 330 (position calibrée et testée indépendamment, voir
-    // tests/position-oracle.test.ts). "9 862" apparaît donc exactement UNE
-    // fois sur cette page, portée par 330 — jamais par 372.
+    // ORACLE EDI RÉEL (SAV-032) — dossier témoin accepté en EDI : 330 = 9 961 (= déficit 9 862 + 99 de charges non
+    // déductibles « Fond de roulement », compte 614100), 352 = 370 = 0 imprimés (colonne 1), 350/354/372 vides.
+    // « 9 862 » n'apparaît donc plus sur la 2033-B : le déficit LMNP est neutralisé en 330 (avec le non-déductible) et
+    // reporté en 7b de la 2031-SD (9 862, ci-dessus).
     assert.equal(
       page3Text.filter((s) => s === "9 862").length,
-      1,
-      "9 862 doit apparaître UNE SEULE fois sur le 2033-B-SD : case 330 (déficit LMNP réintégré) — jamais 372",
+      0,
+      "9 862 n'apparaît plus sur la 2033-B-SD : 330 = 9 961 (déficit + non-déductible, oracle EDI)",
     );
-    assert.ok(result.manifest.some((e) => e.caseId === "330" && e.text === "9 862"), "330 doit apparaître dans le manifeste de rendu avec la valeur 9 862");
-
-    // MICRO-JALON implémentation 350 : le mapper produit TOUJOURS la case
-    // 350 (deficitsImputes, jamais bloquée même à 0 — convention identique à
-    // 218/254/300/318, voir map-2033b.ts). deficitsImputes=0 sur le dossier
-    // témoin (aucun déficit antérieur, première année) : la convention
-    // "eur-arrondi" existante (format-value.ts) ne transforme JAMAIS un zéro
-    // en absence — elle dessine littéralement "0", exactement comme pour
-    // n'importe quelle autre case toujours-alimentée. Ce test vérifie la
-    // convention RÉELLEMENT utilisée, sans en inventer une nouvelle.
-    assert.ok(page3Text.includes("0"), "350=0 (deficitsImputes) doit être réellement dessinée, convention identique aux autres cases toujours-alimentées");
-    assert.ok(result.manifest.some((e) => e.caseId === "350" && e.text === "0"), "350 doit apparaître dans le manifeste de rendu avec la valeur '0'");
+    assert.ok(result.manifest.some((e) => e.caseId === "330" && e.text === "9 961"), "330 doit apparaître dans le manifeste de rendu avec la valeur 9 961 (oracle EDI)");
+    assert.ok(page3Text.includes("9 961"), "330 = 9 961 doit être dessinée sur la page 2033-B");
+    assert.ok(result.manifest.some((e) => e.caseId === "352" && e.text === "0"), "352 = 0 (colonne 1) comme le dossier témoin accepté");
+    assert.ok(result.manifest.some((e) => e.caseId === "370" && e.text === "0"), "370 = 0 (colonne 1) comme le dossier témoin accepté");
+    for (const vide of ["350", "354", "372"]) {
+      assert.ok(!result.manifest.some((e) => e.caseId === vide), `${vide} reste vide, comme le dossier témoin accepté`);
+    }
+    assert.equal(form2033B.balancing.status, "BALANCED", "(13 681) + 3 720 + 9 961 − 0 = 0");
 
     // MICRO-JALON implémentation 300 : le mapper produit TOUJOURS la case
     // 300 (perteExceptionnelle, jamais bloquée même à 0 — même convention

@@ -411,16 +411,23 @@ describe("R2C.3a — P16, P17 : RFS persistée puis re-projetée, ordre des bien
 
 // ---------------------------------------------------------------------------
 // P18 → P23 : parité mono (empreintes capturées à HEAD bc30923)
+// RECAPTURES DOCUMENTÉES — uniquement P18, P20 et « liasse mono » (P19, P21, registre, P22, P23 et validation F-006 INCHANGÉS) :
+//  - P18 (RFS mono) : 94bb29f (SAV-030) ajoute `fiscalResult.resultatFiscalAvantDeficits` (−6 236,19) — changement attendu ; le
+//    chantier SAV-032 n'a PAS modifié la RFS (empreinte identique à celle observée à HEAD 70831e7).
+//  - P20 (2033-B mono) et « liasse mono » : 94bb29f produit 354 ; SAV-032 (MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1) remplace
+//    350 = 0 / 354 = 6 236,19 par 352 = 370 = 0 (350 et 354 vides), ajoute `balancing` (BALANCED : −10 780,40 + 10 780,40 = 0) ;
+//    la liasse ajoute 2031 C_L1_COL1 = 0. Bugs prouvés : 354 doublait la perte déjà réintégrée en 330, 370 absente alors que
+//    le témoin imprime 0. Valeurs non concernées (330, 318, 310, 312/314, 2033-A/C…) : identiques champ par champ.
 // ---------------------------------------------------------------------------
 
 describe("R2C.3a — P18 → P23 : mono strictement identique", () => {
   const extras = () => collectLiasseDossierExtras({ declarationDraft: monoDraft(), fiscalYear: { stocksOuverture: MONO_STOCKS } as never });
   const MONO: Array<[string, () => unknown, string]> = [
-    ["P18 — RFS mono", () => BASE, "4f16f84508fc272b58b026064226da7321f9bd40351c56512cc251e23d8a92d8"],
+    ["P18 — RFS mono", () => BASE, "8be65782c79997ecd985de718864ff418baafa4f920f50cfd211bf77d0035731"],
     ["P19 — 2033-A mono", () => map2033AFromRfs(BASE), "87877371559f0731f8293ed87eac98bd311e9b73f473ddad5022d1afe75d33f2"],
-    ["P20 — 2033-B mono", () => map2033BFromRfs(BASE), "6206cb2dc648cf16f46a57898518174730a4fecab263449f5832f965ae9e5a62"],
+    ["P20 — 2033-B mono", () => map2033BFromRfs(BASE), "3aaa0bb3a32f0a45f28ba76f2bd66238da94136a74a6b1b60f0b0d31711411ee"],
     ["P21 — 2033-C mono", () => map2033CFromRfs(BASE), "6abf4846bac742caba50c9f3ff77cbee750f5d153792a2793e5c3e2cc7926cc4"],
-    ["liasse mono", () => assembleLiasseFromRfs(BASE), "8fa1245bdc6ad74866c9433a3997015bd6a69a25f20f2ef3caacf1ad7b349b4f"],
+    ["liasse mono", () => assembleLiasseFromRfs(BASE), "c19f4ca38ea34d9505b734f1d9846400f7115728fa27f3324807d9b0dc2df2f5"],
     ["registre mono", () => assembleRegistreImmobilisationsPatrimoniales({ immobilisations: BASE.immobilisations, amortCalcule: BASE.fiscalResult.amortCalcule }), "7bd1485141e30ed21cf97b760080117e04c806c958d3987bbb3d43cbdb65a711"],
     ["P22 — annexe mono", () => buildLiasseDossierDocument(BASE, extras()), "13237e14094d9c38661f4b5284194e5e47da08a1d80ea5214d008a4e9aefb8ad"],
     ["P23 — extras mono", () => extras(), "fc90a898aefc8f51b1084379c99c6d5258bdbc7145646fb72893c582dd6c8dff"],

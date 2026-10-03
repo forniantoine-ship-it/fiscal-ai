@@ -243,6 +243,49 @@ export async function deriveCase370372Boxes(officialAssetBytes: Uint8Array): Pro
   return { beneficeBox, numberZone372, deficitBox };
 }
 
+export type Case352354Boxes = {
+  /** Boîte VALEUR de la case "352" (bénéfice, colonne 1) — PAS la zone de son numéro imprimé. */
+  beneficeBox: ColumnBox;
+  /** Zone où est imprimé le numéro de case "354" — écrire une valeur ici est l'erreur P0-1 historique (case 372). */
+  numberZone354: ColumnBox;
+  /** Boîte VALEUR de la case "354" (déficit, colonne 2). */
+  deficitBox: ColumnBox;
+};
+
+/**
+ * Dérive, en lisant `assets/2026/2033-sd.pdf` (page 2 = 2033-B-SD), les bornes réelles des boîtes de la ligne
+ * « RÉSULTAT FISCAL AVANT IMPUTATION DES DÉFICITS ANTÉRIEURS » (cases 352/354) — sans jamais importer `registry/2033-b`.
+ * Même procédé que `deriveCase370372Boxes` (numéros de case → séparateurs verticaux continus sur la bande de la ligne).
+ */
+export async function deriveCase352354Boxes(officialAssetBytes: Uint8Array): Promise<Case352354Boxes> {
+  const PAGE_NUMBER = 2;
+  const text354 = await findExactTextOnOfficialPage(officialAssetBytes, PAGE_NUMBER, "354");
+  const text352 = await findExactTextOnOfficialPage(officialAssetBytes, PAGE_NUMBER, "352");
+
+  const yMin = Math.min(text354.yBottomLeft, text352.yBottomLeft) - 1;
+  const yMax = Math.max(text354.yBottomLeft + text354.height, text352.yBottomLeft + text352.height) + 1;
+
+  const contentText = await officialPageContentText(officialAssetBytes, PAGE_NUMBER - 1);
+  const segments = parseStrokedLineSegments(contentText);
+  const xs = verticalSeparatorsSpanningBand(segments, yMin, yMax);
+  if (xs.length < 4) {
+    throw new Error(
+      `Oracle 352/354 : seulement ${xs.length} séparateur(s) vertical(aux) trouvé(s) dans la bande de la ligne 352/354 (attendu ≥4) — l'asset officiel a peut-être changé de structure. xs=${xs.join(",")}`,
+    );
+  }
+  const numberZone352 = intervalContaining(xs, text352.x);
+  const numberZone354 = intervalContaining(xs, text354.x);
+  if (!numberZone352 || !numberZone354) {
+    throw new Error("Oracle 352/354 : impossible de localiser la zone-numéro de 352 ou 354 dans les séparateurs trouvés.");
+  }
+  const beneficeBox = nextIntervalRight(xs, numberZone352);
+  const deficitBox = nextIntervalRight(xs, numberZone354);
+  if (!beneficeBox || !deficitBox) {
+    throw new Error("Oracle 352/354 : impossible de dériver la boîte de valeur à droite du numéro de case.");
+  }
+  return { beneficeBox, numberZone354, deficitBox };
+}
+
 export type ResultatFiscalColumnBoxes = {
   col1Box: ColumnBox;
   col2Box: ColumnBox;

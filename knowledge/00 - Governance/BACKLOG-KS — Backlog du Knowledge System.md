@@ -5,7 +5,7 @@ type: backlog
 status: living-document
 version: "1.1"
 created: 2026-07-02
-updated: 2026-09-20
+updated: 2026-10-03
 owner: product-owner
 tags: [backlog, gouvernance, knowledge-system, maintenance]
 ---
@@ -74,6 +74,7 @@ Une entrée n'est traitée que lorsqu'une Feature future en dépend réellement.
 | BKS-001 | Ventilation droits/taxes vs autres frais d'acquisition (déduction immédiate) | SAV-001, TRF-0001, SAV-011 | AL-2609 | P2 | À traiter | À la demande |
 | BKS-002 | Classement 2033-B des composantes du financement (garantie/caution encore PROVISOIRE) | SAV-001, SAV-011, TRF-0016, RAI-011 | AL-2609 | P2 | En cours | Avant toute évolution de garantie 242/294 |
 | BKS-003 | Identité du prêt dans F-012 et péremption du recouvrement F-011↔F-012 | RAI-000, AX-009, F-011, F-012 | AL-2609 | P3 | À traiter | À la demande |
+| BKS-004 | 2042-C-PRO : lieu officiel d'imputation des déficits LMNP antérieurs et cohérence avec 2031 7a/7b | SAV-032, SAV-030, AX-016 | MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1 | P2 | À traiter | Avant toute évolution de l'aide 2042-C-PRO (5NA / 5GA à 5GJ) |
 
 ---
 
@@ -103,6 +104,15 @@ Une entrée n'est traitée que lorsqu'une Feature future en dépend réellement.
 
 - **Non couvert historiquement :** exclusions par libellé hors « Charges diverses ». **Corrigé (2026-09-20) :** document gestion/assurance et saisie famille gestion suivent le même principe montant F-011 (enveloppes assurance + frais de dossier séparées) ; capital de prêt (AX-009) reste refusé.
 - **Péremption :** F-011 peut changer après la confirmation de F-012 ; F-006 bloque alors la génération (`chargesAssistant.recouvrementAssuranceF011` et `recouvrementFraisDossierF011`) jusqu'à reconfirmation de F-012.
+
+## BKS-004 — 2042-C-PRO : imputation des déficits LMNP antérieurs
+
+**Dette d'audit (MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1, 2026-10-03) — hors périmètre de SAV-032, volontairement non traitée.**
+
+- **Établi (SAV-032) :** pour un LMNP exclusif, les déficits antérieurs ne figurent ni en 330, ni en 350, ni en 352/354, ni en 370/372 de la 2033-B ; la 2031 Bis demande un « Résultat avant imputation des déficits antérieurs » (cases 7a/7b, reportées automatiquement sur la 2042-C-PRO). Leur imputation intervient donc après 7a.
+- **Non établi officiellement :** le lieu exact de cette imputation dans la déclaration personnelle (cases 5NA, 5GA à 5GJ de la 2042-C-PRO), la nature de 5NA (avant ou après imputation) et la cohérence avec 2031 7a/7b. La notice 2042-C-PRO n'a pas été consultée ; des sources secondaires ne valent pas preuve.
+- **Impact connu :** `buildClientSummaryDocument` / l'aide 2042-C-PRO alimente 5NA avec `resultatFiscal` (après imputation) — à auditer contre la notice 2042-C-PRO avant toute évolution.
+- **Non traité tant que :** l'aide 2042-C-PRO n'est pas auditée. Aucune modification de cette chaîne n'a été faite par SAV-032.
 
 ---
 

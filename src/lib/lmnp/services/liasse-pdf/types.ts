@@ -193,7 +193,9 @@ export type GateViolationCode =
   | "debordement-largeur"
   | "coordonnee-hors-page"
   | "page-formulaire-invalide"
-  | "positions-superposees";
+  | "positions-superposees"
+  /** SAV-032 — le bloc « RÉSULTAT FISCAL » de la 2033-B ne boucle pas sur les lignes imprimées (ou n'est pas établi). */
+  | "bouclage-resultat-fiscal";
 
 export type GateViolation = {
   code: GateViolationCode;

@@ -412,7 +412,32 @@ export const registry2033B2026: readonly CerfaVisualMapping[] = [
     note:
       "MICRO-JALON calibration 300 : position géométrique démontrée indépendamment du registre et du dossier témoin (quatre méthodes techniques convergentes sur l'asset officiel 2033-sd.pdf, voir commentaire ci-dessus). Zone de valeur [440.26,506.45]×[367.03,383.49], distincte de la zone-numéro '300', de la ligne 294 au-dessus, et de la zone grisée du memo 348 en dessous. Statut fiscal : `perteExceptionnelle` (voir map-2033b.ts, pass-through TRF-0027, inchangé) — cette entrée ne fait que positionner une valeur déjà fiscalement déterminée, aucune règle fiscale ici.",
   },
-  // Cases 352, 354 : RETIRÉES du périmètre supporté — voir excluded-cases.ts
-  // pour la raison (jamais produites par le mapper actuel, aucune case à
-  // positionner).
+  // Case 352 (ligne « RÉSULTAT FISCAL AVANT IMPUTATION DES DÉFICITS ANTÉRIEURS — Bénéfice col.1 / Déficit col.2 ») —
+  // MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1, après démonstration géométrique indépendante sur l'asset officiel
+  // `assets/2026/2033-sd.pdf` (PyMuPDF `get_drawings()` / `get_text()`, page 2) :
+  //  - bande de la ligne : y∈[753.45, 765.71] (filets horizontaux), numéros de case « 352 » en [347.5,361.9] et « 354 » en
+  //    [425.95,440.31] ;
+  //  - boîte de VALEUR de 352 (colonne 1, bénéfice) : x∈[361.89, 425.95] — MÊME colonne physique que 370 et 312/330 (séparateurs
+  //    verticaux continus 361.89 / 425.95 / 440.31 / 506.07) ; aucune zone grisée sur cette bande (les rectangles de fond
+  //    couvrent y∈[666.53,753.38] puis y∈[765.63,777.47]) ;
+  //  - oracle empirique complémentaire : sur le dossier témoin EDI accepté, « 0 » est imprimé en 352 avec bbox PyMuPDF
+  //    x∈[418.9,423.9], y∈[751.9,764.2] (même famille que le « 0 » de 370, x∈[419.4,424.4], y∈[787.8,800.2] = position
+  //    du registre pour 370).
+  // 354 (colonne 2) n'est volontairement PAS dans ce registre : vide en neutralisation LMNP (SAV-032) — toute production
+  // de 354 resterait bloquée par `case-sans-mapping-visuel`.
+  {
+    form: FORM,
+    millesime: MILLESIME,
+    caseId: "352",
+    page: 1,
+    position: topLeft(426.0, 751.9),
+    width: 60,
+    height: 9,
+    fontSize: 9,
+    align: "right",
+    format: "eur-arrondi",
+    calibration: "mesure-empirique",
+    note:
+      "MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1 : même bord droit que 370 (x=426.0, famille 312/330/370) ; y=751.9 = haut de bbox du « 0 » imprimé en 352 sur le dossier témoin EDI accepté (oracle empirique), cohérent avec la bande [753.45,765.71] (voir tests/position-oracle.test.ts, describe « case 352 »). Valeur : 0 par neutralisation (SAV-032) — cette entrée ne fait que positionner une valeur déjà fiscalement déterminée, aucune règle fiscale ici.",
+  },
 ];

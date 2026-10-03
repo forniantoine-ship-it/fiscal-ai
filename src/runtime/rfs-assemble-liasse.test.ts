@@ -46,6 +46,14 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
   if (overrides.amortNonDeduitExercice === undefined) {
     merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
   }
+  if (overrides.resultatFiscalAvantDeficits === undefined) {
+    // Reconstruction manuelle fidèle à F-006 (TRF-0031) : année déficitaire → −deficitNouveau ; sinon
+    // resultatFiscal + déficits imputés (resultatFiscal = résultat avant déficits − déficits imputés).
+    merged.resultatFiscalAvantDeficits =
+      merged.deficitNouveau > 0
+        ? -merged.deficitNouveau
+        : Math.round((merged.resultatFiscal + merged.deficitsImputes) * 100) / 100;
+  }
   return merged;
 }
 
@@ -151,7 +159,7 @@ describe("Cycle 31 — TEST 3 et 4 : valeurs exactes des cases pass-through", ()
 });
 
 describe("Cycle 31 — TEST 5 : 370 et 372 jamais alimentées simultanément", () => {
-  it("bénéfice → 370 seule ; déficit LMNP → 330 seule (ni 370 ni 372) — CORRIGÉ (audit fiscal P0, Cursor/Grok)", () => {
+  it("bénéfice → 350 = E, 352 = 370 = 0 ; déficit LMNP → 330 (354 et 372 vides) — SAV-032 (neutralisation)", () => {
     // AVANT correction, la branche déficit attendait 372 alimentée. Un
     // déficit LMNP non professionnel (CGI art. 156-I-1° bis, AX-016) ne
     // s'impute/reporte jamais via le circuit générique 370/372 : il est
@@ -159,20 +167,25 @@ describe("Cycle 31 — TEST 5 : 370 et 372 jamais alimentées simultanément", (
     const liasseBenef = assembleLiasseFromRfs(rfs(fiscalResult({ resultatFiscal: 5500, deficitNouveau: 0 })));
     const has = (liasse: ReturnType<typeof assembleLiasseFromRfs>, id: string) =>
       liasse.form2033B.cases.some((c) => c.caseId === id);
+    // SAV-032 : résultat 2033-B neutralisé — 370 imprimée à 0 ; le bénéfice LMNP est déduit en 350.
+    assert.equal(has(liasseBenef, "350"), true);
     assert.equal(has(liasseBenef, "370"), true);
+    assert.equal(liasseBenef.form2033B.cases.find((c) => c.caseId === "370")?.value, 0);
     assert.equal(has(liasseBenef, "372"), false);
 
     const liasseDeficit = assembleLiasseFromRfs(rfs(fiscalResult({ resultatFiscal: 0, deficitNouveau: 9862 })));
     assert.equal(has(liasseDeficit, "330"), true, "330 réintègre le déficit LMNP");
-    assert.equal(has(liasseDeficit, "372"), false, "372 exige resultatFiscal<0, jamais vrai pour un déficit LMNP réel");
-    assert.equal(has(liasseDeficit, "370"), false);
+    assert.equal(has(liasseDeficit, "372"), false, "372 vide : le déficit LMNP est neutralisé en 330");
+    assert.equal(has(liasseDeficit, "354"), false);
+    assert.equal(liasseDeficit.form2033B.cases.find((c) => c.caseId === "370")?.value, 0, "370 imprimée à 0 (colonne 1)");
   });
 });
 
 describe("Cycle 31/32 — TEST 6 : cases bloquées jamais inventées, jamais 0 par défaut", () => {
-  it("352/354/356 n'apparaissent jamais dans cases, uniquement dans casesNonAlimentees — 264/270/310/312/314 sont désormais alimentées (Cycle 32)", () => {
+  it("354/356 n'apparaissent jamais dans cases ; 352 est produite à 0 (SAV-032) — 264/270/310/312/314 sont désormais alimentées (Cycle 32)", () => {
     const liasse = assembleLiasseFromRfs(rfs(fiscalResult()));
-    const blockedIds = ["352", "354", "356"];
+    assert.equal(liasse.form2033B.cases.find((c) => c.caseId === "352")?.value, 0);
+    const blockedIds = ["354", "356"];
     for (const id of blockedIds) {
       assert.equal(
         liasse.form2033B.cases.some((c) => c.caseId === id),
@@ -278,10 +291,13 @@ describe("Cycle 31 — TEST 11 : document client 149 € et liasse RFS ne peuven
       liasseBenef.form2033B.cases.find((c) => c.caseId === "232")?.value,
       clientDocBenef.syntheseFiscale.recettes,
     );
+    // SAV-032 : le bénéfice LMNP du document client est déduit en 350 (E, sans ARD ni déficit antérieur ici) ;
+    // 370 est neutralisée à 0.
     assert.equal(
-      liasseBenef.form2033B.cases.find((c) => c.caseId === "370")?.value,
+      liasseBenef.form2033B.cases.find((c) => c.caseId === "350")?.value,
       clientDocBenef.syntheseFiscale.resultatFiscal,
     );
+    assert.equal(liasseBenef.form2033B.cases.find((c) => c.caseId === "370")?.value, 0);
 
     // CORRIGÉ (audit fiscal P0, Cursor/Grok) — le déficit LMNP non
     // professionnel n'apparaît plus sur 372 : c'est désormais 330 qui porte

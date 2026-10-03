@@ -3,13 +3,13 @@ id: TRF-0034
 title: "Mapping des données Fiscal AI vers la déclaration 2031-SD"
 type: transformation
 status: approved
-version: "1.0"
+version: "1.1"
 created: 2026-09-02
-updated: 2026-09-04
+updated: 2026-10-03
 owner: product-owner
 tags: [liasse, 2031-sd, identité, mapping, régime-réel-simplifié, bic, ir]
 catégorie: mapping
-requiert: [SAV-029]
+requiert: [SAV-029, SAV-032]
 ---
 
 # TRF-0034 — Mapping des données Fiscal AI vers la déclaration 2031-SD
@@ -23,6 +23,7 @@ requiert: [SAV-029]
 - activity_start_date : date de début d'activité déclarée au RNE/INPI — retenue par Fiscal AI comme représentation opérationnelle du commencement des opérations pour ce calcul, sans équivalence juridique générale affirmée. Distincte de dateMiseEnService (première location effective du bien) et de FIELD-026 (début d'exploitation du bien), toutes deux hors périmètre de cette Transformation.
 - exercice : année de l'exercice fiscal traité — voir FIELD-075 (exercice figé pour ce calcul) lorsqu'une référence documentaire est utile
 - résultat_fiscal : résultat imposable de l'exercice — voir FIELD-084
+- résultat_fiscal_avant_déficits : résultat LMNP après plafond 39 C et ARD consommés, avant imputation des déficits antérieurs (sortie de TRF-0031, SAV-030 étape 4)
 - déficit_nouveau : déficit de l'exercice, si le résultat avant amortissement est négatif (sortie de TRF-0031)
 
 ## Sorties
@@ -44,9 +45,10 @@ requiert: [SAV-029]
 
 **Section C — Récapitulation des éléments d'imposition**
 
-- Résultat fiscal — Bénéfice : reportée depuis `résultat_fiscal` si positif.
-- Résultat fiscal — Déficit : reportée depuis `déficit_nouveau` si positif.
-- BIC non professionnels — Bénéfice / Déficit : mêmes valeurs, reportées séparément vers la section dédiée du formulaire.
+- Résultat fiscal — ligne 1 (report des lignes 370/372 de la 2033-B-SD) : pour une activité LMNP exclusive, le résultat de la 2033-B est neutralisé (SAV-032). La ligne 1 reporte donc **0** en colonne 1 (bénéfice) ; la colonne 2 reste vide. Elle ne lit ni `résultat_fiscal` ni `déficit_nouveau`.
+- BIC non professionnels — Bénéfice (7a) : reportée depuis `résultat_fiscal_avant_déficits` si positif — résultat **avant** imputation des déficits antérieurs (cadre I de la 2031 Bis-SD). Elle ne lit pas `résultat_fiscal`.
+- BIC non professionnels — Déficit (7b) : reportée depuis `déficit_nouveau` si positif.
+- 2031 Bis-SD, cadre I « Autres locations meublées non professionnelles » : mêmes valeurs que 7a/7b.
 
 ## Logique
 

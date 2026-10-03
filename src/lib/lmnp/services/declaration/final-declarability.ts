@@ -1,6 +1,7 @@
 import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import type { LiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import type { CerfaCaseNonAlimentee, Form2033A } from "@/runtime/capabilities/rfs/projection/map-2033a";
+import type { Form2033B } from "@/runtime/capabilities/rfs/projection/map-2033b";
 
 /**
  * NEXT-5 — la déclarabilité CLIENT est une couche distincte de :
@@ -25,7 +26,7 @@ import type { CerfaCaseNonAlimentee, Form2033A } from "@/runtime/capabilities/rf
  *   dossiers aujourd'hui (ex. 2033-A cases 044/096/110/112/142/176/180 —
  *   bilan patrimonial, catégories jamais modélisées ou saisie patrimoniale
  *   non complétée ; 2033-B cases 352/354 — ordre de calcul F-006 ≠ formulaire
- *   officiel) — bloquer dessus rendrait la majorité des dossiers actuels
+ *   officiel ; résolu par SAV-032 : le bloc 2033-B est désormais gardé par `balancing`) — bloquer dessus rendrait la majorité des dossiers actuels
  *   non livrables, un résultat clairement faux ;
  * - un sous-ensemble ÉTROIT et PROUVÉ par le code lui-même : une divergence
  *   entre deux valeurs fiscales déjà calculées (F-010 vs F-014 pour
@@ -112,6 +113,22 @@ function resolveEquilibreIssue(form2033A: Pick<Form2033A, "formId" | "equilibreS
 }
 
 /**
+ * SAV-032 — le bloc « RÉSULTAT FISCAL » de la 2033-B-SD (312/314, 318, 330, 350, 352/354, 370/372) doit boucler sur les
+ * lignes imprimées. `balancing` absent (`liasseRfs` persisté avant SAV-032) : fail-open, comme `liasseRfs` absent (aucune
+ * invalidation rétroactive) — la route PDF recalcule de toute façon le bouclage à partir de la RFS (fail-closed).
+ */
+function resolveBouclage2033BIssue(form2033B: Pick<Form2033B, "formId" | "balancing"> | undefined): InternalProjectionIssue | undefined {
+  const balancing = form2033B?.balancing;
+  if (!form2033B || !balancing || balancing.status === "BALANCED") return undefined;
+  return {
+    formId: form2033B.formId,
+    caseId: "352",
+    label: "Résultat fiscal avant imputation des déficits antérieurs",
+    raison: balancing.raisons.join(" ") || `Bouclage du résultat fiscal non établi (${balancing.status}).`,
+  };
+}
+
+/**
  * `liasseRfs` absent (dossier généré avant l'introduction de ce champ, ou
  * archive antérieure) n'est jamais traité comme une preuve de
  * non-déclarabilité : fail-open, aucune migration/invalidation rétroactive
@@ -136,10 +153,12 @@ export function resolveFinalDeclarabilityState(
 
   const dispenseEnEffet = isDispense2033AEnEffet(liasseRfs.dispense2033A);
   const equilibreIssue = dispenseEnEffet ? undefined : resolveEquilibreIssue(liasseRfs.form2033A);
+  const bouclageIssue = resolveBouclage2033BIssue(liasseRfs.form2033B);
   const internalProjectionIssues = [
     ...(dispenseEnEffet ? [] : issuesForForm(liasseRfs.form2033A.formId, liasseRfs.form2033A.casesNonAlimentees)),
     ...(equilibreIssue ? [equilibreIssue] : []),
     ...issuesForForm(liasseRfs.form2033C.formId, liasseRfs.form2033C.casesNonAlimentees),
+    ...(bouclageIssue ? [bouclageIssue] : []),
   ];
 
   return { deliverable: internalProjectionIssues.length === 0, internalProjectionIssues };

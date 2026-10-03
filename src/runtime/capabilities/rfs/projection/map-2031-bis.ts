@@ -1,6 +1,7 @@
 import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import { resolveNonProNeutralisation } from "../../f007/nonpro-neutralisation";
 
 /**
  * Projection Cerfa 2031 Bis-SD (Annexe au 2031-SD — Cadre I, BIC non
@@ -70,18 +71,20 @@ export function map2031BisFromRfs(rfs: FiscalRepresentation): Form2031Bis {
   const baseTrace: Omit<CaseTrace, "path"> = { source: "FiscalResult", ksArtifacts: ["TRF-0032"] };
 
   const cases: CerfaCase[] = [];
-  // CORRECTION JALON 1B : plus aucune condition sur `deficitsImputes` — voir
-  // le commentaire d'en-tête du fichier. `resultatFiscal`/`deficitNouveau`
-  // sont déjà, par construction F-006 (TRF-0031, inchangé), le résultat/
-  // déficit APRÈS imputation : exactement ce que cette ligne doit reporter,
-  // à l'identique de I_7A/I_7B (`map-2031-recapitulation.ts`), jamais une
-  // formule distincte.
-  if (fr.resultatFiscal > 0) {
+  // SAV-032 — cadre I « Résultat avant imputation des déficits antérieurs » : bénéfice = `resultatFiscalAvantDeficits`
+  // (jamais `resultatFiscal`, qui est APRÈS imputation), identique à I_7A du 2031-SD ; déficit = `deficitNouveau`
+  // (= I_7B). Sans `resultatFiscalAvantDeficits` (FiscalResult antérieur à P0-39C) : bénéfice non reconstituable, absent.
+  const neutralisation = resolveNonProNeutralisation(fr);
+  if (neutralisation.status === "AVAILABLE" && neutralisation.case7a > 0) {
     cases.push({
       caseId: "I_AUTRES_LMNP_BENEFICE",
       label: LABEL_BENEFICE,
-      value: round2(fr.resultatFiscal),
-      trace: { ...baseTrace, path: "fiscalResult.resultatFiscal (= I_7A du 2031-SD)", ksArtifacts: ["TRF-0032"] },
+      value: neutralisation.case7a,
+      trace: {
+        ...baseTrace,
+        path: "fiscalResult.resultatFiscalAvantDeficits (= I_7A du 2031-SD, avant imputation des déficits antérieurs)",
+        ksArtifacts: ["SAV-032", "SAV-030", "TRF-0032"],
+      },
     });
   }
   if (fr.deficitNouveau > 0) {

@@ -84,7 +84,7 @@ describe("generateCerfa2031FromRfs — vertical slice 2031-SD (P1-6A)", () => {
     assert.ok(!drawnCaseIds.has("C_L1_COL2"), "C_L1_COL2 (déficit) ne doit jamais apparaître en cas de bénéfice");
   });
 
-  it("cas nominal — déficit (comportement différent du bénéfice) : I_7B dessinée, I_7A/C_L1_COL1 absentes ; C_L1_COL2 structurellement jamais alimentée par le F-006 actuel (map-2031-recapitulation.ts : condition resultatFiscal < 0, jamais vraie — resultatFiscal est toujours plafonné à 0, le déficit vit dans deficitNouveau)", async () => {
+  it("cas nominal — déficit (comportement différent du bénéfice) : I_7B dessinée, I_7A absente, C_L1_COL1 dessinée à 0 (SAV-032, report de 370 neutralisée) ; C_L1_COL2 structurellement jamais alimentée par le F-006 actuel (map-2031-recapitulation.ts : condition resultatFiscal < 0, jamais vraie — resultatFiscal est toujours plafonné à 0, le déficit vit dans deficitNouveau)", async () => {
     const generation = runDeclarationGeneration(draftDeficit(), 2025);
     assert.equal(generation.status, "generated");
     if (generation.status !== "generated") throw new Error("unreachable");
@@ -98,7 +98,10 @@ describe("generateCerfa2031FromRfs — vertical slice 2031-SD (P1-6A)", () => {
     const drawnCaseIds = new Set(result.manifest.map((entry) => entry.caseId));
     assert.ok(drawnCaseIds.has("I_7B"), "I_7B (déficit) doit être dessinée");
     assert.ok(!drawnCaseIds.has("I_7A"), "I_7A (bénéfice) ne doit jamais apparaître en cas de déficit");
-    assert.ok(!drawnCaseIds.has("C_L1_COL1"), "C_L1_COL1 (bénéfice) ne doit jamais apparaître en cas de déficit");
+    // SAV-032 : la ligne 1 reporte 370 (0 après neutralisation du déficit LMNP en 330) : « 0 » en colonne 1, comme le
+    // dossier témoin accepté. Ce n'est plus une valeur de bénéfice (le bénéfice LMNP vit en 7a / 350).
+    assert.ok(drawnCaseIds.has("C_L1_COL1"), "C_L1_COL1 = 0 doit être dessinée (report de 370 neutralisée)");
+    assert.equal(result.manifest.find((entry) => entry.caseId === "C_L1_COL1")?.text, "0");
     assert.ok(!drawnCaseIds.has("C_L1_COL2"), "C_L1_COL2 n'est jamais alimentée par le F-006 actuel (resultatFiscal n'est jamais négatif) — non-régression de ce constat, pas un bug de ce wrapper");
   });
 

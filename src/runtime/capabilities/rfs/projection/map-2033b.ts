@@ -1,6 +1,7 @@
 import type { FiscalRepresentation } from "../types";
 import type { CaseTrace, CerfaCase } from "../../f007/types";
 import { round2 } from "../../f007/types";
+import { resolveNonProNeutralisation } from "../../f007/nonpro-neutralisation";
 import { resultatComptable as resultatComptableCentral } from "../../bilan/resultat-comptable";
 import { resolveConservationDetail2033B, type ConservationDetail2033B } from "./detail-charges-2033b";
 import { splitFinancementFor2033B } from "./split-financement-2033b";
@@ -19,12 +20,15 @@ import { splitFinancementFor2033B } from "./split-financement-2033b";
  * l'exposition de `FiscalResult.charges.totalNonDeductible` (Cycle 32,
  * transport pur depuis F-012 — voir f006/aggregate-inputs.ts). Formule
  * vérifiée au centime près contre le grand livre comptable réel du dossier
- * de référence. P0-39C — 352/354 sont un pass-through de
- * `fiscalResult.resultatFiscalAvantDeficits` (SAV-030 : plafond 39 C puis
- * imputation des déficits). Le scalaire est calculé dans le moteur, où le
- * stock d'amortissements réputés différés est encore isolable ; il n'est
- * jamais reconstitué ici. Un FiscalResult antérieur, sans ce champ, laisse
- * 352/354 bloquées. 356 est reclassée : ce n'est pas un
+ * de référence. SAV-032 — 330/350/352/354/370/372 forment UN SEUL bloc de
+ * neutralisation du résultat LMNP non professionnel (voir
+ * `f007/nonpro-neutralisation.ts`) : `resultatFiscalAvantDeficits` (F-006) est
+ * la grandeur métier de 2031 7a, ce n'est PAS directement la ligne 352/354 ;
+ * 352 = 370 = 0 imprimés, 354/372 vides, et un invariant de bouclage
+ * (`balancing`) construit sur les lignes réellement imprimées bloque la
+ * livraison s'il n'est pas vérifié. Un FiscalResult antérieur, sans
+ * `resultatFiscalAvantDeficits`, laisse ces lignes non alimentées
+ * (`balancing.status = UNAVAILABLE`). 356 est reclassée : ce n'est pas un
  * choix de périmètre Fiscal AI, c'est un mécanisme (report en arrière,
  * art. 220 quinquies du CGI) réservé aux entreprises à l'IS — non applicable
  * par nature à un LMNP au réel simplifié (IR).
@@ -79,19 +83,16 @@ import { splitFinancementFor2033B } from "./split-financement-2033b";
  * `resultatFiscal` (case 370) et documentée séparément sur le 2042-C-PRO
  * (cases 5GA-5GJ).
  *
- * Règle fiscale VERROUILLÉE (jalon dédié, après audit indépendant primaire de
- * la notice 2033-NOT-SD 2026) — pour le périmètre produit actuel de Fiscal AI
- * (entreprise individuelle LMNP, IR, activité non professionnelle unique,
- * aucun autre mécanisme "divers" traité) : la case 350 « Divers à déduire »
- * porte la mention IR de l'imputation d'un déficit catégoriel ANTÉRIEUR sur
- * le bénéfice de l'exercice — projection informative pure de
- * `fiscalResult.deficitsImputes` (déjà calculé par TRF-0031), qui ne
- * participe à aucun calcul de 352/354/370/372 (lectures indépendantes de
- * `resultatFiscal`/`deficitNouveau`), ne reçoit jamais `deficitNouveau`, et
- * ne reçoit jamais le mouvement annuel d'amortissement non déduit ni le
- * stock final ARD (voir case 318 = `amortNonDeduitExercice`, flux totalement
- * distinct). 218/254 exceptées, 350 est la première case du groupe 209-350
- * sortie du statut « non traitée ».
+ * SAV-032 (remplace la règle « 350 = deficitsImputes », jalon antérieur) — la
+ * notice 2033-NOT-SD 2026 (rubriques 330, 350, 690, 691) neutralise le
+ * résultat d'une activité non professionnelle dans la 2033-B : déficit
+ * réintégré en 330, bénéfice déduit en 350 (ARD consommés inclus dans ce
+ * total, jamais une seconde déduction), 352/354 et 370/372 à zéro pour une
+ * activité LMNP exclusive. Les déficits ANTÉRIEURS n'apparaissent pas dans la
+ * 2033-B (le cadre I de la 2031 Bis demande un résultat « avant imputation
+ * des déficits antérieurs » : 7a/7b) ; `deficitsImputes` n'est donc plus
+ * projeté ici. Ni `ligne 350` ni `ligne 330` ne reçoivent plus `deficitNouveau`
+ * seul : voir `f007/nonpro-neutralisation.ts`.
  *
  * Correction documentaire (audit indépendant, ce même jalon) — l'ancienne
  * justification de ce commentaire ("à la place du Cadre II du 2033-D-SD")
@@ -99,15 +100,9 @@ import { splitFinancementFor2033B } from "./split-financement-2033b";
  * à l'IS) se sert de la case **360** du 2033-B-SD (notice 2033-NOT-SD 2026,
  * p.14 : "Montant porté ligne 360 du tableau n° 2033-B-SD"), jamais de la
  * case 350 — 360 reste `non_applicable` ci-dessous, à raison, comme mécanisme
- * IS distinct. La case 350 « Divers à déduire » a par ailleurs, sur le
- * formulaire officiel, un usage explicitement documenté pour le bénéfice non
- * professionnel (art. 156-I-1° bis, symétrique de la case 330 pour le
- * déficit) — usage volontairement HORS PÉRIMÈTRE de ce mapper (aucune donnée
- * ne le projette ici), le produit actuel ne traitant que l'imputation d'un
- * déficit antérieur pour cette case. Voir
- * `src/lib/lmnp/services/liasse-pdf/excluded-cases.ts` pour le statut PDF
- * correspondant (calibrage géométrique en attente, question fiscale
- * verrouillée).
+ * IS distinct. La case 350 « Divers à déduire » porte le bénéfice
+ * non professionnel (art. 156-I-1° bis, symétrique de la case 330 pour le
+ * déficit) : désormais projetée, voir SAV-032 ci-dessus.
  *
  * Correction P0 fiscale (audit indépendant Cursor/Grok, confirmée) — case
  * 330 « Divers* » (bloc RÉINTÉGRATIONS, notice 2033-NOT-SD 2026 : inclut le
@@ -192,6 +187,30 @@ export type CerfaCaseNonAlimentee = {
   categorie: CerfaCaseNonAlimenteeCategorie;
 };
 
+/**
+ * SAV-032 — invariant de bouclage du bloc « RÉSULTAT FISCAL » de la 2033-B, construit sur les lignes RÉELLEMENT
+ * imprimées (jamais sur les scalaires F-006) :
+ *   (312 − 314) + réintégrations imprimées − déductions imprimées = (352 − 354) imprimés.
+ * Domaine supporté (LMNP exclusif) : le résultat attendu après neutralisation est 0. Toute ligne du bloc imprimée mais
+ * non modélisée ici, ou tout écart, rend le bouclage `UNBALANCED` : fail-closed (aucun PDF, déclaration non livrable).
+ */
+export type Balancing2033B = {
+  status: "BALANCED" | "UNBALANCED" | "UNAVAILABLE";
+  /** 312 − 314 imprimés. */
+  resultatComptable: number;
+  /** Σ des lignes de réintégration imprimées (316, 318, 322, 324, 330, 251, 998, 999). */
+  reintegrations: number;
+  /** Σ des lignes de déduction imprimées (342, 350, 997). */
+  deductions: number;
+  /** resultatComptable + reintegrations − deductions. */
+  resultatCalcule: number;
+  /** 352 − 354 imprimés. */
+  resultatImprime: number;
+  /** resultatCalcule − resultatImprime. */
+  ecart: number;
+  raisons: string[];
+};
+
 export type Form2033B = {
   formId: "2033-B-SD";
   millésime: number;
@@ -200,7 +219,54 @@ export type Form2033B = {
   casesNonAlimentees: CerfaCaseNonAlimentee[];
   /** A1 — invariant de conservation : 242 + 244 + 254 = 264 (ou lignes non publiées, avec raison). */
   conservationDetail: ConservationDetail2033B;
+  /** SAV-032 — bouclage du bloc résultat fiscal (voir `Balancing2033B`). */
+  balancing: Balancing2033B;
 };
+
+const RESULTAT_BLOCK_REINTEGRATIONS: readonly string[] = ["316", "318", "322", "324", "330", "251", "998", "999"];
+const RESULTAT_BLOCK_DEDUCTIONS: readonly string[] = ["342", "350", "997"];
+/**
+ * Lignes du bloc 2033-B situées entre 312/314 et 370/372 dont le SIGNE dans l'équation n'est pas modélisé ici, ou qui
+ * ne concernent pas le domaine LMNP exclusif (déductions exceptionnelles, ZFU…, « dont », IS) : imprimées, elles rendent
+ * le bouclage `UNBALANCED` plutôt que d'être ignorées silencieusement.
+ */
+const RESULTAT_BLOCK_UNMODELLED: readonly string[] = [
+  "247", "248", "249", "344", "345", "346", "986", "987", "989", "127", "138", "991", "181", "992", "993",
+  "655", "643", "645", "647", "648", "641", "990", "649", "354", "356", "360", "372",
+];
+
+function computeBalancing2033B(cases: readonly CerfaCase[], unavailableReason?: string): Balancing2033B {
+  const valueOf = (caseId: string): number | undefined => {
+    const value = cases.find((c) => c.caseId === caseId)?.value;
+    return typeof value === "number" ? value : undefined;
+  };
+  const sum = (ids: readonly string[]) => round2(ids.reduce((acc, id) => acc + (valueOf(id) ?? 0), 0));
+  const resultatComptable = round2((valueOf("312") ?? 0) - (valueOf("314") ?? 0));
+  const reintegrations = sum(RESULTAT_BLOCK_REINTEGRATIONS);
+  const deductions = sum(RESULTAT_BLOCK_DEDUCTIONS);
+  const noNegativeZero = (value: number) => (Object.is(value, -0) ? 0 : value);
+  const resultatCalcule = noNegativeZero(round2(resultatComptable + reintegrations - deductions));
+  const resultatImprime = noNegativeZero(round2((valueOf("352") ?? 0) - (valueOf("354") ?? 0)));
+  const ecart = noNegativeZero(round2(resultatCalcule - resultatImprime));
+  const base = { resultatComptable, reintegrations, deductions, resultatCalcule, resultatImprime, ecart };
+
+  if (unavailableReason !== undefined) {
+    return { status: "UNAVAILABLE", ...base, raisons: [unavailableReason] };
+  }
+  const raisons: string[] = [];
+  const unmodelled = RESULTAT_BLOCK_UNMODELLED.filter((id) => valueOf(id) !== undefined);
+  if (unmodelled.length > 0) {
+    raisons.push(`Ligne(s) du bloc résultat fiscal imprimée(s) mais non modélisée(s) dans le bouclage : ${unmodelled.join(", ")}.`);
+  }
+  if (valueOf("352") === undefined) raisons.push("La ligne 352 n'est pas imprimée : le résultat du bloc n'est pas établi.");
+  if (ecart !== 0) {
+    raisons.push(
+      `Le bloc ne boucle pas : (312 − 314) ${resultatComptable} + réintégrations ${reintegrations} − déductions ${deductions} = ${resultatCalcule}, ` +
+        `alors que 352 − 354 imprimés = ${resultatImprime} (écart ${ecart}).`,
+    );
+  }
+  return { status: raisons.length === 0 ? "BALANCED" : "UNBALANCED", ...base, raisons };
+}
 
 export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
   const fr = rfs.fiscalResult;
@@ -259,11 +325,6 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     amortNonDeduitExplicite !== undefined
       ? "fiscalResult.amortNonDeduitExercice"
       : "fiscalResult.amortCalcule − fiscalResult.amortDeduct (legacy fallback)";
-
-  const resultatAvantDeficits =
-    typeof fr.resultatFiscalAvantDeficits === "number" && Number.isFinite(fr.resultatFiscalAvantDeficits)
-      ? round2(fr.resultatFiscalAvantDeficits)
-      : undefined;
 
   const cases: CerfaCase[] = [
     {
@@ -330,20 +391,6 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
       label: "Charges exceptionnelles (VI)",
       value: round2(fr.perteExceptionnelle),
       trace: { ...baseTrace, path: "fiscalResult.perteExceptionnelle", ksArtifacts: ["TRF-0027", "TRF-0032"] },
-    },
-    {
-      // Règle fiscale VERROUILLÉE (voir commentaire d'en-tête du fichier) :
-      // pour le périmètre LMNP-IR actuel, 350 porte la mention IR de
-      // l'imputation d'un déficit catégoriel antérieur sur le bénéfice de
-      // l'exercice. Projection informative pure de fiscalResult.deficitsImputes,
-      // déjà calculé par TRF-0031 — ne participe à aucun calcul de
-      // 352/354/370/372. Seul cas d'usage spécifié pour cette case dans ce
-      // mapper — voir le commentaire d'en-tête du fichier pour les autres
-      // usages notice (bénéfice non professionnel, etc.) non couverts ici.
-      caseId: "350",
-      label: "Divers à déduire",
-      value: round2(fr.deficitsImputes),
-      trace: { ...baseTrace, path: "fiscalResult.deficitsImputes", ksArtifacts: ["TRF-0031", "TRF-0032"] },
     },
     {
       caseId: "310",
@@ -431,92 +478,63 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     });
   }
 
-  // Correction P0 fiscale (audit indépendant Cursor/Grok) — le déficit LMNP
-  // non professionnel (`deficitNouveau`) est réintégré ici, case 330 « Divers
-  // » (bloc RÉINTÉGRATIONS ; notice 2033-NOT-SD 2026 : déficit d'activités
-  // non professionnelles, CGI art. 156-I-1° bis, AX-016 du Knowledge
-  // System) — jamais projeté sur 372 (voir ci-dessous et le commentaire
-  // d'en-tête du fichier pour le raisonnement complet). Comme 350, cette case
-  // ne participe à aucun calcul de 352/354/370/372 dans ce mapper : lecture
-  // indépendante et informative de `deficitNouveau`, déjà calculé par
-  // TRF-0031.
-  if (fr.deficitNouveau > 0) {
-    cases.push({
-      caseId: "330",
-      label: "Divers (réintégration du déficit LMNP non professionnel)",
-      value: round2(fr.deficitNouveau),
-      trace: { ...baseTrace, path: "fiscalResult.deficitNouveau", ksArtifacts: ["TRF-0031", "TRF-0032", "AX-016"] },
-    });
-  }
-
-  if (resultatAvantDeficits !== undefined && resultatAvantDeficits > 0) {
-    cases.push({
-      caseId: "352",
-      label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
-      value: resultatAvantDeficits,
-      trace: {
-        ...baseTrace,
-        path: "fiscalResult.resultatFiscalAvantDeficits",
-        ksArtifacts: ["TRF-0031", "TRF-0032", "SAV-030"],
+  // SAV-032 — neutralisation du résultat LMNP non professionnel (domaine supporté : LMNP exclusif, IR). Une seule
+  // règle pour 330 / 350 / 352 / 354 / 370 / 372 (jamais patchées séparément) ; voir `nonpro-neutralisation.ts`.
+  //   330 = −E + totalNonDeductible (E < 0) ou totalNonDeductible ; 350 = E (E > 0, ARD consommés inclus) ;
+  //   352 = 370 = 0 imprimés (colonne 1, comme le dossier témoin accepté) ; 354 et 372 vides.
+  // `resultatFiscalAvantDeficits` (F-006) est la grandeur métier de 2031 7a : ce n'est PAS la ligne 352/354.
+  const neutralisation = resolveNonProNeutralisation(fr);
+  const neutralisationTrace = {
+    ...baseTrace,
+    ksArtifacts: ["SAV-032", "SAV-030", "TRF-0031", "TRF-0032"],
+  };
+  if (neutralisation.status === "AVAILABLE") {
+    if (neutralisation.ligne330 > 0) {
+      cases.push({
+        caseId: "330",
+        label: "Divers à réintégrer (déficit LMNP non professionnel et charges non déductibles)",
+        value: neutralisation.ligne330,
+        trace: {
+          ...neutralisationTrace,
+          path: "max(−E, 0) + fiscalResult.charges.totalNonDeductible, E = fiscalResult.resultatFiscalAvantDeficits + fiscalResult.amortReportesUtilises",
+        },
+      });
+    }
+    if (neutralisation.ligne350 > 0) {
+      cases.push({
+        caseId: "350",
+        label: "Divers à déduire (bénéfice LMNP non professionnel, ARD consommés inclus)",
+        value: neutralisation.ligne350,
+        trace: {
+          ...neutralisationTrace,
+          path: "max(E, 0), E = fiscalResult.resultatFiscalAvantDeficits + fiscalResult.amortReportesUtilises",
+        },
+      });
+    }
+    cases.push(
+      {
+        caseId: "352",
+        label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
+        value: 0,
+        trace: { ...neutralisationTrace, path: "case 312/314 + case 318 + case 330 − case 350 (projection de présentation : résultat de l'équation 2033-B, 0 après neutralisation)" },
       },
-    });
-  }
-
-  if (resultatAvantDeficits !== undefined && resultatAvantDeficits < 0) {
-    cases.push({
-      caseId: "354",
-      label: "Résultat fiscal avant imputation des déficits antérieurs — Déficit (col. 2)",
-      value: round2(Math.abs(resultatAvantDeficits)),
-      trace: {
-        ...baseTrace,
-        path: "fiscalResult.resultatFiscalAvantDeficits",
-        ksArtifacts: ["TRF-0031", "TRF-0032", "SAV-030"],
+      {
+        caseId: "370",
+        label: "Résultat fiscal après imputation des déficits — Bénéfice (col. 1)",
+        value: 0,
+        trace: { ...neutralisationTrace, path: "case 352 − case 354 − 356 − 360 (356 = 360 = 0 : IS uniquement) = 0" },
       },
-    });
-  }
-
-  if (fr.resultatFiscal > 0) {
-    cases.push({
-      caseId: "370",
-      label: "Résultat fiscal après imputation des déficits — Bénéfice (col. 1)",
-      value: round2(fr.resultatFiscal),
-      trace: { ...baseTrace, path: "fiscalResult.resultatFiscal" },
-    });
-  }
-
-  // Correction P0 fiscale — 372 ne lit plus jamais `deficitNouveau` (voir
-  // commentaire d'en-tête). Cette condition reflète la définition réelle de
-  // la case (résultat fiscal négatif après imputation) plutôt que le déficit
-  // LMNP mis en réserve : elle ne se déclenche jamais avec le F-006 actuel,
-  // qui garantit `resultatFiscal >= 0` (TRF-0031, applyAmortissementStocks —
-  // INCHANGÉ). Conservée sous cette forme (plutôt que supprimée) pour rester
-  // correcte si cette garantie F-006 changeait un jour.
-  if (fr.resultatFiscal < 0) {
-    cases.push({
-      caseId: "372",
-      label: "Résultat fiscal après imputation des déficits — Déficit (col. 2)",
-      value: round2(Math.abs(fr.resultatFiscal)),
-      trace: { ...baseTrace, path: "fiscalResult.resultatFiscal", ksArtifacts: ["TRF-0032"] },
-    });
+    );
   }
 
   const casesNonAlimentees: CerfaCaseNonAlimentee[] = [
-    ...(resultatAvantDeficits === undefined
-      ? [
-          {
-            caseId: "352",
-            label: "Résultat fiscal avant imputation des déficits antérieurs — Bénéfice (col. 1)",
-            raison:
-              "FiscalResult.resultatFiscalAvantDeficits est absent (snapshot antérieur à P0-39C). Le moteur le calcule désormais avant l'imputation des déficits (SAV-030, plafond 39 C indépendant du stock de déficits). Sans ce scalaire, la case n'est pas reconstituite à partir de resultatFiscal et du stock d'amortissements reportés.",
-            categorie: "incoherence_modele" as const,
-          },
-          {
-            caseId: "354",
-            label: "Résultat fiscal avant imputation des déficits antérieurs — Déficit (col. 2)",
-            raison: "Même absence que la case 352.",
-            categorie: "incoherence_modele" as const,
-          },
-        ]
+    ...(neutralisation.status === "UNAVAILABLE"
+      ? (["330", "350", "352", "354", "370", "372"] as const).map((caseId) => ({
+          caseId,
+          label: `Ligne ${caseId} (neutralisation du résultat LMNP non professionnel, SAV-032)`,
+          raison: neutralisation.raison,
+          categorie: "incoherence_modele" as const,
+        }))
       : []),
     {
       caseId: "356",
@@ -570,5 +588,6 @@ export function map2033BFromRfs(rfs: FiscalRepresentation): Form2033B {
     cases,
     casesNonAlimentees,
     conservationDetail,
+    balancing: computeBalancing2033B(cases, neutralisation.status === "UNAVAILABLE" ? neutralisation.raison : undefined),
   };
 }

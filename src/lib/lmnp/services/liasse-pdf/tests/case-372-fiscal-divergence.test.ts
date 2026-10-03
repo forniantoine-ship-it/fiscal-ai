@@ -44,13 +44,15 @@ import { resolveVisualMapping } from "../registry";
 import { buildDossierTemoinRfs } from "./golden-master-technical-pipeline.test";
 
 describe("RÉSOLU — case 372 (2033-B) / C_L1_COL2 (2031-SD) ne reflètent plus le déficit LMNP", () => {
-  it("le mapper produit désormais 330 = deficitNouveau (9862), et ne produit plus jamais 372 pour ce scénario déficitaire", () => {
+  it("le mapper produit 330 = deficitNouveau + charges non déductibles (9 862 + 99 = 9 961, oracle EDI), et ne produit plus jamais 372 pour ce scénario déficitaire", () => {
     const rfs = buildDossierTemoinRfs();
     const form = map2033BFromRfs(rfs);
 
     const case330 = form.cases.find((c) => c.caseId === "330");
-    assert.ok(case330, "330 doit désormais être produite (réintégration du déficit LMNP)");
-    assert.equal(case330?.value, 9862, "330 porte exactement deficitNouveau, sans reformulation");
+    assert.ok(case330, "330 doit être produite (réintégration du déficit LMNP et des charges non déductibles, SAV-032)");
+    // MISE À JOUR SAV-032 : avant, 330 = deficitNouveau seul (9 862), ce qui laissait 99 € non neutralisés et ne
+    // reproduisait pas la liasse acceptée en EDI (330 = 9 961, déficit + « Fond de roulement » non déductible).
+    assert.equal(case330?.value, 9961, "330 = deficitNouveau (9 862) + totalNonDeductible (99)");
 
     const case372 = form.cases.find((c) => c.caseId === "372");
     assert.equal(case372, undefined, "372 ne doit plus jamais être produite pour un déficit LMNP (exige resultatFiscal<0)");

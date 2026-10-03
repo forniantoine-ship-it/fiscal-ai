@@ -233,6 +233,9 @@ assert.ok(RESULTAT_AVANT_AMORT >= AMORT_CALCULE, "précondition golden — amort
 const AMORT_DEDUCT = AMORT_CALCULE;
 const AMORT_REPORTE = 0;
 const RESULTAT_FISCAL = round2(RESULTAT_AVANT_AMORT - AMORT_DEDUCT); // 4 094.41
+// SAV-032 : sans ARD ni déficit antérieur, E = résultat avant déficits = résultat fiscal.
+const RESULTAT_FISCAL_AVANT_DEFICITS = RESULTAT_FISCAL;
+const E_NEUTRALISE = RESULTAT_FISCAL;
 const RESULTAT_COMPTABLE = round2(RESULTAT_AVANT_AMORT - AMORT_CALCULE - 0); // totalNonDeductible=0 → 4 094.41 (= RESULTAT_FISCAL ici)
 
 // --- Bilan patrimonial (2033-A) ---
@@ -503,8 +506,11 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
     function findCase(id: string) {
       return liasseRfs.form2031.cases.find((c) => c.caseId === id);
     }
-    it("C_L1_COL1 (résultat fiscal bénéfice)", () => assert.equal(findCase("C_L1_COL1")?.value, RESULTAT_FISCAL));
-    it("I_7A (BIC non pro bénéfice)", () => assert.equal(findCase("I_7A")?.value, RESULTAT_FISCAL));
+    // SAV-032 — la 2033-B neutralise le résultat LMNP non professionnel : ligne 1 = report de 370 = 0 (colonne 1) ;
+    // 7a = résultat AVANT imputation des déficits antérieurs (ici identique à resultatFiscal : aucun déficit antérieur).
+    it("C_L1_COL1 (report de 370 après neutralisation = 0)", () => assert.equal(findCase("C_L1_COL1")?.value, 0));
+    it("I_7A (BIC non pro bénéfice, avant imputation des déficits antérieurs)", () =>
+      assert.equal(findCase("I_7A")?.value, RESULTAT_FISCAL_AVANT_DEFICITS));
     it("C_L1_COL2 / I_7B absents (aucun déficit)", () => {
       assert.equal(findCase("C_L1_COL2"), undefined);
       assert.equal(findCase("I_7B"), undefined);
@@ -569,8 +575,10 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
       "310": RESULTAT_COMPTABLE,
       "312": RESULTAT_COMPTABLE,
       "318": AMORT_REPORTE,
-      "350": 0,
-      "370": RESULTAT_FISCAL,
+      // SAV-032 : bénéfice LMNP déduit en 350 (E = 4 094,41, aucun ARD) ; 352 = 370 = 0 par neutralisation.
+      "350": E_NEUTRALISE,
+      "352": 0,
+      "370": 0,
     };
     for (const [caseId, expected] of Object.entries(attendus)) {
       it(`case ${caseId} = ${expected}`, () => {
@@ -587,6 +595,14 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
       // L'écart de conservation F-012 reste les frais notaire ; les FD sont ajoutés des deux côtés
       // (attendu/attribue) via le mapper — l'écart affiché reste FRAIS_NOTAIRE.
       assert.equal(liasseRfs.form2033B.conservationDetail.ecart, FRAIS_NOTAIRE);
+    });
+    it("SAV-032 — bouclage du bloc résultat fiscal : 312 + 318 + 330 − 350 = 352 = 0, 330/354/372 absentes", () => {
+      const v = (id: string) => (findCase(id)?.value as number | undefined) ?? 0;
+      assert.equal(liasseRfs.form2033B.balancing.status, "BALANCED");
+      assert.equal(round2(v("312") + v("318") + v("330") - v("350")), v("352"));
+      assert.equal(findCase("330"), undefined, "aucun non-déductible, aucun déficit : 330 non imprimée");
+      assert.equal(findCase("354"), undefined);
+      assert.equal(findCase("372"), undefined);
     });
     it("réconciliation Cerfa avec crédit : 270 − 294 − 300 = 310", () => {
       const v = (id: string) => (findCase(id)?.value as number | undefined) ?? 0;
@@ -660,16 +676,18 @@ describe("GOLDEN #1 — LMNP réel simplifié 2026 : validation fiscale end-to-e
   });
 
   describe("Réconciliation inter-formulaires", () => {
-    it("F-006 fiscalResult.resultatFiscal = RFS = 2033-B case 370 = 2031 case C_L1_COL1/I_7A = aide 2042 case 5NA", () => {
+    it("F-006 resultatFiscal = 2033-B 350 (neutralisé) ; 370 = C_L1_COL1 = 0 ; 2031 I_7A = résultat avant déficits ; aide 2042 5NA inchangée", () => {
+      const c350 = liasseRfs.form2033B.cases.find((c) => c.caseId === "350")?.value;
       const c370 = liasseRfs.form2033B.cases.find((c) => c.caseId === "370")?.value;
       const cL1 = liasseRfs.form2031.cases.find((c) => c.caseId === "C_L1_COL1")?.value;
       const i7a = liasseRfs.form2031.cases.find((c) => c.caseId === "I_7A")?.value;
       const aide = buildClientSummaryDocument(rfs);
       const c5NA = aide.aide2042.cases.find((c) => c.case === "5NA")?.montant;
       assert.equal(rfs.fiscalResult.resultatFiscal, RESULTAT_FISCAL);
-      assert.equal(c370, RESULTAT_FISCAL);
-      assert.equal(cL1, RESULTAT_FISCAL);
-      assert.equal(i7a, RESULTAT_FISCAL);
+      assert.equal(c350, RESULTAT_FISCAL, "350 = E : le bénéfice LMNP (ici sans ARD, sans déficit antérieur) est déduit en entier");
+      assert.equal(c370, 0);
+      assert.equal(cL1, 0);
+      assert.equal(i7a, RESULTAT_FISCAL_AVANT_DEFICITS);
       assert.equal(c5NA, RESULTAT_FISCAL);
     });
 

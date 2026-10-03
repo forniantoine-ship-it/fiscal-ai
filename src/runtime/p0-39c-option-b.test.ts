@@ -12,6 +12,7 @@ import { produceFiscalResult } from "./capabilities/f006/produce-fiscal-result";
 import type { FiscalEngineInputs } from "./capabilities/f006/types";
 import { buildFiscalRepresentation } from "./capabilities/rfs/build-fiscal-representation";
 import { map2033BFromRfs } from "./capabilities/rfs/projection/map-2033b";
+import { assembleForm2031SD } from "./capabilities/f007/assemble-form-2031";
 
 const EXERCICE = 2026;
 
@@ -45,14 +46,17 @@ function oracleInput(priorDeficit: number): FiscalEngineInputs {
   };
 }
 
-function caseValue(caseId: string, priorDeficit: number): number | undefined {
+function rfsFor(priorDeficit: number) {
   const { result } = produceFiscalResult(oracleInput(priorDeficit));
   assert.ok(result);
-  const rfs = buildFiscalRepresentation({
+  return buildFiscalRepresentation({
     fiscalResult: result,
     identite: { siren: "104545108", siret: "10454510800011", denomination: "Oracle P0-39C" },
   });
-  return map2033BFromRfs(rfs).cases.find((c) => c.caseId === caseId)?.value;
+}
+
+function caseValue(caseId: string, priorDeficit: number): number | undefined {
+  return map2033BFromRfs(rfsFor(priorDeficit)).cases.find((c) => c.caseId === caseId)?.value as number | undefined;
 }
 
 describe("P0-39C — oracle Option B (chemin produceFiscalResult)", () => {
@@ -78,10 +82,22 @@ describe("P0-39C — oracle Option B (chemin produceFiscalResult)", () => {
     assert.equal(result.resultatFiscal, 0);
 
     assert.equal(caseValue("318", 3_000), 0);
-    assert.equal(caseValue("352", 3_000), 2_000);
-    assert.equal(caseValue("370", 3_000), undefined);
+    // SAV-032 : `resultatFiscalAvantDeficits` (2 000, grandeur métier) n'est PAS la ligne 352 du Cerfa. Pour un LMNP
+    // exclusif, la 2033-B neutralise le résultat : 350 = E = 2 000 (le déficit antérieur de 3 000 n'y figure pas :
+    // il est imputé après 7a), 352 = 370 = 0 imprimés, 354/372/360 vides.
+    assert.equal(caseValue("350", 3_000), 2_000);
+    assert.equal(caseValue("352", 3_000), 0);
+    assert.equal(caseValue("354", 3_000), undefined);
+    assert.equal(caseValue("370", 3_000), 0);
     assert.equal(caseValue("372", 3_000), undefined);
     assert.equal(caseValue("360", 3_000), undefined);
+    assert.equal(caseValue("330", 3_000), undefined);
+    // 2031 : 7a = résultat AVANT imputation des déficits antérieurs (2 000), jamais resultatFiscal (0, après imputation).
+    const rfs = rfsFor(3_000);
+    const form2031 = assembleForm2031SD(rfs.fiscalResult, rfs.identite).form;
+    assert.equal(form2031.cases.find((c) => c.caseId === "I_7A")?.value, 2_000);
+    assert.equal(form2031.cases.find((c) => c.caseId === "C_L1_COL1")?.value, 0);
+    assert.equal(map2033BFromRfs(rfs).balancing.status, "BALANCED");
   });
 
   it("un autre stock de déficits antérieurs ne change ni le plafond 39 C ni la fraction non déductible", () => {

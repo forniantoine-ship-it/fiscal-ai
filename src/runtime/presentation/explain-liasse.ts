@@ -29,8 +29,10 @@ export function explainLiasse(input: ExplainLiasseInput): ExplainLiasseOutput {
   const form = liasse.formulairesGeneres[0];
   const caseCount = form?.cases.length ?? 0;
   const ab = caseValue(liasse, "AB");
-  const benefice = caseValue(liasse, "C_L1_COL1");
-  const deficit = caseValue(liasse, "C_L1_COL2");
+  // SAV-032 : la ligne 1 de la 2031-SD reporte 370/372 de la 2033-B, neutralisée à 0 pour un LMNP exclusif. Le résultat LMNP
+  // (avant imputation des déficits antérieurs) est porté par 7a/7b : c'est lui que cette synthèse restitue.
+  const benefice = caseValue(liasse, "I_7A");
+  const deficit = caseValue(liasse, "I_7B");
 
   const headline = `Formulaire 2031-SD — exercice ${liasse.exercice}`;
   const subtitle =

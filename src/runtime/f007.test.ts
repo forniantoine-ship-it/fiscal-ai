@@ -81,10 +81,13 @@ describe("F-007 — TRF-0034 mapping 2031-SD", () => {
     const { form } = assembleForm2031SD(result!, IDENTITE);
     assert.equal(caseValue(form, "C_L1_COL2"), undefined, "C_L1_COL2 = report de 372 (resultatFiscal<0), jamais déclenché ici");
     assert.equal(caseValue(form, "I_7B"), 2287, "I_7B (circuit dédié BIC non pro) continue de porter le déficit LMNP, inchangé");
-    assert.equal(caseValue(form, "C_L1_COL1"), undefined);
+    // SAV-032 : ligne 1 = report de 370 après neutralisation = 0 imprimé en colonne 1 (dossier témoin EDI accepté : « 0 »),
+    // jamais vide ; 7a vide (aucun bénéfice avant déficits).
+    assert.equal(caseValue(form, "C_L1_COL1"), 0);
+    assert.equal(caseValue(form, "I_7A"), undefined);
   });
 
-  it("VER-047 — reporte bénéfice nul sans case bénéfice", () => {
+  it("VER-047 — résultat nul : 0 explicite en colonne 1 (SAV-032), colonne 2 vide", () => {
     const { result } = produceFiscalResult({
       exerciceFiscal: 2024,
       activite: { dateMiseEnService: "2024-04-15", siret: "12345678901234" },
@@ -108,7 +111,9 @@ describe("F-007 — TRF-0034 mapping 2031-SD", () => {
       logementAmortissement: { computedAt: "2024-01-01T00:00:00.000Z" },
     });
     const { form } = assembleForm2031SD(result!, { ...IDENTITE, exerciceDebut: "01/01/2024", exerciceFin: "31/12/2024" });
-    assert.equal(caseValue(form, "C_L1_COL1"), undefined);
+    // SAV-032 : le résultat de la 2033-B est neutralisé (352 = 370 = 0) ; la ligne 1 de la 2031-SD reporte ce 0
+    // en colonne 1 (comme le dossier témoin EDI accepté), colonne 2 vide.
+    assert.equal(caseValue(form, "C_L1_COL1"), 0);
     assert.equal(caseValue(form, "C_L1_COL2"), undefined);
   });
 });
@@ -149,6 +154,20 @@ describe("F-007 — Explanation Engine", () => {
     const explain = explainLiasse({ liasse: liasse! });
     assert.match(explain.headline, /2031-SD/);
     assert.match(explain.explanation, /aucun recalcul fiscal/i);
+  });
+
+  it("SAV-032 — restitue le résultat LMNP par 7a/7b (la ligne 1, neutralisée à 0, n'est pas un « bénéfice fiscal »)", () => {
+    // Bénéfice : 12 000 − 4 000 = 8 000 avant amortissement ; dotation 3 000 → 5 000 (7a). La ligne 1 reporte 0.
+    const profit = produceFiscalResult({
+      exerciceFiscal: 2025,
+      activite: { dateMiseEnService: "2025-01-01" },
+      revenusAssistant: { exerciceFiscal: 2025, totalRecettes: 12000 },
+      chargesAssistant: { exerciceFiscal: 2025, totalDeductible: 4000, totalPreExploitation: 0 },
+      amortissementAssistant: { exerciceFiscal: 2025, totalDotations: 3000, status: "validated" },
+    }).result!;
+    const lines = explainLiasse({ liasse: produceLiasse({ fiscalResult: profit, identite: IDENTITE }).liasse! }).summaryLines;
+    assert.ok(lines.some((line) => /^Bénéfice fiscal : 5\s000\s€$/.test(line)), `lignes : ${lines.join(" | ")}`);
+    assert.ok(!lines.some((line) => line.startsWith("Déficit")));
   });
 });
 

@@ -1,7 +1,14 @@
 /**
  * Run: npx tsx --test src/lib/lmnp/services/liasse-pdf/tests/case-350-fiscal-arbitration.test.ts
  *
- * RÈGLE FISCALE VERROUILLÉE — jalon dédié, après audit indépendant primaire
+ * MISE À JOUR SAV-032 (MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1) — CE QUI SUIT (« 350 = deficitsImputes ») EST
+ * SUPERSÉDÉ. La notice 2033-NOT-SD 2026 (rubriques 350, 690, 691) neutralise le résultat d'une activité non
+ * professionnelle : bénéfice DÉDUIT en 350, déficit RÉINTÉGRÉ en 330. Pour une activité LMNP exclusive,
+ * 350 = E = resultatFiscalAvantDeficits + amortReportesUtilises (ARD consommés inclus ; déficits antérieurs
+ * exclus, imputés après 7a) et vide si E ≤ 0. Le raisonnement historique ci-dessous est conservé (jamais supprimé
+ * silencieusement) ; les assertions de ce fichier reflètent désormais SAV-032.
+ *
+ * RÈGLE FISCALE VERROUILLÉE (ANTÉRIEURE, SUPERSÉDÉE) — jalon dédié, après audit indépendant primaire
  * de la notice 2033-NOT-SD 2026 (lue intégralement pour les cases 330/350/360
  * et le cadre "Déficits reportables" du 2033-D-SD).
  *
@@ -74,13 +81,35 @@ import { isExcludedCase } from "../excluded-cases";
 import { resolveVisualMapping } from "../registry";
 import { buildDossierTemoinRfs, DOSSIER_TEMOIN_FISCAL_RESULT } from "./golden-master-technical-pipeline.test";
 
-describe("RÈGLE VERROUILLÉE + GÉOMÉTRIE DÉMONTRÉE — case 350 du 2033-B-SD (350 = deficitsImputes, périmètre LMNP-IR)", () => {
-  it("le mapper produit la case 350 avec la valeur deficitsImputes, conforme à la règle verrouillée (INCHANGÉ par ce jalon)", () => {
+describe("SAV-032 + GÉOMÉTRIE DÉMONTRÉE — case 350 du 2033-B-SD (350 = E, bénéfice LMNP neutralisé, périmètre LMNP-IR)", () => {
+  it("dossier témoin déficitaire (E < 0) : 350 vide, comme la 2033-B acceptée en EDI — jamais deficitsImputes = 0 imprimé", () => {
     const rfs = buildDossierTemoinRfs();
     const form = map2033BFromRfs(rfs);
-    const case350 = form.cases.find((c) => c.caseId === "350");
-    assert.ok(case350, "le mapper doit produire la case 350");
-    assert.equal(case350?.value, DOSSIER_TEMOIN_FISCAL_RESULT.deficitsImputes);
+    assert.equal(form.cases.find((c) => c.caseId === "350"), undefined, "350 vide quand E ≤ 0");
+    assert.equal(DOSSIER_TEMOIN_FISCAL_RESULT.deficitsImputes, 0, "précondition : le témoin n'a imputé aucun déficit");
+  });
+
+  it("cas bénéficiaire avec ARD et déficit antérieur : 350 = E (3 000 − 800 = 2 200), jamais deficitsImputes (600)", () => {
+    const base = buildDossierTemoinRfs();
+    const rfs = {
+      ...base,
+      fiscalResult: {
+        ...base.fiscalResult,
+        resultatAvantAmort: 3000,
+        amortCalcule: 800,
+        amortDeduct: 800,
+        amortReporte: 0,
+        amortNonDeduitExercice: 0,
+        amortReportesUtilises: 200,
+        resultatFiscalAvantDeficits: 2000,
+        resultatFiscal: 1400,
+        deficitNouveau: 0,
+        deficitsImputes: 600,
+      },
+    };
+    const case350 = map2033BFromRfs(rfs).cases.find((c) => c.caseId === "350");
+    assert.equal(case350?.value, 2200);
+    assert.notEqual(case350?.value, rfs.fiscalResult.deficitsImputes);
   });
 
   it("350 n'est plus dans la liste des exclusions PDF (règle fiscale verrouillée ET géométrie désormais démontrée)", () => {

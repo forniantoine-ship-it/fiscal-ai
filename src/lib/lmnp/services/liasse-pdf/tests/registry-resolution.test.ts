@@ -33,8 +33,8 @@ describe("resolveVisualMapping", () => {
     assert.equal(mapping?.calibration, "mesure-empirique");
   });
 
-  it("352/354 (2033-B) n'existent plus du tout dans le registre - jamais produites par le mapper actuel, aucune case a positionner", () => {
-    assert.equal(resolveVisualMapping("2033-B-SD", 2026, "352"), undefined);
+  it("352 (2033-B) est calibree par mesure empirique (SAV-032 : 0 par neutralisation) ; 354 n'existe pas dans le registre (vide, sa production resterait bloquee)", () => {
+    assert.equal(resolveVisualMapping("2033-B-SD", 2026, "352")?.calibration, "mesure-empirique");
     assert.equal(resolveVisualMapping("2033-B-SD", 2026, "354"), undefined);
   });
 

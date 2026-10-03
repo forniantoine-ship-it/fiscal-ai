@@ -65,6 +65,22 @@ export async function generateCerfa2033BFromRfs(input: {
   const form2033B = map2033BFromRfs(input.rfs);
   const generatedAt = input.generatedAt ?? new Date().toISOString();
 
+  // SAV-032 — invariant de bouclage du bloc « RÉSULTAT FISCAL » (construit sur les lignes imprimées) : fail-closed, aucun
+  // PDF tant que (312 − 314) + réintégrations − déductions ≠ 352 − 354, ou tant que le résultat n'est pas établi.
+  if (form2033B.balancing.status !== "BALANCED") {
+    return {
+      status: "blocked",
+      form2033B,
+      violations: [
+        {
+          code: "bouclage-resultat-fiscal",
+          form: CERFA_2033B_FORM_ID,
+          message: `Le bloc « RÉSULTAT FISCAL » de la 2033-B-SD n'est pas établi (${form2033B.balancing.status}) : ${form2033B.balancing.raisons.join(" ")} Génération bloquée plutôt qu'une liasse qui ne boucle pas.`,
+        },
+      ],
+    };
+  }
+
   const pdfResult: LiasseGenerationResult = await generateCerfaLiassePdf({
     millesime: CERFA_2033B_MILLESIME,
     forms: [{ form: CERFA_2033B_FORM_ID, cases: form2033B.cases }],

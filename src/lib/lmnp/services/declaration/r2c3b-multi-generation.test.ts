@@ -370,9 +370,12 @@ describe("MB-ORACLE-1 — fiscalité consolidée sur le chemin Workspace → F-0
     assert.deepEqual(fiscal.stocks.deficits, [{ millesime: 2024, montant: 1000 }]);
     assert.equal(fiscal.resultatFiscal, 0);
     assert.equal(caseValue(form, "318"), 0);
-    assert.equal(caseValue(form, "352"), 5000);
-    assert.equal(caseValue(form, "350"), 5000, "observation du mapping actuel ; son analyse IR reste séparée");
-    assert.equal(caseValue(form, "370"), undefined);
+    // SAV-032 (neutralisation, remplace l'ancienne observation « 352 = résultat avant déficits ») : E = 5 000 + 0 d'ARD → 350 = 5 000
+    // (les 5 000 de déficits antérieurs imputés ne figurent pas dans la 2033-B) ; 352 = 370 = 0 ; le bloc boucle.
+    assert.equal(caseValue(form, "350"), 5000);
+    assert.equal(caseValue(form, "352"), 0);
+    assert.equal(caseValue(form, "370"), 0);
+    assert.equal(form.balancing.status, "BALANCED");
   });
 
   it("B — déficit courant global sans dotation : aucun ARD ni imputation de déficit antérieur", async () => {
@@ -399,9 +402,13 @@ describe("MB-ORACLE-1 — fiscalité consolidée sur le chemin Workspace → F-0
     assert.equal(fiscal.resultatFiscalAvantDeficits, -3000);
     assert.equal(fiscal.resultatFiscal, 0);
     assert.equal(caseValue(form, "318"), 0);
-    assert.equal(caseValue(form, "354"), 3000);
+    // SAV-032 : le déficit courant (3 000) est neutralisé en 330 (aucun non-déductible) ; 354 et 372 vides ; 352 = 370 = 0.
+    // (Ancienne attente : 354 = 3 000, qui doublait la perte réintégrée en 330 — bug prouvé.)
+    assert.equal(caseValue(form, "330"), 3000);
+    assert.equal(caseValue(form, "354"), undefined);
     assert.equal(caseValue(form, "372"), undefined);
-    // La ligne 330 n'est pas utilisée ici comme oracle du déficit courant (SAV-031).
+    assert.equal(caseValue(form, "352"), 0);
+    assert.equal(form.balancing.status, "BALANCED");
   });
 
   it("C1/C2 — même +7 000 et 4 000 de dotations : ventilation entre biens sans effet sur le plafond", async () => {
@@ -418,8 +425,10 @@ describe("MB-ORACLE-1 — fiscalité consolidée sur le chemin Workspace → F-0
       assert.equal(fiscal.resultatFiscalAvantDeficits, 3000, label);
       assert.equal(fiscal.resultatFiscal, 3000, label);
       assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "318"), 0, label);
-      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "352"), 3000, label);
-      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "370"), 3000, label);
+      // SAV-032 : E = 3 000 → 350 = 3 000 ; 352 = 370 = 0 (la ventilation entre biens n'y change rien).
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "350"), 3000, label);
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "352"), 0, label);
+      assert.equal(caseValue(oracle.result.liasseRfs.form2033B, "370"), 0, label);
     }
     assert.equal(c2.result.rfs.fiscalResult.amortDeduct, c1.result.rfs.fiscalResult.amortDeduct);
     assert.equal(c2.result.rfs.fiscalResult.resultatFiscal, c1.result.rfs.fiscalResult.resultatFiscal);
@@ -444,7 +453,7 @@ describe("MB-ORACLE-1 — fiscalité consolidée sur le chemin Workspace → F-0
     for (const key of ["resultatAvantAmort", "amortCalcule", "amortDeduct", "amortNonDeduitExercice", "resultatFiscalAvantDeficits", "deficitsImputes", "resultatFiscal"] as const) {
       assert.equal(multiFiscal[key], monoFiscal[key], key);
     }
-    for (const caseId of ["318", "352", "354", "370", "372"] as const) {
+    for (const caseId of ["318", "330", "350", "352", "354", "370", "372"] as const) {
       assert.equal(caseValue(multi.result.liasseRfs.form2033B, caseId), caseValue(mono.liasseRfs.form2033B, caseId), caseId);
     }
   });

@@ -5,7 +5,7 @@ type: savoir
 status: approved
 version: "0.1"
 created: 2026-10-02
-updated: 2026-10-02
+updated: 2026-10-03
 owner: product-owner
 source: "CGI art. 39 C, II, 2 et 3 ; CGI art. 156, I, 1° ter ; BOI-BIC-AMT-20-40-10-20, §§ 40 à 100 ; BOI-BIC-AMT-20-40-10-40 ; BOI-FORM-000038 ; BOI-BIC-DEF-20-20, §§ 110 à 130 ; formulaires 2033-SD et notice 2033-NOT-SD 2026"
 tags: [résultat-fiscal, article-39-c, lmnp, multi-bien, amortissements, déficits, 2033-b]
@@ -43,7 +43,7 @@ Les déficits antérieurs de LMNP s'imputent sur les bénéfices ultérieurs d'u
 
 La 2033-B porte le résultat de l'entreprise déclarante : la réintégration des amortissements excédentaires en ligne 318 et les montants de résultat sont des totaux déclaratifs, sans lignes 2033-B distinctes par bien. Le suivi justificatif par bien des amortissements écartés reste requis. La ligne 330 correspond à « Divers à réintégrer » et ne désigne pas, par elle-même, le déficit de l'exercice.
 
-**2033-B IR MAPPING — FURTHER PROOF REQUIRED.** La notice 2033-NOT-SD 2026 mentionne la ligne 350 « Divers à déduire » pour l'imputation de déficits antérieurs d'une entreprise à l'IR ; l'articulation exacte avec les lignes 352/354 et 370/372 et la représentation de SAV-030 doit être examinée dans une preuve séparée. Ce Savoir ne modifie ni SAV-030 ni un mapping 2033-B.
+**2033-B IR MAPPING — FURTHER PROOF REQUIRED.** La notice 2033-NOT-SD 2026 mentionne la ligne 350 « Divers à déduire » pour l'imputation de déficits antérieurs d'une entreprise à l'IR ; l'articulation exacte avec les lignes 352/354 et 370/372 et la représentation de SAV-030 doit être examinée dans une preuve séparée. Ce Savoir ne modifie ni SAV-030 ni un mapping 2033-B. *Mise à jour 2026-10-03 : cette preuve séparée est portée par SAV-032 (neutralisation du résultat LMNP non professionnel : 330 / 350 / 352-354 / 370-372, 2031 7a-7b). Elle ne change ni les oracles ci-dessus ni la granularité du plafond 39 C.*
 
 ## Oracles multi-bien
 
