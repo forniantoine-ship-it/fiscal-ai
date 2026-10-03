@@ -36,6 +36,11 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.resultatFiscalAvantDeficits === undefined) {
+    // Fixture : résultat avant imputation des déficits antérieurs (SAV-033).
+    merged.resultatFiscalAvantDeficits =
+      merged.deficitNouveau > 0 ? -merged.deficitNouveau : Math.round((merged.resultatFiscal + merged.deficitsImputes) * 100) / 100;
+  }
   if (overrides.amortNonDeduitExercice === undefined) {
     merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
   }
@@ -49,8 +54,12 @@ const IDENTITE: IdentiteDeclarante = {
   adresseEntreprise: "15 Rue Saint-Germain, 29600 Saint-Martin-Des-Champs",
 };
 
-function rfs(fr: FiscalResult): FiscalRepresentation {
+/** `ouverture` = stock de déficits d'ouverture (non encore imputés) — c'est lui qui alimente 5GA–5GJ (SAV-033). */
+function rfs(fr: FiscalResult, ouverture?: Array<{ millesime: number; montant: number }>): FiscalRepresentation {
   return {
+    ...(ouverture !== undefined
+      ? { deficitsOuverture: { source: "fiscal_year_stocks_ouverture" as const, deficits: ouverture } }
+      : {}),
     exercice: fr.exercice,
     identite: IDENTITE,
     fiscalResult: fr,
@@ -126,15 +135,11 @@ describe("Cas 4 — déficits antérieurs : tient désormais sur 1 page grâce �
         fiscalResult({
           exercice: 2025,
           resultatFiscal: 4250,
-          stocks: {
-            deficits: [
-              { millesime: 2023, montant: 1800 },
-              { millesime: 2024, montant: 950 },
-            ],
-            amortissementsReportes: 0,
-            deficitsExpires: [],
-          },
         }),
+        [
+          { millesime: 2023, montant: 1800 },
+          { millesime: 2024, montant: 950 },
+        ],
       ),
       { activityStartDate: "2020-01-01" },
     );
@@ -154,19 +159,15 @@ describe("Cas 5 — combinaison chargée : 5CD + 5NA + plusieurs déficits anté
         fiscalResult({
           exercice: 2025,
           resultatFiscal: 4250,
-          stocks: {
-            deficits: [
-              { millesime: 2018, montant: 300 },
-              { millesime: 2019, montant: 450 },
-              { millesime: 2020, montant: 600 },
-              { millesime: 2021, montant: 700 },
-              { millesime: 2022, montant: 400 },
-              { millesime: 2023, montant: 1800 },
-            ],
-            amortissementsReportes: 0,
-            deficitsExpires: [],
-          },
         }),
+        [
+          { millesime: 2018, montant: 300 },
+          { millesime: 2019, montant: 450 },
+          { millesime: 2020, montant: 600 },
+          { millesime: 2021, montant: 700 },
+          { millesime: 2022, montant: 400 },
+          { millesime: 2023, montant: 1800 },
+        ],
       ),
       { activityStartDate: "2025-06-01" },
     );

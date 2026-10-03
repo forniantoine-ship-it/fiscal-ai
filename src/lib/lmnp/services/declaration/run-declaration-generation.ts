@@ -240,6 +240,20 @@ export function runDeclarationGeneration(
     };
   }
   const openingFiscalStocks = stocksResolution.stocks;
+  // SAV-033 — le stock de déficits d'OUVERTURE réellement transmis à F-006 (même objet que `openingFiscalStocks` ci-dessus),
+  // transporté tel quel dans la RFS pour les cases 2042-C-PRO 5GA–5GJ. Jamais reconstruit depuis la clôture.
+  const deficitsOuverture: NonNullable<FiscalRepresentation["deficitsOuverture"]> = {
+    source:
+      fiscalYearOpening !== undefined && stocksOuverture !== undefined
+        ? "fiscal_year_opening_and_stocks_ouverture"
+        : fiscalYearOpening !== undefined
+          ? "fiscal_year_opening"
+          : stocksOuverture !== undefined
+            ? "fiscal_year_stocks_ouverture"
+            : "none",
+    // Aucun stock d'ouverture résolu (source `none`) : liste vide EXPLICITE, jamais un repli sur la clôture.
+    deficits: openingFiscalStocks !== undefined ? openingFiscalStocks.deficits.map((deficit) => ({ ...deficit })) : [],
+  };
 
   // Lot 4F.2 / P0-2A — Opening actifs disponibles → DN ancrée + inventaire
   // historique conservé pour la RFS. Assets unavailable (stocks-only) → draft.
@@ -523,6 +537,7 @@ export function runDeclarationGeneration(
     bilanInputs,
     dispense2033AIntake,
     fiscalYearOpening,
+    deficitsOuverture,
   });
 }
 
@@ -570,12 +585,14 @@ export type GenerationOutputInput = {
   bilanInputs?: BilanInputs;
   dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision };
   fiscalYearOpening?: FiscalYearOpening;
+  /** SAV-033 — stock de déficits d'ouverture utilisé par F-006 (transport pur vers `rfs.deficitsOuverture`). */
+  deficitsOuverture?: FiscalRepresentation["deficitsOuverture"];
 };
 
 export function assembleGenerationOutput(input: GenerationOutputInput): DeclarationGenerationResult {
   const {
     fiscalResult, identite, liasseResult, fiscalYear, immobilisations, immobilisationsSource, immobilisationsParBien,
-    detailCharges2033B, emprunts, bilanInputs, dispense2033AIntake, fiscalYearOpening,
+    detailCharges2033B, emprunts, bilanInputs, dispense2033AIntake, fiscalYearOpening, deficitsOuverture,
   } = input;
   const multiBlocks = {
     ...(immobilisationsParBien !== undefined ? { immobilisationsParBien } : {}),
@@ -630,6 +647,7 @@ export function assembleGenerationOutput(input: GenerationOutputInput): Declarat
     ...multiBlocks,
     emprunts,
     dispense2033A,
+    ...(deficitsOuverture !== undefined ? { deficitsOuverture } : {}),
   });
   // Transport uniquement : si aucun BilanInputs réel n'est fourni, le
   // patrimoine reste `undefined` — le mapper 2033-A laisse alors 084/120/
@@ -645,6 +663,7 @@ export function assembleGenerationOutput(input: GenerationOutputInput): Declarat
           emprunts,
           patrimoine: assemblePatrimoine(rfsSansPatrimoine, bilanInputs),
           dispense2033A,
+          ...(deficitsOuverture !== undefined ? { deficitsOuverture } : {}),
         })
       : rfsSansPatrimoine;
 

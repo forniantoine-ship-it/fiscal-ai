@@ -32,18 +32,12 @@ export type ClientSummaryResultatPrincipal =
   | { nature: "deficit"; montant: number };
 
 /**
- * P2-1 (design PDF 2042-C-PRO validé) — catégorisation d'affichage pure,
- * dérivée du code de case lui-même (5CD/5NA/5NY vs 5GA-5GJ), jamais d'une
- * règle fiscale nouvelle :
+ * Catégorisation d'affichage pure, dérivée du code de case lui-même — jamais d'une règle fiscale nouvelle (SAV-033) :
  *
- * - "a_saisir" : 5CD, 5NA, 5NY. Validation officielle 2026 (brochure DGFiP
- *   « Loueurs en meublé non professionnels », pages 7 et 9) : le contribuable
- *   doit « reporter le résultat » lui-même, y compris après télétransmission
- *   EDI-TDFC de sa déclaration n° 2031. Ces cases ne sont jamais préremplies.
- * - "a_verifier" : 5GA à 5GJ (déficits antérieurs). Seules cases où un report
- *   automatique par l'administration est plausible (reprise de la propre
- *   déclaration N-1 du contribuable) — mais sans garantie, d'où l'instruction
- *   de vérification plutôt qu'une affirmation.
+ * - "a_saisir" : 5CD, 5NA, 5NY — montants à déclarer par le contribuable. 5NA = bénéfice LMNP AVANT imputation des déficits
+ *   antérieurs (= 2031 7a) ; 5NY = déficit de l'exercice (= 2031 7b).
+ * - "a_verifier" : 5GA à 5GJ — déficits des années antérieures NON ENCORE IMPUTÉS au début de l'exercice (stock d'OUVERTURE).
+ *   Le formulaire les indique « à titre indicatif » : l'aide ne les présente jamais comme préremplies ni comme certaines.
  */
 export type ClientSummaryCase2042Categorie = "a_saisir" | "a_verifier";
 
@@ -111,14 +105,28 @@ export type ClientSummaryDocument = {
     amortissementDeductible: number;
     amortissementReporte: number;
     resultatAvantAmortissement: number;
-    /** Restitution directe de fiscalResult.resultatFiscal — 0 si l'exercice est déficitaire. */
+    /**
+     * SAV-033 — bénéfice LMNP AVANT imputation des déficits antérieurs (`fiscalResult.resultatFiscalAvantDeficits`) : la valeur
+     * déclarée en 2031 7a et 2042-C-PRO 5NA. `undefined` pour un FiscalResult antérieur à P0-39C (non reconstruit).
+     */
+    resultatAvantImputationDeficits?: number;
+    /**
+     * Restitution directe de fiscalResult.resultatFiscal — 0 si l'exercice est déficitaire. INFORMATION MÉTIER (résultat imposable
+     * attendu APRÈS imputation des déficits antérieurs) : ce n'est PAS une case Cerfa et il n'alimente jamais 5NA (SAV-033).
+     */
     resultatFiscal: number;
     /** Restitution directe de fiscalResult.deficitNouveau — 0 si l'exercice est bénéficiaire. */
     deficitFiscal: number;
     /** Ce qui doit être affiché en titre — ne vaut jamais 0 € pour un exercice déficitaire. */
     resultatPrincipal: ClientSummaryResultatPrincipal;
+    /** Consommation métier du stock pendant l'exercice (`fiscalResult.deficitsImputes`) — suivi et explication, jamais une valeur déclarée. */
     deficitsAnterieursImputes: number;
-    /** Restitution directe de fiscalResult.stocks.deficits, filtrée de l'exercice courant — tel quel, non retraité. */
+    /**
+     * SAV-033 — stock de déficits d'OUVERTURE (`rfs.deficitsOuverture`, transport de la source d'ouverture de F-006) : ce que les
+     * cases 5GA–5GJ déclarent. `undefined` : RFS antérieure à SAV-033, ouverture non établie — jamais remplacée par la clôture.
+     */
+    deficitsAnterieursOuverture?: StockDeficit[];
+    /** Stock APRÈS imputation (clôture, hors déficit de l'exercice courant) — suivi seulement ; devient l'ouverture de l'exercice suivant. */
     deficitsAnterieursRestants: StockDeficit[];
     /** Somme d'affichage de deficitsAnterieursRestants[].montant — pure addition, aucune règle fiscale. */
     totalDeficitsAnterieursRestants: number;
@@ -143,18 +151,21 @@ export type ClientSummaryDocument = {
   aide2042: {
     cases: ClientSummaryCase2042[];
     /**
-     * P2-1 — instruction fixe pour les cases catégorie "a_saisir" (5CD, 5NA,
-     * 5NY). Validée officiellement : jamais de mention d'un préremplissage
-     * possible, y compris après télétransmission EDI-TDFC de la déclaration
-     * professionnelle (brochure DGFiP LMNP, pages 7 et 9 : « vous devez
-     * ensuite reporter le résultat »).
+     * SAV-033 — ESTIMATION d'information, distincte des montants à déclarer : jamais une case. Ne remplace aucune valeur
+     * déclarative (5NA, 5NY, 5GA–5GJ).
      */
+    estimation: {
+      /** Déficits antérieurs consommés cette année (`fiscalResult.deficitsImputes`). */
+      deficitImpute: number;
+      /** Résultat imposable attendu après imputation (`fiscalResult.resultatFiscal`). */
+      resultatImposableAttendu: number;
+      /** Stock de déficits après imputation (clôture, avec le déficit de l'exercice s'il existe). */
+      stockRestantApresImputation: StockDeficit[];
+      totalStockRestantApresImputation: number;
+    };
+    /** Instruction pour les cases "a_saisir" (5CD, 5NA, 5NY). N'affirme aucun préremplissage. */
     instructionASaisir: string;
-    /**
-     * P2-1 — instruction fixe pour les cases catégorie "a_verifier"
-     * (5GA-5GJ) : le préremplissage y est plausible mais jamais garanti,
-     * jamais affirmé comme systématique.
-     */
+    /** Instruction pour les cases "a_verifier" (5GA–5GJ) : cases « communiquées à titre indicatif » par le formulaire. */
     instructionAVerifier: string;
     /** P2-1 — que faire si la case à vérifier est vide ou diffère du montant indiqué. */
     instructionAVerifierDivergence: string;
@@ -363,10 +374,11 @@ function buildChargesParCategorie(fr: FiscalResult): ClientSummaryChargeCategori
 }
 
 function buildCases2042(
-  fr: FiscalResult,
+  rfs: FiscalRepresentation,
   isDeficit: boolean,
   activityStartDate?: string,
 ): ClientSummaryCase2042[] {
+  const fr = rfs.fiscalResult;
   const cases: ClientSummaryCase2042[] = [];
 
   cases.push(buildCase5CD(activityStartDate, fr.exercice));
@@ -378,23 +390,49 @@ function buildCases2042(
       montant: fr.deficitNouveau,
       categorie: "a_saisir",
     });
-  } else {
+  } else if (typeof fr.resultatFiscalAvantDeficits === "number" && Number.isFinite(fr.resultatFiscalAvantDeficits)) {
+    // SAV-033 — 5NA = bénéfice AVANT imputation des déficits antérieurs (= 2031 7a), jamais `resultatFiscal` (après imputation).
     cases.push({
       case: "5NA",
-      label: "Revenu imposable — locations meublées non professionnelles, régime réel, cas général",
-      montant: fr.resultatFiscal,
+      label: "Bénéfice avant imputation des déficits antérieurs — locations meublées non professionnelles, régime réel, cas général",
+      montant: fr.resultatFiscalAvantDeficits,
       categorie: "a_saisir",
+    });
+  } else {
+    // FiscalResult antérieur à P0-39C : le bénéfice avant imputation n'est pas établi — jamais substitué par `resultatFiscal`.
+    cases.push({
+      case: "5NA",
+      label: "Bénéfice avant imputation des déficits antérieurs — locations meublées non professionnelles, régime réel, cas général",
+      montant: "À vérifier",
+      categorie: "a_saisir",
+      note: "Le bénéfice avant imputation des déficits antérieurs n'a pas pu être établi à partir de ce dossier : il doit être recalculé avant de renseigner la case 5NA.",
     });
   }
 
-  for (const deficit of deficitsVraimentAnterieurs(fr)) {
-    const caseId = get2042DeficitCase(fr.exercice, deficit.millesime);
-    if (!caseId) continue;
+  // SAV-033 — 5GA–5GJ = déficits des années antérieures NON ENCORE IMPUTÉS au début de l'exercice : stock d'OUVERTURE transporté
+  // par la RFS (source d'ouverture de F-006), jamais le stock de clôture après imputation.
+  const opening = rfs.deficitsOuverture;
+  if (opening) {
+    const ordered = [...opening.deficits].sort((a, b) => a.millesime - b.millesime);
+    for (const deficit of ordered) {
+      if (!(deficit.montant > 0)) continue;
+      const caseId = get2042DeficitCase(fr.exercice, deficit.millesime);
+      if (!caseId) continue;
+      cases.push({
+        case: caseId,
+        label: `Déficit antérieur non encore imputé au début de l'exercice (exercice ${deficit.millesime})`,
+        montant: deficit.montant,
+        categorie: "a_verifier",
+      });
+    }
+  } else if (deficitsVraimentAnterieurs(fr).length > 0 || fr.deficitsImputes > 0) {
+    // Ouverture non établie alors que des déficits antérieurs existent : jamais le stock de clôture à la place.
     cases.push({
-      case: caseId,
-      label: `Déficit antérieur restant à reporter (exercice ${deficit.millesime})`,
-      montant: deficit.montant,
+      case: "5GA–5GJ",
+      label: "Déficits des années antérieures non encore imputés au début de l'exercice",
+      montant: "Non disponible",
       categorie: "a_verifier",
+      note: "Le stock de déficits au début de l'exercice n'est pas disponible dans ce dossier : il ne peut pas être déduit du stock de clôture. Reportez-vous à votre déclaration de l'année précédente.",
     });
   }
 
@@ -402,6 +440,7 @@ function buildCases2042(
 }
 
 function buildFormationDuResultat(fr: FiscalResult, isDeficit: boolean): string[] {
+  const avantImputation = fr.resultatFiscalAvantDeficits;
   const lignes: string[] = [
     `Recettes de l'activité : ${fmtEur(fr.recettes.total)}`,
     `Charges déductibles de l'exercice : ${fmtEur(fr.charges.totalDeductible)}`,
@@ -438,15 +477,20 @@ function buildFormationDuResultat(fr: FiscalResult, isDeficit: boolean): string[
     );
   }
 
-  if (fr.deficitsImputes > 0) {
-    lignes.push(`Déficits antérieurs imputés sur le résultat de cette année : ${fmtEur(fr.deficitsImputes)}`);
+  if (isDeficit) {
+    lignes.push(`= Déficit fiscal de l'exercice (case 5NY) : ${fmtEur(fr.deficitNouveau)}`);
+    return lignes;
   }
 
-  lignes.push(
-    isDeficit
-      ? `= Déficit fiscal de l'exercice : ${fmtEur(fr.deficitNouveau)}`
-      : `= Résultat fiscal de l'exercice : ${fmtEur(fr.resultatFiscal)}`,
-  );
+  // SAV-033 — le montant déclaré en 5NA est le bénéfice AVANT imputation des déficits antérieurs ; l'imputation et le résultat
+  // imposable qui en découle sont une ESTIMATION d'information, jamais des cases.
+  if (typeof avantImputation === "number" && Number.isFinite(avantImputation)) {
+    lignes.push(`= Bénéfice avant imputation des déficits antérieurs (case 5NA) : ${fmtEur(avantImputation)}`);
+  }
+  if (fr.deficitsImputes > 0) {
+    lignes.push(`Estimation — déficits antérieurs imputés sur ce bénéfice (ne se saisit pas) : ${fmtEur(fr.deficitsImputes)}`);
+  }
+  lignes.push(`Estimation — résultat imposable attendu après imputation (ne se saisit pas) : ${fmtEur(fr.resultatFiscal)}`);
 
   return lignes;
 }
@@ -493,11 +537,17 @@ export function buildClientSummaryDocument(
   const fr = rfs.fiscalResult;
   const isDeficit = fr.deficitNouveau > 0;
 
+  // SAV-033 — le montant mis en avant pour un bénéfice est celui qui se DÉCLARE (avant imputation des déficits antérieurs, = 5NA).
+  // FiscalResult antérieur à P0-39C (scalaire absent) : repli d'affichage sur `resultatFiscal`, la case 5NA étant alors « À vérifier ».
+  const beneficeDeclare =
+    typeof fr.resultatFiscalAvantDeficits === "number" && Number.isFinite(fr.resultatFiscalAvantDeficits)
+      ? fr.resultatFiscalAvantDeficits
+      : fr.resultatFiscal;
   const resultatPrincipal: ClientSummaryResultatPrincipal = isDeficit
     ? { nature: "deficit", montant: fr.deficitNouveau }
-    : { nature: "benefice", montant: fr.resultatFiscal };
+    : { nature: "benefice", montant: beneficeDeclare };
 
-  const cases = buildCases2042(fr, isDeficit, options?.activityStartDate);
+  const cases = buildCases2042(rfs, isDeficit, options?.activityStartDate);
   const deficitsAnterieursRestants = deficitsVraimentAnterieurs(fr);
 
   return {
@@ -523,10 +573,14 @@ export function buildClientSummaryDocument(
       // STOCK FINAL à clôture (≠ mouvement annuel — cf. amortNonDeduitExercice / case 318).
       amortissementReporte: fr.amortReporte,
       resultatAvantAmortissement: fr.resultatAvantAmort,
+      ...(typeof fr.resultatFiscalAvantDeficits === "number" && Number.isFinite(fr.resultatFiscalAvantDeficits)
+        ? { resultatAvantImputationDeficits: fr.resultatFiscalAvantDeficits }
+        : {}),
       resultatFiscal: fr.resultatFiscal,
       deficitFiscal: fr.deficitNouveau,
       resultatPrincipal,
       deficitsAnterieursImputes: fr.deficitsImputes,
+      ...(rfs.deficitsOuverture ? { deficitsAnterieursOuverture: rfs.deficitsOuverture.deficits } : {}),
       deficitsAnterieursRestants,
       // Somme d'affichage — addition simple de montants déjà calculés par F-006, aucune règle fiscale nouvelle.
       totalDeficitsAnterieursRestants: deficitsAnterieursRestants.reduce((total, d) => total + d.montant, 0),
@@ -536,16 +590,18 @@ export function buildClientSummaryDocument(
     travailEffectue: buildTravailEffectue(fr, isDeficit),
     aide2042: {
       cases,
-      // P2-1 — validation officielle 2026 (brochure DGFiP LMNP, pages 7 et 9) :
-      // pour 5CD/5NA/5NY, jamais de mention d'un préremplissage possible,
-      // même après télétransmission EDI-TDFC de la déclaration professionnelle.
+      estimation: {
+        deficitImpute: fr.deficitsImputes,
+        resultatImposableAttendu: fr.resultatFiscal,
+        stockRestantApresImputation: fr.stocks.deficits,
+        totalStockRestantApresImputation: fr.stocks.deficits.reduce((total, d) => total + d.montant, 0),
+      },
+      // SAV-033 — aucune affirmation de préremplissage : seule la vérification de ce qui figure déjà dans la déclaration est demandée.
       instructionASaisir:
-        "Cette information doit être reportée par vous dans votre déclaration 2042-C-PRO. Elle n'est pas préremplie par l'administration, même si votre déclaration professionnelle a déjà été télétransmise.",
-      // P2-1 — pour 5GA-5GJ uniquement : un report par l'administration est
-      // plausible (reprise de la déclaration N-1), mais jamais garanti — la
-      // formulation reste au conditionnel, jamais "sera" ni "automatiquement".
+        "Ces montants se reportent dans votre déclaration 2042-C-PRO. Avant de valider, vérifiez ce qui y figure déjà.",
+      // Le formulaire 2042-C-PRO indique que les cases 5GA à 5GI sont « communiquées uniquement à titre indicatif ».
       instructionAVerifier:
-        "L'administration peut déjà avoir reporté ce montant. Vérifiez qu'il correspond bien à ce qui apparaît dans votre déclaration.",
+        "Ces cases peuvent déjà être renseignées à titre indicatif (indication portée par le formulaire). Vérifiez qu'elles correspondent aux déficits des années précédentes non encore imputés au début de cet exercice.",
       instructionAVerifierDivergence:
         "Si le montant est différent ou absent, vérifiez la situation avant de valider votre déclaration.",
       ambiguites: cases.filter((c) => c.note).map((c) => c.note as string),

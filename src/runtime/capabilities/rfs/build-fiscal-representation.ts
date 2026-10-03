@@ -38,6 +38,8 @@ export type BuildFiscalRepresentationInput = {
    * disponible pour ce dossier.
    */
   dispense2033A?: Dispense2033AState;
+  /** SAV-033 — stock de déficits d'ouverture utilisé par F-006 (transport pur ; voir `FiscalRepresentation.deficitsOuverture`). */
+  deficitsOuverture?: FiscalRepresentation["deficitsOuverture"];
 };
 
 /**
@@ -64,6 +66,7 @@ export function buildFiscalRepresentation(
     emprunts: input.emprunts,
     patrimoine: input.patrimoine,
     dispense2033A: input.dispense2033A,
+    ...(input.deficitsOuverture !== undefined ? { deficitsOuverture: input.deficitsOuverture } : {}),
     trace: {
       // Pas de code KS propre à la RFS elle-même à ce stade (à formaliser
       // dans le KS avant que la RFS ne devienne un artefact officiel) — on

@@ -17,6 +17,7 @@ import { describe, it, mock } from "node:test";
 import { representativeMonoWorkspaces } from "@/lab/v2-dossier/bien-read-test-support";
 import { financementChargesForGeneration } from "@/lib/lmnp/services/f011/credit-financing-to-financement-charges";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { buildClientSummaryDocument } from "@/lib/lmnp/services/declaration/build-client-summary-document";
 import { computeOpeningContentHash } from "@/lib/lmnp/services/fiscal-year-opening/content-hash";
 import { available, unavailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
 import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
@@ -312,15 +313,18 @@ describe("R2C.1 — R : extraction du chemin mono à parité exacte", () => {
   //     de neutralisation 2033-B (330 : 7 306,98 → 7 319,48 = déficit + 12,50 non déductibles ; 350, 352, 354, 370 ; nouveau
   //     champ `balancing`) et 2031 (C_L1_COL1 = 0, I_7A = résultat avant déficits) — rattachés aux bugs prouvés : 330 omet les
   //     non-déductibles, 354 double la perte déjà réintégrée en 330, 350 omet les ARD, 7a pris après imputation.
+  //  3. BKS-004-2042-C-PRO-IMPL-1 (SAV-033) : fiscalResult, 2033-A/B/C, 2031 INCHANGÉS ; seul ajout, comparé champ par champ à HEAD
+  //     bff9d83 : `rfs.deficitsOuverture` (transport pur du stock de déficits d'OUVERTURE utilisé par F-006 : takeover = 2024/1 500 ;
+  //     rich-native-stocks = 2023/2 000 ; autres = source `none`, liste vide).
   const FIXED = Date.parse("2026-06-01T12:00:00.000Z");
   const GOLDEN: Array<[string, () => unknown[], string]> = [
-    ["rich-native", () => [richNative(Y), Y], "d7bea6eb9b7c9218c46f1047becb37816db3a8def2c2d29cabd9b07736c5e1c8"],
-    ["rich-native-stocks", () => [richNative(Y), Y, { deficits: [{ millesime: 2023, montant: 2000 }], amortissementsReportes: 4000, deficitsExpires: [] }], "269530ff5eae940eec957753d8ffa060a586f403eba5328b71df0ef5b610f210"],
+    ["rich-native", () => [richNative(Y), Y], "1789949a2bb66c792d4801988d177d29ecb9ecf5bd3e02aa8432d3bd2a6c9e2d"],
+    ["rich-native-stocks", () => [richNative(Y), Y, { deficits: [{ millesime: 2023, montant: 2000 }], amortissementsReportes: 4000, deficitsExpires: [] }], "d764a60bad2f809e4ff901bc7be19d7292634f5d0e035c1c719b1251b0a54453"],
     ["rich-native-continuation-verified", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, {
       immobilisationsOuverture: { sourceClosureId: "closure-n", brut: 208000, amortissementsCumules: 0, vnc: 208000 },
       previousFiscalYearId: "fy-2025", continuiteNativeVerifiee: true, propertyId: "prop-1",
-    }], "125a5e1a447c240a3d69ad6b4281684d9ee88b6e539fad8034ef5d5499e6cade"],
-    ["rich-external-takeover-stocks-only", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, undefined, externalTakeoverOpening()], "4b580554468ddf0cbaa60ccc0474aca60323e3f16cf08a896aa089c28ea60024"],
+    }], "161665842ee6cd826b7655be68af64f42d85c82ca5467803f9a49aaf69e4d5ab"],
+    ["rich-external-takeover-stocks-only", () => [richNative(Y), Y, undefined, undefined, { caReferenceN1Declaree: 0 }, undefined, externalTakeoverOpening()], "ebf0f5cf8817f9ef4d9243b8382fe37b3b52194c19da4525107747f36db77e9a"],
   ];
   for (const [name, args, expected] of GOLDEN) {
     it(`R2/R3/R4 — ${name} : FiscalResult, RFS, liasse et liasseRfs identiques à HEAD (empreinte)`, () => {
@@ -387,6 +391,39 @@ describe("R2C.1 — R : extraction du chemin mono à parité exacte", () => {
     // 3 136,68 + 12,50 − 3 149,18 = 0
     assert.ok(Math.abs(3136.68 + 12.5 - 3149.18) < 0.005);
     assert.equal(form2033B.balancing.status, "BALANCED");
+  });
+
+  // SAV-033 (BKS-004-2042-C-PRO-IMPL-1) — aide 2042-C-PRO sur le chemin de production réel (F-006 → RFS → document client).
+  // Valeurs posées à la main : takeover = bénéfice avant imputation 649,18 ; déficit d'ouverture 2024 de 1 500 ; imputé 649,18 ;
+  // imposable attendu 0 ; reste 1 500 − 649,18 = 850,82. Exercice 2026 : 2024 = N − 2 → 5GI (2016 = 5GA … 2025 = 5GJ).
+  const aide = (index: number) => {
+    mock.timers.enable({ apis: ["Date"], now: FIXED });
+    try {
+      const result = (runDeclarationGeneration as (...a: unknown[]) => { status: string; rfs?: unknown })(...GOLDEN[index]![1]());
+      assert.equal(result.status, "generated");
+      return buildClientSummaryDocument(result.rfs as never);
+    } finally {
+      mock.timers.reset();
+    }
+  };
+
+  it("ORACLE AIDE 2042 RICH-TAKEOVER — 5NA = 649,18 (avant imputation) ; 5GI = 1 500 (ouverture 2024), jamais 850,82 ; estimation : imputé 649,18, imposable attendu 0, reste 850,82", () => {
+    const doc = aide(3);
+    const cases = doc.aide2042.cases;
+    assert.equal(cases.find((c) => c.case === "5NA")?.montant, 649.18);
+    assert.equal(cases.find((c) => c.case === "5GI")?.montant, 1500);
+    assert.equal(cases.some((c) => c.montant === 850.82), false, "le stock de clôture n'est jamais une case déclarative (double imputation)");
+    assert.equal(cases.some((c) => c.case === "5NY"), false);
+    assert.equal(doc.syntheseFiscale.resultatAvantImputationDeficits, 649.18);
+    assert.equal(doc.syntheseFiscale.resultatFiscal, 0, "résultat imposable attendu : information, pas une case");
+    assert.equal(doc.aide2042.estimation.totalStockRestantApresImputation, 850.82);
+  });
+
+  it("ORACLE AIDE 2042 RICH-NATIVE (déficit) — 5NY = 7 306,98 ; aucune case 5NA ; aucune case 5GA–5GJ pour le même exercice", () => {
+    const cases = aide(0).aide2042.cases;
+    assert.equal(cases.find((c) => c.case === "5NY")?.montant, 7306.98);
+    assert.equal(cases.some((c) => c.case === "5NA"), false);
+    assert.equal(cases.some((c) => /^5G[A-J]$/.test(c.case)), false);
   });
 });
 

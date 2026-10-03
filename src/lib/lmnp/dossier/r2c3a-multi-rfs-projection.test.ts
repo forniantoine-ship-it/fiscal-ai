@@ -423,7 +423,10 @@ describe("R2C.3a — P16, P17 : RFS persistée puis re-projetée, ordre des bien
 describe("R2C.3a — P18 → P23 : mono strictement identique", () => {
   const extras = () => collectLiasseDossierExtras({ declarationDraft: monoDraft(), fiscalYear: { stocksOuverture: MONO_STOCKS } as never });
   const MONO: Array<[string, () => unknown, string]> = [
-    ["P18 — RFS mono", () => BASE, "8be65782c79997ecd985de718864ff418baafa4f920f50cfd211bf77d0035731"],
+    // P18 recapturé (BKS-004-2042-C-PRO-IMPL-1, SAV-033) : seule différence vs HEAD bff9d83 = `deficitsOuverture` ({ source: "none",
+    // deficits: [] }, transport pur du stock d'ouverture) ; vérifié : la RFS privée de ce champ reproduit l'ancienne empreinte 8be65782….
+    // P19–P23, liasse, registre et validation restent identiques.
+    ["P18 — RFS mono", () => BASE, "6c482932c4f7a7ecaaa7b0ababa87255dd3bfdc1e14578a9e12acb0cfd65824b"],
     ["P19 — 2033-A mono", () => map2033AFromRfs(BASE), "87877371559f0731f8293ed87eac98bd311e9b73f473ddad5022d1afe75d33f2"],
     ["P20 — 2033-B mono", () => map2033BFromRfs(BASE), "3aaa0bb3a32f0a45f28ba76f2bd66238da94136a74a6b1b60f0b0d31711411ee"],
     ["P21 — 2033-C mono", () => map2033CFromRfs(BASE), "6abf4846bac742caba50c9f3ff77cbee750f5d153792a2793e5c3e2cc7926cc4"],

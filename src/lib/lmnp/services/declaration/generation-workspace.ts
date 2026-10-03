@@ -274,6 +274,11 @@ export function runDeclarationGenerationFromWorkspace(
     identite,
     liasseResult: liasseStage.liasseResult,
     fiscalYear: exercice,
+    // SAV-033 — stock de déficits d'ouverture tel qu'injecté dans l'appel F-006 unique (transport pur, aucune allocation par bien).
+    deficitsOuverture: {
+      source: stocks ? "fiscal_year_stocks_ouverture" : "none",
+      deficits: (stocks?.deficits ?? []).map((deficit) => ({ ...deficit })),
+    },
     immobilisationsParBien,
     detailCharges2033B: toConservationDetail(resolveMultiPropertyCharges2033BDetail(contributions)),
     emprunts: rfsEmpruntsMulti(consolidation.inputs),

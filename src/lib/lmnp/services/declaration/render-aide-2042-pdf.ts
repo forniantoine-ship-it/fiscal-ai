@@ -13,11 +13,11 @@ import type { ClientSummaryCase2042, ClientSummaryDocument } from "./build-clien
  *    provient de `ClientSummaryDocument.aide2042`, déjà construit par
  *    `buildClientSummaryDocument()`. Ce fichier ne fait que disposer ce
  *    contenu sur la page.
- * 2. Validation officielle 2026 (Cerfa 2042 C PRO N°11222*28 — revenus 2025 ;
- *    brochure DGFiP « Loueurs en meublé non professionnels ») : les cases
- *    catégorie "a_saisir" (5CD, 5NA, 5NY) ne sont jamais présentées comme
- *    pouvant être préremplies. Seules les cases "a_verifier" (5GA-5GJ)
- *    portent une formulation de vérification conditionnelle.
+ * 2. SAV-033 (Cerfa 2042 C PRO N°11222*28 — revenus 2025) : 5NA = bénéfice AVANT imputation des déficits antérieurs, 5NY = déficit
+ *    de l'exercice, 5GA–5GJ = déficits des années antérieures NON ENCORE IMPUTÉS au début de l'exercice (stock d'ouverture). Le
+ *    formulaire indique que les cases 5GA à 5GI sont « communiquées uniquement à titre indicatif » : le rendu n'affirme jamais un
+ *    préremplissage. Les estimations (déficit imputé, résultat imposable attendu, stock restant) sont affichées à part, jamais
+ *    comme des cases.
  * 3. Deux pages cibles dans le cas normal : page 1 « ce que vous devez
  *    faire » (blocs À SAISIR / À VÉRIFIER, chaque case à saisir portant
  *    directement son instruction et son "pourquoi" — pas de page de détail
@@ -56,6 +56,7 @@ const WARNING_BORDER = colors.warning.border; // #E0CEB0
 const WARNING_BADGE = colors.warning.DEFAULT; // #A8834A
 const CARD_BORDER = colors.border.default; // #E8E2D9
 const WHITE: RGB = [255, 255, 255];
+const WHITE_HEX = "#FFFFFF";
 
 type RGB = [number, number, number];
 
@@ -247,6 +248,8 @@ function compactCaseLine(cursor: Cursor, c: ClientSummaryCase2042, badgeColor: s
 }
 
 function instructionFor(c: ClientSummaryCase2042): string {
+  // Montant non établi (ex. 5NA « À vérifier ») : jamais « saisissez À vérifier » — la note de la case explique pourquoi.
+  if (typeof c.montant === "string" && c.case !== "5CD") return c.note ?? "Ce montant n'a pas pu être établi à partir de votre dossier.";
   return c.case === "5CD"
     ? "Dans votre déclaration de revenus, ouvrez l'annexe 2042-C-PRO et renseignez la case 5CD."
     : `Dans votre déclaration de revenus, ouvrez l'annexe 2042-C-PRO et saisissez ${fmtCaseMontant(c.montant)} dans la case ${c.case}.`;
@@ -254,7 +257,7 @@ function instructionFor(c: ClientSummaryCase2042): string {
 
 function whyLineFor(c: ClientSummaryCase2042): string | undefined {
   if (c.case === "5NA")
-    return "Ce montant correspond au résultat fiscal de votre activité LMNP, calculé à partir de votre dossier.";
+    return "Ce montant est le bénéfice de votre activité LMNP avant imputation de vos déficits antérieurs (le même que la case 7a de votre déclaration 2031).";
   if (c.case === "5NY")
     return "Ce montant correspond au déficit fiscal de votre activité LMNP, calculé à partir de votre dossier.";
   if (c.case === "5CD") return "Cette information indique à l'administration que votre exercice n'a pas duré 12 mois.";
@@ -360,7 +363,7 @@ export function renderAide2042Pdf(document: ClientSummaryDocument): jsPDF {
   if (casesAVerifier.length > 0) {
     sectionBlock(
       cursor,
-      "À VÉRIFIER — Vos déficits des années précédentes",
+      "À VÉRIFIER — Déficits des années précédentes non encore imputés",
       WARNING_BADGE,
       WARNING_BG,
       WARNING_BORDER,
@@ -368,6 +371,20 @@ export function renderAide2042Pdf(document: ClientSummaryDocument): jsPDF {
         for (const c of casesAVerifier) compactCaseLine(inner, c, WARNING_BADGE);
       },
     );
+  }
+
+  // Estimation d'information (SAV-033) — distincte des montants à déclarer : jamais une case, ne remplace aucune valeur déclarative.
+  const estimation = document.aide2042.estimation;
+  if (estimation.deficitImpute > 0 || estimation.totalStockRestantApresImputation > 0) {
+    sectionBlock(cursor, "POUR INFORMATION — estimation, ne se saisit pas", INK_MUTED, WHITE_HEX, CARD_BORDER, (inner) => {
+      if (estimation.deficitImpute > 0) {
+        inner.text(`Déficits antérieurs imputés sur ce bénéfice (estimation) : ${fmtEurValue(estimation.deficitImpute)}`, { size: 9.5, color: INK_SECONDARY });
+      }
+      inner.text(`Résultat imposable attendu après imputation (estimation) : ${fmtEurValue(estimation.resultatImposableAttendu)}`, { size: 9.5, color: INK_SECONDARY });
+      if (estimation.totalStockRestantApresImputation > 0) {
+        inner.text(`Déficits restant à reporter après imputation (estimation) : ${fmtEurValue(estimation.totalStockRestantApresImputation)}`, { size: 9.5, color: INK_SECONDARY });
+      }
+    });
   }
 
   cursor.spacer(3);

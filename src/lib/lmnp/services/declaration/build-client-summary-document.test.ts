@@ -35,6 +35,11 @@ function fiscalResult(overrides: Partial<FiscalResult> = {}): FiscalResult {
     anomalies: [],
     ...overrides,
   };
+  if (overrides.resultatFiscalAvantDeficits === undefined) {
+    // Fixture : résultat avant imputation des déficits antérieurs (SAV-033) — déficit → valeur négative, sinon résultat + imputé.
+    merged.resultatFiscalAvantDeficits =
+      merged.deficitNouveau > 0 ? -merged.deficitNouveau : Math.round((merged.resultatFiscal + merged.deficitsImputes) * 100) / 100;
+  }
   if (overrides.amortNonDeduitExercice === undefined) {
     merged.amortNonDeduitExercice = Math.round((merged.amortCalcule - merged.amortDeduct) * 100) / 100;
   }
@@ -48,8 +53,12 @@ const IDENTITE: IdentiteDeclarante = {
   adresseEntreprise: "15 Rue Saint-Germain, 29600 Saint-Martin-Des-Champs",
 };
 
-function rfs(fr: FiscalResult): FiscalRepresentation {
+/** `ouverture` = stock de déficits NON ENCORE IMPUTÉS au début de l'exercice (SAV-033) ; absent → transport non fourni. */
+function rfs(fr: FiscalResult, ouverture?: Array<{ millesime: number; montant: number }>): FiscalRepresentation {
   return {
+    ...(ouverture !== undefined
+      ? { deficitsOuverture: { source: "fiscal_year_stocks_ouverture" as const, deficits: ouverture } }
+      : {}),
     exercice: fr.exercice,
     identite: IDENTITE,
     fiscalResult: fr,
@@ -203,6 +212,8 @@ describe("Cycle 27 — TEST 4 : déficits antérieurs → cases 5GA à 5GJ", () 
   it("chaque déficit antérieur du FiscalResult produit une ligne de case, avec le montant exact et la case individuelle", () => {
     const document = buildClientSummaryDocument(
       rfs(
+        // SAV-033 : 5GA–5GJ = stock d'OUVERTURE (non encore imputé au début de l'exercice) ; le stock de clôture ci-dessous
+        // (ici identique, aucune imputation) ne pilote plus les cases.
         fiscalResult({
           stocks: {
             deficits: [
@@ -213,10 +224,14 @@ describe("Cycle 27 — TEST 4 : déficits antérieurs → cases 5GA à 5GJ", () 
             deficitsExpires: [],
           },
         }),
+        [
+          { millesime: 2023, montant: 1200 },
+          { millesime: 2024, montant: 800 },
+        ],
       ),
     );
     const lignesDeficitsAnterieurs = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
-    assert.equal(lignesDeficitsAnterieurs.length, 2, "une ligne par déficit antérieur restant");
+    assert.equal(lignesDeficitsAnterieurs.length, 2, "une ligne par déficit d'ouverture");
     assert.equal(lignesDeficitsAnterieurs[0].case, "5GI", "exercice 2025, millésime 2023 → 5GI");
     assert.equal(lignesDeficitsAnterieurs[0].montant, 1200);
     assert.equal(lignesDeficitsAnterieurs[1].case, "5GJ", "exercice 2025, millésime 2024 → 5GJ");
@@ -262,6 +277,8 @@ describe("Cycle 28 — le déficit de l'exercice courant n'est jamais dupliqué 
             deficitsExpires: [],
           },
         }),
+        // Ouverture : seul le vrai déficit de 2023 existait au 01/01/2025 (le déficit 2025 n'est pas un stock d'ouverture).
+        [{ millesime: 2023, montant: 1200 }],
       ),
     );
 
@@ -310,6 +327,7 @@ describe("Cycle 28 — le déficit de l'exercice courant n'est jamais dupliqué 
           deficitNouveau: 0,
           stocks: { deficits: [{ millesime: 2023, montant: 1200 }], amortissementsReportes: 0, deficitsExpires: [] },
         }),
+        [{ millesime: 2023, montant: 1200 }],
       ),
     );
     const case5NA = document.aide2042.cases.find((c) => c.case === "5NA");
@@ -363,14 +381,15 @@ describe("Cycle 27 — TEST 6 : instructions si les informations ne sont pas pr�
   it("l'instruction 'à saisir' n'affirme jamais un préremplissage possible, même après télétransmission", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult()));
     assert.ok(document.aide2042.instructionASaisir.length > 0);
-    assert.match(document.aide2042.instructionASaisir, /pas préremplie/i);
-    assert.doesNotMatch(document.aide2042.instructionASaisir, /normalement|peut(-| )être|susceptible/i);
+    // SAV-033 : plus aucune affirmation de (non-)préremplissage ; seule la vérification de l'existant est demandée.
+    assert.match(document.aide2042.instructionASaisir, /vérifiez ce qui y figure déjà/i);
+    assert.doesNotMatch(document.aide2042.instructionASaisir, /pas préremplie|non préremplie|normalement|susceptible/i);
   });
 
   it("l'instruction 'à vérifier' reste au conditionnel, jamais garantie", () => {
     const document = buildClientSummaryDocument(rfs(fiscalResult()));
     assert.ok(document.aide2042.instructionAVerifier.length > 0);
-    assert.match(document.aide2042.instructionAVerifier, /peut déjà avoir/i);
+    assert.match(document.aide2042.instructionAVerifier, /peuvent déjà être renseignées à titre indicatif/i);
     assert.doesNotMatch(document.aide2042.instructionAVerifier, /\bsera\b|garanti|automatiquement/i);
     assert.ok(document.aide2042.instructionAVerifierDivergence.length > 0);
     assert.match(document.aide2042.instructionAVerifierDivergence, /différent ou absent/i);
@@ -722,10 +741,8 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
   it("1. exercice 2025 + déficit 2023 → 5GI, montant et millésime conservés", () => {
     const document = buildClientSummaryDocument(
       rfs(
-        fiscalResult({
-          exercice: 2025,
-          stocks: { deficits: [{ millesime: 2023, montant: 1200 }], amortissementsReportes: 0, deficitsExpires: [] },
-        }),
+        fiscalResult({ exercice: 2025 }),
+        [{ millesime: 2023, montant: 1200 }],
       ),
     );
     const ligne = document.aide2042.cases.find((c) => c.case === "5GI");
@@ -737,10 +754,8 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
   it("2. exercice 2025 + déficit 2024 → 5GJ", () => {
     const document = buildClientSummaryDocument(
       rfs(
-        fiscalResult({
-          exercice: 2025,
-          stocks: { deficits: [{ millesime: 2024, montant: 800 }], amortissementsReportes: 0, deficitsExpires: [] },
-        }),
+        fiscalResult({ exercice: 2025 }),
+        [{ millesime: 2024, montant: 800 }],
       ),
     );
     assert.equal(document.aide2042.cases.find((c) => c.case === "5GJ")?.montant, 800);
@@ -749,10 +764,8 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
   it("3. exercice 2025 + déficit 2015 → 5GA", () => {
     const document = buildClientSummaryDocument(
       rfs(
-        fiscalResult({
-          exercice: 2025,
-          stocks: { deficits: [{ millesime: 2015, montant: 500 }], amortissementsReportes: 0, deficitsExpires: [] },
-        }),
+        fiscalResult({ exercice: 2025 }),
+        [{ millesime: 2015, montant: 500 }],
       ),
     );
     assert.equal(document.aide2042.cases.find((c) => c.case === "5GA")?.montant, 500);
@@ -761,10 +774,8 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
   it("4. exercice 2024 + déficit 2023 → 5GJ (le mapping glisse avec l'exercice)", () => {
     const document = buildClientSummaryDocument(
       rfs(
-        fiscalResult({
-          exercice: 2024,
-          stocks: { deficits: [{ millesime: 2023, montant: 900 }], amortissementsReportes: 0, deficitsExpires: [] },
-        }),
+        fiscalResult({ exercice: 2024 }),
+        [{ millesime: 2023, montant: 900 }],
       ),
     );
     assert.equal(document.aide2042.cases.find((c) => c.case === "5GJ")?.montant, 900);
@@ -774,10 +785,8 @@ describe("P1-4A — mapping dynamique 5GA–5GJ", () => {
   it("5. exercice 2024 + déficit 2014 → 5GA", () => {
     const document = buildClientSummaryDocument(
       rfs(
-        fiscalResult({
-          exercice: 2024,
-          stocks: { deficits: [{ millesime: 2014, montant: 300 }], amortissementsReportes: 0, deficitsExpires: [] },
-        }),
+        fiscalResult({ exercice: 2024 }),
+        [{ millesime: 2014, montant: 300 }],
       ),
     );
     assert.equal(document.aide2042.cases.find((c) => c.case === "5GA")?.montant, 300);
@@ -858,15 +867,11 @@ describe("P2-1 — catégorisation des cases (à saisir / à vérifier)", () => 
       rfs(
         fiscalResult({
           exercice: 2025,
-          stocks: {
-            deficits: [
-              { millesime: 2023, montant: 1200 },
-              { millesime: 2024, montant: 800 },
-            ],
-            amortissementsReportes: 0,
-            deficitsExpires: [],
-          },
         }),
+        [
+          { millesime: 2023, montant: 1200 },
+          { millesime: 2024, montant: 800 },
+        ],
       ),
     );
     const lignes = document.aide2042.cases.filter((c) => /^5G[A-J]$/.test(c.case));
@@ -881,16 +886,12 @@ describe("P2-1 — catégorisation des cases (à saisir / à vérifier)", () => 
           exercice: 2025,
           resultatFiscal: 4250,
           deficitNouveau: 0,
-          stocks: {
-            deficits: [
-              { millesime: 2022, montant: 400 },
-              { millesime: 2023, montant: 1800 },
-              { millesime: 2024, montant: 950 },
-            ],
-            amortissementsReportes: 0,
-            deficitsExpires: [],
-          },
         }),
+        [
+          { millesime: 2022, montant: 400 },
+          { millesime: 2023, montant: 1800 },
+          { millesime: 2024, montant: 950 },
+        ],
       ),
       { activityStartDate: "2025-03-01" },
     );
@@ -965,5 +966,91 @@ describe("P1-4B — exposition 5CD selon la date de début d'activité", () => {
     });
     const case5CD = document.aide2042.cases.find((c) => c.case === "5CD");
     assert.match(String(case5CD?.montant), /Ne pas renseigner/i);
+  });
+});
+
+/**
+ * SAV-033 (BKS-004-2042-C-PRO-IMPL-1) — oracles posés à la main.
+ * 5NA = résultat AVANT imputation des déficits antérieurs (= 2031 7a) ; 5NY = déficit de l'exercice (= 7b) ;
+ * 5GA–5GJ = déficits antérieurs NON ENCORE IMPUTÉS au début de l'exercice (stock d'OUVERTURE, jamais de clôture).
+ */
+describe("SAV-033 — 5NA / 5NY / 5GA–5GJ", () => {
+  const cases2042 = (document: ReturnType<typeof buildClientSummaryDocument>) => document.aide2042.cases;
+
+  it("ORACLE BÉNÉFICE SIMPLE : 20 000 − 12 000 − 3 000 = 5 000 → 5NA = 5 000 ; aucun déficit antérieur ; imposable attendu 5 000", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ resultatAvantAmort: 8000, amortCalcule: 3000, amortDeduct: 3000, resultatFiscal: 5000 }), []),
+    );
+    assert.equal(cases2042(document).find((c) => c.case === "5NA")?.montant, 5000);
+    assert.equal(cases2042(document).some((c) => /^5G[A-J]$/.test(c.case)), false);
+    assert.equal(document.syntheseFiscale.resultatFiscal, 5000);
+  });
+
+  it("ORACLE REPRISE : avant imputation 649,18, ouverture 2024 = 1 500, imputé 649,18, imposable attendu 0, reste 850,82 → 5NA = 649,18 et 5GJ = 1 500 (exercice 2025), jamais 850,82", () => {
+    // 1 500 − 649,18 = 850,82 (calcul à la main) ; resultatFiscal = 649,18 − 649,18 = 0.
+    const fr = fiscalResult({
+      resultatFiscalAvantDeficits: 649.18,
+      deficitsImputes: 649.18,
+      resultatFiscal: 0,
+      stocks: { deficits: [{ millesime: 2024, montant: 850.82 }], amortissementsReportes: 0, deficitsExpires: [] },
+    });
+    const document = buildClientSummaryDocument(rfs(fr, [{ millesime: 2024, montant: 1500 }]));
+    const cases = cases2042(document);
+    assert.equal(cases.find((c) => c.case === "5NA")?.montant, 649.18, "le résultat imposable attendu (0) n'alimente pas 5NA");
+    assert.equal(cases.find((c) => c.case === "5GJ")?.montant, 1500);
+    assert.equal(cases.some((c) => c.montant === 850.82), false, "NO DOUBLE IMPUTATION : 5NA brut + stock déjà diminué interdit");
+    assert.equal(document.syntheseFiscale.resultatFiscal, 0);
+    assert.equal(document.aide2042.estimation.totalStockRestantApresImputation, 850.82);
+  });
+
+  it("ORACLE DÉFICIT COURANT : 5NY = deficitNouveau, aucune 5NA, aucune 5GA–5GJ pour le même exercice (le stock de clôture contient le déficit 2025)", () => {
+    const document = buildClientSummaryDocument(
+      rfs(
+        fiscalResult({
+          exercice: 2025,
+          resultatFiscal: 0,
+          deficitNouveau: 7306.98,
+          stocks: { deficits: [{ millesime: 2025, montant: 7306.98 }], amortissementsReportes: 0, deficitsExpires: [] },
+        }),
+        [],
+      ),
+    );
+    assert.equal(cases2042(document).find((c) => c.case === "5NY")?.montant, 7306.98);
+    assert.equal(cases2042(document).some((c) => c.case === "5NA" || /^5G[A-J]$/.test(c.case)), false);
+  });
+
+  it("MAPPING ANNUEL — bornes : N−10 → 5GA, N−1 → 5GJ, N → aucune case, N−11 (expiré) → aucune case ; aucune année codée en dur", () => {
+    for (const exercice of [2025, 2031, 2040]) {
+      assert.equal(get2042DeficitCase(exercice, exercice - 10), "5GA");
+      assert.equal(get2042DeficitCase(exercice, exercice - 1), "5GJ");
+      assert.equal(get2042DeficitCase(exercice, exercice), undefined);
+      assert.equal(get2042DeficitCase(exercice, exercice - 11), undefined);
+    }
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ exercice: 2031 }), [
+        { millesime: 2021, montant: 100 },
+        { millesime: 2030, montant: 200 },
+      ]),
+    );
+    assert.equal(cases2042(document).find((c) => c.case === "5GA")?.montant, 100);
+    assert.equal(cases2042(document).find((c) => c.case === "5GJ")?.montant, 200);
+  });
+
+  it("FAIL-CLOSED : ouverture non fournie alors que des déficits antérieurs existent en clôture → '5GA–5GJ' Non disponible (à vérifier), jamais le stock de clôture", () => {
+    const document = buildClientSummaryDocument(
+      rfs(fiscalResult({ stocks: { deficits: [{ millesime: 2023, montant: 1200 }], amortissementsReportes: 0, deficitsExpires: [] } })),
+    );
+    const cases = cases2042(document);
+    assert.equal(cases.some((c) => /^5G[A-J]$/.test(c.case)), false, "aucune case individuelle déduite du stock de clôture");
+    const indisponible = cases.find((c) => c.case === "5GA–5GJ");
+    assert.equal(indisponible?.montant, "Non disponible");
+    assert.equal(indisponible?.categorie, "a_verifier");
+  });
+
+  it("FAIL-CLOSED : résultat avant imputation absent (snapshot ancien) → 5NA 'À vérifier', jamais resultatFiscal substitué", () => {
+    const fr = fiscalResult({ resultatFiscal: 0, deficitsImputes: 649.18 });
+    delete (fr as { resultatFiscalAvantDeficits?: number }).resultatFiscalAvantDeficits;
+    const document = buildClientSummaryDocument(rfs(fr, []));
+    assert.equal(cases2042(document).find((c) => c.case === "5NA")?.montant, "À vérifier");
   });
 });

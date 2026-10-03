@@ -12,7 +12,7 @@
  * pour le même dossier (garanti par construction, pas par convention).
  */
 
-import type { FiscalResult } from "../f006/types";
+import type { FiscalResult, StockDeficit } from "../f006/types";
 import type { IdentiteDeclarante } from "../f007/types";
 import type { AmortissementPlan, PlanLigne } from "../f010/types";
 import type { ConservationDetail2033B } from "./projection/detail-charges-2033b";
@@ -204,6 +204,18 @@ export type FiscalRepresentation = {
    * source unique de la règle.
    */
   dispense2033A?: Dispense2033AState;
+
+  /**
+   * SAV-033 — stock de déficits LMNP d'OUVERTURE de l'exercice, tel qu'utilisé par F-006 (`stockDeficitsAnterieurs`) : transport
+   * pur depuis la source d'ouverture réelle (jamais reconstruit à partir du stock de clôture, jamais `clôture + deficitsImputes`).
+   * Alimente les cases 2042-C-PRO 5GA–5GJ (déficits des années antérieures NON ENCORE imputés au début de l'exercice).
+   * `source: "none"` : aucune source d'ouverture fournie (premier exercice / sans continuité) — F-006 a alors traité « aucun stock ».
+   * Absent : RFS antérieure à SAV-033 — l'ouverture n'est pas établie et ne doit jamais être substituée par la clôture.
+   */
+  deficitsOuverture?: {
+    source: "none" | "fiscal_year_stocks_ouverture" | "fiscal_year_opening" | "fiscal_year_opening_and_stocks_ouverture";
+    deficits: StockDeficit[];
+  };
 
   trace: {
     ksArtifacts: string[];
