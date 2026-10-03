@@ -46,6 +46,8 @@ export const OWNER_ROUTES: Readonly<Record<string, boolean>> = {
   // R14.4A — F009's V3-native presentation of the same owner route/engine.
   // Legacy /assistants/activite stays registered and untouched above.
   "/lab/v2-dossier/real/activity": false,
+  // MB-MULTI-E2E-LAB-1 — banc LAB « Mes biens » (édition ouverte localement) ; propriété d'activité, jamais d'un bien.
+  "/lab/v2-dossier/real/biens": false,
   "/assistants/logement": true,
   "/assistants/financement": true,
   "/assistants/revenus": true,
