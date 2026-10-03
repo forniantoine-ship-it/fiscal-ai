@@ -270,15 +270,22 @@ export function isMultiPropertyRfsShape(rfs: unknown): rfs is FiscalRepresentati
  * la RFS ne rejoue donc que ce qu'elle expose, et déclare `unverifiable` ce qui lui manque pour établir le stock d'ouverture.
  */
 export function multiPropertyDomainFactsFromRfs(rfs: FiscalRepresentation): MultiPropertyDomainFacts {
-  const parBien = rfs.immobilisationsParBien ?? [];
+  // MB-MULTI-DELIVERY-WIRING-1 — la RFS livrée est transmise par le CLIENT : toute forme inattendue est « non établie » (refus), jamais une
+  // exception ni une présomption favorable.
+  const parBien = Array.isArray(rfs.immobilisationsParBien) ? rfs.immobilisationsParBien : [];
   const opening = rfs.deficitsOuverture;
   const unverifiable: string[] = [];
-  if (opening === undefined) unverifiable.push("rfs.deficitsOuverture");
+  const openingValid = opening !== undefined && opening !== null && typeof opening === "object" && Array.isArray(opening.deficits);
+  if (!openingValid) unverifiable.push("rfs.deficitsOuverture");
+  const fiscalResult = rfs.fiscalResult;
+  const fiscalResultValid = fiscalResult !== undefined && fiscalResult !== null && typeof fiscalResult === "object";
+  if (!fiscalResultValid) unverifiable.push("rfs.fiscalResult");
+  const propertyIds = parBien.flatMap((bloc) => (bloc && typeof bloc === "object" && typeof bloc.propertyId === "string" && bloc.propertyId ? [bloc.propertyId] : []));
   return {
-    propertyCount: new Set(parBien.map((bloc) => bloc.propertyId)).size,
-    openingDeficits: opening?.deficits ?? [],
-    ...multiPropertyDomainFactsOfFiscalResult(rfs.fiscalResult),
-    ...(opening !== undefined && opening.source !== "none" ? { priorYearIndicia: [`rfs.deficitsOuverture.source=${opening.source}`] } : {}),
+    propertyCount: new Set(propertyIds).size,
+    openingDeficits: openingValid ? opening.deficits : [],
+    ...(fiscalResultValid ? multiPropertyDomainFactsOfFiscalResult(fiscalResult) : {}),
+    ...(openingValid && opening.source !== "none" ? { priorYearIndicia: [`rfs.deficitsOuverture.source=${opening.source}`] } : {}),
     ...(unverifiable.length > 0 ? { unverifiable } : {}),
   };
 }

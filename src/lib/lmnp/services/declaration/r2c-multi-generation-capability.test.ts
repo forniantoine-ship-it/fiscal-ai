@@ -417,7 +417,7 @@ describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1
 
   it("18. LIVRAISON : générer n'autorise pas la livraison — Cerfa ET aide 2042 refusent avec la seule génération ouverte", async () => {
     const { result } = generated(SIMPLE());
-    for (const capabilities of [GENERATION_ONLY, undefined]) {
+    for (const capabilities of [GENERATION_ONLY]) {
       const aide = await post(handleAide2042PdfRequest, { rfs: result.rfs, activityStartDate: "2026-03-01" }, capabilities);
       const cerfa = await post(handleCerfaPdfRequest, { rfs: result.rfs, declarationVersionId: "v1", forms: ["2031-SD"] }, capabilities);
       for (const response of [aide, cerfa]) {
@@ -449,8 +449,8 @@ describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1
     for (const other of ALL) assert.equal(isMultiPropertyCapabilityOpen(other, GENERATION_ONLY), other === "generation", other);
   });
 
-  it("valeurs FINALES de production : génération seule ouverte ; édition, livraison, paiement, clôture, N+1 fermés", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: false, payment: false, closing: false, nextYear: false });
+  it("valeurs FINALES de production : génération et livraison ouvertes ; édition, paiement, clôture, N+1 fermés (MB-MULTI-DELIVERY-WIRING-1 : delivery ouverte ensuite)", () => {
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false });
   });
 });
 

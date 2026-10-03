@@ -98,10 +98,10 @@ const LOSSES_WITH_DEPRECIATION = (): PersistedWorkspace => multiWorkspace({ spec
 // ---------------------------------------------------------------------------
 
 describe("MB-MULTI-DOMAIN-GUARD-1 — capacités d'activation multi", () => {
-  it("valeurs finales : génération = ON (seul levier) ; édition, livraison, paiement, clôture, N+1 = OFF", () => {
+  it("valeurs finales : génération et livraison = ON ; édition, paiement, clôture, N+1 = OFF", () => {
     for (const capability of ALL) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", capability);
-      assert.equal(isMultiPropertyCapabilityOpen(capability), capability === "generation", capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), capability);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery"].includes(capability), capability);
     }
   });
 
@@ -442,9 +442,9 @@ describe("MB-MULTI-DOMAIN-GUARD-1 — routes Cerfa et aide 2042-C-PRO", () => {
   const cerfa = (rfs: unknown, capabilities?: MultiPropertyCapabilities) => post(handleCerfaPdfRequest, { rfs, declarationVersionId: "v1", forms: ["2033-B-SD", "2031-SD"] }, capabilities);
   const supportedRfs = () => generated(SIMPLE()).result.rfs;
 
-  it("multi SUPPORTÉ, activation OFF (défaut) : les deux routes refusent — 422 multi_property_not_enabled, aucun PDF", async () => {
+  it("multi SUPPORTÉ, livraison FERMÉE (capacités injectées) : les deux routes refusent — 422 multi_property_not_enabled, aucun PDF", async () => {
     for (const route of [aide, cerfa]) {
-      const response = await route(supportedRfs());
+      const response = await route(supportedRfs(), caps(["generation"]));
       assert.equal(response.status, 422);
       assert.notEqual(response.headers.get("content-type"), "application/pdf");
       assert.deepEqual(await response.json(), { status: "blocked", reason: "multi_property_not_enabled" });

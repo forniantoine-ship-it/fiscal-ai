@@ -62,8 +62,8 @@ function scopedMulti(): PersistedWorkspace {
 describe("R2C.3c1 — constante d'activation et résolveur multi unique", () => {
   it("S21 — capacités d'activation multi : seule la GÉNÉRATION est ouverte (constantes pures, aucune source dynamique) ; remplace l'ancien flag unique", () => {
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", `capacité multi ${capability} : seule la génération est ouverte (MB-MULTI-CAPABILITY-WIRING-1)`);
-      assert.equal(isMultiPropertyCapabilityOpen(capability), capability === "generation", `capacité multi ${capability}`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), `capacité multi ${capability} : seules la génération et la livraison sont ouvertes (MB-MULTI-CAPABILITY-WIRING-1 / MB-MULTI-DELIVERY-WIRING-1)`);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery"].includes(capability), `capacité multi ${capability}`);
     }
     const code = source("src/lib/lmnp/dossier/multi-property-activation.ts");
     assert.doesNotMatch(code, /process\.env|localStorage|sessionStorage|supabase|fetch\(/i);
@@ -81,11 +81,11 @@ describe("R2C.3c1 — constante d'activation et résolveur multi unique", () => 
     for (const blocked of [isMultiPropertyGenerationBlocked, isMultiPropertyDeliveryBlocked, isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(scopedMono()), false);
   });
 
-  it("S3 — scoped multi A+B : reconnu multi ; livraison, clôture et N+1 bloqués ; génération débloquée (seule capacité ouverte, MB-MULTI-CAPABILITY-WIRING-1)", () => {
+  it("S3 — scoped multi A+B : reconnu multi ; clôture et N+1 bloqués ; génération et livraison débloquées (MB-MULTI-CAPABILITY-WIRING-1 / MB-MULTI-DELIVERY-WIRING-1)", () => {
     assert.equal(resolveWorkspacePropertyMode(scopedMulti()).kind, "scoped_multi");
     assert.equal(isMultiPropertyWorkspace(scopedMulti()), true);
-    for (const blocked of [isMultiPropertyDeliveryBlocked, isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(scopedMulti()), true);
-    assert.equal(isMultiPropertyGenerationBlocked(scopedMulti()), false);
+    for (const blocked of [isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(scopedMulti()), true);
+    for (const blocked of [isMultiPropertyGenerationBlocked, isMultiPropertyDeliveryBlocked]) assert.equal(blocked(scopedMulti()), false);
   });
 
   it("fail-closed : plusieurs biens à plat (sans biens) ou périmètres divergents avec >1 identifiant = multi", () => {

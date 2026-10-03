@@ -42,10 +42,10 @@ function walk(dir: string, out: string[] = []): string[] {
 const productionFiles = walk("src").filter((file) => !file.startsWith("src/lab/") && !file.startsWith("src/app/lab/") && !/\.test\.tsx?$/.test(file));
 
 describe("MB-MULTI-E2E-LAB-1 — capacités de production", () => {
-  it("seule la génération est ouverte globalement ; l'édition de production reste fermée", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: false, payment: false, closing: false, nextYear: false });
+  it("seules la génération et la livraison sont ouvertes globalement ; l'édition de production reste fermée", () => {
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false });
     for (const capability of Object.keys(MULTI_PROPERTY_CAPABILITIES) as Array<keyof typeof MULTI_PROPERTY_CAPABILITIES>) {
-      assert.equal(isMultiPropertyCapabilityOpen(capability), capability === "generation", capability);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery"].includes(capability), capability);
     }
   });
 

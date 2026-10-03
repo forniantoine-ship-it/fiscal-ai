@@ -3,7 +3,7 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.2"
+version: "1.3"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -71,3 +71,12 @@ Décision du Product Owner : la capacité `generation` est la **seule** capacit�
 - Une activité = **une** génération : un F-006, une RFS d'activité, une liasse, une 2031, une aide 2042-C-PRO ; le bien actif de l'interface n'entre jamais dans le calcul.
 - `edition`, `delivery`, `payment`, `closing`, `nextYear` restent **fermés**. Ouvrir la génération n'ouvre aucun autre levier ; clôture et exercice suivant restent structurellement non ouvrables. Le multi utilisateur reste donc **dormant** (aucun moyen de créer un second bien en production, de payer ni de livrer).
 - Prérequis avant toute activation utilisateur finale : migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` vérifiée/appliquée (statut distant à ce jour inconnu).
+
+# 8. Capacité `delivery` (MB-MULTI-DELIVERY-WIRING-1) — deuxième levier ouvert, jamais un droit d'accès
+
+Décision du Product Owner : la capacité `delivery` est ouverte **après** une preuve à 3 biens (le domaine du §1 reste « 2 biens ou plus », sans borne ; aucune hypothèse « exactement deux » n'existe dans le pipeline). `generation` reste ouverte ; `edition`, `payment`, `closing`, `nextYear` restent **fermés**.
+
+- **Admission** à la livraison d'une RFS multi (Cerfa ET aide 2042-C-PRO : MÊME fonction `resolveMultiPropertyDeliveryAdmission`, aucune condition de domaine dans les routes) = capacité `delivery` ouverte **ET** domaine ADR-011 établi sur la RFS d'activité **ET** déclarabilité finale (`final-declarability`, bouclage 2033-B `BALANCED`, aucune case sans mapping visuel). Une RFS multi dont un fait requis n'est pas établi (forme inattendue, `fiscalResult` ou stock d'ouverture absents) est refusée (`multi_property_domain_unverifiable`), jamais présumée favorable ni source d'exception.
+- **Une livraison fiscale par activité** : la liasse (2031, 2031 bis, 2033-A/B/C), et l'aide 2042-C-PRO (5NA ou 5NY consolidé, aucun identifiant de bien) sont rendues depuis la RFS consolidée d'activité ; le bien actif de l'interface n'entre jamais dans la livraison.
+- **La capacité n'est pas l'entitlement** : les deux routes exigent d'abord, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon). Ouvrir `delivery` ne rend donc jamais un document payant accessible gratuitement ; le checkout multi reste fermé par la barrière `payment`. Le tarif reste 149 € par dossier et par exercice.
+- Le multi utilisateur reste **dormant** (édition de production, paiement et migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` non vérifiée : prérequis avant toute activation utilisateur finale).

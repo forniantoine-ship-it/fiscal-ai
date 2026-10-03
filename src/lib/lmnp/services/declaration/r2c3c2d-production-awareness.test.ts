@@ -228,7 +228,7 @@ describe("R2C.3c2d — le gate reconnaît le multi (visibilité) sans l'activer"
       }
     }
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", `capacité multi ${capability}`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), `capacité multi ${capability}`);
     }
   });
 
