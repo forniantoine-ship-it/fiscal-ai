@@ -2,8 +2,8 @@
 id: SAV-033
 title: "Report du résultat et des déficits LMNP sur la 2042-C-PRO"
 type: savoir
-status: draft
-version: "0.1"
+status: approved
+version: "1.0"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -56,6 +56,7 @@ Déclarer ensemble un 5NA brut (avant imputation) et un stock 5GA–5GJ déjà d
 
 ## Limites et réserves
 
+- *Approbation (2026-10-03, Product Owner) : les réserves ci-dessous sont des limites de preuve documentées d'un Savoir approuvé ; elles ne le remettent pas en draft.*
 - **L'acteur exact de l'imputation** (calcul automatique de l'administration à partir de 5NA et des cases 5GA–5GJ, ou autre) n'est pas décrit mot pour mot dans les sources obtenues. La chaîne déclarative « 5NA + stock 5GA–5GJ » est en revanche établie ; aucune règle supplémentaire n'en est déduite.
 - Aucune source n'énonce littéralement « 5NA avant imputation » : la règle repose sur la chaîne 2031 Bis (7a avant imputation) → report automatique 7a/7b vers la 2042-C-PRO → « bénéfice calculé sur la 2031 » en 5NA.
 - La notice détaillée de la 2042-C-PRO n'a pas été consultée.
