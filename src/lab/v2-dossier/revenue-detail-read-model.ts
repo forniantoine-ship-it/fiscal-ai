@@ -7,7 +7,7 @@ import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./documen
 import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./property-service-date";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft,
+  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft, v3DocumentBelongsToBien,
 } from "./v3-property-scope";
 
 /**
@@ -176,7 +176,7 @@ export function buildV3RevenueDetail(
 
   const documentIds = channel === "documents" ? [...new Set(draft?.revenusDocumentIds ?? [])] : [];
   const usedDocuments = documentIds.flatMap((id): V3RevenueDocument[] => {
-    const doc = workspace.documents.find(item => item.id === id);
+    const doc = workspace.documents.find(item => item.id === id && v3DocumentBelongsToBien(workspace, item, property.id));
     return doc ? [{ id: doc.id, label: doc.fileName, status: processingStatusFor(doc.id, documents) }] : [];
   });
 

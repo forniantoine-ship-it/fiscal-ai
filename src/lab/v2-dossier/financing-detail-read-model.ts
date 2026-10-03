@@ -9,7 +9,7 @@ import {
   LOAN_FACT_PROVENANCE_KEY, V3_LOAN_EXCLUSION_PHRASES, loanExclusionCauses, type V3LoanExclusionCode,
 } from "./financing-shared";
 import { fieldSourceLabel, known, percent } from "./read-model";
-import { resolveV3ActiveBienSource } from "./v3-property-scope";
+import { resolveV3ActiveBienSource, v3DocumentBelongsToBien } from "./v3-property-scope";
 
 /**
  * R15 — structured, per-loan projection of the persisted Financement data for the V3 workspace.
@@ -135,12 +135,12 @@ function yearOf(date: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-function buildLoanFacts(loan: LoanProfile, workspace: PersistedWorkspace): V3LoanFactDetail[] {
+function buildLoanFacts(loan: LoanProfile, workspace: PersistedWorkspace, owns: (document: { id?: string; propertyId?: string | null }) => boolean): V3LoanFactDetail[] {
   const origin = (factKey: string, hasValue: boolean): V3LoanFactOrigin | undefined => {
     const entry = hasValue ? loan.provenance?.[LOAN_FACT_PROVENANCE_KEY[factKey] ?? ""] : undefined;
     const label = fieldSourceLabel(entry?.source);
     if (!entry || !label) return undefined;
-    const doc = entry.documentId ? workspace.documents.find(item => item.id === entry.documentId) : undefined;
+    const doc = entry.documentId ? workspace.documents.find(item => item.id === entry.documentId && owns(item)) : undefined;
     return { source: entry.source, label, ...(doc ? { document: { id: doc.id, label: doc.fileName } } : {}) };
   };
   // A confirmed F011 loan with provenance but no entry for the insurance amount never had one: the canonical `0` is a
@@ -203,6 +203,8 @@ export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?
   if (source.kind === "unsupported" || source.kind === "selection_required") return empty("unsupported");
 
   const draft = source.draft;
+  // Isolation documentaire : en multi, seuls les documents explicitement rattachés au bien actif ; mono inchangé.
+  const owns = (document: { id?: string; propertyId?: string | null }) => source.kind !== "bien" || v3DocumentBelongsToBien(workspace, document, source.propertyId);
   const financing = draft?.creditFinancing;
   const loans = financing?.loans ?? [];
   if (!financing || loans.length === 0) return empty(draft?.creditDeclaredNoneAt ? "none" : "missing");
@@ -217,7 +219,7 @@ export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?
     return {
       id: loan.id,
       label: `Prêt ${index + 1}`,
-      facts: buildLoanFacts(loan, workspace),
+      facts: buildLoanFacts(loan, workspace, owns),
       ...(pret ? {
         exercise: {
           interets: pret.interetsEmpruntExercice, assurance: pret.assuranceEmpruntExercice,
@@ -238,7 +240,7 @@ export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?
   // Per-loan provenance is authoritative; the dossier-level creditDocumentId is only the fallback for older dossiers.
   const usedIds = hasLoanProvenance ? documentIds : draft?.creditDocumentId ? [draft.creditDocumentId] : [];
   const usedDocuments: V3FinancingDocument[] = usedIds.flatMap(id => {
-    const doc = workspace.documents.find(item => item.id === id);
+    const doc = workspace.documents.find(item => item.id === id && owns(item));
     return doc ? [{ id: doc.id, label: doc.fileName, status: processingStatusFor(doc.id, documents) }] : [];
   });
 

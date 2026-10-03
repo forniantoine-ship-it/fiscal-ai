@@ -5,7 +5,7 @@ import {
   resolveExternalOpeningProofFromFiscalYear, resolvePriorHistoryEligibility,
 } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { resolveBienDraftForRead } from "@/lib/lmnp/dossier/bien-draft";
-import { resolveExerciseScope } from "@/lib/lmnp/dossier/property-scope";
+import { resolveDocumentScope, resolveExerciseScope } from "@/lib/lmnp/dossier/property-scope";
 
 /**
  * R15.6 — résolution COMMUNE du bien pour les read models V3 de domaines du bien (Logement, Revenus, futurs Charges /
@@ -70,13 +70,30 @@ export function projectV3PropertyEntry(workspace: PersistedWorkspace, propertyId
 }
 
 /**
- * SUPPORT PRODUIT (distinct de la capacité de lecture) : `full` seulement si le bien vérifié est le seul de l'exercice
- * ET que ses données sont lisibles par BienDraft (legacy mono projeté, ou scopé `draft.biens`). Multi-bien, conflit ou
- * scope incohérent : `facts_only` — le parcours multi-bien n'est pas encore supporté.
+ * SUPPORT PRODUIT (distinct de la capacité de lecture) : `full` quand le bien EXPLICITEMENT demandé et vérifié est lisible
+ * par BienDraft — mono (legacy projeté ou scopé) comme multi scopé (`draft.biens[propertyId]`, MB-MULTI-PROPERTY-DETAILS-1).
+ * Les sorties F010–F014 lues sont alors celles de CE bien seul. `facts_only` : scope incohérent, dossier multi à plat
+ * (champs de bien non attribuables), conflit à plat/scopé, ou BienDraft absent. Jamais un repli vers un autre bien.
  */
 export function resolveV3PropertySupport(workspace: PersistedWorkspace, propertyId: string): V3PropertySupport {
-  return resolveExerciseScope(workspace).kind === "mono" && resolveBienDraftForRead(workspace, propertyId).status === "resolved"
+  const scope = resolveExerciseScope(workspace).kind;
+  return (scope === "mono" || scope === "multi") && resolveBienDraftForRead(workspace, propertyId).status === "resolved"
     ? "full" : "facts_only";
+}
+
+/**
+ * Isolation documentaire d'un panneau de BIEN : en multi, un document n'y figure que s'il est explicitement rattaché à CE bien
+ * (`documents[].propertyId`). Un document commun, d'activité (INPI), non attribué, ou d'un autre bien n'y figure jamais ; un
+ * document non attribué n'est jamais promu commun. Mono : inchangé (le document historique reste celui du bien unique).
+ */
+export function v3DocumentBelongsToBien(
+  workspace: PersistedWorkspace,
+  document: { id?: string; propertyId?: string | null },
+  propertyId: string,
+): boolean {
+  if (!isMultiPropertyExercise(workspace)) return true;
+  const scope = resolveDocumentScope(workspace, document);
+  return scope.kind === "property" && scope.propertyId === propertyId;
 }
 
 /**

@@ -10,7 +10,7 @@ import type { F010FieldKey, F010ReviewFieldKey, F010State, F010Step } from "@/ru
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./document-read-model";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, v3BienDraft,
+  type V3PropertyEntry, type V3PropertyScopeReason, v3BienDraft, v3DocumentBelongsToBien,
 } from "./v3-property-scope";
 import { PROPERTY_TYPE_LABELS } from "./read-model";
 import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./property-service-date";
@@ -228,7 +228,7 @@ export function buildV3HousingDetail(
   ];
 
   const documentId = session?.review?.documentId;
-  const document = documentId ? workspace.documents.find(item => item.id === documentId) : undefined;
+  const document = documentId ? workspace.documents.find(item => item.id === documentId && v3DocumentBelongsToBien(workspace, item, id)) : undefined;
 
   return {
     ...base,

@@ -4,7 +4,7 @@ import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/valida
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
 import { LOAN_FACT_PROVENANCE_KEY, exclusionFactValue, loanExclusionCauses } from "./financing-shared";
-import { resolveV3ActiveBienSource, type V3ActiveBienSource } from "./v3-property-scope";
+import { resolveV3ActiveBienSource, v3DocumentBelongsToBien, type V3ActiveBienSource } from "./v3-property-scope";
 
 export type V3DomainId = "activity" | "property" | "financing" | "revenues" | "charges" | "depreciation";
 export type V3DomainStatus = "complete" | "incomplete" | "unsupported" | "selection_required";
@@ -214,7 +214,7 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace, activePropertyI
   const fieldSources = amortissement?.fieldSources ?? {};
   // Stable, cross-year F010 base (composants bâti/mobilier/travaux) — distinct from the exercise output above.
   const base = property.amortissementBase;
-  const sourceDocument = workspace.documents.find(doc => doc.id === property.notaryDocumentId);
+  const sourceDocument = workspace.documents.find(doc => doc.id === property.notaryDocumentId && v3DocumentBelongsToBien(workspace, doc, property.id));
 
   const addressValue = [property.address, [property.postalCode, property.city].filter(Boolean).join(" ")]
     .filter(Boolean).join(", ") || null;
@@ -279,7 +279,8 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace, activeProperty
   const financementCharges = isAnnualOutputForActiveYear(draft?.financementCharges, workspace.fiscalYear.year)
     ? draft?.financementCharges : undefined;
   const excludedLoanIds = new Set(financementCharges?.excludedLoanIds ?? []);
-  const sourceDocument = workspace.documents.find(doc => doc.id === draft?.creditDocumentId);
+  const owns = (doc: { id?: string; propertyId?: string | null }) => source.kind !== "bien" || v3DocumentBelongsToBien(workspace, doc, source.propertyId);
+  const sourceDocument = workspace.documents.find(doc => doc.id === draft?.creditDocumentId && owns(doc));
   // R3.6 — F011's financementCharges.fieldSources is scoped to whichever loan the assistant was last editing
   // (reset on every loan change, see assistant.ts): with several loans it cannot be attributed to a specific
   // one without risk of misattribution, so it is never read. The only provenance attached to a fact is the one
@@ -338,7 +339,7 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace, activeProperty
   const hasLoanProvenance = loans.some(loan => Object.keys(loan.provenance ?? {}).length > 0);
   const sources = hasLoanProvenance
     ? provenanceDocumentIds.flatMap(id => {
-      const doc = workspace.documents.find(d => d.id === id);
+      const doc = workspace.documents.find(d => d.id === id && owns(d));
       return doc ? [{ id: doc.id, label: doc.fileName }] : [];
     })
     : sourceDocument ? [{ id: sourceDocument.id, label: sourceDocument.fileName }] : [];
@@ -368,7 +369,7 @@ function buildV3RevenueReadModel(workspace: PersistedWorkspace, activePropertyId
   const revenus = isAnnualOutputForActiveYear(draft?.revenusAssistant, workspace.fiscalYear.year)
     ? draft?.revenusAssistant : undefined;
   const fieldSources = revenus?.fieldSources ?? {};
-  const sourceDocuments = workspace.documents.filter(doc => (draft?.revenusDocumentIds ?? []).includes(doc.id));
+  const sourceDocuments = workspace.documents.filter(doc => (draft?.revenusDocumentIds ?? []).includes(doc.id) && (source.kind !== "bien" || v3DocumentBelongsToBien(workspace, doc, source.propertyId)));
 
   // R3.6 discipline, confirmed by tracing computeRecettesExercice(): indemnitesAssurance,
   // recettesPlateforme, ajustementsJanDec and moisLocationEffectifs all fold "not applicable"
@@ -424,7 +425,7 @@ function buildV3ChargesReadModel(workspace: PersistedWorkspace, activePropertyId
   // category, unlike F011's per-loan reset) and is persisted verbatim by buildChargesAssistantOutput()
   // — per-category evidence is therefore safe to attribute here (see Charges H test).
   const fieldSources = charges?.fieldSources ?? {};
-  const sourceDocuments = workspace.documents.filter(doc => (draft?.chargesDocumentIds ?? []).includes(doc.id));
+  const sourceDocuments = workspace.documents.filter(doc => (draft?.chargesDocumentIds ?? []).includes(doc.id) && (source.kind !== "bien" || v3DocumentBelongsToBien(workspace, doc, source.propertyId)));
 
   const totalFacts: V3Fact[] = [
     { id: "totalDeductible", label: "Charges déductibles (exercice)", value: money(charges?.totalDeductible) },

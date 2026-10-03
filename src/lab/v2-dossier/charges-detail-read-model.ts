@@ -10,7 +10,7 @@ import { resolveV3PropertyServiceDate, type V3PropertyServiceDate } from "./prop
 import { derivedFromRealDate } from "./revenue-detail-read-model";
 import {
   projectV3PropertyEntry, resolveV3PropertyScope, resolveV3PropertySupport,
-  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft,
+  type V3PropertyEntry, type V3PropertyScopeReason, type V3PropertySupport, v3BienDraft, v3DocumentBelongsToBien,
 } from "./v3-property-scope";
 
 /**
@@ -282,7 +282,7 @@ export function buildV3ChargesDetail(
 
   const usedDocuments = fresh && state
     ? documentIdsOf(state, registry).flatMap((id): V3ChargesDocument[] => {
-        const doc = workspace.documents.find(item => item.id === id);
+        const doc = workspace.documents.find(item => item.id === id && v3DocumentBelongsToBien(workspace, item, property.id));
         return doc ? [{ id: doc.id, label: doc.fileName, status: processingStatusFor(doc.id, documents) }] : [];
       })
     : [];

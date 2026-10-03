@@ -98,7 +98,7 @@ describe("R2A — Oracle G : conflit flat + scopé", () => {
 });
 
 describe("R2A — Oracle H : isolation par bien", () => {
-  it("lecture A → uniquement A ; lecture B → uniquement B ; support produit multi inchangé (facts_only)", async () => {
+  it("lecture A → uniquement A ; lecture B → uniquement B ; support produit multi scopé : full par bien explicite (MB-MULTI-PROPERTY-DETAILS-1)", async () => {
     const source = (await workspaces).f013;
     const outputA = source.declarationDraft!.revenusAssistant!;
     const outputB = { ...outputA, totalRecettes: outputA.totalRecettes + 777 };
@@ -119,8 +119,9 @@ describe("R2A — Oracle H : isolation par bien", () => {
     assert.equal(read(multi, "bien-a").view?.revenusAssistant, outputA);
     assert.equal(read(multi, "bien-b").view?.revenusAssistant, outputB);
     assert.equal(read(multi).status, "ambiguous", "jamais le premier bien");
-    assert.equal(resolveV3PropertySupport(multi, "bien-a"), "facts_only");
-    assert.equal(resolveV3PropertySupport(multi, "bien-b"), "facts_only");
+    assert.equal(resolveV3PropertySupport(multi, "bien-a"), "full");
+    assert.equal(resolveV3PropertySupport(multi, "bien-b"), "full");
+    assert.equal(resolveV3PropertySupport(multi, "inconnu"), "facts_only", "bien inconnu : jamais attribuable");
   });
 });
 

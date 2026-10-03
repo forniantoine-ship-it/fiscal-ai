@@ -11,8 +11,10 @@ import { resolveBienDraftForRead } from "@/lib/lmnp/dossier/bien-draft";
  *  - `Property.amortissementBase.dateMiseEnService` — propre au bien (posée au passage N → N+1) ;
  *  - `draft.activiteAssistantState.dateMiseEnService` — réponse F009 pas encore devenue donnée métier.
  *
- * Attribution : la base appartient au `Property` demandé. La valeur globale du draft n'est attribuable qu'à un bien qui
- * est le SEUL de l'exercice (même règle que `propertyScopeFor`, réutilisée) ; en multi-biens elle n'est jamais attribuée.
+ * Attribution : la base appartient au `Property` demandé. La valeur du draft n'est attribuable qu'à un bien qui est le SEUL
+ * de l'exercice (même règle que `propertyScopeFor`, réutilisée) OU, en multi scopé, à la valeur de SON BienDraft
+ * (`draft.biens[id].dateMiseEnService`, MB-MULTI-PROPERTY-DETAILS-1) ; une valeur à plat d'un dossier multi n'est jamais attribuée.
+ * La réponse F009 en cours (niveau activité) n'est jamais attribuée à un bien en multi.
  *
  * Jamais de repli : ni `acquisitionDate`, ni `activityStartDate`, ni date construite depuis l'exercice. Deux sources
  * valides qui divergent = `conflict`, aucune valeur retenue, aucun arbitrage.
@@ -53,6 +55,8 @@ export function resolveV3PropertyServiceDate(workspace: PersistedWorkspace, prop
   const draft = read.status === "resolved" ? read.view : workspace.declarationDraft;
   const globalAttributable =
     property !== undefined && read.status === "resolved" && scope?.kind === "required" && scope.propertyId === propertyId;
+  // Multi scopé : `view.dateMiseEnService` est celle de CE bien (BIEN_DRAFT_FIELDS), pas celle de l'exercice.
+  const draftDateAttributable = globalAttributable || (property !== undefined && read.status === "resolved" && read.source === "scoped");
 
   const reliable: V3ServiceDateCandidate[] = [];
   const consider = (source: V3ServiceDateSource, raw: string | undefined, attributable: boolean, into: V3ServiceDateCandidate[]) => {
@@ -64,7 +68,7 @@ export function resolveV3PropertyServiceDate(workspace: PersistedWorkspace, prop
   };
 
   consider("property_base", property?.amortissementBase?.dateMiseEnService, property !== undefined, reliable);
-  consider("draft", draft?.dateMiseEnService, globalAttributable, reliable);
+  consider("draft", draft?.dateMiseEnService, draftDateAttributable, reliable);
 
   const distinct = [...new Set(reliable.map(candidate => candidate.value))];
   const inProgress: V3ServiceDateCandidate[] = [];
