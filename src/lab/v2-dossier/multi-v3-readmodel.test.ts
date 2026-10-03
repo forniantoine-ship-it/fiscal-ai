@@ -137,6 +137,6 @@ test("MONO inchangé — le bien actif est ignoré ; une rubrique n'est jamais �
   assert.ok(DOMAIN_KEYS.every(key => model(mono, null)[key].status !== "selection_required"));
 });
 
-test("PRODUCTION DORMANCY — génération et livraison ouvertes ; l'édition de production reste fermée", () => {
-  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false });
+test("PRODUCTION DORMANCY — génération, livraison et paiement ouverts ; l'édition de production reste fermée", () => {
+  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
 });

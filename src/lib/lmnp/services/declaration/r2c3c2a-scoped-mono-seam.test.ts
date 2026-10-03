@@ -349,7 +349,7 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
 
   it("A17 — les capacités d'activation multi restent toutes fermées", () => {
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), `capacité multi ${capability} : seules la génération et la livraison sont ouvertes (MB-MULTI-CAPABILITY-WIRING-1 / MB-MULTI-DELIVERY-WIRING-1)`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), `capacité multi ${capability} : seuls la génération, la livraison et le paiement sont ouverts (MB-MULTI-CAPABILITY / DELIVERY / PAYMENT-WIRING-1)`);
     }
   });
 
@@ -357,7 +357,8 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
     // L'ancien test pinnait « aucune modification depuis la baseline 3c1 » : MB-MULTI-DOMAIN-GUARD-1 refond volontairement ces
     // fichiers (flag unique → capacités). L'invariant utile est conservé : chaque point de barrière référence une capacité nommée.
     const guards: Array<[string, RegExp]> = [
-      ["src/lib/lmnp/services/payment/checkout-handler.ts", /isMultiPropertyBarrierActive\([\s\S]*"payment"/],
+      ["src/lib/lmnp/services/payment/checkout-handler.ts", /resolveMultiPropertyPaymentAdmission\(/],
+      ["src/lib/lmnp/services/payment/multi-payment-admission.ts", /"payment"[\s\S]*"generation"[\s\S]*"delivery"/],
       ["src/lib/lmnp/services/fiscal-year-transition/transition-handler.ts", /"closing"[\s\S]*"nextYear"/],
       ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", /resolveMultiPropertyDeliveryAdmission/],
       ["src/lib/lmnp/services/dossier/fiscal-year-cycle.ts", /isMultiPropertyClosingBlocked[\s\S]*isMultiPropertyNextYearBlocked|isMultiPropertyNextYearBlocked[\s\S]*isMultiPropertyClosingBlocked/],

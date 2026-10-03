@@ -62,8 +62,8 @@ function scopedMulti(): PersistedWorkspace {
 describe("R2C.3c1 — constante d'activation et résolveur multi unique", () => {
   it("S21 — capacités d'activation multi : seule la GÉNÉRATION est ouverte (constantes pures, aucune source dynamique) ; remplace l'ancien flag unique", () => {
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), `capacité multi ${capability} : seules la génération et la livraison sont ouvertes (MB-MULTI-CAPABILITY-WIRING-1 / MB-MULTI-DELIVERY-WIRING-1)`);
-      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery"].includes(capability), `capacité multi ${capability}`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), `capacité multi ${capability} : seuls la génération, la livraison et le paiement sont ouverts (MB-MULTI-CAPABILITY / DELIVERY / PAYMENT-WIRING-1)`);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery", "payment"].includes(capability), `capacité multi ${capability}`);
     }
     const code = source("src/lib/lmnp/dossier/multi-property-activation.ts");
     assert.doesNotMatch(code, /process\.env|localStorage|sessionStorage|supabase|fetch\(/i);

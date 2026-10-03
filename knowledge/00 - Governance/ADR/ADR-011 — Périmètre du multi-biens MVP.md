@@ -3,7 +3,7 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.3"
+version: "1.4"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -80,3 +80,13 @@ Décision du Product Owner : la capacité `delivery` est ouverte **après** une 
 - **Une livraison fiscale par activité** : la liasse (2031, 2031 bis, 2033-A/B/C), et l'aide 2042-C-PRO (5NA ou 5NY consolidé, aucun identifiant de bien) sont rendues depuis la RFS consolidée d'activité ; le bien actif de l'interface n'entre jamais dans la livraison.
 - **La capacité n'est pas l'entitlement** : les deux routes exigent d'abord, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon). Ouvrir `delivery` ne rend donc jamais un document payant accessible gratuitement ; le checkout multi reste fermé par la barrière `payment`. Le tarif reste 149 € par dossier et par exercice.
 - Le multi utilisateur reste **dormant** (édition de production, paiement et migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` non vérifiée : prérequis avant toute activation utilisateur finale).
+
+# 9. Capacité `payment` (MB-MULTI-PAYMENT-WIRING-1) — troisième levier ouvert, jamais un entitlement
+
+Décision du Product Owner : la capacité `payment` est ouverte pour le multi **sans nouveau contrat commercial**. `generation` et `delivery` restent ouvertes ; `edition`, `closing`, `nextYear` restent **fermés**.
+
+- **Un achat par dossier et par exercice** : 149 € TTC (14 900 centimes EUR), prix et devise exclusivement serveur, que le dossier compte 1, 2, 3 ou N biens. L'identité commerciale est (paiement, dossier, exercice, utilisateur) : **aucun bien n'y participe** (ni prix, ni ligne, ni session, ni métadonnée Stripe par bien). Le bien actif de l'interface et l'ordre des biens n'ont aucun effet sur le paiement.
+- **Même moteur que le mono** : le checkout serveur existant (`/api/lmnp/payment/checkout`) est inchangé dans son contrat ; aucun service de paiement multi n'existe. La seule addition est une **admission pure** (`resolveMultiPropertyPaymentAdmission`, même modèle que génération et livraison) évaluée sur le snapshot SERVEUR avant toute ligne et toute session : capacités `payment` ET `generation` ET `delivery` ouvertes, éligibilité d'antériorité, garde de domaine ADR-011, et aptitude à livrer par la gate de génération (capacité génération ∧ domaine ∧ preview déterministe réellement généré ∧ readiness technique).
+- **Ne jamais encaisser un dossier connu comme non livrable** : le preview est le moteur déterministe réel appliqué au snapshot (pas une prédiction) ; les motifs que seul le calcul établit (ARD généré / 39 C inter-biens) sont donc connus **avant** le paiement et refusent le checkout (409 `multi_property_not_payable` ; hors domaine : 409 `multi_property_domain_unsupported` ; capacités fermées : 409 `multi_property_not_enabled`). Un snapshot multi illisible ou d'un autre exercice est refusé (`multi_property_domain_unverifiable`).
+- **La capacité n'est pas l'entitlement** : `payment` ouvert ne vaut jamais `paid`. La livraison exige toujours, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon) ; un exercice ou un dossier payé n'en débloque aucun autre.
+- Le multi utilisateur reste **dormant** : édition de production fermée, migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` non vérifiée, recette E2E finale non effectuée, clôture et N+1 interdits.

@@ -20,18 +20,18 @@ export type MultiPropertyCapability = "edition" | "generation" | "delivery" | "p
 export type MultiPropertyCapabilities = Readonly<Record<MultiPropertyCapability, boolean>>;
 
 /**
- * Valeurs finales de l'activation (ADR-011). Leviers OUVERTS : la GÉNÉRATION (MB-MULTI-CAPABILITY-WIRING-1) et la LIVRAISON
- * (MB-MULTI-DELIVERY-WIRING-1) — ni l'une ni l'autre ne suffit seule : la génération exige le domaine ADR-011 supporté, la preview
- * générée et la readiness technique (`resolveMultiPropertyGenerationAdmission`) ; la livraison exige le domaine supporté sur la RFS
- * d'activité, la déclarabilité finale ET l'entitlement PAYÉ vérifié en premier par les routes (jamais une capacité). Édition,
- * paiement, clôture et exercice suivant restent FERMÉS : le multi utilisateur reste dormant (aucun moyen de créer un second bien,
- * de payer ni de clôturer en production).
+ * Valeurs finales de l'activation (ADR-011). Leviers OUVERTS : GÉNÉRATION (MB-MULTI-CAPABILITY-WIRING-1), LIVRAISON
+ * (MB-MULTI-DELIVERY-WIRING-1) et PAIEMENT (MB-MULTI-PAYMENT-WIRING-1) — aucun ne suffit seul. La génération exige le domaine ADR-011,
+ * la preview générée et la readiness technique ; la livraison exige le domaine sur la RFS d'activité, la déclarabilité finale ET
+ * l'entitlement PAYÉ ; le paiement n'ouvre que l'accès au checkout MONO existant (dossier + exercice, 149 €) pour un dossier admis
+ * (capacités payment ∧ generation ∧ delivery, domaine, aptitude à livrer) et n'est JAMAIS un entitlement. ÉDITION, clôture et exercice
+ * suivant restent FERMÉS : le multi utilisateur reste dormant (aucun moyen de créer un second bien en production).
  */
 export const MULTI_PROPERTY_CAPABILITIES = {
   edition: false,
   generation: true,
   delivery: true,
-  payment: false,
+  payment: true,
   closing: false,
   nextYear: false,
 } as const satisfies MultiPropertyCapabilities;

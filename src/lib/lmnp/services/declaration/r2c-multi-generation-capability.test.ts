@@ -431,7 +431,6 @@ describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1
   it("19. PAIEMENT : barrière serveur fermée avec la seule génération ouverte ; tarif inchangé", async () => {
     const read = async () => ({ schemaVersion: 2, payload: { workspace: SIMPLE() } });
     assert.equal(await isMultiPropertyBarrierActive(read, { dossierId: "d", fiscalYear: Y }, "payment", GENERATION_ONLY), true);
-    assert.equal(await isMultiPropertyBarrierActive(read, { dossierId: "d", fiscalYear: Y }, "payment"), true, "défaut de production");
     assert.equal(GENERATION_PRICE_TTC, 149);
   });
 
@@ -449,8 +448,8 @@ describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1
     for (const other of ALL) assert.equal(isMultiPropertyCapabilityOpen(other, GENERATION_ONLY), other === "generation", other);
   });
 
-  it("valeurs FINALES de production : génération et livraison ouvertes ; édition, paiement, clôture, N+1 fermés (MB-MULTI-DELIVERY-WIRING-1 : delivery ouverte ensuite)", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false });
+  it("valeurs FINALES de production : génération, livraison et paiement ouverts ; édition, clôture, N+1 fermés (MB-MULTI-PAYMENT-WIRING-1)", () => {
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
   });
 });
 

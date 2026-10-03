@@ -6,8 +6,10 @@
  *
  *   1. authentification            → 401
  *   2. propriété du dossier        → 403
- *   2b. dossier multi-bien (snapshot SERVEUR, R2C.3c1) → 409 `multi_property_not_enabled`
- *       (AVANT toute ligne, toute session Stripe ; jamais un booléen client)
+ *   2b. dossier multi-bien (snapshot SERVEUR, R2C.3c1) → 409 : `multi_property_not_enabled` (capacités fermées) ou, capacités
+ *       ouvertes (MB-MULTI-PAYMENT-WIRING-1), `multi_property_domain_unsupported` / `multi_property_not_payable` (domaine ADR-011,
+ *       aptitude à livrer) — AVANT toute ligne, toute session Stripe ; jamais un booléen client, jamais un paiement multi distinct :
+ *       l'admission ne fait que décider si le checkout (dossier, exercice) existant est atteignable
  *   3. exercice terminé            → 409 `fiscal_year_not_closed` (ni ligne, ni session)
  *   4. éligibilité d'antériorité   → 403 `prior_history_not_eligible` (AVANT tout argent)
  *   5. entitlement déjà payé       → 200 `already_paid` (aucun second paiement)
@@ -20,8 +22,9 @@
 import {
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+  type MultiPropertyCapabilities,
 } from "@/lib/lmnp/dossier/multi-property-activation";
-import { isMultiPropertyBarrierActive } from "../server-workspace-snapshot";
+import { resolveMultiPropertyPaymentAdmission } from "./multi-payment-admission";
 import {
   isNonEmptyString,
   jsonResponse,
@@ -81,6 +84,8 @@ async function reuseOpenSession(deps: PaymentDeps, row: PaymentRow): Promise<Res
 export async function handleCheckoutRequest(
   request: Request,
   depsFactory: () => PaymentDeps = createDefaultPaymentDeps,
+  /** Tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES`. */
+  multiPropertyCapabilities?: MultiPropertyCapabilities,
 ): Promise<Response> {
   let body: CheckoutBody;
   try {
@@ -106,8 +111,16 @@ export async function handleCheckoutRequest(
 
     await deps.assertOwnership(dossierId, userId);
 
-    if (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, { dossierId, fiscalYear }, "payment")) {
-      return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
+    const multiAdmission = await resolveMultiPropertyPaymentAdmission(deps.readWorkspaceSnapshot, { dossierId, fiscalYear }, multiPropertyCapabilities);
+    if (!multiAdmission.allowed) {
+      if (multiAdmission.reason === "multi_property_not_enabled") {
+        return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
+      }
+      return jsonResponse(409, {
+        error: "Ce dossier ne peut pas être payé tant qu'il n'est pas livrable : aucun paiement n'a été demandé.",
+        code: multiAdmission.reason,
+        reasons: multiAdmission.reason === "multi_property_domain_unsupported" ? multiAdmission.domainReasons : multiAdmission.blockingReasons,
+      });
     }
 
     const notClosed = rejectUnclosedFiscalYear(deps, fiscalYear);

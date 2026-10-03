@@ -7,11 +7,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { MultiPropertyCapabilities } from "@/lib/lmnp/dossier/multi-property-activation";
 import { handleCheckoutRequest } from "./checkout-handler";
 import { handlePriorHistoryRequest } from "./prior-history-handler";
 import { createFakePaymentEnv, jsonPost } from "./payment-fakes";
 
 const URL_CHECKOUT = "https://app.fiscal-ai.test/api/lmnp/payment/checkout";
+/** Capacité de paiement FERMÉE (injectée) : le multi reste bloqué par la capacité, indépendamment du domaine. */
+const PAYMENT_CLOSED = { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false } as MultiPropertyCapabilities;
 const prop = (id: string) => ({ id, label: id });
 const workspace = (ids: string[], scoped: boolean) => ({
   fiscalYear: { id: "fy", year: 2026, propertyIds: ids },
@@ -30,17 +33,21 @@ function setup() {
       jsonPost("https://app.fiscal-ai.test/api/lmnp/payment/prior-history", { authToken: "tok", dossierId: "dossier-X", fiscalYear, status: "FIRST_REAL_YEAR" }),
       () => env.deps,
     );
-  const post = (body: unknown = { authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026 }) =>
-    handleCheckoutRequest(jsonPost(URL_CHECKOUT, body), () => env.deps);
+  const post = (body: unknown = { authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026 }, capabilities?: MultiPropertyCapabilities) =>
+    handleCheckoutRequest(jsonPost(URL_CHECKOUT, body), () => env.deps, capabilities);
   return { env, post, declareEligible };
 }
 
 describe("R2C.3c1 — checkout : barrière multi-bien serveur", () => {
-  it("S6/S7 — snapshot multi → 409 multi_property_not_enabled, AUCUN appel createCheckoutSession, aucune ligne", async () => {
+  it("S6/S7 — snapshot multi + capacité de paiement FERMÉE → 409 multi_property_not_enabled, AUCUN appel createCheckoutSession, aucune ligne ; capacité ouverte mais dossier non livrable (snapshot minimal sans attestations) → 409 multi_property_domain_unsupported", async () => {
     const { env, post, declareEligible } = setup();
     env.setSnapshot("dossier-X", 2026, snapshot(["A", "B"], true));
     await declareEligible();
-    const res = await post();
+    const open = await post();
+    assert.equal(open.status, 409);
+    assert.equal(((await open.json()) as { code: string }).code, "multi_property_domain_unsupported", "défaut de production (payment ouvert) : snapshot minimal sans attestations, jamais encaissé tant que non livrable");
+    assert.equal(env.created.length, 0);
+    const res = await post(undefined, PAYMENT_CLOSED);
     assert.equal(res.status, 409);
     assert.equal(((await res.json()) as { code: string }).code, "multi_property_not_enabled");
     assert.equal(env.created.length, 0);
@@ -51,7 +58,7 @@ describe("R2C.3c1 — checkout : barrière multi-bien serveur", () => {
   it("le booléen/le payload client ne décide jamais : continuity forgée sur un dossier multi → refus ; sur un mono → inchangé", async () => {
     const { env, post } = setup();
     env.setSnapshot("dossier-X", 2026, snapshot(["A", "B"], true));
-    const forged = await post({ authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026, multiProperty: false, isMultiProperty: false });
+    const forged = await post({ authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026, multiProperty: false, isMultiProperty: false }, PAYMENT_CLOSED);
     assert.equal(forged.status, 409);
     assert.equal(env.created.length, 0);
   });

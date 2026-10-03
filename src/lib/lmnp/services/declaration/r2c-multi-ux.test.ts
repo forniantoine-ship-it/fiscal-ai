@@ -538,7 +538,7 @@ describe("MB-MULTI-UX-1 — GENERATION / DELIVERY / PAYMENT / CLOSING / N+1 rest
     assert.equal(isMultiPropertyClosingBlocked(ws), true);
     assert.equal(isMultiPropertyNextYearBlocked(ws), true);
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), capability);
     }
   });
 

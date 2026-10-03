@@ -100,8 +100,8 @@ const LOSSES_WITH_DEPRECIATION = (): PersistedWorkspace => multiWorkspace({ spec
 describe("MB-MULTI-DOMAIN-GUARD-1 — capacités d'activation multi", () => {
   it("valeurs finales : génération et livraison = ON ; édition, paiement, clôture, N+1 = OFF", () => {
     for (const capability of ALL) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), capability);
-      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery"].includes(capability), capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), capability);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery", "payment"].includes(capability), capability);
     }
   });
 
@@ -136,7 +136,7 @@ describe("MB-MULTI-DOMAIN-GUARD-1 — capacités d'activation multi", () => {
     const row = { schemaVersion: 2, payload: { workspace: SIMPLE() } };
     const read = async () => row;
     const input = { dossierId: "d", fiscalYear: Y };
-    assert.equal(await isMultiPropertyBarrierActive(read, input, "payment"), true, "défaut : fermé");
+    assert.equal(await isMultiPropertyBarrierActive(read, input, "payment", caps(["generation", "delivery"])), true, "payment fermé (injecté) : génération + livraison n'ouvrent pas le paiement");
     assert.equal(await isMultiPropertyBarrierActive(read, input, "payment", caps(["generation"])), true);
     assert.equal(await isMultiPropertyBarrierActive(read, input, "payment", caps(["payment"])), false);
     assert.equal(await isMultiPropertyBarrierActive(read, input, "closing", caps(["payment", "generation", "delivery"])), true);

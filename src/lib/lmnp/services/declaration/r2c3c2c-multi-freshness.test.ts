@@ -499,7 +499,7 @@ describe("R2C.3c2c — garde-fous de périmètre", () => {
 
   it("C36 — les capacités d'activation multi restent toutes fermées", () => {
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery"].includes(capability), `capacité multi ${capability} : seules la génération et la livraison sont ouvertes (MB-MULTI-CAPABILITY-WIRING-1 / MB-MULTI-DELIVERY-WIRING-1)`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), `capacité multi ${capability} : seuls la génération, la livraison et le paiement sont ouverts (MB-MULTI-CAPABILITY / DELIVERY / PAYMENT-WIRING-1)`);
     }
   });
 

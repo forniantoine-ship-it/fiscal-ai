@@ -508,13 +508,12 @@ describe("PAIEMENT — l'entitlement payé reste l'autorité, capacité de livra
     }
   });
 
-  it("19. PAIEMENT reste OFF : barrière serveur du checkout active même avec génération ET livraison ouvertes ; tarif inchangé", async () => {
+  it("19. la livraison ouverte n'ouvre pas le paiement (capacités injectées) ; le checkout passe par l'admission paiement unique ; tarif inchangé", async () => {
     const read = async () => ({ schemaVersion: 2, payload: { workspace: THREE() } });
     assert.equal(await isMultiPropertyBarrierActive(read, { dossierId: "d", fiscalYear: Y }, "payment", DELIVERY_ON), true);
-    assert.equal(await isMultiPropertyBarrierActive(read, { dossierId: "d", fiscalYear: Y }, "payment"), true, "défaut de production");
     assert.equal(GENERATION_PRICE_TTC, 149);
     const checkout = readFileSync(path.join(ROOT, "src/lib/lmnp/services/payment/checkout-handler.ts"), "utf8");
-    assert.match(checkout, /isMultiPropertyBarrierActive\(deps\.readWorkspaceSnapshot, \{ dossierId, fiscalYear \}, "payment"\)/);
+    assert.match(checkout, /resolveMultiPropertyPaymentAdmission\(deps\.readWorkspaceSnapshot, \{ dossierId, fiscalYear \}/);
   });
 
   it("l'accès à la livraison ne lit AUCUNE capacité multi : l'entitlement est évalué avant et indépendamment (source)", () => {
@@ -532,8 +531,8 @@ describe("PAIEMENT — l'entitlement payé reste l'autorité, capacité de livra
 // ===========================================================================
 
 describe("CAPACITÉS FINALES", () => {
-  it("valeurs finales de production : generation et delivery ouvertes ; edition, payment, closing, nextYear fermés", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: false, closing: false, nextYear: false });
+  it("valeurs finales de production : generation, delivery et payment ouverts ; edition, closing, nextYear fermés (MB-MULTI-PAYMENT-WIRING-1)", () => {
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
   });
 
   it("21–22. CLÔTURE et N+1 : bloqués structurellement, même avec les six capacités à true", () => {
@@ -552,7 +551,7 @@ describe("CAPACITÉS FINALES", () => {
     assert.equal(isMultiPropertyGenerationBlocked(THREE()), false, "production : génération ouverte");
     for (const other of ALL) assert.equal(isMultiPropertyCapabilityOpen(other, caps(["delivery"])), other === "delivery", other);
     assert.equal(isMultiPropertyCapabilityOpen("edition"), false);
-    assert.equal(isMultiPropertyCapabilityOpen("payment"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("payment", caps(["delivery"])), false, "la livraison seule n'ouvre pas le paiement");
   });
 });
 
