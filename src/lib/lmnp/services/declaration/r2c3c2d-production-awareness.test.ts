@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, it, mock } from "node:test";
 
 import { buildBlockingReasonRows, ValidationMultiPropertyBlock } from "@/components/lmnp/validation-workflow/ValidationMultiPropertyBlock";
-import { MULTI_PROPERTY_USER_ENABLED } from "@/lib/lmnp/dossier/multi-property-activation";
+import { MULTI_PROPERTY_CAPABILITIES } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveDocumentScope } from "@/lib/lmnp/dossier/property-scope";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
@@ -225,7 +225,9 @@ describe("R2C.3c2d — le gate reconnaît le multi (visibilité) sans l'activer"
         assert.deepEqual({ g: gate.canGenerate, c: gate.canCheckout, r: gate.canRetryAfterPayment }, { g: false, c: false, r: false }, `paid=${paid} generated=${generatedFlag}`);
       }
     }
-    assert.equal(MULTI_PROPERTY_USER_ENABLED, false);
+    for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+    }
   });
 
   it("D9/D13 — les documents du workspace sont transmis au preview : un document sans propertyId bloque (unattributed_documents)", () => {
@@ -374,7 +376,7 @@ describe("R2C.3c2d — câblage : aucune activation (balayages de source)", () =
 
   it("D33/D34/D35/D36 — génération : garde multi AVANT tout calcul ; aucune génération ni persistance multi", () => {
     const body = handlerBody();
-    const guard = body.indexOf("isMultiPropertyBlocked(workspace)");
+    const guard = body.indexOf("isMultiPropertyGenerationBlocked(workspace)");
     const call = body.indexOf("runDeclarationGenerationFromWorkspace(");
     assert.ok(guard >= 0 && call > guard, "garde multi avant l'appel au service");
     assert.doesNotMatch(body, /\brunDeclarationGeneration\(/, "plus d'appel direct historique : un seul seam (service workspace)");
@@ -384,10 +386,10 @@ describe("R2C.3c2d — câblage : aucune activation (balayages de source)", () =
 
   it("D41/D42 — DeclarationReadyView : un multi n'est jamais présenté comme généré/prêt ; téléchargement fermé ; aucun CTA actif", () => {
     const text = drv();
-    assert.match(text, /isMultiPropertyBlocked\(workspace\)/);
-    const earlyReturn = text.indexOf("isMultiPropertyBlocked(workspace)", text.indexOf("export function DeclarationReadyView"));
+    assert.match(text, /isMultiPropertyDeliveryBlocked\(workspace\)/);
+    const earlyReturn = text.indexOf("isMultiPropertyDeliveryBlocked(workspace)", text.indexOf("export function DeclarationReadyView"));
     assert.ok(earlyReturn > 0 && earlyReturn < text.indexOf("vos éléments fiscaux sont générés"), "garde multi avant l'affichage « générés »");
-    assert.match(text, /canDownloadLiasse\s*=\s*Boolean\([\s\S]*?!isMultiPropertyBlocked\(workspace\)/);
+    assert.match(text, /canDownloadLiasse\s*=\s*Boolean\([\s\S]*?!isMultiPropertyDeliveryBlocked\(workspace\)/);
   });
 
   it("D37–D39/D44 + périmètre — checkout, transition, clôture/N+1, Cerfa, readiness de paiement, reducer, moteur, workspace-readiness, SQL : inchangés", () => {

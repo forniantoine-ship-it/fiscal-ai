@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, mock } from "node:test";
 
-import { MULTI_PROPERTY_USER_ENABLED, isMultiPropertyRfs } from "@/lib/lmnp/dossier/multi-property-activation";
+import { MULTI_PROPERTY_CAPABILITIES, isMultiPropertyRfs } from "@/lib/lmnp/dossier/multi-property-activation";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
@@ -338,7 +338,6 @@ describe("R2C.3c2a — A15 : blockingReasons du pipeline multi inchangées", () 
 
 describe("R2C.3c2a — garde-fous de périmètre", () => {
   const files = () => execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
-  const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
   it("A16 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d)", () => {
     const callers = files().filter((file) =>
@@ -347,17 +346,25 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
     assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
-  it("A17 — MULTI_PROPERTY_USER_ENABLED reste false", () => {
-    assert.equal(MULTI_PROPERTY_USER_ENABLED, false);
+  it("A17 — les capacités d'activation multi restent toutes fermées", () => {
+    for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+    }
   });
 
-  it("A18 — barrières 3c1 inchangées (aucune modification depuis la baseline 3c1)", () => {
-    assert.equal(diffAgainstBaseline([
-      "src/lib/lmnp/dossier/multi-property-activation.ts", "src/lib/lmnp/services/payment/checkout-handler.ts",
-      "src/lib/lmnp/services/fiscal-year-transition/transition-handler.ts", "src/app/api/lmnp/declaration/cerfa-pdf/handler.ts",
-      "src/lib/lmnp/services/dossier/fiscal-year-cycle.ts", "src/lib/lmnp/services/fiscal-year-transition/prepare-transition.ts",
-      "src/lib/lmnp/store/server-fiscal-year-transition.ts", "src/lib/lmnp/services/server-workspace-snapshot.ts",
-    ]), "");
+  it("A18 — barrières 3c1 conservées (refondues en capacités par MB-MULTI-DOMAIN-GUARD-1) : aucune garde supprimée", () => {
+    // L'ancien test pinnait « aucune modification depuis la baseline 3c1 » : MB-MULTI-DOMAIN-GUARD-1 refond volontairement ces
+    // fichiers (flag unique → capacités). L'invariant utile est conservé : chaque point de barrière référence une capacité nommée.
+    const guards: Array<[string, RegExp]> = [
+      ["src/lib/lmnp/services/payment/checkout-handler.ts", /isMultiPropertyBarrierActive\([\s\S]*"payment"/],
+      ["src/lib/lmnp/services/fiscal-year-transition/transition-handler.ts", /"closing"[\s\S]*"nextYear"/],
+      ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", /resolveMultiPropertyDeliveryAdmission/],
+      ["src/lib/lmnp/services/dossier/fiscal-year-cycle.ts", /isMultiPropertyClosingBlocked[\s\S]*isMultiPropertyNextYearBlocked|isMultiPropertyNextYearBlocked[\s\S]*isMultiPropertyClosingBlocked/],
+      ["src/lib/lmnp/services/fiscal-year-transition/prepare-transition.ts", /isMultiPropertyClosingBlocked/],
+      ["src/lib/lmnp/store/server-fiscal-year-transition.ts", /isMultiPropertyClosingBlocked/],
+      ["src/lib/lmnp/services/server-workspace-snapshot.ts", /isMultiPropertyCapabilityOpen/],
+    ];
+    for (const [file, pattern] of guards) assert.match(readFileSync(path.join(ROOT, file), "utf8"), pattern, file);
   });
 
   it("hors périmètre 3c2b/c/d : gate, validation-profile, readiness, freshness, écrans non modifiés PAR 3c2a", () => {

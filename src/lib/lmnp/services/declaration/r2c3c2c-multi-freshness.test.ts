@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, mock } from "node:test";
 
-import { MULTI_PROPERTY_USER_ENABLED } from "@/lib/lmnp/dossier/multi-property-activation";
+import { MULTI_PROPERTY_CAPABILITIES } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveDeclarationGenerationGate, immobilisationsParBienSemanticProjection } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
 import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
@@ -496,8 +496,10 @@ describe("R2C.3c2c — garde-fous de périmètre", () => {
     assert.doesNotMatch(gate, /\bdispatch\s*\(|localStorage|indexedDB|\bfetch\s*\(|\.upsert\(|\.insert\(|putScopedWorkspaceRecord|JOURNEY_MARK|appendDeclarationVersion/);
   });
 
-  it("C36 — MULTI_PROPERTY_USER_ENABLED reste false", () => {
-    assert.equal(MULTI_PROPERTY_USER_ENABLED, false);
+  it("C36 — les capacités d'activation multi restent toutes fermées", () => {
+    for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+    }
   });
 
   it("C38 — paiement, closure, N+1, transition, Cerfa, readiness de paiement, écrans, reducer : inchangés", () => {

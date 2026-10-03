@@ -1,10 +1,13 @@
 /**
- * R2C.3c1 — barrières de sécurité multi-bien. Module PUR, sans I/O.
+ * R2C.3c1 / MB-MULTI-DOMAIN-GUARD-1 — barrières d'ACTIVATION PRODUIT du multi-bien. Module PUR, sans I/O.
  *
- * `MULTI_PROPERTY_USER_ENABLED` représente l'ACTIVATION UTILISATEUR du multi-bien, jamais la capacité technique du
- * moteur (R2C.3b est techniquement capable). Tant qu'elle vaut `false`, un dossier multi ne peut ni payer, ni
- * clôturer, ni créer N+1, ni appeler la transition serveur, ni obtenir un PDF Cerfa. Constante de code : aucune
- * variable d'environnement, aucun flag distant, aucune valeur persistée.
+ * Il n'existe plus de booléen unique : l'activation utilisateur est décomposée en CAPACITÉS indépendantes
+ * (`MULTI_PROPERTY_CAPABILITIES` : édition, génération, livraison, paiement, clôture, exercice suivant). Ouvrir l'une
+ * n'en ouvre jamais une autre ; la clôture et le N+1 multi ne sont, en outre, PAS ouvrables par ce seul objet
+ * (`MULTI_PROPERTY_NEVER_OPEN_CAPABILITIES`) : ils exigent une mission de code dédiée (R2C.5, ouverture par bien).
+ * Activation produit ≠ domaine fiscal supporté : celui-ci est décidé par la garde de domaine
+ * (`multi-property-domain.ts`, ADR-011), jamais par ces capacités. Constantes de code : aucune variable
+ * d'environnement, aucun flag distant, aucune valeur persistée. Le moteur R2C.3b reste techniquement capable.
  *
  * Résolveur multi UNIQUE : `scoped != multi`. Un dossier scopé (`declarationDraft.biens`) avec UN seul bien reste un
  * dossier MONO. La résolution de périmètre réutilise `resolveExerciseScope` (R1) ; ce module n'ajoute que le
@@ -13,7 +16,36 @@
 import { WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION } from "../store/workspace-snapshot";
 import { resolveExerciseScope } from "./property-scope";
 
-export const MULTI_PROPERTY_USER_ENABLED = false as const;
+export type MultiPropertyCapability = "edition" | "generation" | "delivery" | "payment" | "closing" | "nextYear";
+export type MultiPropertyCapabilities = Readonly<Record<MultiPropertyCapability, boolean>>;
+
+/** Valeurs finales de l'activation utilisateur : TOUTES fermées (ADR-011, USER ACTIVATION = OFF). */
+export const MULTI_PROPERTY_CAPABILITIES = {
+  edition: false,
+  generation: false,
+  delivery: false,
+  payment: false,
+  closing: false,
+  nextYear: false,
+} as const satisfies MultiPropertyCapabilities;
+
+/** Capacités qu'AUCUNE valeur de `MULTI_PROPERTY_CAPABILITIES` ne peut ouvrir (clôture et N+1 multi interdits au MVP). */
+export const MULTI_PROPERTY_NEVER_OPEN_CAPABILITIES: ReadonlySet<MultiPropertyCapability> = new Set<MultiPropertyCapability>([
+  "closing",
+  "nextYear",
+]);
+
+/**
+ * Une capacité multi est-elle ouverte ? `capabilities` est injectable (tests : prouver qu'ouvrir génération, livraison ou
+ * paiement n'ouvre jamais clôture ni N+1) ; en production c'est toujours `MULTI_PROPERTY_CAPABILITIES`.
+ */
+export function isMultiPropertyCapabilityOpen(
+  capability: MultiPropertyCapability,
+  capabilities: MultiPropertyCapabilities = MULTI_PROPERTY_CAPABILITIES,
+): boolean {
+  if (MULTI_PROPERTY_NEVER_OPEN_CAPABILITIES.has(capability)) return false;
+  return capabilities[capability] === true;
+}
 
 /** Code HTTP/métier commun à toutes les barrières. */
 export const MULTI_PROPERTY_NOT_ENABLED_CODE = "multi_property_not_enabled" as const;
@@ -62,10 +94,23 @@ export function isMultiPropertyWorkspace(workspace: PropertyModeInput): boolean 
   return kind === "scoped_multi" || kind === "legacy_multi";
 }
 
-/** Décision de barrière : multi ET activation utilisateur fermée. */
-export function isMultiPropertyBlocked(workspace: PropertyModeInput): boolean {
-  return !MULTI_PROPERTY_USER_ENABLED && isMultiPropertyWorkspace(workspace);
+/** Décision de barrière pour UNE capacité : dossier multi ET capacité fermée. Mono : jamais bloqué. */
+export function isMultiPropertyCapabilityBlocked(
+  workspace: PropertyModeInput,
+  capability: MultiPropertyCapability,
+  capabilities: MultiPropertyCapabilities = MULTI_PROPERTY_CAPABILITIES,
+): boolean {
+  return isMultiPropertyWorkspace(workspace) && !isMultiPropertyCapabilityOpen(capability, capabilities);
 }
+
+export const isMultiPropertyGenerationBlocked = (workspace: PropertyModeInput, capabilities?: MultiPropertyCapabilities) =>
+  isMultiPropertyCapabilityBlocked(workspace, "generation", capabilities);
+export const isMultiPropertyDeliveryBlocked = (workspace: PropertyModeInput, capabilities?: MultiPropertyCapabilities) =>
+  isMultiPropertyCapabilityBlocked(workspace, "delivery", capabilities);
+export const isMultiPropertyClosingBlocked = (workspace: PropertyModeInput, capabilities?: MultiPropertyCapabilities) =>
+  isMultiPropertyCapabilityBlocked(workspace, "closing", capabilities);
+export const isMultiPropertyNextYearBlocked = (workspace: PropertyModeInput, capabilities?: MultiPropertyCapabilities) =>
+  isMultiPropertyCapabilityBlocked(workspace, "nextYear", capabilities);
 
 /**
  * Snapshot serveur (`lmnp_workspace_snapshots`) : `payload` = enveloppe `{ workspace }` ou workspace nu. Absence de

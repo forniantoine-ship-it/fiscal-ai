@@ -14,10 +14,10 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
 import {
-  isMultiPropertyRfs,
   MULTI_PROPERTY_NOT_ENABLED_CODE,
-  MULTI_PROPERTY_USER_ENABLED,
+  type MultiPropertyCapabilities,
 } from "@/lib/lmnp/dossier/multi-property-activation";
+import { resolveMultiPropertyDeliveryAdmission } from "@/lib/lmnp/dossier/multi-property-domain";
 import { resolveFinalDeclarabilityState } from "@/lib/lmnp/services/declaration/final-declarability";
 import {
   defaultResolveDeliveryAccess,
@@ -89,6 +89,8 @@ type FormResult = { form: SupportedForm; result: WrapperResult };
 export async function handleCerfaPdfRequest(
   request: Request,
   resolveAccess: DeliveryAccessResolver = defaultResolveDeliveryAccess,
+  /** Tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES` (toutes fermées). */
+  multiPropertyCapabilities?: MultiPropertyCapabilities,
 ) {
   let body: RequestBody;
   try {
@@ -128,8 +130,15 @@ export async function handleCerfaPdfRequest(
   }
   // R2C.3c1 — défense en profondeur (la source de vérité reste le snapshot serveur du checkout/de la transition) :
   // une RFS portant le marqueur multi n'est jamais livrée tant que l'activation utilisateur est fermée.
-  if (!MULTI_PROPERTY_USER_ENABLED && isMultiPropertyRfs(rfs)) {
-    return NextResponse.json({ status: "blocked", reason: MULTI_PROPERTY_NOT_ENABLED_CODE }, { status: 422 });
+  // MB-MULTI-DOMAIN-GUARD-1 : MÊME admission que la route aide 2042-C-PRO (capacité de livraison, puis garde de domaine ADR-011).
+  const admission = resolveMultiPropertyDeliveryAdmission(rfs, multiPropertyCapabilities);
+  if (!admission.allowed) {
+    return NextResponse.json(
+      admission.reason === "multi_property_not_enabled"
+        ? { status: "blocked", reason: MULTI_PROPERTY_NOT_ENABLED_CODE }
+        : { status: "blocked", reason: admission.reason, domainReasons: admission.domainReasons.map((item) => item.code) },
+      { status: 422 },
+    );
   }
   if (!declarationVersionId) {
     return NextResponse.json({ error: "declarationVersionId requis." }, { status: 400 });

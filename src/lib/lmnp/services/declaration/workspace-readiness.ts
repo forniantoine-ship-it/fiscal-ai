@@ -17,7 +17,7 @@
  * d'interface (bien actif). `userActivationEnabled` reflète seulement la constante d'activation de 3c1.
  */
 import { scopedBienView } from "../../dossier/bien-draft";
-import { isMultiPropertyBlocked, resolveWorkspacePropertyMode, type WorkspacePropertyMode } from "../../dossier/multi-property-activation";
+import { isMultiPropertyGenerationBlocked, resolveWorkspacePropertyMode, type WorkspacePropertyMode } from "../../dossier/multi-property-activation";
 import type { PersistedWorkspace } from "../../store/persistence";
 import { buildDossierSteps, type DossierStepId, type DossierStepStatus } from "../validation-profile";
 import type { Anomaly } from "@/runtime";
@@ -130,6 +130,6 @@ export function resolveWorkspaceReadiness(workspace: ReadinessWorkspace, generat
     blockingReasons,
     fiscalEvaluation: evaluated ? "evaluated" : "not_evaluated",
     technicalReady,
-    userActivationEnabled: !isMultiPropertyBlocked(workspace),
+    userActivationEnabled: !isMultiPropertyGenerationBlocked(workspace),
   };
 }

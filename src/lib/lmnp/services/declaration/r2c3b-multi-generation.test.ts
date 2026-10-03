@@ -181,9 +181,15 @@ function oracleBien(recettes: number, charges: number, dotations: number): BienS
   };
 }
 
-/** Exécution instrumentée : compte les appels F-006 et capture leurs entrées. */
+/**
+ * Exécution instrumentée : compte les appels F-006 et capture leurs entrées.
+ *
+ * MB-MULTI-DOMAIN-GUARD-1 : ce fichier prouve le MOTEUR technique R2C.3b, y compris au-delà du domaine produit ADR-011 (déficits
+ * antérieurs, ouvertures par bien, stocks). Il passe donc par l'entrée TECHNIQUE (sans garde de domaine) ; toutes ses assertions
+ * sont inchangées. L'entrée de PRODUCTION (avec garde de domaine) est prouvée par `r2c-multi-domain-guard.test.ts`.
+ */
 async function run(workspace: PersistedWorkspace, options: Record<string, unknown> = {}) {
-  const { runDeclarationGenerationFromWorkspace } = await api();
+  const { runDeclarationGenerationFromWorkspaceTechnical: runDeclarationGenerationFromWorkspace } = await api();
   const calls: FiscalEngineInputs[] = [];
   const result = withFixedClock(() =>
     runDeclarationGenerationFromWorkspace(workspace, {

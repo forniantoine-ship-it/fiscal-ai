@@ -29,7 +29,8 @@ import type {
 } from "../../types/dossier";
 import type { PersistedWorkspace } from "../../store/persistence";
 import {
-  isMultiPropertyBlocked,
+  isMultiPropertyClosingBlocked,
+  isMultiPropertyNextYearBlocked,
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "../../dossier/multi-property-activation";
@@ -366,7 +367,7 @@ export function canCreateNextFiscalYear(
   context?: Pick<PersistedWorkspace, "properties" | "declarationDraft">,
 ): CreateNextFiscalYearPrecondition {
   // R2C.3c1 — barrière multi explicite : un exercice source déjà clos ne la contourne jamais.
-  if (isMultiPropertyBlocked({ fiscalYear, properties: context?.properties, declarationDraft: context?.declarationDraft })) {
+  if (isMultiPropertyNextYearBlocked({ fiscalYear, properties: context?.properties, declarationDraft: context?.declarationDraft })) {
     return MULTI_PROPERTY_REFUSAL;
   }
   if (fiscalYear.status !== "closed") {
@@ -400,7 +401,7 @@ export function canCloseFiscalYear(input: {
   const { fiscalYear, declarationDraft, properties } = input;
 
   // R2C.3c1 — refus multi explicite, AVANT tout autre contrôle : indépendant du statut, de la génération et du gate.
-  if (isMultiPropertyBlocked({ fiscalYear, properties, declarationDraft })) return MULTI_PROPERTY_REFUSAL;
+  if (isMultiPropertyClosingBlocked({ fiscalYear, properties, declarationDraft })) return MULTI_PROPERTY_REFUSAL;
 
   if (fiscalYear.status !== "ready_to_close") {
     return { ok: false, reason: "L'exercice n'est pas prêt à être clôturé." };

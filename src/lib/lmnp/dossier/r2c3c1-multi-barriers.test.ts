@@ -1,6 +1,6 @@
 /**
  * R2C.3c1 — barrières de sécurité multi-bien (AUCUNE génération multi activée).
- * Tant que MULTI_PROPERTY_USER_ENABLED = false, un dossier multi ne peut ni payer, ni clôturer, ni créer N+1, ni
+ * Tant que les capacités d'activation multi (MULTI_PROPERTY_CAPABILITIES) sont fermées, un dossier multi ne peut ni payer, ni clôturer, ni créer N+1, ni
  * appeler la transition serveur, ni obtenir un PDF Cerfa. Scoped mono != multi : un seul bien reste un dossier MONO.
  *
  * Run: npx tsx --test src/lib/lmnp/dossier/r2c3c1-multi-barriers.test.ts
@@ -13,11 +13,15 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  MULTI_PROPERTY_USER_ENABLED,
+  MULTI_PROPERTY_CAPABILITIES,
+  isMultiPropertyCapabilityOpen,
+  isMultiPropertyGenerationBlocked,
+  isMultiPropertyDeliveryBlocked,
+  isMultiPropertyClosingBlocked,
+  isMultiPropertyNextYearBlocked,
   f006FlatAssistantMountable,
   f014GlobalUsageNoteApplicable,
-  isMultiPropertyBlocked,
-  isMultiPropertyRfs,
+    isMultiPropertyRfs,
   isMultiPropertySnapshotRow,
   isMultiPropertyWorkspace,
   resolveWorkspacePropertyMode,
@@ -56,8 +60,11 @@ function scopedMulti(): PersistedWorkspace {
 }
 
 describe("R2C.3c1 — constante d'activation et résolveur multi unique", () => {
-  it("S21 — MULTI_PROPERTY_USER_ENABLED = false (constante pure, aucune source dynamique)", () => {
-    assert.equal(MULTI_PROPERTY_USER_ENABLED, false);
+  it("S21 — capacités d'activation multi : TOUTES fermées (constantes pures, aucune source dynamique) ; remplace l'ancien flag unique", () => {
+    for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), false, `capacité multi ${capability} non ouverte`);
+    }
     const code = source("src/lib/lmnp/dossier/multi-property-activation.ts");
     assert.doesNotMatch(code, /process\.env|localStorage|sessionStorage|supabase|fetch\(/i);
   });
@@ -65,19 +72,19 @@ describe("R2C.3c1 — constante d'activation et résolveur multi unique", () => 
   it("S1 — legacy mono : jamais multi, jamais bloqué", () => {
     assert.equal(resolveWorkspacePropertyMode(legacyMono()).kind, "legacy_mono");
     assert.equal(isMultiPropertyWorkspace(legacyMono()), false);
-    assert.equal(isMultiPropertyBlocked(legacyMono()), false);
+    for (const blocked of [isMultiPropertyGenerationBlocked, isMultiPropertyDeliveryBlocked, isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(legacyMono()), false);
   });
 
   it("S2 — scoped mono (biens = {A}, propertyIds = [A]) : MONO, jamais bloqué", () => {
     assert.equal(resolveWorkspacePropertyMode(scopedMono()).kind, "scoped_mono");
     assert.equal(isMultiPropertyWorkspace(scopedMono()), false);
-    assert.equal(isMultiPropertyBlocked(scopedMono()), false);
+    for (const blocked of [isMultiPropertyGenerationBlocked, isMultiPropertyDeliveryBlocked, isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(scopedMono()), false);
   });
 
   it("S3 — scoped multi A+B : reconnu multi et bloqué", () => {
     assert.equal(resolveWorkspacePropertyMode(scopedMulti()).kind, "scoped_multi");
     assert.equal(isMultiPropertyWorkspace(scopedMulti()), true);
-    assert.equal(isMultiPropertyBlocked(scopedMulti()), true);
+    for (const blocked of [isMultiPropertyGenerationBlocked, isMultiPropertyDeliveryBlocked, isMultiPropertyClosingBlocked, isMultiPropertyNextYearBlocked]) assert.equal(blocked(scopedMulti()), true);
   });
 
   it("fail-closed : plusieurs biens à plat (sans biens) ou périmètres divergents avec >1 identifiant = multi", () => {

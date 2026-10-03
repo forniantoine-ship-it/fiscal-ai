@@ -106,7 +106,7 @@ export async function handleCheckoutRequest(
 
     await deps.assertOwnership(dossierId, userId);
 
-    if (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, { dossierId, fiscalYear })) {
+    if (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, { dossierId, fiscalYear }, "payment")) {
       return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
     }
 

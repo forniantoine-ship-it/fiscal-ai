@@ -47,6 +47,14 @@ import {
   type PropertyOpening,
 } from "@/lib/lmnp/dossier/property-immobilisations";
 import {
+  MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED,
+  MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED,
+  evaluateMultiPropertyDomain,
+  multiPropertyDomainFactsFromWorkspace,
+  multiPropertyDomainFactsOfFiscalResult,
+  type MultiPropertyDomainFacts,
+} from "@/lib/lmnp/dossier/multi-property-domain";
+import {
   IMMOBILISATIONS_CONTINUITY_RECONCILIATION_FAILED,
   assembleGenerationOutput,
   produceLiasseStage,
@@ -54,8 +62,8 @@ import {
   type DeclarationGenerationResult,
 } from "./run-declaration-generation";
 
-export const MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED = "multi_property_historical_ard_not_supported";
-export const MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED = "multi_property_39c_allocation_not_supported";
+// Codes historiques du moteur : définis UNE fois dans la garde de domaine (ADR-011), ré-exportés ici pour compatibilité.
+export { MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED, MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED };
 
 /** Preuve d'un bien, fournie explicitement par l'appelant (jamais déduite de l'ordre ni de l'ancienneté des biens). */
 export type PropertyGenerationProof = {
@@ -145,9 +153,34 @@ function toConservationDetail(multi: MultiPropertyCharges2033BDetail): Conservat
   };
 }
 
+/**
+ * Entrée de génération de PRODUCTION : mono inchangé ; multi = GARDE DE DOMAINE (ADR-011) puis moteur. Un dossier multi hors
+ * domaine est BLOQUÉ avec des motifs stables (`multi_property_*`), F-006 n'étant alors pas appelé quand le motif est connu
+ * avant calcul. Jamais de best effort.
+ */
 export function runDeclarationGenerationFromWorkspace(
   workspace: GenerationWorkspace,
   options: WorkspaceGenerationOptions = {},
+): WorkspaceGenerationResult {
+  return generateFromWorkspace(workspace, options, true);
+}
+
+/**
+ * MOTEUR TECHNIQUE multi, SANS garde de domaine : il prouve l'arithmétique consolidée (déficits antérieurs, ouvertures par bien,
+ * ARD…) au-delà du domaine produit. Réservé aux tests du moteur : aucun fichier de production ne doit l'importer (test source
+ * d'architecture). Le chemin utilisateur est `runDeclarationGenerationFromWorkspace`.
+ */
+export function runDeclarationGenerationFromWorkspaceTechnical(
+  workspace: GenerationWorkspace,
+  options: WorkspaceGenerationOptions = {},
+): WorkspaceGenerationResult {
+  return generateFromWorkspace(workspace, options, false);
+}
+
+function generateFromWorkspace(
+  workspace: GenerationWorkspace,
+  options: WorkspaceGenerationOptions,
+  enforceDomain: boolean,
 ): WorkspaceGenerationResult {
   const view = readBienDrafts(workspace);
 
@@ -190,10 +223,34 @@ export function runDeclarationGenerationFromWorkspace(
   // MULTI (dossier scopé) — préparation consolidée.
   const fiscalYear = workspace.fiscalYear;
   const exercice = fiscalYear.year;
+  const openingInputs = { stocksOuverture: options.stocksOuverture, continuity: options.continuity, fiscalYearOpening: options.fiscalYearOpening };
+  /**
+   * Refus d'un dossier multi : motifs historiques du moteur CONSERVÉS tels quels, auxquels s'ajoutent les motifs de domaine
+   * stables (garde unique ADR-011) lorsque la garde est appliquée.
+   */
+  const block = (seamReasons: WorkspaceBlockingReason[], extraFacts: Partial<MultiPropertyDomainFacts> = {}): WorkspaceGenerationResult => {
+    if (!enforceDomain) return blockedFromReasons(seamReasons);
+    const base = multiPropertyDomainFactsFromWorkspace(workspace, openingInputs);
+    const verdict = evaluateMultiPropertyDomain({
+      ...base,
+      ...extraFacts,
+      seamBlocks: [
+        ...(base.seamBlocks ?? []),
+        ...seamReasons.map((reason) => ({ code: reason.code, ...(reason.propertyId !== undefined ? { propertyId: reason.propertyId } : {}) })),
+      ],
+    });
+    const domainReasons: WorkspaceBlockingReason[] =
+      verdict.status === "UNSUPPORTED"
+        ? verdict.reasons
+            .filter((reason) => !seamReasons.some((seam) => seam.code === reason.code && seam.propertyId === reason.propertyId))
+            .map((reason) => ({ code: reason.code, ...(reason.propertyId !== undefined ? { propertyId: reason.propertyId } : {}), ...(reason.detail !== undefined ? { message: reason.detail } : {}) }))
+        : [];
+    return blockedFromReasons([...seamReasons, ...domainReasons]);
+  };
   // Une ouverture d'exercice RÉELLE fournie par l'appelant est globale (scalaire) : elle n'est attribuable à aucun bien (R2C.5).
   // La simple présence d'un objet `continuity` (toujours transmis par l'écran de validation) n'en est pas une.
   if (continuityCarriesOpening(options.continuity) || options.fiscalYearOpening !== undefined) {
-    return blockedFromReasons([{ code: "exercise_opening_not_attributable" }]);
+    return block([{ code: "exercise_opening_not_attributable" }]);
   }
 
   const indicium = exerciseCarriesTakeoverIndicium(fiscalYear);
@@ -204,7 +261,7 @@ export function runDeclarationGenerationFromWorkspace(
   }
 
   const collection = collectPropertyFiscalContributions(workspace, { entryModes });
-  if (collection.status === "blocked") return blockedFromReasons(collection.reasons);
+  if (collection.status === "blocked") return block(collection.reasons);
   const { contributions } = collection;
 
   const stocks = options.stocksOuverture
@@ -220,7 +277,19 @@ export function runDeclarationGenerationFromWorkspace(
   const reasons: WorkspaceBlockingReason[] = [...consolidation.blockingReasons];
   // ARB-7 bis : le stock d'amortissements reportés est un stock d'ACTIVITÉ ; sa consommation par bien n'est pas établie.
   if ((stocks?.amortissementsReportes ?? 0) > 0) reasons.push({ code: MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED, field: "stocksOuverture.amortissementsReportes" });
-  if (consolidation.status === "blocked" || reasons.length > 0) return blockedFromReasons(reasons);
+  if (consolidation.status === "blocked" || reasons.length > 0) return block(reasons);
+
+  // ADR-011 — domaine vérifié AVANT tout calcul fiscal : un stock d'ouverture ou un indice d'antériorité/reprise bloque, F-006 n'est pas appelé.
+  if (enforceDomain) {
+    const preCalculation = evaluateMultiPropertyDomain(multiPropertyDomainFactsFromWorkspace(workspace, openingInputs));
+    if (preCalculation.status === "UNSUPPORTED") {
+      return blockedFromReasons(preCalculation.reasons.map((reason) => ({
+        code: reason.code,
+        ...(reason.propertyId !== undefined ? { propertyId: reason.propertyId } : {}),
+        ...(reason.detail !== undefined ? { message: reason.detail } : {}),
+      })));
+    }
+  }
 
   // F-006 : UN SEUL appel, sur l'activité consolidée.
   const engine = options.engine?.produceFiscalResult ?? produceFiscalResultReal;
@@ -230,7 +299,10 @@ export function runDeclarationGenerationFromWorkspace(
 
   // ARB-7 : résultat global calculable, mais le cycle d'amortissement non déduit par bien (TRF-0035) n'est pas supporté.
   if (fiscalResult.amortNonDeduitExercice > 0) {
-    return blockedFromReasons([{ code: MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED, field: "amortNonDeduitExercice" }]);
+    return block(
+      [{ code: MULTI_PROPERTY_39C_ALLOCATION_NOT_SUPPORTED, field: "amortNonDeduitExercice" }],
+      multiPropertyDomainFactsOfFiscalResult(fiscalResult),
+    );
   }
 
   const root = workspace.declarationDraft ?? { completedSteps: [] };

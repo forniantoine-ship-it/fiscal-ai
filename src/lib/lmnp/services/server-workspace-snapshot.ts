@@ -10,7 +10,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isMultiPropertyPayload,
   isMultiPropertySnapshotRow,
-  MULTI_PROPERTY_USER_ENABLED,
+  isMultiPropertyCapabilityOpen,
+  type MultiPropertyCapabilities,
+  type MultiPropertyCapability,
 } from "@/lib/lmnp/dossier/multi-property-activation";
 
 export type ServerSnapshotRow = { schemaVersion: number; payload: unknown };
@@ -30,12 +32,17 @@ export function createSupabaseSnapshotReader(client: SupabaseClient): ReadServer
   };
 }
 
-/** `true` : la barrière multi-bien doit refuser (snapshot serveur multi, et/ou payloads transmis multi). */
+/**
+ * `true` : la barrière multi-bien de CETTE capacité doit refuser (snapshot serveur multi, et/ou payloads transmis multi).
+ * La capacité est explicite : le paiement ne s'ouvre jamais par la génération, ni la transition N+1 par le paiement.
+ */
 export async function isMultiPropertyBarrierActive(
   read: ReadServerSnapshot,
   input: { dossierId: string; fiscalYear: number; transmittedPayloads?: readonly unknown[] },
+  capability: MultiPropertyCapability,
+  capabilities?: MultiPropertyCapabilities,
 ): Promise<boolean> {
-  if (MULTI_PROPERTY_USER_ENABLED) return false;
+  if (isMultiPropertyCapabilityOpen(capability, capabilities)) return false;
   if (isMultiPropertySnapshotRow(await read(input.dossierId, input.fiscalYear))) return true;
   return (input.transmittedPayloads ?? []).some(isMultiPropertyPayload);
 }

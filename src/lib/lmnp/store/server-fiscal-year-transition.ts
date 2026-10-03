@@ -11,7 +11,8 @@
  *     (serveur déjà N+1 — reload/cold restore ; jamais reseed)
  */
 import {
-  isMultiPropertyBlocked,
+  isMultiPropertyClosingBlocked,
+  isMultiPropertyNextYearBlocked,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
 import { prepareFiscalYearTransitionCandidate } from "@/lib/lmnp/services/fiscal-year-transition/prepare-transition";
@@ -180,7 +181,7 @@ export async function runServerFiscalYearTransition(
 
     // R2C.3c1 — seam local unique des deux gestes (CLOSE_FISCAL_YEAR_AND_CREATE_NEXT / CREATE_NEXT_FISCAL_YEAR) : refus
     // multi AVANT le flush (écriture du snapshot), le serveur et tout dispatch.
-    if (isMultiPropertyBlocked(workspace)) {
+    if (isMultiPropertyClosingBlocked(workspace) || isMultiPropertyNextYearBlocked(workspace)) {
       onError(MULTI_PROPERTY_NOT_ENABLED_MESSAGE);
       return;
     }

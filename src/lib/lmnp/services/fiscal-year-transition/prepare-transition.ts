@@ -14,7 +14,8 @@ import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import type { FiscalYear } from "@/lib/lmnp/types/domain";
 import {
-  isMultiPropertyBlocked,
+  isMultiPropertyClosingBlocked,
+  isMultiPropertyNextYearBlocked,
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
@@ -48,7 +49,7 @@ export function prepareFiscalYearTransitionCandidate(input: {
   const { workspace, dossierId, now } = input;
   // R2C.3c1 — barrière multi explicite AVANT resolveMonoPropertyId / snapshot mono / préparation N+1 (R2C.5 les rendra
   // multi-compatibles). Source ouverte ou déjà close : même refus.
-  if (isMultiPropertyBlocked(workspace)) {
+  if (isMultiPropertyClosingBlocked(workspace) || isMultiPropertyNextYearBlocked(workspace)) {
     return { ok: false, reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE };
   }
   const sourceAlreadyClosed = workspace.fiscalYear.status === "closed";

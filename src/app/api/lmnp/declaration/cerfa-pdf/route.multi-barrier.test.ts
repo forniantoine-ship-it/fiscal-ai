@@ -1,6 +1,6 @@
 /**
  * R2C.3c1 — défense en profondeur Cerfa : une RFS portant le marqueur multi (`immobilisationsParBien` défini)
- * est refusée tant que MULTI_PROPERTY_USER_ENABLED = false. Mono : chemin historique (voir route.test.ts).
+ * est refusée tant que la capacité de livraison multi est fermée (MULTI_PROPERTY_CAPABILITIES.delivery = false). Mono : chemin historique (voir route.test.ts).
  *
  * Run: npx tsx --test src/app/api/lmnp/declaration/cerfa-pdf/route.multi-barrier.test.ts
  */

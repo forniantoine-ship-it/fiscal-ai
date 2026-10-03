@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it, mock } from "node:test";
 
-import { MULTI_PROPERTY_USER_ENABLED } from "@/lib/lmnp/dossier/multi-property-activation";
+import { MULTI_PROPERTY_CAPABILITIES } from "@/lib/lmnp/dossier/multi-property-activation";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
 import {
@@ -558,8 +558,10 @@ describe("R2C.3c2b — séparation technique / activation / paiement ; périmèt
     assert.deepEqual(consumers, ["src/components/lmnp/validation-workflow/ValidationMultiPropertyBlock.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
   });
 
-  it("B30 — MULTI_PROPERTY_USER_ENABLED reste false", () => {
-    assert.equal(MULTI_PROPERTY_USER_ENABLED, false);
+  it("B30 — les capacités d'activation multi restent toutes fermées", () => {
+    for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+    }
   });
 
   it("B32 + barrières 3c1 : gate, readiness de paiement, freshness, écrans, barrières et moteur non modifiés", () => {

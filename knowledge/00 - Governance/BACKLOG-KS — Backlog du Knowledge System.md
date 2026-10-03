@@ -74,7 +74,7 @@ Une entrée n'est traitée que lorsqu'une Feature future en dépend réellement.
 | BKS-001 | Ventilation droits/taxes vs autres frais d'acquisition (déduction immédiate) | SAV-001, TRF-0001, SAV-011 | AL-2609 | P2 | À traiter | À la demande |
 | BKS-002 | Classement 2033-B des composantes du financement (garantie/caution encore PROVISOIRE) | SAV-001, SAV-011, TRF-0016, RAI-011 | AL-2609 | P2 | En cours | Avant toute évolution de garantie 242/294 |
 | BKS-003 | Identité du prêt dans F-012 et péremption du recouvrement F-011↔F-012 | RAI-000, AX-009, F-011, F-012 | AL-2609 | P3 | À traiter | À la demande |
-| BKS-004 | 2042-C-PRO : lieu officiel d'imputation des déficits LMNP antérieurs et cohérence avec 2031 7a/7b | SAV-032, SAV-033, SAV-030, AX-016 | MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1 | P2 | En cours (SAV-033 draft ; aide 2042 alignée) | Reste : acteur exact de l'imputation, SSI (5NM/5WE) |
+| BKS-004 | 2042-C-PRO : lieu officiel d'imputation des déficits LMNP antérieurs et cohérence avec 2031 7a/7b | SAV-032, SAV-033, SAV-030, AX-016 | MB-2033B-NONPRO-NEUTRALIZATION-IMPL-1 | P2 | En cours (SAV-033 approved v1.0 ; aide 2042 alignée) | Reste : acteur exact de l'imputation, SSI (5NM/5WE) |
 
 ---
 

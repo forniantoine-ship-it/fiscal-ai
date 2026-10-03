@@ -53,7 +53,7 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
-import { isMultiPropertyBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
+import { isMultiPropertyGenerationBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveImmobilisationsContinuityForGeneration } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   canOfferPaymentWithoutCerfa,
@@ -333,7 +333,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const handleGenerationComplete = useCallback(() => {
     // R2C.3c2d — défense en profondeur : JAMAIS de génération utilisateur multi (la gate interdit déjà canGenerate), ni calcul,
     // ni persistance, ni version de déclaration.
-    if (isMultiPropertyBlocked(workspace)) {
+    if (isMultiPropertyGenerationBlocked(workspace)) {
       setPhase("idle");
       return;
     }

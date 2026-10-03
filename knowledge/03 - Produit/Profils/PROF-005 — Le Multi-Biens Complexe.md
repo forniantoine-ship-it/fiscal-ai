@@ -3,9 +3,9 @@ id: PROF-005
 title: Le Multi-Biens Complexe
 type: profil
 status: approved
-version: "1.0"
+version: "1.1"
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-10-03
 owner: product-owner
 tags: [profil, utilisateur, lmnp]
 ---
@@ -95,3 +95,11 @@ Première utilisation : longue, avec des questions de structuration. Une fois la
 # JTBD associés
 
 - JTBD-001 — Déclarer mon activité LMNP au régime réel
+
+---
+
+# Support MVP (ADR-011)
+
+Le multi-biens du MVP n'est **pas** un support universel. Il couvre uniquement : plusieurs biens natifs d'une même activité LMNP au réel simplifié, en première année, sans déficit antérieur, ARD, reprise ni stock d'ouverture, sans charge commune ni prêt partagé, avec des dotations intégralement déductibles ; clôture et exercice suivant interdits.
+
+Pour ce profil, tout ce qui sort de ce domaine (société, SIRET multiples, indivision, reprise d'historique, déficit ou ARD reportable, charges communes) est **bloqué explicitement** : le produit refuse plutôt que d'approcher. Le tarif reste 149 € par dossier et par exercice.

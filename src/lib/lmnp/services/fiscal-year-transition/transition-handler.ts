@@ -218,12 +218,11 @@ export async function handleFiscalYearTransitionRequest(
     await deps.assertOwnership(dossierId, userId);
 
     // R2C.3c1 — barrière multi-bien : snapshot SERVEUR de la source ET payloads transmis, AVANT paiement et RPC.
+    // Le geste porte la CLÔTURE de N et la création de N+1 : refusé si l'une ou l'autre capacité est fermée (toujours, au MVP).
+    const transitionBarrierInput = { dossierId, fiscalYear: fromYear, transmittedPayloads: [closedNPayload, nextPayload] };
     if (
-      await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, {
-        dossierId,
-        fiscalYear: fromYear,
-        transmittedPayloads: [closedNPayload, nextPayload],
-      })
+      (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, transitionBarrierInput, "closing")) ||
+      (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, transitionBarrierInput, "nextYear"))
     ) {
       return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
     }

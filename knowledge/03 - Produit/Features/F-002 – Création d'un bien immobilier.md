@@ -139,7 +139,7 @@ Le Workflow conserve l'état du dossier jusqu'à résolution.
 
 - Créer un bien sans dossier.
     
-- Créer plusieurs biens dans le MVP.
+- Créer plusieurs biens hors du domaine multi supporté (ADR-011), ou avant l'activation utilisateur du multi-biens.
     
 - Autoriser un calcul sans bien.
     
@@ -156,6 +156,8 @@ F-001 – Création d'un dossier LMNP
 
 # Notes
 
-Le MVP autorise un seul bien par dossier.
+Le MVP autorise un seul bien par dossier **par défaut**.
 
-La gestion multi-biens sera introduite dans une version ultérieure sans modifier cette Feature.
+Le multi-biens n'est pas un support universel : il est cadré par ADR-011 (domaine supporté : première année, biens natifs, sans déficit/ARD/stock d'ouverture, sans charge commune ni prêt partagé, dotations intégralement déductibles, clôture et N+1 interdits). Tant que son activation utilisateur n'est pas ouverte, « créer plusieurs biens » reste une erreur interdite pour l'utilisateur ; hors domaine, le dossier est bloqué, jamais traité au mieux.
+
+La gestion multi-biens est introduite sans modifier le contrat de création d'un bien (un bien = un `propertyId`) ; l'ajout d'un second bien relève d'une future Feature d'interface.

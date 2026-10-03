@@ -9,6 +9,11 @@ import {
 } from "@/lib/lmnp/services/payment/delivery-access";
 import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
+import {
+  MULTI_PROPERTY_NOT_ENABLED_CODE,
+  type MultiPropertyCapabilities,
+} from "@/lib/lmnp/dossier/multi-property-activation";
+import { resolveMultiPropertyDeliveryAdmission } from "@/lib/lmnp/dossier/multi-property-domain";
 
 /**
  * Payment V1 — livraison finale de l'aide 2042-C-PRO, servie par le serveur
@@ -28,6 +33,8 @@ type RequestBody = {
 export async function handleAide2042PdfRequest(
   request: Request,
   resolveAccess: DeliveryAccessResolver = defaultResolveDeliveryAccess,
+  /** Tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES` (toutes fermées). */
+  multiPropertyCapabilities?: MultiPropertyCapabilities,
 ) {
   let body: RequestBody;
   try {
@@ -56,6 +63,18 @@ export async function handleAide2042PdfRequest(
     return NextResponse.json(
       { error: "La déclaration ne correspond pas à l'exercice payé.", code: "fiscal_year_mismatch" },
       { status: 403 },
+    );
+  }
+
+  // MB-MULTI-DOMAIN-GUARD-1 : MÊME admission que la route Cerfa (capacité de livraison, puis garde de domaine ADR-011). Une RFS
+  // multi supportée est, le jour de l'activation, celle de l'ACTIVITÉ consolidée (un seul 5NA/5NY) — jamais une RFS par bien.
+  const admission = resolveMultiPropertyDeliveryAdmission(typedRfs, multiPropertyCapabilities);
+  if (!admission.allowed) {
+    return NextResponse.json(
+      admission.reason === "multi_property_not_enabled"
+        ? { status: "blocked", reason: MULTI_PROPERTY_NOT_ENABLED_CODE }
+        : { status: "blocked", reason: admission.reason, domainReasons: admission.domainReasons.map((item) => item.code) },
+      { status: 422 },
     );
   }
 
