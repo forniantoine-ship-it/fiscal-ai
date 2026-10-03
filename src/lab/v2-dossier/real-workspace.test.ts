@@ -6,6 +6,7 @@ import { WORKSPACE_SNAPSHOT_SCHEMA_VERSION } from "@/lib/lmnp/store/workspace-sn
 import type { WorkspaceSnapshotRecord } from "@/lib/lmnp/store/workspace-snapshot-resolve";
 import { resolveV3Activity, resolveV3Amortization, resolveV3Charges, resolveV3Declaration, resolveV3Financing, resolveV3Property, resolveV3Revenue } from "./read-model";
 import { loadRealWorkspace } from "./real-workspace";
+import { sameCorrectionScope, scopeFromRealWorkspace, scopeMatchesWorkspace } from "./correction-scope";
 
 const dossier: LmnpDossier = {
   id: "dossier-test", user_id: "user-test", status: "draft", city: null,
@@ -95,7 +96,7 @@ test("R12.1A — un brouillon local récent n'autorise la correction que si le s
   if (discordant.status === "ready") assert.equal(discordant.serverScopeVerified, false);
 });
 
-test("R14.3B — F009 accepte zéro bien prouvé par serveur, jamais un multi-bien ambigu", async () => {
+test("R14.3B / MB-MULTI-UX-1 — F009 accepte zéro bien prouvé par serveur ; un multi-bien n'est vérifié que si serveur et local décrivent EXACTEMENT les mêmes biens, et n'a jamais de bien actif implicite", async () => {
   const empty = await loadRealWorkspace(dossier.user_id, services());
   assert.equal(empty.status, "ready");
   if (empty.status === "ready") assert.equal(empty.serverScopeVerified, true);
@@ -103,9 +104,44 @@ test("R14.3B — F009 accepte zéro bien prouvé par serveur, jamais un multi-bi
   const multi = workspace();
   multi.fiscalYear.propertyIds = ["property-a", "property-b"];
   multi.properties = ["property-a", "property-b"].map(id => ({ id, label: "", address: "", city: "", postalCode: "" }));
-  const ambiguous = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(multi)] }));
-  assert.equal(ambiguous.status, "ready");
-  if (ambiguous.status === "ready") assert.equal(ambiguous.serverScopeVerified, false);
+  // MB-MULTI-UX-1 : l'ancien contrat « multi → jamais vérifié » évolue (extension voulue du scope) — un multi COHÉRENT (mêmes biens côté
+  // serveur et côté local) est vérifié ; l'ambiguïté se déplace sur le BIEN ACTIF, jamais déduit.
+  const consistent = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(multi)] }));
+  assert.equal(consistent.status, "ready");
+  if (consistent.status === "ready") {
+    assert.equal(consistent.serverScopeVerified, true);
+    assert.deepEqual(scopeFromRealWorkspace(consistent)?.property, { kind: "not_applicable" }, "aucun bien actif implicite");
+    assert.deepEqual(scopeFromRealWorkspace(consistent, "property-b")?.property, { kind: "required", propertyId: "property-b" });
+    assert.equal(scopeFromRealWorkspace(consistent, "bien-etranger"), null, "bien inconnu du dossier : refusé");
+  }
+
+  // Local ≠ serveur (un bien présent d'un seul côté) : jamais vérifié.
+  const diverging = structuredClone(multi);
+  diverging.fiscalYear.propertyIds = ["property-a", "property-c"];
+  diverging.properties = ["property-a", "property-c"].map(id => ({ id, label: "", address: "", city: "", postalCode: "" }));
+  const mismatch = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(multi)], local: diverging, lastSyncedServerRevision: 1 }));
+  assert.equal(mismatch.status, "ready");
+  if (mismatch.status === "ready") assert.equal(mismatch.serverScopeVerified, false);
+});
+
+test("MB-MULTI-UX-1 — SÉCURITÉ : un propertyId d'un autre dossier (ou inconnu) est refusé par le scope vérifié, même en multi-bien vérifié", async () => {
+  const multi = workspace();
+  multi.fiscalYear.propertyIds = ["property-a", "property-b"];
+  multi.properties = ["property-a", "property-b"].map(id => ({ id, label: "", address: "", city: "", postalCode: "" }));
+  const load = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(multi)] }));
+  assert.equal(load.status, "ready");
+  if (load.status !== "ready") return;
+  const own = scopeFromRealWorkspace(load, "property-a");
+  assert.ok(own && own.property.kind === "required");
+  // Un scope d'URL portant le bien d'un AUTRE dossier ne correspond à aucun scope vérifié de ce dossier.
+  const forged = { ...own!, property: { kind: "required" as const, propertyId: "property-d-un-autre-dossier" } };
+  assert.equal(sameCorrectionScope(forged, scopeFromRealWorkspace(load, "property-d-un-autre-dossier")), false);
+  assert.equal(sameCorrectionScope(forged, own), false);
+  assert.equal(scopeMatchesWorkspace(forged, load.workspace), false);
+  assert.equal(scopeMatchesWorkspace(own!, load.workspace), true);
+  // Dossier ou exercice étrangers : refusés comme avant.
+  assert.equal(sameCorrectionScope({ ...own!, dossierId: "autre-dossier" }, own), false);
+  assert.equal(sameCorrectionScope({ ...own!, fiscalYearId: "autre-exercice" }, own), false);
 });
 
 test("R10 — les preuves legacy restent bornées aux snapshots du même dossier et à leur exercice déclaré", async () => {

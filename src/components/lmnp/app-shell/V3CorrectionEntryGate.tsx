@@ -26,7 +26,10 @@ export function V3CorrectionEntryGate({ children }: { children: ReactNode }) {
         const { data, error } = await supabase.auth.getUser();
         if (error || !data.user) throw new Error("auth_unavailable");
         const resolved = await loadRealWorkspace(data.user.id, undefined, expectedScope.dossierId);
-        const allowed = sameCorrectionScope(expectedScope, scopeFromRealWorkspace(resolved));
+        const allowed = sameCorrectionScope(
+          expectedScope,
+          scopeFromRealWorkspace(resolved, expectedScope.property.kind === "required" ? expectedScope.property.propertyId : undefined),
+        );
         if (active) setState({ key, status: allowed ? "allowed" : "refused" });
       } catch {
         if (active) setState({ key, status: "refused" });

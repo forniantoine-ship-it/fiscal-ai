@@ -54,11 +54,11 @@ import {
 } from "@/lib/lmnp/services/ai-activity-events";
 import { AiActivityFeed } from "@/components/lmnp/ai-activity";
 import { useTunnelHydration } from "@/lib/lmnp/hydration";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
-import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
 
 const CHARGES_UPLOAD_CATEGORY = "charges" as const;
 
@@ -86,6 +86,7 @@ function chargesBuildContext(
 export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
   console.log("[render-checkpoint]", "ChargesDocumentStep", "entry");
   const { workspace, dispatch, getFile } = useLmnp();
+  const uploadScope = useUploadPropertyScope();
   const { showSuccess, showInfo } = useFeedback();
   const { markExecution, shouldRunExtraction } = useTunnelHydration("charges");
   const analyzingRef = useRef(false);
@@ -663,7 +664,8 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: resolveMonoPropertyId(workspace),
+      propertyId: uploadScope.propertyId,
+      requirePropertyId: uploadScope.requirePropertyId,
     });
 
     if (uploadedFiles.length === 0) {

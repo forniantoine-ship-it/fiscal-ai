@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { RealWorkspaceRoute } from "@/lab/v2-dossier/RealWorkspaceRoute";
-import { readV3ReturnQuery } from "@/lab/v2-dossier/correction-scope";
+import { readRequestedPropertyId, readV3ReturnQuery } from "@/lab/v2-dossier/correction-scope";
 import { isV3RealTestRouteEnabled } from "@/lab/v2-dossier/v3-real-route-access";
 import { readExplicitDossierId } from "@/lib/lmnp/dossier/explicit-dossier-id";
 
@@ -25,5 +25,12 @@ export default async function RealV3DossierPage({ searchParams }: {
     if (Array.isArray(value)) value.forEach(item => params.append(key, item));
     else if (value !== undefined) params.append(key, value);
   }
-  return <RealWorkspaceRoute key={params.toString()} shell="v3" expectedReturn={readV3ReturnQuery(params)} requestedDossierId={readExplicitDossierId(params)} />;
+  // MB-MULTI-UX-1 — le bien actif vient de l'URL (source de vérité unique) ; valeur invalide = refus, jamais « le premier bien ».
+  const requested = readRequestedPropertyId(params);
+  return <RealWorkspaceRoute
+    key={params.toString()} shell="v3"
+    expectedReturn={requested.kind === "invalid" ? { kind: "invalid" } : readV3ReturnQuery(params)}
+    requestedDossierId={readExplicitDossierId(params)}
+    requestedPropertyId={requested.kind === "property" ? requested.propertyId : undefined}
+  />;
 }

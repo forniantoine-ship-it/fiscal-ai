@@ -41,6 +41,8 @@ export type ScopeQuery =
  */
 export const OWNER_ROUTES: Readonly<Record<string, boolean>> = {
   "/assistants/activite": false,
+  // MB-MULTI-UX-1 — « Mes biens » : ajout d'un bien, attestations d'activité, domaine. Propriété d'ACTIVITÉ, jamais d'un bien.
+  "/assistants/biens": false,
   // R14.4A — F009's V3-native presentation of the same owner route/engine.
   // Legacy /assistants/activite stays registered and untouched above.
   "/lab/v2-dossier/real/activity": false,
@@ -61,11 +63,27 @@ function scopedRouteRequiresProperty(pathname: string): boolean | undefined {
   return OWNER_ROUTES[pathname] ?? (/^\/declarations\/\d{4}$/.test(pathname) ? true : undefined);
 }
 
-export function propertyScopeFor(propertyIds: readonly string[], properties: readonly { id: string }[]): V3PropertyScope | null {
+/**
+ * MB-MULTI-UX-1 — scope du bien. Mono : le bien unique (un `selectedPropertyId` différent le refuse). Multi : JAMAIS le premier bien —
+ * `required` seulement pour un bien EXPLICITEMENT sélectionné ET connu de l'exercice ; sans sélection, `not_applicable` (les owners
+ * d'activité restent accessibles, tout owner de bien reste fermé : `v3CorrectionHrefForResolvedScope` exige `required`) ; une sélection
+ * inconnue / étrangère à l'exercice / ambiguë → `null` (refus). Incohérence liste de biens ↔ exercice → `null`.
+ */
+export function propertyScopeFor(
+  propertyIds: readonly string[],
+  properties: readonly { id: string }[],
+  selectedPropertyId?: string,
+): V3PropertyScope | null {
   const scope = resolveExerciseScope({ properties, fiscalYear: { propertyIds } });
-  if (scope.kind === "none") return { kind: "not_applicable" };
-  if (scope.kind === "mono") return { kind: "required", propertyId: scope.propertyId };
-  return null; // ambiguous or mismatched — the whole scope stays unresolved, for every owner.
+  if (scope.kind === "none") return selectedPropertyId === undefined ? { kind: "not_applicable" } : null;
+  if (scope.kind === "mono") {
+    return selectedPropertyId === undefined || selectedPropertyId === scope.propertyId ? { kind: "required", propertyId: scope.propertyId } : null;
+  }
+  if (scope.kind === "multi") {
+    if (selectedPropertyId === undefined) return { kind: "not_applicable" };
+    return scope.propertyIds.includes(selectedPropertyId) ? { kind: "required", propertyId: selectedPropertyId } : null;
+  }
+  return null; // inconsistent — the whole scope stays unresolved, for every owner.
 }
 
 function propertyScopeEqual(expected: V3PropertyScope, actual: V3PropertyScope): boolean {
@@ -116,12 +134,12 @@ export function readV3ReturnQuery(params: URLSearchParams): ScopeQuery {
   return readScope(params, "v3Return", null);
 }
 
-export function scopeFromRealWorkspace(load: RealWorkspaceLoad): V3CorrectionScope | null {
+export function scopeFromRealWorkspace(load: RealWorkspaceLoad, selectedPropertyId?: string): V3CorrectionScope | null {
   if (load.status !== "ready" || !load.serverScopeVerified) return null;
   const { workspace, dossierId, fiscalYear } = load;
   const year = workspace.fiscalYear;
   if (year.dossierId !== dossierId || year.year !== fiscalYear || year.status === "closed" || !year.id) return null;
-  const property = propertyScopeFor(year.propertyIds, workspace.properties);
+  const property = propertyScopeFor(year.propertyIds, workspace.properties, selectedPropertyId);
   if (!property) return null;
   return { dossierId, fiscalYearId: year.id, year: fiscalYear, property };
 }
@@ -137,7 +155,7 @@ export function scopeMatchesWorkspace(expected: V3CorrectionScope, workspace: Pe
   if (year.dossierId !== expected.dossierId || year.id !== expected.fiscalYearId ||
       year.year !== expected.year || year.status === "closed") return false;
   if (expected.property.kind === "not_applicable") return true;
-  const actual = propertyScopeFor(year.propertyIds, workspace.properties);
+  const actual = propertyScopeFor(year.propertyIds, workspace.properties, expected.property.propertyId);
   return actual !== null && propertyScopeEqual(expected.property, actual);
 }
 
@@ -187,9 +205,22 @@ export function v3ScopedNavigationHref(href: string, scope: V3CorrectionScope | 
   return null;
 }
 
-/** Only callers holding R8's resolved REAL workspace may construct this route. */
-export function v3OwnerCorrectionHref(ownerRoute: string, load: RealWorkspaceLoad): string | null {
-  return v3CorrectionHrefForResolvedScope(ownerRoute, scopeFromRealWorkspace(load));
+/** Only callers holding R8's resolved REAL workspace may construct this route. `selectedPropertyId` is mandatory in a multi-property exercise. */
+export function v3OwnerCorrectionHref(ownerRoute: string, load: RealWorkspaceLoad, selectedPropertyId?: string): string | null {
+  return v3CorrectionHrefForResolvedScope(ownerRoute, scopeFromRealWorkspace(load, selectedPropertyId));
+}
+
+/**
+ * MB-MULTI-UX-1 — bien actif demandé par l'URL (`?propertyId=`), source de vérité UNIQUE du bien actif. Une valeur absente est
+ * `{ kind: "none" }` ; une valeur vide ou répétée est `invalid` (refus). Il ne porte aucune autorité : il est TOUJOURS revérifié
+ * (`scopeFromRealWorkspace` / `propertyScopeFor`) contre le dossier chargé côté serveur.
+ */
+export type RequestedPropertyQuery = { kind: "none" } | { kind: "invalid" } | { kind: "property"; propertyId: string };
+export function readRequestedPropertyId(params: URLSearchParams): RequestedPropertyQuery {
+  const values = params.getAll("propertyId");
+  if (values.length === 0) return { kind: "none" };
+  if (values.length > 1 || !values[0]?.trim()) return { kind: "invalid" };
+  return { kind: "property", propertyId: values[0]! };
 }
 
 export type ConfirmedSave = { status: "confirmed"; revision: number } | { status: "failed"; reason: string };

@@ -60,11 +60,11 @@ import {
   makeValidationEvent,
 } from "@/lib/lmnp/services/ai-activity-events";
 import { AiActivityFeed } from "@/components/lmnp/ai-activity";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { RevenueGptSession } from "@/lib/lmnp/types";
 import type { RevenueSupervisionStatus } from "@/lib/lmnp/services/revenue-supervision";
-import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
 
 const REVENUS_UPLOAD_CATEGORY = "revenus" as const;
 
@@ -90,6 +90,7 @@ function shouldDisplayRevenueGrid(session: RevenueGptSession, ocrReadFailure: bo
 export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
   const revenusHref = useScopedOwnerHref(LMNP_ROUTES.revenusAssistant);
   const { workspace, dispatch, getFile } = useLmnp();
+  const uploadScope = useUploadPropertyScope();
   const { showSuccess, showInfo } = useFeedback();
   const router = useRouter();
   const {
@@ -444,7 +445,8 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "annual_evidence",
-      propertyId: resolveMonoPropertyId(workspace),
+      propertyId: uploadScope.propertyId,
+      requirePropertyId: uploadScope.requirePropertyId,
     });
     if (uploadedFiles.length === 0) return;
 

@@ -75,7 +75,7 @@ import {
   runLogementDocumentPipeline,
   type LogementGptPipelineResult,
 } from "@/lib/lmnp/services/logement-document-pipeline";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { DeclarationDraft, LmnpDocument } from "@/lib/lmnp/types";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import { logVisualMutation } from "@/components/lmnp/documents/visual-debug";
@@ -85,7 +85,6 @@ import {
   LogementStaticRoot,
   logementEffectiveVisibleSections,
 } from "@/components/lmnp/logement/logement-visual-isolation";
-import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 const SECTION_REVEAL_DELAYS_MS = [0, 400];
 const LOGEMENT_UPLOAD_CATEGORY = getDocumentJourneyStep("logement").category;
@@ -170,6 +169,7 @@ function snapshotGovernedFieldsForDebug(draft?: DeclarationDraft) {
 
 export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
   const { workspace, dispatch, getFile } = useLmnp();
+  const uploadScope = useUploadPropertyScope();
   const { showSuccess, showInfo } = useFeedback();
   const {
     markExecution,
@@ -1036,7 +1036,8 @@ export function LogementDocumentStep({ isActive = true }: TunnelStepProps) {
       dossierId: workspace.fiscalYear.dossierId ?? "",
       fiscalYear: workspace.fiscalYear.year,
       documentRole: "durable_reference",
-      propertyId: resolveMonoPropertyId(workspace),
+      propertyId: uploadScope.propertyId,
+      requirePropertyId: uploadScope.requirePropertyId,
     });
 
     if (uploadedFiles.length === 0) {

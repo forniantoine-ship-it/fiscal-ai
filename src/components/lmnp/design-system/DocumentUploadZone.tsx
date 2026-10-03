@@ -12,6 +12,7 @@ interface DocumentUploadZoneProps {
   dossierId: string | null | undefined;
   documentRole?: DocumentRole;
   propertyId?: string;
+  requirePropertyId?: boolean;
   hint?: string;
 }
 
@@ -21,6 +22,7 @@ export function DocumentUploadZone({
   dossierId,
   documentRole,
   propertyId,
+  requirePropertyId,
   hint = "PDF ou images — l'analyse démarre automatiquement",
 }: DocumentUploadZoneProps) {
   return (
@@ -30,6 +32,7 @@ export function DocumentUploadZone({
       dossierId={dossierId}
       documentRole={documentRole}
       propertyId={propertyId}
+      requirePropertyId={requirePropertyId}
       hint={hint}
     />
   );

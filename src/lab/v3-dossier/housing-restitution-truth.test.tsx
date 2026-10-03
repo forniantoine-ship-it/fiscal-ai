@@ -160,10 +160,13 @@ test("aucune fixture DEMO, aucun premier bien implicite, aucune date fabriquée 
   assert.match(prototype, /scope\?\.property\.kind === "required"/);
 });
 
-test("le gate multi-biens n'est pas étendu : propertyScopeFor reste mono-bien uniquement", async () => {
+test("propertyScopeFor : mono inchangé ; multi = bien EXPLICITEMENT sélectionné et connu, jamais le premier (MB-MULTI-UX-1)", async () => {
   const { propertyScopeFor } = await import("@/lab/v2-dossier/correction-scope");
   assert.deepEqual(propertyScopeFor(["a"], [{ id: "a" }]), { kind: "required", propertyId: "a" });
-  assert.equal(propertyScopeFor(["a", "b"], [{ id: "a" }, { id: "b" }]), null);
+  assert.deepEqual(propertyScopeFor(["a", "b"], [{ id: "a" }, { id: "b" }]), { kind: "not_applicable" }, "sans sélection : aucun bien requis");
+  assert.deepEqual(propertyScopeFor(["a", "b"], [{ id: "a" }, { id: "b" }], "b"), { kind: "required", propertyId: "b" });
+  assert.equal(propertyScopeFor(["a", "b"], [{ id: "a" }, { id: "b" }], "z"), null, "bien inconnu");
+  assert.equal(propertyScopeFor(["a"], [{ id: "a" }], "b"), null, "mono : un autre bien est refusé");
   assert.equal(propertyScopeFor(["a"], [{ id: "a" }, { id: "b" }]), null);
   assert.deepEqual(propertyScopeFor([], []), { kind: "not_applicable" });
 });

@@ -904,6 +904,11 @@ export interface DeclarationDraft {
   /** Date de première mise en location effective — F-009. */
   dateMiseEnService?: string;
   activityType?: LmnpActivityType;
+  /**
+   * ADR-011 §6 — attestations d'ACTIVITÉ du multi-bien (explicites, séparées, persistées, auditables). Absente = non attestée
+   * (fail-closed dans la garde de domaine). Voir `multi-property-attestations.ts`.
+   */
+  multiPropertyAttestations?: import("../dossier/multi-property-attestations").MultiPropertyAttestations;
   indivision?: boolean;
   coOwners?: CoOwner[];
   inpiDocumentId?: string;

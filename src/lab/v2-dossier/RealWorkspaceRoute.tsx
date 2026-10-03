@@ -27,8 +27,10 @@ const YEAR_MESSAGES = {
   ambiguous: "Nous ne pouvons pas déterminer automatiquement l’exercice à afficher.",
 } as const;
 
-export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requestedDossierId, shell }: {
+export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requestedDossierId, requestedPropertyId, shell }: {
   expectedReturn?: ScopeQuery;
+  /** MB-MULTI-UX-1 — bien actif demandé par l'URL (jamais une autorité : revérifié contre le dossier chargé). */
+  requestedPropertyId?: string;
   requestedDossierId?: string | null;
   /** R15 — "v3" mounts the V3 real shell on the exact same loading, scope and security path. Absent = V2 (unchanged). */
   shell?: "v3";
@@ -54,7 +56,10 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requeste
       const dossierId = requestedDossierId ?? (expectedReturn.kind === "scope" ? expectedReturn.scope.dossierId : undefined);
       const result = await loadRealDocuments(userId, undefined, dossierId);
       const checked = expectedReturn.kind === "scope" &&
-        !sameCorrectionScope(expectedReturn.scope, scopeFromRealWorkspace(result))
+        !sameCorrectionScope(
+          expectedReturn.scope,
+          scopeFromRealWorkspace(result, expectedReturn.scope.property.kind === "required" ? expectedReturn.scope.property.propertyId : undefined),
+        )
           ? { status: "year_unavailable" as const, reason: "mismatch" as const }
           : result;
       if (active && current === request) setState(checked);
@@ -114,12 +119,12 @@ export function RealWorkspaceRoute({ expectedReturn = { kind: "none" }, requeste
   }
 
   if (state.status === "ready" && shell === "v3") {
-    const scope = scopeFromRealWorkspace(state);
+    const scope = scopeFromRealWorkspace(state, requestedPropertyId);
     // The shell marker only selects where a completed F011 correction returns to; it carries no authority.
     return <div data-workspace-source={state.source}><V3RealPrototype workspace={state.workspace} scope={scope ? { ...scope, shell: "v3" } : null} documents={state.documents} /></div>;
   }
   if (state.status === "ready") {
-    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state)} payment={payment} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
+    return <div data-workspace-source={state.source}><V2Prototype source={{ mode: "real", workspace: state.workspace }} correctionScope={scopeFromRealWorkspace(state, requestedPropertyId)} payment={payment} realDocuments={state.documents} onOpenRealDocument={openDocument} busyDocumentId={busyId} documentOpenError={openError} /></div>;
   }
   return <div className={styles.root}><main className={styles.main}>
     <div className={styles.emptyCard} role={state.status === "error" ? "alert" : "status"}>

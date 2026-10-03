@@ -10,6 +10,14 @@ export const A = "home-1";
 export const B = "bien-b";
 export const SIRET = "12345678900012";
 
+/** Attestations d'activité CONFIRMÉES (ADR-011 §6) : requises par la garde de domaine pour qu'un dossier multi soit dans le domaine. */
+export const CONFIRMED_ATTESTATIONS = {
+  ssi: { answer: "confirmed", at: T_ATTEST(), wordingVersion: "test" },
+  directHolding: { answer: "confirmed", at: T_ATTEST(), wordingVersion: "test" },
+  noCommonCharges: { answer: "confirmed", at: T_ATTEST(), wordingVersion: "test" },
+} as const;
+function T_ATTEST(): string { return "2026-01-01T00:00:00.000Z"; }
+
 export type BienSpec = {
   date?: string;
   recettes: number;
@@ -108,7 +116,7 @@ export function multiWorkspace(options: WorkspaceOptions = {}): PersistedWorkspa
     documents: [], extractions: [], validationItems: [], ledgerEntries: [],
     declarationDraft: {
       completedSteps: [], siret: SIRET, siren: "123456789", exploitantFirstName: "Multi", exploitantLastName: "Bien",
-      activityStartDate: "2026-03-01", activityType: "LMNP", dispense2033A: { caReferenceN1Declaree: 0 }, biens,
+      activityStartDate: "2026-03-01", activityType: "LMNP", dispense2033A: { caReferenceN1Declaree: 0 }, multiPropertyAttestations: CONFIRMED_ATTESTATIONS, biens,
       ...(options.root ?? {}),
     },
   } as unknown as PersistedWorkspace;

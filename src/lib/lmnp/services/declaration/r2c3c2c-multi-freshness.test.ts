@@ -8,6 +8,7 @@
  * Run: npx tsx --test src/lib/lmnp/services/declaration/r2c3c2c-multi-freshness.test.ts
  */
 import "@/lab/v2-dossier/test-public-env";
+import { CONFIRMED_ATTESTATIONS } from "./multi-property-test-support";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -136,7 +137,7 @@ function multiWorkspace(options: WorkspaceOptions = {}): PersistedWorkspace {
     documents: [], extractions: [], validationItems: [], ledgerEntries: [],
     declarationDraft: {
       completedSteps: [], siret: SIRET, siren: "123456789", exploitantFirstName: "Multi", exploitantLastName: "Bien",
-      activityStartDate: "2026-03-01", activityType: "LMNP", dispense2033A: { caReferenceN1Declaree: 0 }, biens,
+      activityStartDate: "2026-03-01", activityType: "LMNP", dispense2033A: { caReferenceN1Declaree: 0 }, multiPropertyAttestations: CONFIRMED_ATTESTATIONS, biens,
       ...(options.root ?? {}),
     },
   } as unknown as PersistedWorkspace;

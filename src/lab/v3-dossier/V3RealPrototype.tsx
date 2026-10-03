@@ -30,6 +30,7 @@ import { RealAmortizationReport, RealAmortizationWorkspace } from "./RealAmortiz
 import { buildFinancingView, financingRubrique, REVIEW_IN_F011_LABEL } from "./financing-view-model";
 import { RealFinancementReport, RealFinancementWorkspace } from "./RealFinancement";
 import { resolveRealUserActions } from "./real-user-actions";
+import { V3PropertiesSection } from "@/components/lmnp/biens/V3PropertiesSection";
 import { Drawer } from "./shell";
 import styles from "./prototype.module.css";
 
@@ -181,6 +182,7 @@ export function V3RealPrototype({ workspace, scope, documents }: {
                     <span aria-hidden="true">!</span>{action.label} <a className={styles.textButton} href={action.href}>Continuer</a>
                   </li>)}</ul>}
             </section>
+            <V3PropertiesSection workspace={workspace} scope={scope} />
             <section className={styles.domains} aria-labelledby="v3r-domains-title">
               <h2 id="v3r-domains-title" className={styles.sectionTitle}>Votre dossier en six rubriques</h2>
               <ul className={styles.domainGrid}>{domains.map(domain => {

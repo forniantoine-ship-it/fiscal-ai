@@ -1,8 +1,26 @@
+import { resolveExerciseScope } from "@/lib/lmnp/dossier/property-scope";
 import type { LmnpDossier } from "@/lib/lmnp/dossier/supabase-dossier";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { lastClosedFiscalYear } from "@/lib/lmnp/services/payment/fiscal-year-closure";
 import { isValidPersistedWorkspace, parseWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import { pickTargetYear, resolveWorkspaceHydration, type WorkspaceSnapshotRecord } from "@/lib/lmnp/store/workspace-snapshot-resolve";
+
+/**
+ * MB-MULTI-UX-1 — scope multi-bien VÉRIFIÉ côté serveur : le snapshot serveur et le workspace local décrivent EXACTEMENT les mêmes
+ * biens (≥ 2, identifiants uniques, liste de biens = biens de l'exercice). Un bien présent d'un seul côté invalide le scope.
+ * Le bien ACTIF n'est pas jugé ici : il est vérifié contre ce même ensemble (`propertyScopeFor`) pour chaque requête.
+ */
+function sameVerifiedMultiPropertyScope(
+  server: Pick<PersistedWorkspace, "properties" | "fiscalYear">,
+  local: Pick<PersistedWorkspace, "properties" | "fiscalYear">,
+): boolean {
+  const serverScope = resolveExerciseScope(server);
+  const localScope = resolveExerciseScope(local);
+  if (serverScope.kind !== "multi" || localScope.kind !== "multi") return false;
+  const serverIds = [...serverScope.propertyIds].sort();
+  const localIds = [...localScope.propertyIds].sort();
+  return serverIds.length === localIds.length && serverIds.every((id, index) => id === localIds[index]);
+}
 
 export type RealWorkspaceLoad =
   | { status: "ready"; workspace: PersistedWorkspace; dossierId: string; userId: string; fiscalYear: number; source: "server" | "local"; serverScopeVerified: boolean; legacyDocumentYears: ReadonlyArray<{ fiscalYear: number; documentIds: ReadonlyArray<string> }> }
@@ -93,7 +111,8 @@ export async function loadRealWorkspace(
         serverWorkspace.fiscalYear.propertyIds[0] === workspace.fiscalYear.propertyIds[0] &&
         serverWorkspace.properties.length === 1 && workspace.properties.length === 1 &&
         serverWorkspace.properties[0]?.id === workspace.properties[0]?.id &&
-        serverWorkspace.properties[0]?.id === serverWorkspace.fiscalYear.propertyIds[0])));
+        serverWorkspace.properties[0]?.id === serverWorkspace.fiscalYear.propertyIds[0]) ||
+       sameVerifiedMultiPropertyScope(serverWorkspace, workspace)));
     const legacyDocumentYears = snapshots.flatMap(row => {
       const parsed = parseWorkspaceSnapshot(row.payload);
       if (!parsed.ok || parsed.envelope.workspace.fiscalYear.year !== row.fiscalYear ||

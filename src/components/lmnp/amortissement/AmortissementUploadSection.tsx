@@ -21,6 +21,8 @@ type AmortissementUploadSectionProps = {
   fiscalYear: number;
   dossierId: string | null | undefined;
   propertyId?: string;
+  /** MB-MULTI-UX-1 — dossier multi-bien : refuse tout téléversement sans `propertyId`. */
+  requirePropertyId?: boolean;
   onFiles: (
     files: File[],
     meta?: { supabaseDocumentIds: string[]; filePaths: string[] },
@@ -45,6 +47,7 @@ export function AmortissementUploadSection({
   fiscalYear,
   dossierId,
   propertyId,
+  requirePropertyId,
   onFiles,
   onContinue,
   continueLabel = "Continuer",
@@ -86,6 +89,7 @@ export function AmortissementUploadSection({
         fiscalYear,
         documentRole: "annual_evidence",
         propertyId,
+        requirePropertyId,
       });
 
     if (uploadedFiles.length === 0) {

@@ -51,10 +51,10 @@ import {
   makeRecommendationEvent,
 } from "@/lib/lmnp/services/ai-activity-events";
 import { AiActivityFeed } from "@/components/lmnp/ai-activity";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { TunnelStepProps } from "@/components/lmnp/documents/frozen-tunnel-step";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
-import { resolveMonoProperty, resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
+import { resolveMonoProperty } from "@/lib/lmnp/dossier/property-scope";
 
 type ExistingActivityAnswer = "yes" | "no" | null;
 
@@ -218,6 +218,7 @@ function launchEligibleDiagnostics(
 
 export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) {
   const { workspace, dispatch, getFile } = useLmnp();
+  const uploadScope = useUploadPropertyScope();
   const { showSuccess, showInfo } = useFeedback();
   const analyzingRef = useRef(false);
   const aiAnimationDoneSourceRef = useRef<string>("initial");
@@ -1225,7 +1226,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isContinuityDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={resolveMonoPropertyId(workspace)}
+        propertyId={uploadScope.propertyId}
+        requirePropertyId={uploadScope.requirePropertyId}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "continuity", meta)}
         canContinue={continuityCanContinue}
         onContinue={() => handleSectionContinue("continuity")}
@@ -1242,7 +1244,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isTravauxDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={resolveMonoPropertyId(workspace)}
+        propertyId={uploadScope.propertyId}
+        requirePropertyId={uploadScope.requirePropertyId}
         onFiles={(files, meta) => handleUpload(files, "charges", "travaux", meta)}
         canContinue={travauxCanContinue}
         onContinue={() => handleSectionContinue("travaux")}
@@ -1268,7 +1271,8 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         uploadedFileName={latestDocumentName(workspace.documents, isMobilierDocument)}
         fiscalYear={workspace.fiscalYear.year}
         dossierId={workspace.fiscalYear.dossierId}
-        propertyId={resolveMonoPropertyId(workspace)}
+        propertyId={uploadScope.propertyId}
+        requirePropertyId={uploadScope.requirePropertyId}
         onFiles={(files, meta) => handleUpload(files, "amortissement", "mobilier", meta)}
         canContinue={showMobilierLaunchAnalysis}
         onContinue={() => handleSectionContinue("mobilier")}

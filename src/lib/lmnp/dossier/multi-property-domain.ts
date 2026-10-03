@@ -19,6 +19,11 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import type { PersistedWorkspace } from "../store/persistence";
 import type { FiscalYear } from "../types/domain";
 import { resolveDocumentScope } from "./property-scope";
+import {
+  resolveAllMultiPropertyAttestations,
+  type MultiPropertyAttestationKind,
+  type MultiPropertyAttestationState,
+} from "./multi-property-attestations";
 import { isMultiPropertyCapabilityOpen, isMultiPropertyRfs, type MultiPropertyCapabilities } from "./multi-property-activation";
 
 // ---------------------------------------------------------------------------
@@ -47,6 +52,10 @@ export const MULTI_PROPERTY_DOMAIN_REASON_CODES = {
   sharedLoanNotSupported: "multi_property_shared_loan_not_supported",
   serviceDateMissing: "multi_property_service_date_missing",
   unattributedDocument: "multi_property_unattributed_document",
+  /** Attestation d'activité absente (ADR-011 §6) : jamais assimilée à une confirmation. */
+  ssiAttestationMissing: "multi_property_ssi_attestation_missing",
+  directHoldingAttestationMissing: "multi_property_direct_holding_attestation_missing",
+  commonChargesAttestationMissing: "multi_property_common_charges_attestation_missing",
   /** Un fait requis par le domaine n'a pas pu être établi par l'appelant : jamais présumé favorable. */
   domainUnverifiable: "multi_property_domain_unverifiable",
 } as const;
@@ -87,8 +96,13 @@ export type MultiPropertyDomainFacts = {
   generatedArd?: number;
   /** Motifs déjà produits par les seams (consolidation par bien) — traduits en motifs de domaine. */
   seamBlocks?: readonly SeamBlock[];
-  /** Situations connues (aujourd'hui sans source de données : à renseigner par une attestation future). */
+  /** Situations connues par ailleurs que les attestations (ex. indivision déclarée dans F009). */
   declared?: { lmp?: boolean; ssi?: boolean; indirectHolding?: boolean };
+  /**
+   * Attestations d'activité (ADR-011 §6). `absent` ⇒ refus (jamais une confirmation) ; `declared_out_of_domain` ⇒ situation hors
+   * domaine. Non fournies (RFS : elle ne les porte pas) ⇒ non évaluées ici : la génération les a déjà exigées.
+   */
+  attestations?: Record<MultiPropertyAttestationKind, MultiPropertyAttestationState>;
   /** Faits requis non établis par l'appelant. */
   unverifiable?: readonly string[];
 };
@@ -133,6 +147,15 @@ export function evaluateMultiPropertyDomain(facts: MultiPropertyDomainFacts): Mu
   if (facts.declared?.lmp) push(C.lmpNotSupported);
   if (facts.declared?.ssi) push(C.ssiNotSupported);
   if (facts.declared?.indirectHolding) push(C.indirectHoldingNotSupported);
+  if (facts.attestations) {
+    const { ssi, directHolding, noCommonCharges } = facts.attestations;
+    if (ssi === "absent") push(C.ssiAttestationMissing);
+    else if (ssi === "declared_out_of_domain") push(C.ssiNotSupported, { detail: "attestation" });
+    if (directHolding === "absent") push(C.directHoldingAttestationMissing);
+    else if (directHolding === "declared_out_of_domain") push(C.indirectHoldingNotSupported, { detail: "attestation" });
+    if (noCommonCharges === "absent") push(C.commonChargesAttestationMissing);
+    else if (noCommonCharges === "declared_out_of_domain") push(C.commonChargesNotSupported, { detail: "attestation" });
+  }
 
   for (const indicium of facts.priorYearIndicia ?? []) push(C.notFirstYear, { detail: indicium });
   for (const indicium of facts.takeoverIndicia ?? []) push(C.takeoverNotSupported, { detail: indicium });
@@ -213,6 +236,8 @@ export function multiPropertyDomainFactsFromWorkspace(
     openingDeficits: stocks?.deficits ?? [],
     openingArd: stocks?.amortissementsReportes ?? 0,
     seamBlocks: [...(extra.seamBlocks ?? []), ...(unattributed ? [{ code: "unattributed_documents" }] : [])],
+    attestations: resolveAllMultiPropertyAttestations(workspace.declarationDraft?.multiPropertyAttestations),
+    ...(workspace.declarationDraft?.indivision === true ? { declared: { indirectHolding: true } } : {}),
     ...(extra.generatedArd !== undefined ? { generatedArd: extra.generatedArd } : {}),
     ...(extra.usedPriorDeficits !== undefined ? { usedPriorDeficits: extra.usedPriorDeficits } : {}),
     ...(extra.usedHistoricalArd !== undefined ? { usedHistoricalArd: extra.usedHistoricalArd } : {}),

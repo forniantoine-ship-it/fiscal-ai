@@ -22,11 +22,14 @@ test("les cinq motifs fail-closed, sans jamais choisir un bien", () => {
   assert.ok(ok.ok && ok.property.id === "home-1");
 });
 
-test("support : full seulement pour le bien unique cohérent ; facts_only sinon ; règle de propertyScopeFor inchangée", () => {
+test("support : full seulement pour le bien unique cohérent ; facts_only sinon ; propertyScopeFor ne choisit jamais un bien (MB-MULTI-UX-1)", () => {
   assert.equal(resolveV3PropertySupport(workspaceOf(stateOf()), "home-1"), "full");
   const two = workspaceOf(stateOf({ properties: [property("a"), property("b")] }));
   assert.equal(resolveV3PropertySupport(two, "a"), "facts_only");
-  assert.equal(propertyScopeFor(two.fiscalYear.propertyIds, two.properties), null, "le gate multi-biens n'est pas étendu");
+  // MB-MULTI-UX-1 : le scope multi est étendu mais ne choisit JAMAIS un bien — sans sélection explicite, aucun bien requis.
+  assert.deepEqual(propertyScopeFor(two.fiscalYear.propertyIds, two.properties), { kind: "not_applicable" });
+  assert.deepEqual(propertyScopeFor(two.fiscalYear.propertyIds, two.properties, "b"), { kind: "required", propertyId: "b" });
+  assert.equal(propertyScopeFor(two.fiscalYear.propertyIds, two.properties, "inconnu"), null);
   assert.equal(resolveV3PropertySupport(workspaceOf(stateOf({ properties: [property("a")], propertyIds: ["b"] })), "a"), "facts_only");
 });
 

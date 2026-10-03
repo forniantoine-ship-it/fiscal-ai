@@ -8,6 +8,7 @@
 import type { LmnpAction } from "../store/reducer";
 import type { DeclarationDraft } from "../types";
 import { resolveBienDraftForRead, type BienDraftFailure } from "./bien-draft";
+import { isMultiPropertyWorkspace } from "./multi-property-activation";
 import { resolveMonoPropertyId, resolvePropertyScope } from "./property-scope";
 
 type ScopeWorkspace = Parameters<typeof resolveBienDraftForRead>[0];
@@ -58,4 +59,20 @@ export function withActivePropertyId(action: LmnpAction, propertyId: string | un
 /** Tunnel A : parcours historique mono, disponible uniquement tant que le dossier n'est pas scopé (décision R2B.1). */
 export function isTunnelAAvailable(workspace: { declarationDraft?: DeclarationDraft }): boolean {
   return workspace.declarationDraft?.biens === undefined;
+}
+
+/**
+ * MB-MULTI-UX-1 — bien d'ATTRIBUTION d'un téléversement de document de bien. Mono : le bien unique (comportement historique
+ * inchangé). Multi : UNIQUEMENT le bien actif explicite et vérifié ; sans bien actif, `propertyId` est absent ET
+ * `requirePropertyId` impose le refus du téléversement (`uploadDocument`) — jamais un repli sur le bien unique, jamais un
+ * document « commun » par défaut. Les documents d'activité (INPI/F009) ne passent pas par ce chemin.
+ */
+export type UploadPropertyScope = { propertyId: string | undefined; requirePropertyId: boolean };
+
+export function resolveUploadPropertyScope(workspace: ScopeWorkspace, activePropertyId: string | undefined): UploadPropertyScope {
+  if (!isMultiPropertyWorkspace(workspace as Parameters<typeof isMultiPropertyWorkspace>[0])) {
+    return { propertyId: resolveMonoPropertyId(workspace), requirePropertyId: false };
+  }
+  const resolution = activePropertyId === undefined ? undefined : resolvePropertyScope(workspace, activePropertyId);
+  return { propertyId: resolution?.ok && resolution.via === "explicit" ? resolution.propertyId : undefined, requirePropertyId: true };
 }

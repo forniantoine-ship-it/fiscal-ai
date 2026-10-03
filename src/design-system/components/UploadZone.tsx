@@ -21,6 +21,8 @@ export type UploadZoneProps = {
   dossierId: string | null | undefined;
   documentRole?: DocumentRole;
   propertyId?: string;
+  /** MB-MULTI-UX-1 — dossier multi-bien : refuse tout téléversement sans `propertyId`. */
+  requirePropertyId?: boolean;
   hint?: string;
   title?: string;
   accept?: string;
@@ -34,6 +36,7 @@ export function UploadZone({
   dossierId,
   documentRole = "annual_evidence",
   propertyId,
+  requirePropertyId,
   hint = "PDF ou images — dépôt multiple accepté",
   title = "TEST SUPABASE UPLOAD",
   accept = ".pdf,image/*",
@@ -71,6 +74,7 @@ export function UploadZone({
           fiscalYear,
           documentRole,
           propertyId,
+          requirePropertyId,
         });
 
       if (uploadedFiles.length === 0) {

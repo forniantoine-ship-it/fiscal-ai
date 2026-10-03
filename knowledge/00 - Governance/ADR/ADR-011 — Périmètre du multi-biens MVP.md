@@ -3,7 +3,7 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.0"
+version: "1.1"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -51,3 +51,14 @@ Inchangé : 149 € par dossier et par exercice, y compris plusieurs biens du do
 # 5. Hors périmètre
 
 Allocation 39 C et ARD par bien (TRF-0035), charges communes, prêt partagé, reprise multi-biens, clôture et N+1 multi. Chacun exige une décision et une preuve ultérieures.
+
+# 6. Parcours utilisateur du multi-biens (dormant) — décisions MB-MULTI-UX-1
+
+Ces décisions décrivent l'interface ; elles n'ouvrent aucune capacité (l'activation utilisateur reste fermée) et n'élargissent pas le domaine.
+
+- **Ajout d'un bien** : une action explicite « Ajouter un bien », au niveau du dossier (écran « Mes biens »), qui réutilise l'unique transition `ADD_PROPERTY` (mono → bien A scopé + bien B, atomique : A conserve toutes ses données, B démarre vide). Le nouveau bien devient le bien actif : l'utilisateur arrive sur le bien qu'il vient de créer pour le renseigner.
+- **Bien actif** : source de vérité unique = l'URL (`propertyId` du scope V3 vérifié). Aucun état parallèle, jamais « le premier bien ». Un scope sans bien valide du dossier est refusé, côté client comme côté serveur.
+- **Sélecteur de bien** : liste les biens du dossier par leur nom (jamais « bien 1 / bien 2 » comme identité) ; changer de bien change l'URL, jamais les données.
+- **Documents** : un document de bien est téléversé avec le `propertyId` du bien actif, explicitement ; sans bien actif en multi-bien, le téléversement est refusé. Un document sans `propertyId` n'est jamais promu commun ; seuls les types explicitement de portée activité (document d'activité INPI/F009) sont communs. Aucun parcours « ce document concerne plusieurs biens ».
+- **Attestations d'activité (explicites, séparées, persistées, auditables)** : (1) l'activité reste dans le LMNP pris en charge et ne relève pas d'une situation SSI hors périmètre ; (2) les logements sont détenus directement dans le périmètre pris en charge ; (3) aucune charge commune à plusieurs biens. Chacune est enregistrée avec sa réponse (`confirmed` / `declared_out_of_domain`), l'horodatage et la version du libellé. **Absente = refus** (fail-closed) ; une déclaration hors domaine bloque. Ces attestations ne sont pas une détection fiscale ni un conseil.
+- **Blocages** : la garde de domaine reste la seule source ; l'interface traduit ses codes de motif en messages, sans recréer de règle.

@@ -67,7 +67,7 @@ import {
   runDocumentRemoval,
 } from "@/lib/lmnp/dossier";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
-import { bienScopeFor, resolveActivePropertyId, withActivePropertyId } from "@/lib/lmnp/dossier/bien-scope";
+import { bienScopeFor, resolveActivePropertyId, resolveUploadPropertyScope, withActivePropertyId } from "@/lib/lmnp/dossier/bien-scope";
 
 interface LmnpContextValue {
   workspace: ReturnType<typeof selectWorkspace>;
@@ -821,6 +821,12 @@ export function useLmnp(): LmnpContextValue {
  * aucune vue de repli, et `BienScopeGate` ne monte alors pas le panel.
  */
 const EMPTY_BIEN_DRAFT: DeclarationDraft = Object.freeze({ completedSteps: [] }) as DeclarationDraft;
+
+/** MB-MULTI-UX-1 — attribution explicite des téléversements de documents de bien (voir `resolveUploadPropertyScope`). */
+export function useUploadPropertyScope() {
+  const { workspace, activePropertyId } = useLmnp();
+  return useMemo(() => resolveUploadPropertyScope(workspace, activePropertyId), [workspace, activePropertyId]);
+}
 
 export function useBienScope() {
   const { workspace, dispatch, activePropertyId } = useLmnp();

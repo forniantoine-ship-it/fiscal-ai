@@ -32,9 +32,8 @@ import {
 import { runBulkDocumentAnalysis } from "@/lib/lmnp/services/run-document-analysis";
 import { logPipelineEntry, logPipelineEntryEarlyReturn } from "@/lib/lmnp/services/pipeline-entry-debug";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
-import { useLmnp } from "@/lib/lmnp/store";
+import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
-import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 import { isTunnelAAvailable } from "@/lib/lmnp/dossier/bien-scope";
 
 const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
@@ -152,6 +151,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
   const step = getDocumentJourneyStep(stepId);
   const declarationsHref = useScopedOwnerHref(LMNP_ROUTES.declarations);
   const { workspace, dispatch, getFile } = useLmnp();
+  const uploadScope = useUploadPropertyScope();
   const { showSuccess, showError, showInfo } = useFeedback();
   const analyzingRef = useRef(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -373,7 +373,8 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
           hint={step.uploadHint}
           fiscalYear={workspace.fiscalYear.year}
           dossierId={workspace.fiscalYear.dossierId}
-          propertyId={resolveMonoPropertyId(workspace)}
+          propertyId={uploadScope.propertyId}
+          requirePropertyId={uploadScope.requirePropertyId}
           onFiles={handleUpload}
         />
         <div className="mt-4 flex items-center justify-between gap-4">

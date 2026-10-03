@@ -25,6 +25,11 @@ export type UploadDocumentOptions = {
   documentRole?: DocumentRole;
   /** Optional property attachment (multi-bien-ready). */
   propertyId?: string;
+  /**
+   * MB-MULTI-UX-1 — dossier multi-bien : un document de bien SANS `propertyId` est refusé (aucun téléversement), jamais rattaché à un
+   * bien par défaut ni promu document commun.
+   */
+  requirePropertyId?: boolean;
 };
 
 export type UploadFilesForUserResult = {
@@ -107,6 +112,10 @@ export async function uploadDocument(
 
   if (!dossierId) {
     console.error("[uploadDocument] aborted: no active dossier_id");
+    return null;
+  }
+  if (options.requirePropertyId && !options.propertyId) {
+    console.error("[uploadDocument] aborted: dossier multi-bien — un document de bien exige un propertyId explicite (aucun bien actif)");
     return null;
   }
 
