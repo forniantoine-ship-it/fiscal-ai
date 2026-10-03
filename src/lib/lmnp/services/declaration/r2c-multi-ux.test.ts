@@ -529,16 +529,16 @@ describe("MB-MULTI-UX-1 — sélecteur de bien et entrée Dossier", () => {
 describe("MB-MULTI-UX-1 — GENERATION / DELIVERY / PAYMENT / CLOSING / N+1 restent OFF", () => {
   const valid = () => multiWorkspace({ specs: [[A, oracleBien(6000, 1000, 1000)], [B, oracleBien(5000, 2000, 2000)]] });
 
-  it("dossier multi COMPLET et dans le domaine : domaine supporté, mais génération, livraison, clôture, N+1 bloqués ; paiement fermé", () => {
+  it("dossier multi COMPLET et dans le domaine : domaine supporté et génération admissible ; livraison, clôture, N+1 bloqués ; paiement et édition fermés", () => {
     const ws = valid();
     assert.equal(resolveMultiPropertyDomainReadiness(ws).status, "supported");
     assert.equal(runDeclarationGenerationFromWorkspace(ws).status, "generated", "le moteur sait générer (domaine OK)…");
-    assert.equal(isMultiPropertyGenerationBlocked(ws), true, "…mais l'activation utilisateur de la génération est fermée");
+    assert.equal(isMultiPropertyGenerationBlocked(ws), false, "…et la capacité de génération est ouverte (MB-MULTI-CAPABILITY-WIRING-1)");
     assert.equal(isMultiPropertyDeliveryBlocked(ws), true);
     assert.equal(isMultiPropertyClosingBlocked(ws), true);
     assert.equal(isMultiPropertyNextYearBlocked(ws), true);
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", capability);
     }
   });
 

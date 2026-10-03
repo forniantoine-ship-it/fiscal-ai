@@ -24,7 +24,7 @@ import {
   type MultiPropertyAttestationKind,
   type MultiPropertyAttestationState,
 } from "./multi-property-attestations";
-import { isMultiPropertyCapabilityOpen, isMultiPropertyRfs, type MultiPropertyCapabilities } from "./multi-property-activation";
+import { isMultiPropertyCapabilityOpen, isMultiPropertyRfs, isMultiPropertyWorkspace, type MultiPropertyCapabilities, type PropertyModeInput } from "./multi-property-activation";
 
 // ---------------------------------------------------------------------------
 // Codes de motif — STABLES (contrat produit, tests, support)
@@ -306,6 +306,39 @@ export function resolveMultiPropertyDeliveryAdmission(
   if (!isMultiPropertyRfsShape(rfs)) return { allowed: true };
   if (!isMultiPropertyCapabilityOpen("delivery", capabilities)) return { allowed: false, reason: "multi_property_not_enabled" };
   const verdict = evaluateMultiPropertyDomain(multiPropertyDomainFactsFromRfs(rfs));
+  if (verdict.status === "SUPPORTED") return { allowed: true };
+  const domainReasons: MultiPropertyDomainReason[] =
+    verdict.status === "UNSUPPORTED" ? verdict.reasons : [{ code: MULTI_PROPERTY_DOMAIN_REASON_CODES.fewerThanTwoProperties }];
+  return { allowed: false, reason: "multi_property_domain_unsupported", domainReasons };
+}
+
+// ---------------------------------------------------------------------------
+// Admission à la GÉNÉRATION (écran de validation, gate) — capacité + domaine, deux questions distinctes
+// ---------------------------------------------------------------------------
+
+export type MultiPropertyGenerationAdmission =
+  | { allowed: true }
+  | { allowed: false; reason: "multi_property_not_enabled" }
+  | { allowed: false; reason: "multi_property_domain_unsupported"; domainReasons: MultiPropertyDomainReason[] };
+
+/**
+ * Admission d'un workspace à la GÉNÉRATION utilisateur (MB-MULTI-CAPABILITY-WIRING-1) — même schéma que la livraison :
+ *   1. mono (pas multi) → autorisé, chemin historique inchangé ;
+ *   2. capacité de GÉNÉRATION multi fermée → `multi_property_not_enabled` (activation produit, quel que soit le domaine) ;
+ *   3. capacité ouverte mais domaine ADR-011 non SUPPORTED avant calcul → `multi_property_domain_unsupported` (+ motifs stables).
+ * Condition NÉCESSAIRE, jamais suffisante : les motifs que seuls la consolidation (charges communes, prêt partagé, dates de mise en
+ * service, immobilisations) ou le résultat F-006 (ARD généré, 39 C) établissent sont refusés par l'entrée de génération par workspace
+ * elle-même, qui applique la MÊME garde. Ouvrir la génération n'ouvre jamais la livraison, le
+ * paiement, la clôture ni l'exercice suivant.
+ */
+export function resolveMultiPropertyGenerationAdmission(
+  workspace: DomainWorkspace & PropertyModeInput,
+  inputs: MultiPropertyOpeningInputs = {},
+  capabilities?: MultiPropertyCapabilities,
+): MultiPropertyGenerationAdmission {
+  if (!isMultiPropertyWorkspace(workspace)) return { allowed: true };
+  if (!isMultiPropertyCapabilityOpen("generation", capabilities)) return { allowed: false, reason: "multi_property_not_enabled" };
+  const verdict = evaluateMultiPropertyDomain(multiPropertyDomainFactsFromWorkspace(workspace, inputs));
   if (verdict.status === "SUPPORTED") return { allowed: true };
   const domainReasons: MultiPropertyDomainReason[] =
     verdict.status === "UNSUPPORTED" ? verdict.reasons : [{ code: MULTI_PROPERTY_DOMAIN_REASON_CODES.fewerThanTwoProperties }];

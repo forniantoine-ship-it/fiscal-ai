@@ -1,6 +1,6 @@
 /**
  * MB-MULTI-E2E-LAB-1 — contrat PERMANENT du banc LAB « Mes biens » : l'édition multi n'est ouverte que localement à la route LAB ;
- * les six capacités de production restent fermées, `/assistants/biens` reste dormant, aucune route de production n'importe le LAB.
+ * seule la génération est ouverte en production (édition fermée), `/assistants/biens` reste dormant, aucune route de production n'importe le LAB.
  *
  * Run: npx tsx --test src/lib/lmnp/services/declaration/r2c-multi-lab-isolation.test.ts
  */
@@ -42,10 +42,10 @@ function walk(dir: string, out: string[] = []): string[] {
 const productionFiles = walk("src").filter((file) => !file.startsWith("src/lab/") && !file.startsWith("src/app/lab/") && !/\.test\.tsx?$/.test(file));
 
 describe("MB-MULTI-E2E-LAB-1 — capacités de production", () => {
-  it("les six capacités globales sont fermées", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: false, delivery: false, payment: false, closing: false, nextYear: false });
+  it("seule la génération est ouverte globalement ; l'édition de production reste fermée", () => {
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: false, payment: false, closing: false, nextYear: false });
     for (const capability of Object.keys(MULTI_PROPERTY_CAPABILITIES) as Array<keyof typeof MULTI_PROPERTY_CAPABILITIES>) {
-      assert.equal(isMultiPropertyCapabilityOpen(capability), false, capability);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), capability === "generation", capability);
     }
   });
 

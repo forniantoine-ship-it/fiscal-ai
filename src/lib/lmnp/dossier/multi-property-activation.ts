@@ -19,10 +19,15 @@ import { resolveExerciseScope } from "./property-scope";
 export type MultiPropertyCapability = "edition" | "generation" | "delivery" | "payment" | "closing" | "nextYear";
 export type MultiPropertyCapabilities = Readonly<Record<MultiPropertyCapability, boolean>>;
 
-/** Valeurs finales de l'activation utilisateur : TOUTES fermées (ADR-011, USER ACTIVATION = OFF). */
+/**
+ * Valeurs finales de l'activation (ADR-011). MB-MULTI-CAPABILITY-WIRING-1 : la GÉNÉRATION est le seul levier ouvert — et elle ne
+ * suffit jamais seule : l'admission exige aussi le domaine ADR-011 supporté, la preview générée et la readiness technique
+ * (`resolveMultiPropertyGenerationAdmission`). Édition, livraison, paiement, clôture et exercice suivant restent FERMÉS : le multi
+ * utilisateur reste dormant (aucun moyen de créer un second bien, de payer ni de livrer en production).
+ */
 export const MULTI_PROPERTY_CAPABILITIES = {
   edition: false,
-  generation: false,
+  generation: true,
   delivery: false,
   payment: false,
   closing: false,

@@ -1,7 +1,7 @@
 /**
  * MB-MULTI-V3-READMODEL-1 — shell V3 d'un dossier multi-bien SCOPÉ (A + B, `draft.biens`) : les rubriques de bien (F010–F014)
  * suivent le bien ACTIF explicite, l'activité (F009) reste au niveau activité, aucune rubrique n'est « non prise en charge »
- * globalement, jamais de repli sur le premier bien. Les capacités de production restent TOUTES fermées.
+ * globalement, jamais de repli sur le premier bien. Seule la génération est ouverte en production ; l'édition reste fermée.
  *
  * Run: npx tsx --test src/lab/v2-dossier/multi-v3-readmodel.test.ts
  */
@@ -137,6 +137,6 @@ test("MONO inchangé — le bien actif est ignoré ; une rubrique n'est jamais �
   assert.ok(DOMAIN_KEYS.every(key => model(mono, null)[key].status !== "selection_required"));
 });
 
-test("PRODUCTION DORMANCY — les six capacités restent fermées", () => {
-  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: false, delivery: false, payment: false, closing: false, nextYear: false });
+test("PRODUCTION DORMANCY — seule la génération est ouverte ; l'édition de production reste fermée", () => {
+  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: false, payment: false, closing: false, nextYear: false });
 });

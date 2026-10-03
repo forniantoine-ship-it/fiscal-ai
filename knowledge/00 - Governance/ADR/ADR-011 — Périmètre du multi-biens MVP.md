@@ -3,7 +3,7 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.1"
+version: "1.2"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -62,3 +62,12 @@ Ces décisions décrivent l'interface ; elles n'ouvrent aucune capacité (l'acti
 - **Documents** : un document de bien est téléversé avec le `propertyId` du bien actif, explicitement ; sans bien actif en multi-bien, le téléversement est refusé. Un document sans `propertyId` n'est jamais promu commun ; seuls les types explicitement de portée activité (document d'activité INPI/F009) sont communs. Aucun parcours « ce document concerne plusieurs biens ».
 - **Attestations d'activité (explicites, séparées, persistées, auditables)** : (1) l'activité reste dans le LMNP pris en charge et ne relève pas d'une situation SSI hors périmètre ; (2) les logements sont détenus directement dans le périmètre pris en charge ; (3) aucune charge commune à plusieurs biens. Chacune est enregistrée avec sa réponse (`confirmed` / `declared_out_of_domain`), l'horodatage et la version du libellé. **Absente = refus** (fail-closed) ; une déclaration hors domaine bloque. Ces attestations ne sont pas une détection fiscale ni un conseil.
 - **Blocages** : la garde de domaine reste la seule source ; l'interface traduit ses codes de motif en messages, sans recréer de règle.
+
+# 7. Capacité `generation` (MB-MULTI-CAPABILITY-WIRING-1) — premier levier ouvert, jamais suffisant
+
+Décision du Product Owner : la capacité `generation` est la **seule** capacité ouverte (`MULTI_PROPERTY_CAPABILITIES`). Le domaine du §1 n'est pas modifié.
+
+- **Admission** à la génération d'un dossier multi = capacité `generation` ouverte **ET** domaine ADR-011 supporté avant calcul **ET** preview réellement généré **ET** readiness technique (global + chaque bien). Chaque dimension refuse seule : capacité fermée → `multi_property_not_enabled` ; domaine non supporté → motif stable `multi_property_*` ; un motif connu seulement après consolidation ou calcul (charge commune, prêt partagé, date de mise en service par bien, ARD généré / 39 C) est refusé par l'entrée de génération elle-même.
+- Une activité = **une** génération : un F-006, une RFS d'activité, une liasse, une 2031, une aide 2042-C-PRO ; le bien actif de l'interface n'entre jamais dans le calcul.
+- `edition`, `delivery`, `payment`, `closing`, `nextYear` restent **fermés**. Ouvrir la génération n'ouvre aucun autre levier ; clôture et exercice suivant restent structurellement non ouvrables. Le multi utilisateur reste donc **dormant** (aucun moyen de créer un second bien en production, de payer ni de livrer).
+- Prérequis avant toute activation utilisateur finale : migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` vérifiée/appliquée (statut distant à ce jour inconnu).

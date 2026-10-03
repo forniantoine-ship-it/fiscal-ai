@@ -7,7 +7,8 @@
  * LmnpProvider, persistance serveur) ; le vrai `PropertiesManager` et le vrai `ADD_PROPERTY` sont montés, rien n'est réimplémenté.
  *
  * Seule différence : la capacité d'ÉDITION est fournie LOCALEMENT à ce composant. `MULTI_PROPERTY_CAPABILITIES` (production)
- * n'est pas modifié ; génération, livraison, paiement, clôture et exercice suivant restent fermés ici aussi. Ce contrat n'est
+ * n'est pas modifié ; les autres capacités sont héritées telles quelles de la production (livraison, paiement, clôture et exercice
+ * suivant fermés ici aussi). Ce contrat n'est
  * exporté d'aucun module de capacités et ne doit être importé que par la route LAB (gardée comme `/lab/v2-dossier/real`).
  */
 

@@ -217,17 +217,18 @@ describe("R2C.3c2d — le gate reconnaît le multi (visibilité) sans l'activer"
     assert.equal(readiness.technicalReady, true);
   });
 
-  it("D5/D6/D7/D8 — technicalReady = true NE change PAS canGenerate / canCheckout / canRetryAfterPayment (payé ou non)", () => {
+  it("D5/D6/D7/D8 — technicalReady ∧ génération ouverte n'autorise QUE canGenerate (avant génération) ; canCheckout / canRetryAfterPayment restent false (payé ou non) ; déjà généré : tout reste false", () => {
     for (const paid of [false, true]) {
       for (const generatedFlag of [false, true]) {
         const ws = generatedFlag ? generated(multi()) : multi();
         const gate = gateOf(ws, { paid, generated: generatedFlag });
         assert.equal(gate.workspaceReadiness?.technicalReady, true);
-        assert.deepEqual({ g: gate.canGenerate, c: gate.canCheckout, r: gate.canRetryAfterPayment }, { g: false, c: false, r: false }, `paid=${paid} generated=${generatedFlag}`);
+        // MB-MULTI-CAPABILITY-WIRING-1 : avant génération, la gate admet la génération (capacité ∧ domaine ∧ readiness) ; jamais le paiement.
+        assert.deepEqual({ g: gate.canGenerate, c: gate.canCheckout, r: gate.canRetryAfterPayment }, { g: !generatedFlag, c: false, r: false }, `paid=${paid} generated=${generatedFlag}`);
       }
     }
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", `capacité multi ${capability}`);
     }
   });
 

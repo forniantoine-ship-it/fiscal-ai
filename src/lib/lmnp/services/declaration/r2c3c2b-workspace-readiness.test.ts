@@ -522,7 +522,7 @@ describe("R2C.3c2b — séparation technique / activation / paiement ; périmèt
     const r = readiness(multi());
     assert.equal(r.technicalReady, true);
     for (const key of ["canGenerate", "canCheckout", "canRetryAfterPayment", "paymentReady"]) assert.equal(key in r, false, key);
-    assert.equal(r.userActivationEnabled, false, "activation utilisateur multi fermée malgré technicalReady");
+    assert.equal(r.userActivationEnabled, true, "activation utilisateur de la GÉNÉRATION multi ouverte (MB-MULTI-CAPABILITY-WIRING-1) : paiement, livraison, clôture, N+1 restent fermés");
     const mono = readiness(legacyMono());
     assert.equal(mono.userActivationEnabled, true, "mono : activation inchangée");
   });
@@ -561,7 +561,7 @@ describe("R2C.3c2b — séparation technique / activation / paiement ; périmèt
 
   it("B30 — les capacités d'activation multi restent toutes fermées", () => {
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], false, `capacité multi ${capability} fermée`);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], capability === "generation", `capacité multi ${capability} : seule la génération est ouverte (MB-MULTI-CAPABILITY-WIRING-1)`);
     }
   });
 

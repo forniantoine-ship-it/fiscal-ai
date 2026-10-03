@@ -5,7 +5,8 @@ import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } f
 import { runDeclarationGenerationFromWorkspace } from "./generation-workspace";
 import { resolveWorkspaceReadiness, type WorkspaceReadiness } from "./workspace-readiness";
 import { resolveConsolidationInput } from "../../dossier/bien-draft";
-import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode } from "../../dossier/multi-property-activation";
+import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode, type MultiPropertyCapabilities } from "../../dossier/multi-property-activation";
+import { resolveMultiPropertyGenerationAdmission } from "../../dossier/multi-property-domain";
 import type { PersistedWorkspace } from "../../store/persistence";
 import { identiteFromDeclarationDraft } from "../f007/draft-to-liasse-inputs";
 import type { PriorHistoryEligibility } from "./prior-history-eligibility";
@@ -458,6 +459,11 @@ export function resolveDeclarationGenerationGate(input: {
    * USER-BLOCKED (`canGenerate` / `canCheckout` / `canRetryAfterPayment` restent false).
    */
   workspace?: GateWorkspace;
+  /**
+   * MB-MULTI-CAPABILITY-WIRING-1 — tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES`
+   * (un seul levier ouvert : la génération ; jamais le paiement, la livraison, la clôture ni N+1).
+   */
+  multiPropertyCapabilities?: MultiPropertyCapabilities;
 }): DeclarationGenerationGate {
   const workspace = input.workspace;
   // Scoped mono : vue plate canonique du bien (même contrat que le service workspace), jamais la racine scopée.
@@ -698,13 +704,22 @@ function resolveMultiPropertyTechnicalState(
     continuity: input.continuity,
     fiscalYearOpening: input.fiscalYearOpening,
   });
+  const workspaceReadiness = resolveWorkspaceReadiness(workspace, preview);
+  // MB-MULTI-CAPABILITY-WIRING-1 — la génération multi est ADMISE seulement si : capacité de génération ouverte ET domaine ADR-011
+  // supporté avant calcul ET preview réellement généré ET readiness technique (global + chaque bien). Chaque dimension refuse seule.
+  // Paiement, livraison, clôture et N+1 ne sont jamais accordés ici : `canCheckout` / `canRetryAfterPayment` restent false.
+  const admission = resolveMultiPropertyGenerationAdmission(
+    workspace,
+    { stocksOuverture: input.stocksOuverture, continuity: input.continuity, fiscalYearOpening: input.fiscalYearOpening },
+    input.multiPropertyCapabilities,
+  );
   return {
     snapshot,
     canCheckout: false,
     canRetryAfterPayment: false,
-    canGenerate: false,
+    canGenerate: admission.allowed && preview.status === "generated" && workspaceReadiness.technicalReady,
     blockingAnomalies: [],
     recoveryItems: snapshot.missing,
-    workspaceReadiness: resolveWorkspaceReadiness(workspace, preview),
+    workspaceReadiness,
   };
 }
