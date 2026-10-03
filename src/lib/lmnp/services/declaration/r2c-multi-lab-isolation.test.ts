@@ -9,7 +9,13 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { OWNER_ROUTES } from "@/lab/v2-dossier/correction-scope";
+import {
+  OWNER_ROUTES,
+  readV3CorrectionQuery,
+  sameCorrectionScope,
+  v3CorrectionHrefForResolvedScope,
+  type V3CorrectionScope,
+} from "@/lab/v2-dossier/correction-scope";
 import {
   MULTI_PROPERTY_CAPABILITIES,
   MULTI_PROPERTY_NEVER_OPEN_CAPABILITIES,
@@ -99,5 +105,58 @@ describe("MB-MULTI-E2E-LAB-1 — production dormante", () => {
     const page = source("src/app/(dashboard)/assistants/biens/page.tsx");
     assert.match(page, /<PropertiesManager \/>/);
     assert.doesNotMatch(page, /capabilities|edition|process\.env|searchParams|localStorage/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MB-MULTI-E2E-LAB-SCOPE-FIX-1 — contrat d'entrée de la route LAB (écran d'ACTIVITÉ : jamais de propertyId)
+// ---------------------------------------------------------------------------
+
+describe("MB-MULTI-E2E-LAB-SCOPE-FIX-1 — scope d'entrée du LAB « Mes biens »", () => {
+  const LAB = "/lab/v2-dossier/real/biens";
+  const V3_SCOPE: V3CorrectionScope = {
+    dossierId: "dossier-1", fiscalYearId: "year-1", year: 2025, property: { kind: "required", propertyId: "prop-A" }, shell: "v3",
+  };
+  const read = (search: string) => readV3CorrectionQuery(LAB, new URLSearchParams(search));
+
+  it("scope V3 valide → URL LAB construite par le contrat réel (propertyId retiré, v3Shell conservé) → scope accepté", () => {
+    const href = v3CorrectionHrefForResolvedScope(LAB, V3_SCOPE)!;
+    assert.ok(href.startsWith(`${LAB}?`));
+    const params = new URL(href, "http://x").searchParams;
+    assert.equal(params.has("propertyId"), false);
+    assert.equal(params.get("v3Shell"), "v3");
+    const query = read(params.toString());
+    assert.equal(query.kind, "scope");
+    if (query.kind === "scope") {
+      assert.deepEqual(query.scope, { dossierId: "dossier-1", fiscalYearId: "year-1", year: 2025, property: { kind: "not_applicable" }, shell: "v3" });
+      assert.equal(sameCorrectionScope(query.scope, { ...V3_SCOPE, property: { kind: "not_applicable" } }), true);
+    }
+  });
+
+  it("CAUSE RACINE : un propertyId sur cet écran d'activité est REFUSÉ (incohérent avec OWNER_ROUTES = false), jamais ignoré", () => {
+    assert.deepEqual(read("dossierId=dossier-1&fiscalYearId=year-1&year=2025&propertyId=prop-A&v3Shell=v3&v3Correction=1"), { kind: "invalid" });
+  });
+
+  it("cas invalides toujours refusés : mauvais dossier / exercice (scope divergent), scope incomplet, propertyId vide ou répété", () => {
+    const ok = read("dossierId=dossier-1&fiscalYearId=year-1&year=2025&v3Correction=1");
+    assert.equal(ok.kind, "scope");
+    if (ok.kind !== "scope") return;
+    const loaded: V3CorrectionScope = { ...V3_SCOPE, property: { kind: "not_applicable" } };
+    assert.equal(sameCorrectionScope(ok.scope, { ...loaded, dossierId: "autre-dossier" }), false);
+    assert.equal(sameCorrectionScope(ok.scope, { ...loaded, fiscalYearId: "autre-exercice" }), false);
+    assert.equal(sameCorrectionScope(ok.scope, { ...loaded, year: 2024 }), false);
+    assert.equal(sameCorrectionScope(ok.scope, null), false);
+    for (const search of [
+      "fiscalYearId=year-1&year=2025&v3Correction=1",
+      "dossierId=dossier-1&year=2025&v3Correction=1",
+      "dossierId=dossier-1&fiscalYearId=year-1&v3Correction=1",
+      "dossierId=dossier-1&fiscalYearId=year-1&year=2025&propertyId=&v3Correction=1",
+      "dossierId=dossier-1&fiscalYearId=year-1&year=2025&propertyId=a&propertyId=b&v3Correction=1",
+      "dossierId=dossier-1&fiscalYearId=year-1&year=2025&v3Correction=1&v3Shell=autre",
+    ]) assert.deepEqual(read(search), { kind: "invalid" }, search);
+  });
+
+  it("sans marqueur v3Correction : aucun scope (le LAB ne s'ouvre pas sur un dossier implicite)", () => {
+    assert.deepEqual(read("dossierId=dossier-1&fiscalYearId=year-1&year=2025"), { kind: "none" });
   });
 });
