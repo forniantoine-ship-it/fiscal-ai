@@ -4,10 +4,10 @@ import { buildDossierSteps, buildMissingItems } from "@/lib/lmnp/services/valida
 import { isAnnualOutputForActiveYear } from "@/lib/lmnp/services/dossier/annual-output-year-safety";
 import type { FieldSource } from "@/runtime/contracts/FieldSource";
 import { LOAN_FACT_PROVENANCE_KEY, exclusionFactValue, loanExclusionCauses } from "./financing-shared";
-import { resolveV3MonoBienSource } from "./v3-property-scope";
+import { resolveV3ActiveBienSource, type V3ActiveBienSource } from "./v3-property-scope";
 
 export type V3DomainId = "activity" | "property" | "financing" | "revenues" | "charges" | "depreciation";
-export type V3DomainStatus = "complete" | "incomplete" | "unsupported";
+export type V3DomainStatus = "complete" | "incomplete" | "unsupported" | "selection_required";
 export type V3ProvenanceLevel = "complete" | "partial" | "unavailable";
 
 export interface V3Fact {
@@ -134,26 +134,15 @@ export function isMultiProperty(workspace: PersistedWorkspace): boolean {
   return workspace.properties.length > 1 || workspace.fiscalYear.propertyIds.length > 1;
 }
 
+/** Carte d'un domaine de bien qui ne peut pas être lue : sélection requise (multi sans bien actif) ou non supporté (fail-closed). */
+function blockedBienCard(source: Exclude<V3ActiveBienSource, { kind: "bien" } | { kind: "no_property" }>): Pick<V3DomainReadModel, "status" | "summary"> {
+  return source.kind === "selection_required"
+    ? { status: "selection_required", summary: "Choisissez un bien pour afficher cette rubrique." }
+    : { status: "unsupported", summary: "Dossier multi-biens non pris en charge dans ce lot." };
+}
+
 function buildV3ActivityReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
-  const emptyFacts: V3Fact[] = [
-    { id: "identity", label: "Exploitant", value: null },
-    { id: "activityType", label: "Activité", value: null },
-    { id: "siren", label: "SIREN", value: null },
-    { id: "siret", label: "SIRET", value: null },
-    { id: "regime", label: "Régime", value: null },
-    { id: "startDate", label: "Début d’activité", value: null },
-  ];
-
-  // The first bridge is explicitly mono-property: never project a partial aggregate.
-  if (isMultiProperty(workspace)) {
-    return {
-      id: "activity", label: "Activité", owner: "F009", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
-      facts: emptyFacts, sources: [], provenance: "unavailable",
-      missing: emptyFacts.map(fact => fact.label),
-    };
-  }
-
+  // F009 est une donnée d'ACTIVITÉ (niveau exercice) : jamais dupliquée ni filtrée par bien, lue à l'identique en mono et en multi.
   const draft = workspace.declarationDraft;
   const provenance = readActiviteFieldProvenance(draft);
   const sourceDocument = workspace.documents.find(doc => doc.id === draft?.inpiDocumentId);
@@ -187,7 +176,7 @@ function buildV3ActivityReadModel(workspace: PersistedWorkspace): V3DomainReadMo
   };
 }
 
-function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+function buildV3PropertyReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DomainReadModel {
   const emptyFacts: V3Fact[] = [
     { id: "address", label: "Adresse", value: null },
     { id: "propertyType", label: "Type de bien", value: null },
@@ -199,11 +188,10 @@ function buildV3PropertyReadModel(workspace: PersistedWorkspace): V3DomainReadMo
 
   // Same mono-property contract as Activity: never aggregate or pick a first property silently.
   // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
-  const source = resolveV3MonoBienSource(workspace);
-  if (isMultiProperty(workspace) || source.kind === "unsupported") {
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  if (source.kind === "unsupported" || source.kind === "selection_required") {
     return {
-      id: "property", label: "Logement", owner: "F010", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      id: "property", label: "Logement", owner: "F010", ...blockedBienCard(source),
       facts: emptyFacts, sources: [], provenance: "unavailable",
       missing: emptyFacts.map(fact => fact.label),
     };
@@ -274,14 +262,13 @@ function loanLabel(index: number, bank: string | null): string {
   return bank ? `Prêt ${index + 1} (${bank})` : `Prêt ${index + 1}`;
 }
 
-function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+function buildV3FinancingReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DomainReadModel {
   // Same mono-property contract as Activity/Property: the whole dossier stays unsupported, never partial.
   // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
-  const source = resolveV3MonoBienSource(workspace);
-  if (isMultiProperty(workspace) || source.kind === "unsupported") {
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  if (source.kind === "unsupported" || source.kind === "selection_required") {
     return {
-      id: "financing", label: "Financement", owner: "F011", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      id: "financing", label: "Financement", owner: "F011", ...blockedBienCard(source),
       facts: [], sources: [], provenance: "unavailable", missing: [],
     };
   }
@@ -365,14 +352,13 @@ function buildV3FinancingReadModel(workspace: PersistedWorkspace): V3DomainReadM
   };
 }
 
-function buildV3RevenueReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+function buildV3RevenueReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DomainReadModel {
   // Same mono-property contract as Activity/Property/Financing: never a partial aggregate.
   // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
-  const source = resolveV3MonoBienSource(workspace);
-  if (isMultiProperty(workspace) || source.kind === "unsupported") {
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  if (source.kind === "unsupported" || source.kind === "selection_required") {
     return {
-      id: "revenues", label: "Loyers", owner: "F013", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      id: "revenues", label: "Loyers", owner: "F013", ...blockedBienCard(source),
       facts: [], sources: [], provenance: "unavailable", missing: [],
     };
   }
@@ -419,14 +405,13 @@ const CHARGE_CATEGORY_LABELS: Record<string, string> = {
 };
 const CHARGE_CATEGORY_IDS = Object.keys(CHARGE_CATEGORY_LABELS);
 
-function buildV3ChargesReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+function buildV3ChargesReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DomainReadModel {
   // Same mono-property contract as the other domains: never a partial aggregate.
   // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
-  const source = resolveV3MonoBienSource(workspace);
-  if (isMultiProperty(workspace) || source.kind === "unsupported") {
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  if (source.kind === "unsupported" || source.kind === "selection_required") {
     return {
-      id: "charges", label: "Dépenses", owner: "F012", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      id: "charges", label: "Dépenses", owner: "F012", ...blockedBienCard(source),
       facts: [], sources: [], provenance: "unavailable", missing: [],
     };
   }
@@ -490,14 +475,13 @@ export const AMORTISSEMENT_PROFIL_LABELS: Record<string, string> = {
   "PROF-003": "Plan repris avec de nouveaux éléments",
 };
 
-function buildV3AmortizationReadModel(workspace: PersistedWorkspace): V3DomainReadModel {
+function buildV3AmortizationReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DomainReadModel {
   // Same mono-property contract as the other domains: never a partial aggregate.
   // R2A — the property-scoped values of this mono read model come from the single property's BienDraft.
-  const source = resolveV3MonoBienSource(workspace);
-  if (isMultiProperty(workspace) || source.kind === "unsupported") {
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  if (source.kind === "unsupported" || source.kind === "selection_required") {
     return {
-      id: "depreciation", label: "Amortissements", owner: "F014", status: "unsupported",
-      summary: "Dossier multi-biens non pris en charge dans ce lot.",
+      id: "depreciation", label: "Amortissements", owner: "F014", ...blockedBienCard(source),
       facts: [], sources: [], provenance: "unavailable", missing: [],
     };
   }
@@ -535,14 +519,18 @@ function buildV3AmortizationReadModel(workspace: PersistedWorkspace): V3DomainRe
   };
 }
 
-export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace): V3DossierDetailReadModel {
+/**
+ * `activePropertyId` : bien actif vérifié (scope V3). Il pilote UNIQUEMENT les rubriques de bien (F010–F014) d'un dossier multi ;
+ * l'activité (F009) ne dépend jamais d'un bien. Mono : ignoré. Multi sans bien actif : rubriques `selection_required`, jamais le premier bien.
+ */
+export function buildV3DossierDetailReadModel(workspace: PersistedWorkspace, activePropertyId?: string | null): V3DossierDetailReadModel {
   return {
     activity: buildV3ActivityReadModel(workspace),
-    property: buildV3PropertyReadModel(workspace),
-    financing: buildV3FinancingReadModel(workspace),
-    revenue: buildV3RevenueReadModel(workspace),
-    charges: buildV3ChargesReadModel(workspace),
-    amortization: buildV3AmortizationReadModel(workspace),
+    property: buildV3PropertyReadModel(workspace, activePropertyId),
+    financing: buildV3FinancingReadModel(workspace, activePropertyId),
+    revenue: buildV3RevenueReadModel(workspace, activePropertyId),
+    charges: buildV3ChargesReadModel(workspace, activePropertyId),
+    amortization: buildV3AmortizationReadModel(workspace, activePropertyId),
   };
 }
 

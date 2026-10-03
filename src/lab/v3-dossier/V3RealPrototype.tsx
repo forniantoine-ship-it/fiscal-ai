@@ -70,12 +70,14 @@ export function V3RealPrototype({ workspace, scope, documents }: {
   const mainRef = useRef<HTMLElement>(null);
 
   const year = workspace.fiscalYear.year;
-  const detail = buildV3DossierDetailReadModel(workspace);
+  // Bien actif = celui du scope V3 vérifié (URL), jamais le premier bien : il pilote les rubriques de bien (F010–F014) ; F009 reste au niveau activité.
+  const activePropertyId = scope?.property.kind === "required" ? scope.property.propertyId : null;
+  const detail = buildV3DossierDetailReadModel(workspace, activePropertyId);
   const domains = [detail.activity, detail.property, detail.financing, detail.revenue, detail.charges, detail.amortization];
   const userActions = resolveRealUserActions(workspace, scope);
   const financingAction = v3CorrectionActionFor("financing", scope);
   const financingView = buildFinancingView(
-    buildV3FinancingDetail(workspace, documents),
+    buildV3FinancingDetail(workspace, documents, activePropertyId),
     financingAction ? { label: REVIEW_IN_F011_LABEL, href: financingAction.href } : null,
   );
   const activityAction = v3CorrectionActionFor("activity", scope);
@@ -84,7 +86,7 @@ export function V3RealPrototype({ workspace, scope, documents }: {
     activityAction ? { label: REVIEW_IN_F009_LABEL, href: activityAction.href } : null,
   );
   // The property is provided by the verified scope only — never the first property of the list. No verified property = fail-closed view.
-  const housingPropertyId = scope?.property.kind === "required" ? scope.property.propertyId : null;
+  const housingPropertyId = activePropertyId;
   const housingAction = v3CorrectionActionFor("property", scope);
   const housingView = buildHousingView(
     buildV3HousingDetail(workspace, housingPropertyId, documents),
@@ -114,18 +116,18 @@ export function V3RealPrototype({ workspace, scope, documents }: {
   const rubrique = (domain: V3DomainReadModel) => {
     if (domain.id === "financing") {
       const verification = financingView.verification !== undefined && financingView.headline !== undefined;
-      return { summary: financingState.summary, ok: financingState.tone === "ok", status: financingState.tone === "ok" ? "Complet" : verification ? "Vérification nécessaire" : "À compléter" };
+      return { summary: financingState.summary, ok: financingState.tone === "ok", status: financingState.tone === "ok" ? "Complet" : domain.status === "selection_required" ? "Choisir un bien" : verification ? "Vérification nécessaire" : "À compléter" };
     }
     if (domain.id === "charges") {
       const state = chargesRubrique(chargesView, { summary: domain.summary, complete: domain.status === "complete" });
-      return { summary: state.summary, ok: state.tone === "ok", status: state.tone === "ok" ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : "À compléter" };
+      return { summary: state.summary, ok: state.tone === "ok", status: state.tone === "ok" ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : domain.status === "selection_required" ? "Choisir un bien" : "À compléter" };
     }
     if (domain.id === "depreciation") {
       const state = amortizationRubrique(amortizationView, { summary: domain.summary, complete: domain.status === "complete" });
-      return { summary: state.summary, ok: state.tone === "ok", status: state.tone === "ok" ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : "À compléter" };
+      return { summary: state.summary, ok: state.tone === "ok", status: state.tone === "ok" ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : domain.status === "selection_required" ? "Choisir un bien" : "À compléter" };
     }
     const ok = domain.status === "complete";
-    return { summary: domain.summary, ok, status: ok ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : "À compléter" };
+    return { summary: domain.summary, ok, status: ok ? "Complet" : domain.status === "unsupported" ? "Non pris en charge" : domain.status === "selection_required" ? "Choisir un bien" : "À compléter" };
   };
 
   function go(next: View) {

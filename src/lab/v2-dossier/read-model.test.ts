@@ -226,15 +226,16 @@ test("une proposition sans valeur retenue ne devient pas une preuve affichée", 
   assert.equal(fact(model, "siren")?.evidence, undefined);
 });
 
-test("G — multi-biens : état explicite et aucune projection partielle", () => {
+test("G — multi-biens : l'activité reste au niveau activité (jamais bloquée ni par bien)", () => {
   const input = workspace();
   input.fiscalYear.propertyIds.push("home-2");
   input.declarationDraft = { completedSteps: [], siren: "123456789", inpiConfirmedAt: "2026-02-10" };
+  // MB-MULTI-V3-READMODEL-1 — l'activité (F009) est au niveau ACTIVITÉ : lue à l'identique en multi, jamais dupliquée ni bloquée.
   const activity = buildV3DossierDetailReadModel(input).activity;
-  assert.equal(activity.status, "unsupported");
-  assert.ok(activity.facts.every(item => item.value === null));
-  assert.deepEqual(activity.sources, []);
-  assert.match(activity.summary, /multi-biens/);
+  assert.notEqual(activity.status, "unsupported");
+  assert.equal(fact({ activity } as never, "siren")?.value, "123456789");
+  assert.deepEqual(activity, buildV3DossierDetailReadModel(input, "home-2").activity, "indépendante du bien actif");
+  assert.deepEqual(activity, buildV3DossierDetailReadModel(input, "unknown").activity, "même un bien inconnu ne change pas l'activité");
 });
 
 test("Property A — logement complet : valeurs canoniques et statut de l'assistant F010", () => {
@@ -339,10 +340,14 @@ test("Property G — multi-biens : jamais le premier bien choisi silencieusement
   input.properties.push({ id: "home-2", label: "Second bien", address: "2 rue Test", city: "Lyon", postalCode: "69002" });
   input.fiscalYear.propertyIds.push("home-2");
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(model.property.status, "unsupported");
+  // Sans bien actif : sélection requise, aucune donnée, jamais le premier bien.
+  assert.equal(model.property.status, "selection_required");
   assert.ok(model.property.facts.every(item => item.value === null));
   assert.deepEqual(model.property.sources, []);
-  assert.match(model.property.summary, /multi-biens/);
+  assert.match(model.property.summary, /Choisissez un bien/);
+  // Dossier multi à plat (non scopé) : même un bien explicite n'est pas attribuable → fail-closed.
+  assert.equal(buildV3DossierDetailReadModel(input, "home-2").property.status, "unsupported");
+  assert.equal(buildV3DossierDetailReadModel(input, "inconnu").property.status, "unsupported");
 });
 
 test("Property — l'output F010 d'un exercice différent n'est pas utilisé (year-safety)", () => {
@@ -481,9 +486,10 @@ test("Financing I — multi-biens : garde identique à Activité/Logement", () =
   input.fiscalYear.propertyIds.push("home-2");
   input.declarationDraft = { completedSteps: [], creditFinancing: { loans: [loan()], summary: { fiscalYearLabel: "2026", annualInterest: 0, annualInsurance: 0, remainingCapital: 0 }, installments: [] } };
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(model.financing.status, "unsupported");
+  assert.equal(model.financing.status, "selection_required");
   assert.deepEqual(model.financing.facts, []);
-  assert.match(model.financing.summary, /multi-biens/);
+  assert.match(model.financing.summary, /Choisissez un bien/);
+  assert.equal(buildV3DossierDetailReadModel(input, "home-2").financing.status, "unsupported", "dossier à plat : données non attribuables");
 });
 
 test("Financing — un prêt exclu du calcul de l'exercice l'indique explicitement, sans être masqué", () => {
@@ -703,9 +709,10 @@ test("Revenue J — multi-biens : garde identique aux autres domaines", () => {
   input.fiscalYear.propertyIds.push("home-2");
   input.declarationDraft = { completedSteps: [], revenusConfirmedAt: "2026-01-01", revenusAssistant: revenusOutput() };
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(model.revenue.status, "unsupported");
+  assert.equal(model.revenue.status, "selection_required");
   assert.deepEqual(model.revenue.facts, []);
-  assert.match(model.revenue.summary, /multi-biens/);
+  assert.match(model.revenue.summary, /Choisissez un bien/);
+  assert.equal(buildV3DossierDetailReadModel(input, "home-2").revenue.status, "unsupported", "dossier à plat : données non attribuables");
 });
 
 test("Charges A — F012 complet : statut confirmé, projection exacte des totaux et catégories", () => {
@@ -852,9 +859,10 @@ test("Charges L — multi-biens : garde identique aux autres domaines", () => {
   input.fiscalYear.propertyIds.push("home-2");
   input.declarationDraft = { completedSteps: [], chargesAssistant: chargesOutput() };
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(model.charges.status, "unsupported");
+  assert.equal(model.charges.status, "selection_required");
   assert.deepEqual(model.charges.facts, []);
-  assert.match(model.charges.summary, /multi-biens/);
+  assert.match(model.charges.summary, /Choisissez un bien/);
+  assert.equal(buildV3DossierDetailReadModel(input, "home-2").charges.status, "unsupported", "dossier à plat : données non attribuables");
 });
 
 test("Charges M — REAL sans données : aucune fixture de dépenses ne fuit", () => {
@@ -952,9 +960,10 @@ test("Amortization J — multi-biens : garde identique aux autres domaines", () 
   input.fiscalYear.propertyIds.push("home-2");
   input.declarationDraft = { completedSteps: [], amortissementAssistant: amortissementOutput() };
   const model = buildV3DossierDetailReadModel(input);
-  assert.equal(model.amortization.status, "unsupported");
+  assert.equal(model.amortization.status, "selection_required");
   assert.deepEqual(model.amortization.facts, []);
-  assert.match(model.amortization.summary, /multi-biens/);
+  assert.match(model.amortization.summary, /Choisissez un bien/);
+  assert.equal(buildV3DossierDetailReadModel(input, "home-2").amortization.status, "unsupported", "dossier à plat : données non attribuables");
 });
 
 test("Amortization K — REAL sans données : aucune fixture d'amortissement ne fuit", () => {

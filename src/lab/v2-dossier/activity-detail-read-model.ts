@@ -4,7 +4,7 @@ import { readActiviteFieldProvenance } from "@/lib/lmnp/services/activite-field-
 import { hasF009Decisions, remainingQuestions, restoreF009, validActivityDate } from "@/runtime/assistants/f009-activite/assistant";
 import type { F009DocumentFieldKey, F009QuestionStep, F009State } from "@/runtime/assistants/f009-activite/types";
 import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./document-read-model";
-import { isMultiProperty, known } from "./read-model";
+import { known } from "./read-model";
 
 /**
  * R15.3 — structured projection of the Activité (F009) data for the V3 workspace.
@@ -83,10 +83,7 @@ function processingStatusFor(id: string, documents: V3DocumentsReadModel | undef
 
 export function buildV3ActivityDetail(workspace: PersistedWorkspace, documents?: V3DocumentsReadModel): V3ActivityDetail {
   const year = workspace.fiscalYear.year;
-  // Fail-closed, like the flat read model: never a partial aggregate for several properties.
-  if (isMultiProperty(workspace)) {
-    return { state: "unsupported", year, confirmed: false, facts: [], additional: [], remaining: [], decisions: [], documents: [] };
-  }
+  // MB-MULTI-V3-READMODEL-1 — F009 est au niveau ACTIVITÉ : même lecture en mono et en multi, jamais par bien.
   const draft = workspace.declarationDraft;
   const confirmed = Boolean(draft?.inpiConfirmedAt);
   const status: V3ActivityFactStatus = confirmed ? "retained" : "to_confirm";

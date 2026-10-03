@@ -245,7 +245,7 @@ test("R8 — workspace partiel et sans fiscalResult : six projections stables, a
   assert.ok(declaration?.facts.every(fact => fact.value === null));
 });
 
-test("R8 — multi-biens : le garde unsupported reste actif", async () => {
+test("R8 — multi-biens : sans bien actif, la rubrique bien reste fermée (selection_required)", async () => {
   const ws = workspace();
   ws.properties = [
     { id: "p1", label: "Bien 1", address: "", city: "", postalCode: "" },
@@ -254,7 +254,7 @@ test("R8 — multi-biens : le garde unsupported reste actif", async () => {
   const result = await loadRealWorkspace(dossier.user_id, services({ snapshots: [snapshot(ws)] }));
   assert.equal(result.status, "ready");
   if (result.status !== "ready") return;
-  assert.equal(resolveV3Property({ mode: "real", workspace: result.workspace })?.status, "unsupported");
+  assert.equal(resolveV3Property({ mode: "real", workspace: result.workspace })?.status, "selection_required");
 });
 
 test("R8 — un résultat persisté sans signal de fraîcheur reste stale", async () => {

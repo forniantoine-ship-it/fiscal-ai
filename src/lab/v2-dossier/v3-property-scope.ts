@@ -106,3 +106,22 @@ export function resolveV3MonoBienSource(workspace: PersistedWorkspace): V3MonoBi
   }
   return { kind: "unsupported" };
 }
+
+/**
+ * MB-MULTI-V3-READMODEL-1 — source des domaines F010–F014 du bien ACTIF d'un dossier multi-bien. Mono : inchangé
+ * (`resolveV3MonoBienSource`). Multi : le bien actif doit être fourni explicitement (URL → scope vérifié) ; il est relu par
+ * `resolveBienDraftForRead` (connu de l'exercice, non ambigu, BienDraft scopé lisible). Sans bien actif : `selection_required`
+ * (jamais « le premier bien ») ; bien inconnu / étranger / illisible : `unsupported`. Les données lues sont celles de CE bien seul.
+ */
+export type V3ActiveBienSource = V3MonoBienSource | { kind: "selection_required" };
+
+export function isMultiPropertyExercise(workspace: Pick<PersistedWorkspace, "properties" | "fiscalYear">): boolean {
+  return workspace.properties.length > 1 || workspace.fiscalYear.propertyIds.length > 1;
+}
+
+export function resolveV3ActiveBienSource(workspace: PersistedWorkspace, activePropertyId?: string | null): V3ActiveBienSource {
+  if (!isMultiPropertyExercise(workspace)) return resolveV3MonoBienSource(workspace);
+  if (typeof activePropertyId !== "string" || !activePropertyId.trim()) return { kind: "selection_required" };
+  const read = resolveBienDraftForRead(workspace, activePropertyId);
+  return read.status === "resolved" ? { kind: "bien", propertyId: read.propertyId, draft: read.view } : { kind: "unsupported" };
+}

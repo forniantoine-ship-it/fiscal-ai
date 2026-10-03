@@ -8,8 +8,8 @@ import type { V3DocumentProcessingStatus, V3DocumentsReadModel } from "./documen
 import {
   LOAN_FACT_PROVENANCE_KEY, V3_LOAN_EXCLUSION_PHRASES, loanExclusionCauses, type V3LoanExclusionCode,
 } from "./financing-shared";
-import { fieldSourceLabel, isMultiProperty, known, percent } from "./read-model";
-import { resolveV3MonoBienSource } from "./v3-property-scope";
+import { fieldSourceLabel, known, percent } from "./read-model";
+import { resolveV3ActiveBienSource } from "./v3-property-scope";
 
 /**
  * R15 — structured, per-loan projection of the persisted Financement data for the V3 workspace.
@@ -190,16 +190,17 @@ function buildTotals(output: NonNullable<PersistedWorkspace["declarationDraft"]>
   };
 }
 
-export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?: V3DocumentsReadModel): V3FinancingDetail {
+export function buildV3FinancingDetail(workspace: PersistedWorkspace, documents?: V3DocumentsReadModel, activePropertyId?: string | null): V3FinancingDetail {
   const year = workspace.fiscalYear.year;
   // R2A — F011 is property-scoped: its values come from the single property's BienDraft (legacy mono: the draft itself).
-  const source = resolveV3MonoBienSource(workspace);
-  const stepDraft = source.kind === "unsupported" ? workspace.declarationDraft : source.draft;
+  // MB-MULTI-V3-READMODEL-1 — multi : le bien ACTIF explicite (jamais le premier) ; sans lui, fail-closed.
+  const source = resolveV3ActiveBienSource(workspace, activePropertyId);
+  const stepDraft = source.kind === "unsupported" || source.kind === "selection_required" ? workspace.declarationDraft : source.draft;
   const stepStatus = buildDossierSteps(stepDraft, year).find(step => step.id === "credit")?.status ?? "incomplete";
   const empty = (state: V3FinancingState): V3FinancingDetail => ({
     state, stepStatus, year, loans: [], schedule: { state: "unavailable", reason: "absent" }, documents: [],
   });
-  if (isMultiProperty(workspace) || source.kind === "unsupported") return empty("unsupported");
+  if (source.kind === "unsupported" || source.kind === "selection_required") return empty("unsupported");
 
   const draft = source.draft;
   const financing = draft?.creditFinancing;

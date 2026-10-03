@@ -122,12 +122,12 @@ test("9. conflit en attente : exposé tel quel, jamais résolu", async () => {
   assert.equal(byId(detail, "siret")?.value, "80890035100020", "la valeur retenue n'est pas remplacée silencieusement");
 });
 
-test("11. multi-biens : fail-closed, aucune donnée agrégée", async () => {
+test("11. multi-biens : l'activité reste lisible au niveau activité (jamais par bien, jamais bloquée)", async () => {
   const workspace = workspaceOf(persisted(await confirmedState(), true));
   workspace.properties.push({ id: "home-2", label: "Autre", address: "2 rue Y", city: "Lyon", postalCode: "69001" });
   const detail = buildV3ActivityDetail(workspace);
-  assert.equal(detail.state, "unsupported");
-  assert.deepEqual([detail.facts, detail.remaining, detail.decisions, detail.documents], [[], [], [], []]);
+  assert.equal(detail.state, "known");
+  assert.deepEqual(detail, buildV3ActivityDetail({ ...workspace, properties: workspace.properties.slice(0, 1), fiscalYear: { ...workspace.fiscalYear, propertyIds: workspace.fiscalYear.propertyIds.slice(0, 1) } }), "identique au mono : F009 ne dépend d'aucun bien");
 });
 
 test("14. anciens dossiers compatibles : draft sans état d'assistant, sans provenance, sans mise en service", () => {
