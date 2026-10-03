@@ -2,8 +2,8 @@
 id: SAV-032
 title: "Neutralisation du résultat LMNP non professionnel dans la 2033-B"
 type: savoir
-status: draft
-version: "0.1"
+status: approved
+version: "1.0"
 created: 2026-10-03
 updated: 2026-10-03
 owner: product-owner
@@ -75,6 +75,7 @@ Cette règle remplace, pour une activité LMNP exclusive, l'hypothèse d'un repo
 
 ## Limites et réserves
 
+- *Approbation (2026-10-03, Product Owner) : les réserves ci-dessous sont des limites de preuve documentées d'un Savoir approuvé ; elles ne le remettent pas en draft.*
 - **Aucun dossier bénéficiaire réel accepté** n'est disponible : le sens « bénéfice déduit en 350 » repose sur le texte officiel (notice, rubriques 350 et 690), pas sur un oracle réel. La décomposition du cas bénéficiaire (non-déductible en 330, ARD inclus dans le total 350) en est déduite.
 - Le **BOFiP** (BOI-BIC-DEF-20-10 §§ 80 à 100) fonde l'individualisation du résultat non professionnel (cadre H de la 2031-SD et 2031 Bis-SD) mais **ne cite ni la ligne 330 ni la ligne 350** : la preuve des lignes repose sur la notice DGFiP, les formulaires et le dossier témoin.
 - Le lieu d'imputation des déficits LMNP antérieurs dans la déclaration personnelle (2042-C-PRO) n'est pas établi officiellement ici (notice 2042-C-PRO non consultée) : dette d'audit, hors périmètre.
