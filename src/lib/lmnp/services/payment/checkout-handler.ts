@@ -44,6 +44,7 @@ import {
   type PaymentRow,
 } from "./payment-server";
 import { GENERATION_PRICE_CENTS, PAYMENT_CURRENCY } from "./price";
+import { buildStripeReturnUrls } from "./stripe-return-context";
 import { resolveServerPriorHistoryEligibility, type ClientContinuityFacts } from "./server-prior-history";
 
 type CheckoutBody = {
@@ -178,7 +179,8 @@ export async function handleCheckoutRequest(
     if (reusable) return reusable;
 
     const origin = new URL(request.url).origin;
-    const returnBase = `${origin}/documents?step=validation&fy=${fiscalYear}`;
+    // Contexte de navigation du retour : (dossier, exercice) d'origine, jamais un bien ni une révision ; pas une autorité de paiement.
+    const { successUrl, cancelUrl } = buildStripeReturnUrls({ origin, fiscalYear, dossierId });
     const session = await deps.stripe.createCheckoutSession({
       paymentId: row.id,
       dossierId,
@@ -187,8 +189,8 @@ export async function handleCheckoutRequest(
       // Prix et devise : serveur uniquement, jamais le payload.
       amountCents: GENERATION_PRICE_CENTS,
       currency: PAYMENT_CURRENCY,
-      successUrl: `${returnBase}&checkout=success`,
-      cancelUrl: `${returnBase}&checkout=cancelled`,
+      successUrl,
+      cancelUrl,
       idempotencyKey: `lmnp-checkout-${row.id}-${Math.floor(Date.now() / 60_000)}`,
     });
     await deps.store.attachSession(row.id, session.id);

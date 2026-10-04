@@ -3,12 +3,12 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.5"
+version: "1.6"
 created: 2026-10-03
 updated: 2026-10-04
 owner: product-owner
 tags: [adr, multi-biens, lmnp, perimetre, fail-closed, activation]
-triggers: [MB-ACTIVATION-AUDIT-2, MB-MULTI-DOMAIN-GUARD-1, MB-MULTI-JOURNEY-COMPLETION-2]
+triggers: [MB-ACTIVATION-AUDIT-2, MB-MULTI-DOMAIN-GUARD-1, MB-MULTI-JOURNEY-COMPLETION-2, MB-MULTI-STRIPE-RETURN-CONTEXT-1]
 éclaire: [SAV-030, SAV-031, SAV-032, SAV-033, F-002, PROF-005]
 ---
 
@@ -99,6 +99,6 @@ Décision d'ingénierie, sans nouvelle doctrine fiscale : le parcours utilisateu
 - **Aucune dépendance au LAB** : « Mes biens » (`/assistants/biens`), les assistants par bien, les documents (`/documents`) et la validation (`/documents?step=validation`) sont des routes de production. Les routes `/lab` restent fermées en production sans `ENABLE_V3_REAL_TEST_ROUTE`, qui n'est plus nécessaire au parcours supporté. Le scope de production réutilise le contrat de scope V3 (dossier, exercice, bien) avec un marqueur de retour `dossier` vers « Mes biens » ; il est dérivé du dossier déjà chargé et revérifié côté serveur à l'arrivée.
 - **Entrée en multi** : avant `ADD_PROPERTY` (irréversible, sans suppression de bien), l'interface évalue l'admission d'entrée par la garde unique de domaine : tout motif connu avant génération et non récupérable (exercice non initial, reprise, déficit ou ARD d'ouverture, LMP, détention indirecte, régime) refuse l'ajout et le motif est affiché. Les motifs récupérables (attestations, document non attribué, date de mise en service du nouveau bien) ne le refusent pas. Ce que seuls la consolidation ou le calcul établissent (charges communes, prêt partagé, ARD généré / 39 C) n'est pas connaissable à l'entrée : il reste refusé à la génération, au checkout et à la livraison (fail-closed côté serveur).
 - **Enregistrement véridique** : l'issue d'un ajout de bien est décidée par la seule révision serveur confirmée (primitive partagée avec le checkout et la livraison) ; « rien en attente » n'est pas un échec ; un échec propose de réessayer l'enregistrement, sans afficher de succès.
-- **Paiement** : l'interdiction côté client « parcours multi-dossier » est levée. Le checkout reste le chemin serveur existant (vidage de l'autosave → snapshot serveur → admission → ligne → session) ; le retour Stripe porte uniquement l'exercice (`/documents?step=validation&fy=…`), jamais un bien ni une révision, et le contexte multi est reconstruit depuis l'état persisté.
+- **Paiement** : l'interdiction côté client « parcours multi-dossier » est levée. Le checkout reste le chemin serveur existant (vidage de l'autosave → snapshot serveur → admission → ligne → session) ; le retour Stripe porte uniquement le dossier et l'exercice d'origine (`/documents?step=validation&fy=…&dossierId=…`, MB-MULTI-STRIPE-RETURN-CONTEXT-1), jamais un bien ni une révision, et le contexte multi est reconstruit depuis l'état persisté. Cette URL est un contexte de navigation, jamais une autorité : la porte d'entrée revérifie la propriété du dossier demandé avant de le charger, l'entitlement reste (dossier, exercice) côté serveur, et un retour sans `dossierId` (ancien lien) garde le comportement historique (dossier par défaut du fournisseur).
 - **Ouverture** : basculer `edition` reste une décision et une mission distinctes, après recette de bout en bout.
 

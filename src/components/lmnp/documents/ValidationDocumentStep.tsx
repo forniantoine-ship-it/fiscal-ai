@@ -46,6 +46,7 @@ import {
   resolveDeliveryContext,
 } from "@/lib/lmnp/services/payment/entitlement-client";
 import { startCheckoutAfterFlush } from "@/lib/lmnp/services/payment/checkout-flush";
+import { readStripeReturnContext } from "@/lib/lmnp/services/payment/stripe-return-context";
 import { useServerPaymentSync } from "@/components/lmnp/payment/useServerPaymentSync";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
 import {
@@ -255,18 +256,23 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   useEffect(() => {
     if (returnHandled.current || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    const outcome = params.get("checkout");
-    if (!outcome) return;
+    if (!params.has("checkout")) return;
     returnHandled.current = true;
-    const year = Number(params.get("fy"));
+    // Contexte de navigation du retour (dossier, exercice) : lu par l'unique lecteur. Il n'autorise rien — la porte d'entrée a déjà
+    // vérifié la propriété du dossier demandé avant de le charger, et le paiement n'est jamais déduit de l'URL (entitlement serveur).
+    const context = readStripeReturnContext(params);
     params.delete("checkout");
     params.delete("fy");
     const query = params.toString();
+    // `dossierId` reste dans l'URL : un rechargement garde le même dossier.
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    // Un dossier désigné qui n'est pas celui chargé (ou illisible) ne déclenche aucune vérification de paiement.
+    const sameDossier = context.dossier.kind === "legacy"
+      || (context.dossier.kind === "explicit" && context.dossier.id === fiscalYear.dossierId?.toLowerCase());
     // Annulation : retour propre au tunnel, aucun droit, le client peut réessayer.
     // Volontairement asynchrone : aucun setState synchrone dans le corps de l'effet.
-    if (outcome === "success" && year === fiscalYear.year) queueMicrotask(() => void verifyPayment());
-  }, [fiscalYear.year, verifyPayment]);
+    if (context.checkout === "success" && sameDossier && context.fiscalYear === fiscalYear.year) queueMicrotask(() => void verifyPayment());
+  }, [fiscalYear.year, fiscalYear.dossierId, verifyPayment]);
 
   // Une fois le paiement CONFIRMÉ par le serveur : on poursuit comme avant le
   // paiement (génération si le dossier est générable, sinon suite du parcours).

@@ -124,7 +124,7 @@ describe("checkout multi : le chemin serveur existant, sans interdiction de port
 });
 
 describe("retour Stripe : (dossier, exercice), jamais un bien ni une révision ; le contexte multi vient de l'état persisté", () => {
-  it("J — l'URL de retour porte l'exercice seulement ; aucun bien, aucune révision, aucune capacité", async () => {
+  it("J — l'URL de retour porte l'exercice (et le dossier s'il est un identifiant valide, voir stripe-return-context.test.ts) ; aucun bien, aucune révision, aucune capacité", async () => {
     const { env, declareEligible, checkout } = setup(MULTI(SUPPORTED()));
     await declareEligible();
     await checkout();
@@ -147,8 +147,9 @@ describe("retour Stripe : (dossier, exercice), jamais un bien ni une révision ;
     assert.equal(isMultiPropertyWorkspace(persisted), true);
     assert.equal(resolveMultiPropertyDomainReadiness(persisted).status, "supported");
     const step = read("src/components/lmnp/documents/ValidationDocumentStep.tsx");
-    assert.match(step, /params\.get\("checkout"\)/);
-    assert.match(step, /Number\(params\.get\("fy"\)\)/);
+    // Le contexte de retour est lu par l'unique lecteur (dossier + exercice) — voir stripe-return-context.test.ts.
+    assert.match(step, /readStripeReturnContext\(params\)/);
+    assert.match(step, /context\.fiscalYear === fiscalYear\.year/);
   });
 
   it("K — payé : l'accès à la livraison est ouvert pour (dossier, exercice) et le serveur livre depuis son snapshot recalculé (un seul F-006)", async () => {
