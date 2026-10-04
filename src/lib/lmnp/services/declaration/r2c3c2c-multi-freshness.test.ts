@@ -490,9 +490,14 @@ describe("R2C.3c2c — garde-fous de périmètre", () => {
     }
   });
 
-  it("C37 — la gate est le seul appelant PREVIEW du service workspace ; l'écran de validation (génération mono, R2C.3c2d) est le seul autre appelant", () => {
+  it("C37 — la gate est le seul appelant PREVIEW du service workspace ; l'écran de validation (génération mono, R2C.3c2d) et la livraison serveur autoritative (TRUST-2) sont les seuls autres appelants", () => {
     const callers = files().filter((file) => !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") && src(file).includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    assert.deepEqual(callers, [
+      "src/components/lmnp/documents/ValidationDocumentStep.tsx",
+      // MB-MULTI-SERVER-TRUST-2 (857c248) — la livraison recalcule côté serveur via le MÊME pipeline (un seul F-006), jamais depuis une RFS client.
+      "src/lib/lmnp/services/declaration/authoritative-delivery.ts",
+      "src/lib/lmnp/services/declaration/declaration-generation-gate.ts",
+    ]);
     const gate = src("src/lib/lmnp/services/declaration/declaration-generation-gate.ts");
     assert.doesNotMatch(gate, /\bdispatch\s*\(|localStorage|indexedDB|\bfetch\s*\(|\.upsert\(|\.insert\(|putScopedWorkspaceRecord|JOURNEY_MARK|appendDeclarationVersion/);
   });

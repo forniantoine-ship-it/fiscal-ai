@@ -545,11 +545,16 @@ describe("R2C.3c2b — séparation technique / activation / paiement ; périmèt
   // Ancré sur le commit 3c2b lui-même (04e7e98..283ce27) : l'invariant « 3c2b ne touche pas ces fichiers » ne dépend pas des slices suivantes.
   const diffAgainstBaseline = (paths: string[]) => execSync(`git diff --name-only ${BASELINE} 283ce277429a10510d7cb6ecc6861552bf5de92c -- ${paths.join(" ")}`, { cwd: ROOT, encoding: "utf8" }).trim();
 
-  it("B31 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d)", () => {
+  it("B31 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d) ; la livraison serveur autoritative (TRUST-2)", () => {
     const callers = files().filter((file) =>
       !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") &&
       readFileSync(path.join(ROOT, file), "utf8").includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    assert.deepEqual(callers, [
+      "src/components/lmnp/documents/ValidationDocumentStep.tsx",
+      // MB-MULTI-SERVER-TRUST-2 (857c248) — la livraison recalcule côté serveur via le MÊME pipeline (un seul F-006), jamais depuis une RFS client.
+      "src/lib/lmnp/services/declaration/authoritative-delivery.ts",
+      "src/lib/lmnp/services/declaration/declaration-generation-gate.ts",
+    ]);
   });
 
   it("consommateurs de production des nouveaux modules : la gate (R2C.3c2c) et le composant de présentation des raisons (types, R2C.3c2d) ; aucun parcours de génération", () => {

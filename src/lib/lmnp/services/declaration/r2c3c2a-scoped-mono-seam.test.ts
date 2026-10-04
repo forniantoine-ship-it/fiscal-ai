@@ -340,11 +340,16 @@ describe("R2C.3c2a — A15 : blockingReasons du pipeline multi inchangées", () 
 describe("R2C.3c2a — garde-fous de périmètre", () => {
   const files = () => execSync("git ls-files 'src/**/*.ts' 'src/**/*.tsx'", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 
-  it("A16 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d)", () => {
+  it("A16 — appelants de production de runDeclarationGenerationFromWorkspace : le preview pur de la gate (R2C.3c2c) et l'écran de validation, gardé contre le multi (R2C.3c2d) ; la livraison serveur autoritative (TRUST-2)", () => {
     const callers = files().filter((file) =>
       !/\.test\.tsx?$/.test(file) && !file.endsWith("generation-workspace.ts") &&
       readFileSync(path.join(ROOT, file), "utf8").includes("runDeclarationGenerationFromWorkspace"));
-    assert.deepEqual(callers, ["src/components/lmnp/documents/ValidationDocumentStep.tsx", "src/lib/lmnp/services/declaration/declaration-generation-gate.ts"]);
+    assert.deepEqual(callers, [
+      "src/components/lmnp/documents/ValidationDocumentStep.tsx",
+      // MB-MULTI-SERVER-TRUST-2 (857c248) — la livraison recalcule côté serveur via le MÊME pipeline (un seul F-006), jamais depuis une RFS client.
+      "src/lib/lmnp/services/declaration/authoritative-delivery.ts",
+      "src/lib/lmnp/services/declaration/declaration-generation-gate.ts",
+    ]);
   });
 
   it("A17 — les capacités d'activation multi restent toutes fermées", () => {
