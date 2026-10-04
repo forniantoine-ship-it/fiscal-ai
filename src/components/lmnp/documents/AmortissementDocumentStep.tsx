@@ -1034,6 +1034,7 @@ export function AmortissementDocumentStep({ isActive = true }: TunnelStepProps) 
         documentId: meta?.supabaseDocumentIds?.[index],
         isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
         storagePath: meta?.filePaths?.[index],
+        propertyId: uploadScope.propertyId,
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence" as const,
       })),

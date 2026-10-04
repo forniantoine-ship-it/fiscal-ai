@@ -98,6 +98,8 @@ export type LmnpAction =
          * for documents-table reconcile.
          */
         storagePath?: string;
+        /** Exact property relation sent to the document upload; absent legacy mono stays compatible. */
+        propertyId?: string;
         /**
          * Lot 2 — calendar year of origin. Defaults to the active workspace
          * year when omitted (local-only producers). Server uploads must already
@@ -672,12 +674,12 @@ function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "UPLOAD_DOCUMENTS": {
       const now = nowIso();
       const newDocs: LmnpDocument[] = action.files.map(
-        ({ file, category, documentId, isSupabaseDocumentId, storagePath, fiscalYear, documentRole }) => ({
+        ({ file, category, documentId, isSupabaseDocumentId, storagePath, fiscalYear, documentRole, propertyId }) => ({
           id: documentId ?? crypto.randomUUID(),
           fiscalYearId: state.fiscalYear.id,
           fiscalYear: fiscalYear ?? state.fiscalYear.year,
           documentRole: documentRole ?? "annual_evidence",
-          propertyId: resolveMonoPropertyId(state),
+          propertyId: propertyId ?? resolveMonoPropertyId(state),
           fileName: file.name,
           mimeType: file.type || "application/octet-stream",
           sizeBytes: file.size,

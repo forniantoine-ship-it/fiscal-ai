@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useOptionalLmnp } from "@/lib/lmnp/store";
+import { productionWorkspaceHref } from "@/lib/lmnp/dossier/production-dossier-scope";
 import { isValidElement, type ComponentProps, type KeyboardEvent } from "react";
 import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 import { v3ScopedNavigationHref } from "@/lab/v2-dossier/correction-scope";
 import { scopedOwnerTarget } from "./scoped-owner-target";
 import { useV3CorrectionReturn } from "./useV3CorrectionReturn";
 
-/** One navigation rule shared by every owner panel. Legacy routes keep their original href. */
+/** Owner navigation keeps the loaded dossier/year; standalone presentation keeps its original href. */
 export function useScopedOwnerHref(href: string): string | null {
   const scope = useV3CorrectionScope();
-  return v3ScopedNavigationHref(href, scope);
+  const context = useOptionalLmnp();
+  return scope ? v3ScopedNavigationHref(href, scope)
+    : context ? productionWorkspaceHref(href, context.workspace) : href;
 }
 
 /**
@@ -56,8 +60,10 @@ function V3DossierExit({ children, className, style }: Pick<ComponentProps<typeo
 
 export function ScopedOwnerLink({ href, children, ...props }: ComponentProps<typeof Link>) {
   const scope = useV3CorrectionScope();
-  const target = scopedOwnerTarget(typeof href === "string" ? href : `${href.pathname ?? ""}${href.search ?? ""}`, scope);
+  const rawHref = typeof href === "string" ? href : `${href.pathname ?? ""}${href.search ?? ""}`;
+  const scopedHref = useScopedOwnerHref(rawHref);
+  const target = scopedOwnerTarget(rawHref, scope);
   if (target.kind === "exit") return <V3DossierExit className={props.className} style={props.style}>{children}</V3DossierExit>;
   if (target.kind === "disabled") return <span className={props.className} style={props.style} aria-disabled="true">{children}</span>;
-  return <Link href={target.href} {...props}>{children}</Link>;
+  return <Link href={scopedHref ?? target.href} {...props}>{children}</Link>;
 }

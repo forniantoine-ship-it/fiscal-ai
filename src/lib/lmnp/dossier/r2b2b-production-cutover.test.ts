@@ -304,13 +304,13 @@ describe("R2B.2b — champs mixtes, revenus, documents", () => {
 });
 
 describe("R2B.2b — N → P : Tunnel A", () => {
-  it("N / O — disponible en legacy, inaccessible en scopé", async () => {
+  it("N / O — écritures du Tunnel A disponibles en legacy, gelées en scopé", async () => {
     const { legacy, scoped } = await scopedAB();
     const { isTunnelAAvailable } = scopeApi();
     assert.equal(isTunnelAAvailable(legacy), true);
     assert.equal(isTunnelAAvailable(scoped), false);
-    const workspace = source("src/components/lmnp/documents/DocumentsWorkspace.tsx");
-    assert.match(workspace, /isTunnelAAvailable\(/);
+    // Documents entry is governed by domain readiness (MB-MULTI-E2E-DEFECT-FIX-1).
+    // Behavioral rendering coverage lives in mb-multi-e2e-defects.test.tsx.
   });
 
   it("P — actions Tunnel A toujours refusées par le reducer en scopé", async () => {

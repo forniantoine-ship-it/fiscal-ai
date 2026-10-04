@@ -7,7 +7,7 @@ import { isMultiPropertyWorkspace, type MultiPropertyCapabilities } from "@/lib/
 import { describeMultiPropertyDomainReasons } from "@/lib/lmnp/dossier/multi-property-domain-messages";
 import { recordMultiPropertyAttestation, type MultiPropertyAttestationAnswer, type MultiPropertyAttestationKind } from "@/lib/lmnp/dossier/multi-property-attestations";
 import { resolveMultiPropertyDomainReadiness } from "@/lib/lmnp/dossier/multi-property-readiness";
-import { deriveProductionScope, PRODUCTION_VALIDATION_HREF } from "@/lib/lmnp/dossier/production-dossier-scope";
+import { deriveProductionScope, productionWorkspaceHref, PRODUCTION_VALIDATION_HREF } from "@/lib/lmnp/dossier/production-dossier-scope";
 import { useLmnp } from "@/lib/lmnp/store";
 import { resolveAddPropertyOutcome, toConfirmedSave } from "./add-property-return";
 import { DomainReadinessList } from "./DomainReadinessList";
@@ -137,7 +137,7 @@ export function PropertiesManager({ capabilities }: { capabilities?: MultiProper
         <p role="status" className="rounded-lg border p-3 text-sm text-ink-muted">{REFUSALS.edition_not_enabled}</p>
       )}
 
-      {multi ? <a href={PRODUCTION_VALIDATION_HREF} className="text-sm underline">Passer à la validation de mon dossier</a> : null}
+      {multi ? <a href={productionWorkspaceHref(PRODUCTION_VALIDATION_HREF, workspace)} className="text-sm underline">Passer à la validation de mon dossier</a> : null}
 
       {multi ? (
         <>

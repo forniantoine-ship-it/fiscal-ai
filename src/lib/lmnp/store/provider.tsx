@@ -38,7 +38,7 @@ import {
   listWorkspaceSnapshots,
 } from "./workspace-snapshot-client";
 import { selectWorkspace, type LmnpAction, type LmnpState } from "./reducer";
-import { trackedWorkspaceReducer, workspaceCanPersist, workspaceIsDirty, type TrackedWorkspace } from "./workspace-dirty";
+import { trackedWorkspaceReducer, workspaceCanPersist, workspaceIsDirty, workspaceScopeKey, type TrackedWorkspace } from "./workspace-dirty";
 import { runCreateNextFiscalYear } from "./create-next-fiscal-year";
 import { runCloseAndCreateNextFiscalYear } from "./close-and-create-next-fiscal-year";
 import { loadArchivedWorkspaceFromServer } from "./fiscal-year-archive";
@@ -85,7 +85,7 @@ interface LmnpContextValue {
   persistenceUserId: string | null;
   /** Flush the committed workspace; legacy callers may still provide a draft patch. */
   flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
-  /** Correction V3 only: revision returned solely after a successful server CAS. */
+  /** Current hydrated workspace: revision returned solely after a successful server CAS. */
   confirmWorkspaceSave: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<ConfirmedWorkspaceSaveResult>;
   /**
    * MB-MULTI-SERVER-TRUST-2 — vide l'autosave, puis renvoie la révision serveur CONFIRMÉE que le serveur comparera à `expectedRevision`
@@ -618,11 +618,25 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       void patch;
       await awaitCommittedActions();
       const userId = authUserIdRef.current;
-      if (!correctionScope || !userId || !isReady || hydrationBlockedRef.current) {
+      if (!userId || !isReady || hydrationBlockedRef.current) {
         return { status: "failed", reason: "scope_unavailable" };
       }
       const current = toPersisted(stateRef.current);
-      if (!scopeMatchesWorkspace(correctionScope, current)) return { status: "failed", reason: "scope_mismatch" };
+      // The loaded workspace owns the save scope even on ordinary production URLs.
+      // An explicit correction still has to match; it never falls back to another dossier.
+      const saveScope = correctionScope ?? {
+        dossierId: current.fiscalYear.dossierId,
+        fiscalYearId: current.fiscalYear.id,
+        year: current.fiscalYear.year,
+        property: { kind: "not_applicable" as const },
+      };
+      if (!saveScope.dossierId || !saveScope.fiscalYearId || !Number.isInteger(saveScope.year)) {
+        return { status: "failed", reason: "scope_unavailable" };
+      }
+      if (!scopeMatchesWorkspace({ ...saveScope, dossierId: saveScope.dossierId }, current)) return { status: "failed", reason: "scope_mismatch" };
+      if (trackedRef.current.scopeKey !== workspaceScopeKey(userId, stateRef.current)) {
+        return { status: "failed", reason: "scope_unavailable" };
+      }
       if (!workspaceCanPersist(trackedRef.current, userId, isReady)) {
         return workspaceIsDirty(trackedRef.current)
           ? { status: "failed", reason: "scope_unavailable" }
@@ -632,7 +646,8 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       if (!scopeKey) return { status: "failed", reason: "scope_unavailable" };
       const result = await flushWorkspaceSaveConfirmed(userId, () => {
         const base = toPersisted(stateRef.current);
-        if (!scopeMatchesWorkspace(correctionScope, base)) throw new Error("scope_mismatch");
+        if (authUserIdRef.current !== userId || trackedRef.current.incarnation !== incarnation ||
+            !scopeMatchesWorkspace({ ...saveScope, dossierId: saveScope.dossierId! }, base)) throw new Error("scope_mismatch");
         return base;
       });
       if (result.status === "confirmed") {
@@ -825,6 +840,11 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       <LmnpContext.Provider value={value}>{children}</LmnpContext.Provider>
     </LmnpHydrationProvider>
   );
+}
+
+/** Read-only presentation may render outside the workspace provider. */
+export function useOptionalLmnp(): LmnpContextValue | null {
+  return useContext(LmnpContext);
 }
 
 export function useLmnp(): LmnpContextValue {

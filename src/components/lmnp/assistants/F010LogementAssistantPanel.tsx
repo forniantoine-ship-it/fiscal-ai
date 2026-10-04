@@ -1411,6 +1411,7 @@ function F010LogementAssistantPanelBody() {
               category: document.category,
               documentId,
               isSupabaseDocumentId: true,
+              propertyId: bienScope.propertyId,
               storagePath,
               fiscalYear: workspace.fiscalYear.year,
               documentRole: "durable_reference",

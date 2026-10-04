@@ -785,6 +785,7 @@ function F011FinancementAssistantPanelBody() {
             category: "emprunt",
             documentId,
             isSupabaseDocumentId: true,
+            propertyId: activePropertyId,
             storagePath,
             fiscalYear: workspace.fiscalYear.year,
             documentRole: "annual_evidence",

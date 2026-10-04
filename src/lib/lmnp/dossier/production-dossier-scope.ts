@@ -9,7 +9,7 @@
  *
  * Aucune règle métier ici : le bien actif reste explicite (jamais « le premier bien » en multi) et le domaine reste jugé par la garde unique.
  */
-import { propertyScopeFor, v3CorrectionHrefForResolvedScope, type V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
+import { propertyScopeFor, OWNER_ROUTES, v3CorrectionHrefForResolvedScope, type V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import type { PersistedWorkspace } from "../store/persistence";
 
 /**
@@ -32,4 +32,18 @@ export function deriveProductionScope(workspace: ScopeWorkspace, selectedPropert
 /** Lien de production vers un écran propriétaire (bien requis ou non selon la route), ou `null` si le scope ne peut pas être établi. */
 export function productionOwnerHref(ownerRoute: string, workspace: ScopeWorkspace, propertyId?: string): string | null {
   return v3CorrectionHrefForResolvedScope(ownerRoute, deriveProductionScope(workspace, propertyId));
+}
+
+/** Navigation context only: keep the currently loaded dossier/year on ordinary owner links.
+ * Ownership is still verified at the destination; property identity stays in the verified correction contract.
+ */
+export function productionWorkspaceHref(href: string, workspace: ScopeWorkspace): string {
+  const url = new URL(href, "http://workspace.local");
+  if (!href.startsWith("/") || url.origin !== "http://workspace.local" ||
+      (OWNER_ROUTES[url.pathname] === undefined && !/^\/declarations\/\d{4}$/.test(url.pathname))) return href;
+  const year = workspace.fiscalYear;
+  if (!year.dossierId || !Number.isInteger(year.year)) return href;
+  url.searchParams.set("dossierId", year.dossierId);
+  url.searchParams.set("fy", String(year.year));
+  return `${url.pathname}${url.search}${url.hash}`;
 }

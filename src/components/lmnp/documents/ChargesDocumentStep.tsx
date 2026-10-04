@@ -696,6 +696,7 @@ export function ChargesDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[index],
         isSupabaseDocumentId: true,
         storagePath: filePaths[index],
+        propertyId: uploadScope.propertyId,
         category: CHARGES_UPLOAD_CATEGORY,
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence" as const,

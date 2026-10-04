@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 import { v3CorrectionHrefForResolvedScope } from "@/lab/v2-dossier/correction-scope";
 import { isMultiPropertyCapabilityOpen, isMultiPropertyWorkspace, type MultiPropertyCapabilities } from "@/lib/lmnp/dossier/multi-property-activation";
-import { deriveProductionScope, PRODUCTION_VALIDATION_HREF } from "@/lib/lmnp/dossier/production-dossier-scope";
+import { deriveProductionScope, productionWorkspaceHref, PRODUCTION_VALIDATION_HREF } from "@/lib/lmnp/dossier/production-dossier-scope";
 import { useLmnp } from "@/lib/lmnp/store";
 import { PropertySelector } from "./PropertySelector";
 import { buildPropertySelectorItems } from "./property-selector-model";
@@ -42,7 +42,7 @@ export function ProductionPropertiesEntry({ capabilities }: { capabilities?: Mul
       {pathname === "/documents" ? <PropertySelector items={items} /> : null}
       <div className="flex flex-wrap gap-4 text-sm">
         {manageHref ? <a href={manageHref} className="underline">Mes biens{isMultiPropertyCapabilityOpen("edition", capabilities) ? " · Ajouter un bien" : ""}</a> : null}
-        {multi ? <a href={PRODUCTION_VALIDATION_HREF} className="underline">Valider mon dossier</a> : null}
+        {multi ? <a href={productionWorkspaceHref(PRODUCTION_VALIDATION_HREF, workspace)} className="underline">Valider mon dossier</a> : null}
       </div>
     </section>
   );

@@ -467,6 +467,7 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[index],
         isSupabaseDocumentId: true,
         storagePath: filePaths[index],
+        propertyId: uploadScope.propertyId,
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence" as const,
       })),

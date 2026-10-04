@@ -1574,6 +1574,7 @@ export function CreditDocumentStep({ isActive = true }: TunnelStepProps) {
         documentId: documentIds[i],
         isSupabaseDocumentId: true,
         storagePath: filePaths[i],
+        propertyId: uploadScope.propertyId,
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence" as const,
       })),

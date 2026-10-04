@@ -54,7 +54,7 @@ import {
   resolveLiasseCoverageState,
 } from "@/lib/lmnp/services/declaration/liasse-coverage-state";
 import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
-import { isMultiPropertyGenerationBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
+import { isMultiPropertyCapabilityBlocked, isMultiPropertyGenerationBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveImmobilisationsContinuityForGeneration } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import {
   canOfferPaymentWithoutCerfa,
@@ -191,6 +191,13 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const [checkoutMode, setCheckoutMode] = useState<"generate" | "pay-only">("generate");
 
   const canGenerate = gate.canGenerate && phase === "idle";
+  // The central generation gate already checks domain and technical readiness.
+  // Payment/delivery capabilities also have to be open to expose the existing checkout;
+  // its server admission remains authoritative after the confirmed autosave.
+  const multiCheckoutBlocked = snapshot.isMultiProperty && (
+    !gate.canGenerate || isMultiPropertyCapabilityBlocked(workspace, "payment") ||
+    isMultiPropertyCapabilityBlocked(workspace, "delivery")
+  );
   // P0 — bloqué : le contenu principal reste affiché (question + blocage
   // visibles, CTA désactivés), y compris pour un exercice déjà généré.
   const showMainContent = phase === "idle" && (priorHistoryBlocked || !generated || gate.canGenerate);
@@ -262,9 +269,8 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     // vérifié la propriété du dossier demandé avant de le charger, et le paiement n'est jamais déduit de l'URL (entitlement serveur).
     const context = readStripeReturnContext(params);
     params.delete("checkout");
-    params.delete("fy");
     const query = params.toString();
-    // `dossierId` reste dans l'URL : un rechargement garde le même dossier.
+    // `dossierId` et `fy` restent dans l’URL : un rechargement garde le même dossier/exercice.
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
     // Un dossier désigné qui n'est pas celui chargé (ou illisible) ne déclenche aucune vérification de paiement.
     const sameDossier = context.dossier.kind === "legacy"
@@ -663,7 +669,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
             {snapshot.deadlineLabel}
           </p>
 
-          {snapshot.isMultiProperty ? (
+          {multiCheckoutBlocked ? (
             <ValidationMultiPropertyBlock cardStyle={DOCUMENT_WORKFLOW_CARD_STYLE} reasons={multiBlockingRows} />
           ) : (
             <>

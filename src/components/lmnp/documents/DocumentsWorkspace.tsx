@@ -34,7 +34,10 @@ import { logPipelineEntry, logPipelineEntryEarlyReturn } from "@/lib/lmnp/servic
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useLmnp, useUploadPropertyScope } from "@/lib/lmnp/store";
 import type { DocumentCategory, LmnpDocument } from "@/lib/lmnp/types";
-import { isTunnelAAvailable } from "@/lib/lmnp/dossier/bien-scope";
+import { isMultiPropertyGenerationBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
+import { resolveMultiPropertyDomainReadiness } from "@/lib/lmnp/dossier/multi-property-readiness";
+import { describeMultiPropertyDomainReasons } from "@/lib/lmnp/dossier/multi-property-domain-messages";
+import { DomainReadinessList } from "@/components/lmnp/biens/DomainReadinessList";
 
 const STATUS_LABEL: Record<LmnpDocument["status"], string> = {
   uploaded: "En attente d'analyse",
@@ -327,6 +330,7 @@ function GenericDocumentStep({ stepId }: { stepId: DocumentJourneyStepId }) {
         documentId: meta?.supabaseDocumentIds?.[index],
         isSupabaseDocumentId: Boolean(meta?.supabaseDocumentIds?.[index]),
         storagePath: meta?.filePaths?.[index],
+        propertyId: uploadScope.propertyId,
         fiscalYear: workspace.fiscalYear.year,
         documentRole: "annual_evidence" as const,
       })),
@@ -416,14 +420,14 @@ export function DocumentsWorkspace() {
   console.log("[render-checkpoint]", "DocumentsWorkspace", "entry");
   const searchParams = useSearchParams();
   const { workspace } = useLmnp();
-  // R2B.2b — Tunnel A (parcours historique mono) : inaccessible pour un dossier multi-bien scopé. Aucune étape, aucune
-  // zone de dépôt n'est montée ; le reducer reste la seconde barrière (actions Tunnel A refusées).
-  if (!isTunnelAAvailable(workspace)) {
-    return (
-      <div role="status" className="rounded-lg border p-4 text-sm text-ink-muted">
-        Ce parcours documentaire n’est pas disponible pour un dossier comportant plusieurs logements.
-      </div>
-    );
+  // R2B.2b protected the flat Tunnel A writes. Its reducer barriers stay closed;
+  // access to the existing Documents/validation journey now follows ADR-011 readiness.
+  const readiness = resolveMultiPropertyDomainReadiness(workspace);
+  if (isMultiPropertyGenerationBlocked(workspace)) {
+    return <div role="status">La génération pour plusieurs biens n’est pas disponible.</div>;
+  }
+  if (readiness.status === "unsupported") {
+    return <DomainReadinessList supported={false} reasons={describeMultiPropertyDomainReasons(readiness.reasons, workspace.properties)} />;
   }
   const stepId = resolveStepId(searchParams.get("step"));
   const activeTunnel = resolvePersistedTunnel(stepId);
