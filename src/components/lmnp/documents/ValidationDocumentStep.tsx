@@ -46,6 +46,7 @@ import {
   requestCheckout,
   resolveDeliveryContext,
 } from "@/lib/lmnp/services/payment/entitlement-client";
+import { startCheckoutAfterFlush } from "@/lib/lmnp/services/payment/checkout-flush";
 import { useServerPaymentSync } from "@/components/lmnp/payment/useServerPaymentSync";
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
 import {
@@ -81,7 +82,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const router = useRouter();
   const correctionScope = useV3CorrectionScope();
   const declarationsHref = useScopedOwnerHref(LMNP_ROUTES.declarations);
-  const { workspace, dispatch, dossierInpiStatus, updateInpiStatus, inpiStatusUpdating } = useLmnp();
+  const { workspace, dispatch, dossierInpiStatus, updateInpiStatus, inpiStatusUpdating, resolveDeliveryRevision } = useLmnp();
   const { showSuccess } = useFeedback();
 
   const draft = workspace.declarationDraft;
@@ -291,25 +292,32 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
     if (!resolvePriorHistoryEligibility(fiscalYear, externalOpeningProof).eligible) {
       throw new Error("Votre situation doit être confirmée avant le paiement.");
     }
-    const declared = fiscalYear.priorHistoryDeclaration?.status;
-    const context = await resolveDeliveryContext(fiscalYear.year, { dossierId: fiscalYear.dossierId });
-    if (declared) await declarePriorHistoryOnServer(fiscalYear.year, declared, { context });
-    const outcome = await requestCheckout(fiscalYear.year, {
-      previousFiscalYearId: fiscalYear.previousFiscalYearId ?? undefined,
-      stocksOuverture: fiscalYear.stocksOuverture,
-      stocksOuvertureUnavailableReason: fiscalYear.stocksOuvertureUnavailableReason,
-      // Lot 5.3 — même Opening persistée ; le serveur la valide via isUsableExternalTakeoverOpening.
-      fiscalYearOpening,
-    }, { context });
-    if (outcome.status === "checkout") {
-      window.location.assign(outcome.url);
-      return;
-    }
-    // Déjà payé ou paiement en cours de confirmation : jamais un second paiement.
-    setCheckoutOpen(false);
-    setPhase("idle");
-    await verifyPayment();
-  }, [correctionScope, fiscalYear, fiscalYearOpening, verifyPayment]);
+    // MB-MULTI-CHECKOUT-FLUSH-1 — le serveur évalue son snapshot persisté : vider l'autosave et confirmer la persistance AVANT
+    // toute requête de paiement. Échec : ni déclaration d'antériorité, ni ligne de paiement, ni session Stripe (erreur récupérable).
+    await startCheckoutAfterFlush({
+      resolveDeliveryRevision,
+      start: async () => {
+        const declared = fiscalYear.priorHistoryDeclaration?.status;
+        const context = await resolveDeliveryContext(fiscalYear.year, { dossierId: fiscalYear.dossierId });
+        if (declared) await declarePriorHistoryOnServer(fiscalYear.year, declared, { context });
+        const outcome = await requestCheckout(fiscalYear.year, {
+          previousFiscalYearId: fiscalYear.previousFiscalYearId ?? undefined,
+          stocksOuverture: fiscalYear.stocksOuverture,
+          stocksOuvertureUnavailableReason: fiscalYear.stocksOuvertureUnavailableReason,
+          // Lot 5.3 — même Opening persistée ; le serveur la valide via isUsableExternalTakeoverOpening.
+          fiscalYearOpening,
+        }, { context });
+        if (outcome.status === "checkout") {
+          window.location.assign(outcome.url);
+          return;
+        }
+        // Déjà payé ou paiement en cours de confirmation : jamais un second paiement.
+        setCheckoutOpen(false);
+        setPhase("idle");
+        await verifyPayment();
+      },
+    });
+  }, [correctionScope, fiscalYear, fiscalYearOpening, resolveDeliveryRevision, verifyPayment]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;
