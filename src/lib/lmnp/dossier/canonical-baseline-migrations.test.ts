@@ -393,7 +393,7 @@ describe("POLICIES — hardening migration", () => {
 
   it("does not hard-code any project reference or credential", () => {
     for (const f of [BASE, CLEANUP, HARDENING, DEFAULT_PRIVS]) {
-      assert.doesNotMatch(raw(f), /jviyqblcjuqennfvgrdg|service_role_key|eyJ[A-Za-z0-9_-]{10,}|sk_(live|test)_/i);
+      assert.doesNotMatch(raw(f), /pooler\.supabase\.com|\.supabase\.co\b|service_role_key|eyJ[A-Za-z0-9_-]{10,}|sk_(live|test)_/i);
     }
   });
 });

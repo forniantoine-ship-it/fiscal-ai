@@ -57,3 +57,7 @@ src/lib/lmnp/services/liasse-pdf/tests/output/
 
 # local reference spreadsheet (kept local for now, per PO decision)
 scripts/cycle23-revenus-reel.xlsx
+
+# Supabase CLI generated local state: project link (project-ref, linked-project.json, pooler-url)
+# and version caches. Never versioned: a tracked link silently points CLI commands at a real project.
+/supabase/.temp/
