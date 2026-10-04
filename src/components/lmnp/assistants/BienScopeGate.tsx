@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 import { isMultiPropertyWorkspace } from "@/lib/lmnp/dossier/multi-property-activation";
+import { deriveProductionScope } from "@/lib/lmnp/dossier/production-dossier-scope";
 import { useBienScope, useLmnp } from "@/lib/lmnp/store";
 import { PropertySelector } from "@/components/lmnp/biens/PropertySelector";
 import { buildPropertySelectorItems } from "@/components/lmnp/biens/property-selector-model";
@@ -18,7 +19,9 @@ import { buildPropertySelectorItems } from "@/components/lmnp/biens/property-sel
 export function BienScopeGate({ children }: { children: ReactNode }) {
   const { scope, propertyId } = useBienScope();
   const { workspace } = useLmnp();
-  const correctionScope = useV3CorrectionScope();
+  const urlScope = useV3CorrectionScope();
+  // Production : sans scope d'URL, les liens de bien viennent du dossier chargé (revérifié côté serveur à l'arrivée), jamais d'un lien mort.
+  const correctionScope = useMemo(() => urlScope ?? deriveProductionScope(workspace), [urlScope, workspace]);
   const pathname = usePathname();
   const multi = isMultiPropertyWorkspace(workspace);
   const items = useMemo(

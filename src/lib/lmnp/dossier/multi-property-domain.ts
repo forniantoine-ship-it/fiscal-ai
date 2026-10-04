@@ -351,3 +351,38 @@ export function resolveMultiPropertyGenerationAdmission(
     verdict.status === "UNSUPPORTED" ? verdict.reasons : [{ code: MULTI_PROPERTY_DOMAIN_REASON_CODES.fewerThanTwoProperties }];
   return { allowed: false, reason: "multi_property_domain_unsupported", domainReasons };
 }
+
+// ---------------------------------------------------------------------------
+// Admission à l'ENTRÉE en multi-bien (ADD_PROPERTY) — avant la transition irréversible
+// ---------------------------------------------------------------------------
+
+/**
+ * Motifs que l'utilisateur peut lever APRÈS avoir ajouté un bien (attestations à poser, document à attribuer, date de mise en service du
+ * nouveau bien) : ils ne justifient pas de refuser l'ajout. Tout autre motif connu avant la génération est un état du dossier qu'un
+ * second bien ne peut pas corriger (exercice non initial, reprise, déficit / ARD d'ouverture, LMP, détention indirecte, régime) :
+ * l'entrée en multi serait alors une impasse sans retour.
+ */
+export const MULTI_PROPERTY_ENTRY_RECOVERABLE_REASONS: ReadonlySet<MultiPropertyDomainReasonCode> = new Set<MultiPropertyDomainReasonCode>([
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.ssiAttestationMissing,
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.directHoldingAttestationMissing,
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.commonChargesAttestationMissing,
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.unattributedDocument,
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.serviceDateMissing,
+  MULTI_PROPERTY_DOMAIN_REASON_CODES.fewerThanTwoProperties,
+]);
+
+export type MultiPropertyEntryAdmission = { allowed: true } | { allowed: false; reasons: MultiPropertyDomainReason[] };
+
+/**
+ * Le dossier peut-il ENTRER en multi-bien ? MÊME évaluateur et MÊMES faits que la génération (`multiPropertyDomainFactsFromWorkspace`),
+ * évalués comme si le dossier comptait au moins deux biens ; seuls les motifs récupérables sont écartés. Ce que seuls la consolidation ou
+ * le calcul établissent (charges communes, prêt partagé, ARD généré / 39 C) n'est pas connaissable ici : il reste refusé plus tard par
+ * la génération, le checkout et la livraison (fail-closed côté serveur).
+ */
+export function resolveMultiPropertyEntryAdmission(workspace: DomainWorkspace, inputs: MultiPropertyOpeningInputs = {}): MultiPropertyEntryAdmission {
+  const facts = multiPropertyDomainFactsFromWorkspace(workspace, inputs);
+  const verdict = evaluateMultiPropertyDomain({ ...facts, propertyCount: Math.max(2, facts.propertyCount) });
+  if (verdict.status !== "UNSUPPORTED") return { allowed: true };
+  const blocking = verdict.reasons.filter((reason) => !MULTI_PROPERTY_ENTRY_RECOVERABLE_REASONS.has(reason.code));
+  return blocking.length === 0 ? { allowed: true } : { allowed: false, reasons: blocking };
+}

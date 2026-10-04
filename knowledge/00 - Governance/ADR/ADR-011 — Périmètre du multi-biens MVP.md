@@ -3,12 +3,12 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.4"
+version: "1.5"
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-04
 owner: product-owner
 tags: [adr, multi-biens, lmnp, perimetre, fail-closed, activation]
-triggers: [MB-ACTIVATION-AUDIT-2, MB-MULTI-DOMAIN-GUARD-1]
+triggers: [MB-ACTIVATION-AUDIT-2, MB-MULTI-DOMAIN-GUARD-1, MB-MULTI-JOURNEY-COMPLETION-2]
 éclaire: [SAV-030, SAV-031, SAV-032, SAV-033, F-002, PROF-005]
 ---
 
@@ -65,21 +65,21 @@ Ces décisions décrivent l'interface ; elles n'ouvrent aucune capacité (l'acti
 
 # 7. Capacité `generation` (MB-MULTI-CAPABILITY-WIRING-1) — premier levier ouvert, jamais suffisant
 
-Décision du Product Owner : la capacité `generation` est la **seule** capacité ouverte (`MULTI_PROPERTY_CAPABILITIES`). Le domaine du §1 n'est pas modifié.
+Décision du Product Owner : la capacité `generation` est la **première** capacité ouverte (`MULTI_PROPERTY_CAPABILITIES`) ; `delivery` (§8) et `payment` (§9) l'ont suivie. Le domaine du §1 n'est pas modifié.
 
 - **Admission** à la génération d'un dossier multi = capacité `generation` ouverte **ET** domaine ADR-011 supporté avant calcul **ET** preview réellement généré **ET** readiness technique (global + chaque bien). Chaque dimension refuse seule : capacité fermée → `multi_property_not_enabled` ; domaine non supporté → motif stable `multi_property_*` ; un motif connu seulement après consolidation ou calcul (charge commune, prêt partagé, date de mise en service par bien, ARD généré / 39 C) est refusé par l'entrée de génération elle-même.
 - Une activité = **une** génération : un F-006, une RFS d'activité, une liasse, une 2031, une aide 2042-C-PRO ; le bien actif de l'interface n'entre jamais dans le calcul.
-- `edition`, `delivery`, `payment`, `closing`, `nextYear` restent **fermés**. Ouvrir la génération n'ouvre aucun autre levier ; clôture et exercice suivant restent structurellement non ouvrables. Le multi utilisateur reste donc **dormant** (aucun moyen de créer un second bien en production, de payer ni de livrer).
+- À la date de cette décision, `edition`, `delivery`, `payment`, `closing`, `nextYear` étaient **fermés** (voir §8 et §9 pour l'ouverture de `delivery` et `payment`). Ouvrir la génération n'ouvre aucun autre levier ; clôture et exercice suivant restent structurellement non ouvrables. État courant : `edition`, `closing` et `nextYear` fermés ; le multi utilisateur reste **dormant** parce que l'ÉDITION est fermée (aucun moyen de créer un second bien en production).
 - Prérequis avant toute activation utilisateur finale : migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` vérifiée/appliquée (statut distant à ce jour inconnu).
 
 # 8. Capacité `delivery` (MB-MULTI-DELIVERY-WIRING-1) — deuxième levier ouvert, jamais un droit d'accès
 
-Décision du Product Owner : la capacité `delivery` est ouverte **après** une preuve à 3 biens (le domaine du §1 reste « 2 biens ou plus », sans borne ; aucune hypothèse « exactement deux » n'existe dans le pipeline). `generation` reste ouverte ; `edition`, `payment`, `closing`, `nextYear` restent **fermés**.
+Décision du Product Owner : la capacité `delivery` est ouverte **après** une preuve à 3 biens (le domaine du §1 reste « 2 biens ou plus », sans borne ; aucune hypothèse « exactement deux » n'existe dans le pipeline). `generation` reste ouverte ; à cette date `edition`, `payment`, `closing`, `nextYear` restaient **fermés** (`payment` a été ouvert ensuite : §9).
 
 - **Admission** à la livraison d'une RFS multi (Cerfa ET aide 2042-C-PRO : MÊME fonction `resolveMultiPropertyDeliveryAdmission`, aucune condition de domaine dans les routes) = capacité `delivery` ouverte **ET** domaine ADR-011 établi sur la RFS **recalculée par le serveur depuis son snapshot** (jamais la RFS d'activité envoyée par le client) **ET** déclarabilité finale (`final-declarability`, bouclage 2033-B `BALANCED`, aucune case sans mapping visuel). Une RFS multi dont un fait requis n'est pas établi (forme inattendue, `fiscalResult` ou stock d'ouverture absents) est refusée (`multi_property_domain_unverifiable`), jamais présumée favorable ni source d'exception.
 - **Chaîne d'autorité serveur (MB-MULTI-SERVER-TRUST-2 / MB-MULTI-CHECKOUT-FLUSH-1)** : requête client → snapshot serveur → génération serveur (un seul F006) → admission de domaine serveur → RFS serveur → livraison. La RFS client n'est **jamais** autoritaire (elle n'est plus lue). `expectedRevision` protège la livraison contre un état périmé (409 `workspace_snapshot_stale`). Le checkout lit le même snapshot serveur ; le client vide donc l'autosave et obtient la confirmation de persistance **avant** toute requête de paiement (échec : ni ligne, ni session Stripe). Le paiement reste lié au dossier et à l'exercice, jamais à une révision.
 - **Une livraison fiscale par activité** : la liasse (2031, 2031 bis, 2033-A/B/C), et l'aide 2042-C-PRO (5NA ou 5NY consolidé, aucun identifiant de bien) sont rendues depuis la RFS consolidée d'activité ; le bien actif de l'interface n'entre jamais dans la livraison.
-- **La capacité n'est pas l'entitlement** : les deux routes exigent d'abord, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon). Ouvrir `delivery` ne rend donc jamais un document payant accessible gratuitement ; le checkout multi reste fermé par la barrière `payment`. Le tarif reste 149 € par dossier et par exercice.
+- **La capacité n'est pas l'entitlement** : les deux routes exigent d'abord, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon). Ouvrir `delivery` ne rend donc jamais un document payant accessible gratuitement ; le checkout multi est gouverné par l'admission `payment` du §9. Le tarif reste 149 € par dossier et par exercice.
 - Le multi utilisateur reste **dormant** (édition de production, paiement et migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` non vérifiée : prérequis avant toute activation utilisateur finale).
 
 # 9. Capacité `payment` (MB-MULTI-PAYMENT-WIRING-1) — troisième levier ouvert, jamais un entitlement
@@ -91,3 +91,14 @@ Décision du Product Owner : la capacité `payment` est ouverte pour le multi **
 - **Ne jamais encaisser un dossier connu comme non livrable** : le preview est le moteur déterministe réel appliqué au snapshot (pas une prédiction) ; les motifs que seul le calcul établit (ARD généré / 39 C inter-biens) sont donc connus **avant** le paiement et refusent le checkout (409 `multi_property_not_payable` ; hors domaine : 409 `multi_property_domain_unsupported` ; capacités fermées : 409 `multi_property_not_enabled`). Un snapshot multi illisible ou d'un autre exercice est refusé (`multi_property_domain_unverifiable`).
 - **La capacité n'est pas l'entitlement** : `payment` ouvert ne vaut jamais `paid`. La livraison exige toujours, sans lire aucune capacité, l'entitlement serveur `paid` pour (dossier, exercice) (402 `payment_required` sinon) ; un exercice ou un dossier payé n'en débloque aucun autre.
 - Le multi utilisateur reste **dormant** : édition de production fermée, migration distante `20261001120000_lmnp_snapshot_schema_no_downgrade.sql` non vérifiée, recette E2E finale non effectuée, clôture et N+1 interdits.
+
+# 10. Parcours de production du multi-biens (MB-MULTI-JOURNEY-COMPLETION-2) — techniquement prêt, jamais ouvert
+
+Décision d'ingénierie, sans nouvelle doctrine fiscale : le parcours utilisateur multi-bien est complété sur les routes de **production** existantes ; il n'ouvre **aucune** capacité (`edition` reste fermée) et n'élargit pas le domaine du §1.
+
+- **Aucune dépendance au LAB** : « Mes biens » (`/assistants/biens`), les assistants par bien, les documents (`/documents`) et la validation (`/documents?step=validation`) sont des routes de production. Les routes `/lab` restent fermées en production sans `ENABLE_V3_REAL_TEST_ROUTE`, qui n'est plus nécessaire au parcours supporté. Le scope de production réutilise le contrat de scope V3 (dossier, exercice, bien) avec un marqueur de retour `dossier` vers « Mes biens » ; il est dérivé du dossier déjà chargé et revérifié côté serveur à l'arrivée.
+- **Entrée en multi** : avant `ADD_PROPERTY` (irréversible, sans suppression de bien), l'interface évalue l'admission d'entrée par la garde unique de domaine : tout motif connu avant génération et non récupérable (exercice non initial, reprise, déficit ou ARD d'ouverture, LMP, détention indirecte, régime) refuse l'ajout et le motif est affiché. Les motifs récupérables (attestations, document non attribué, date de mise en service du nouveau bien) ne le refusent pas. Ce que seuls la consolidation ou le calcul établissent (charges communes, prêt partagé, ARD généré / 39 C) n'est pas connaissable à l'entrée : il reste refusé à la génération, au checkout et à la livraison (fail-closed côté serveur).
+- **Enregistrement véridique** : l'issue d'un ajout de bien est décidée par la seule révision serveur confirmée (primitive partagée avec le checkout et la livraison) ; « rien en attente » n'est pas un échec ; un échec propose de réessayer l'enregistrement, sans afficher de succès.
+- **Paiement** : l'interdiction côté client « parcours multi-dossier » est levée. Le checkout reste le chemin serveur existant (vidage de l'autosave → snapshot serveur → admission → ligne → session) ; le retour Stripe porte uniquement l'exercice (`/documents?step=validation&fy=…`), jamais un bien ni une révision, et le contexte multi est reconstruit depuis l'état persisté.
+- **Ouverture** : basculer `edition` reste une décision et une mission distinctes, après recette de bout en bout.
+

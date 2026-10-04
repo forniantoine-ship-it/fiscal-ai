@@ -131,9 +131,10 @@ test("gardes statiques : liens V3, entry gate, provider et upload explicite", ()
   assert.match(validation, /declarationsHref = useScopedOwnerHref\(LMNP_ROUTES\.declarations\)/);
   assert.doesNotMatch(validation, /router\.push\(LMNP_ROUTES\.declarations\)/);
   const checkout = validation.slice(validation.indexOf("const handleStartCheckout"), validation.indexOf("const handleBilanPatrimonialChange"));
-  assert.match(checkout, /if \(correctionScope\) throw new Error/);
+  // MB-MULTI-JOURNEY-COMPLETION-2 — l'interdiction de portée est levée : le paiement est (dossier, exercice), le serveur reste seul juge.
+  assert.doesNotMatch(checkout, /correctionScope/);
   assert.match(checkout, /requestCheckout\(/);
-  assert.ok(checkout.indexOf("if (correctionScope) throw") < checkout.indexOf("requestCheckout("));
+  assert.ok(checkout.indexOf("startCheckoutAfterFlush(") < checkout.indexOf("requestCheckout("));
   assert.match(declarations, /validationHref = useScopedOwnerHref\(LMNP_ROUTES\.validation\)/);
   assert.doesNotMatch(declarations, /router\.replace\(LMNP_ROUTES\.validation\)/);
 });

@@ -23,9 +23,14 @@ export type V3CorrectionScope = {
   shell?: V3Shell;
 };
 
-export type V3Shell = "v3";
+/**
+ * `v3` : retour vers le dossier V3 LAB. `dossier` (MB-MULTI-JOURNEY-COMPLETION-2) : retour vers « Mes biens », route de PRODUCTION —
+ * le parcours de production n'a jamais besoin d'une route /lab ni du drapeau ENABLE_V3_REAL_TEST_ROUTE.
+ */
+export type V3Shell = "v3" | "dossier";
 
-const V3_SHELL_RETURN_ROUTES: Readonly<Record<V3Shell, string>> = { v3: "/lab/v3-dossier/real" };
+const V3_SHELL_RETURN_ROUTES: Readonly<Record<V3Shell, string>> = { v3: "/lab/v3-dossier/real", dossier: "/assistants/biens" };
+const V3_SHELLS: ReadonlySet<string> = new Set<V3Shell>(["v3", "dossier"]);
 const V2_REAL_ROUTE = "/lab/v2-dossier/real";
 
 export type ScopeQuery =
@@ -112,10 +117,10 @@ function parseScopeParams(
   const wantsProperty = requiresProperty ?? hasProperty;
   if (wantsProperty !== hasProperty) return "invalid";
   const property: V3PropertyScope = hasProperty ? { kind: "required", propertyId: propertyValues[0]! } : { kind: "not_applicable" };
-  // Optional allow-listed shell marker: exactly "v3" once, or absent. Anything else invalidates the whole scope.
+  // Optional allow-listed shell marker: exactly one allow-listed value once, or absent. Anything else invalidates the whole scope.
   const shellValues = params.getAll("v3Shell");
-  if (shellValues.length > 1 || (shellValues.length === 1 && shellValues[0] !== "v3")) return "invalid";
-  return { dossierId, fiscalYearId, year: Number(rawYear), property, ...(shellValues.length === 1 ? { shell: "v3" as const } : {}) };
+  if (shellValues.length > 1 || (shellValues.length === 1 && !V3_SHELLS.has(shellValues[0]!))) return "invalid";
+  return { dossierId, fiscalYearId, year: Number(rawYear), property, ...(shellValues.length === 1 ? { shell: shellValues[0] as V3Shell } : {}) };
 }
 
 function readScope(params: URLSearchParams, marker: string, requiresProperty: boolean | null): ScopeQuery {
@@ -166,7 +171,7 @@ function scopeParams(scope: V3CorrectionScope): URLSearchParams {
     dossierId: scope.dossierId, fiscalYearId: scope.fiscalYearId, year: String(scope.year),
   });
   if (scope.property.kind === "required") params.set("propertyId", scope.property.propertyId);
-  if (scope.shell === "v3") params.set("v3Shell", "v3");
+  if (scope.shell !== undefined) params.set("v3Shell", scope.shell);
   return params;
 }
 

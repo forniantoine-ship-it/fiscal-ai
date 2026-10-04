@@ -9,6 +9,8 @@ import { GENERATION_PRICE_TTC } from "@/lib/lmnp/services/payment/price";
 import type { ServerPaymentStatus } from "@/lib/lmnp/services/payment/entitlement-client";
 import { isMultiProperty, type V3PrototypeSource } from "./read-model";
 import { v3CorrectionHrefForResolvedScope, type V3CorrectionScope } from "./correction-scope";
+import { resolveMultiPropertyDomainReadiness } from "@/lib/lmnp/dossier/multi-property-readiness";
+import { PRODUCTION_VALIDATION_HREF } from "@/lib/lmnp/dossier/production-dossier-scope";
 
 /**
  * R13.1 — honest generation-state vocabulary. `declarationGeneratedAt`
@@ -30,6 +32,12 @@ export interface V3FinalizationLastGeneration {
 export interface V3FinalizationReadModel {
   dossierComplete: boolean;
   multiProperty: boolean;
+  /**
+   * MB-MULTI-JOURNEY-COMPLETION-2 — verdict du domaine ADR-011 lu sur le dossier (garde unique, aucune règle ici). Remplace l'ancienne
+   * barrière historique « multi = jamais de finalisation » : un multi SUPPORTÉ suit le même parcours que le mono ; un multi hors domaine
+   * reste sans action. Le serveur (admission au checkout, à la livraison) reste l'autorité finale.
+   */
+  multiPropertyDomain: "not_multi" | "supported" | "unsupported";
   blockers: string[];
   /** Verbatim existing authority (prior-history-eligibility.ts) — never reconstructed. */
   priorHistory: PriorHistoryEligibility;
@@ -75,7 +83,7 @@ export function resolveV3FinalizationCta(
   finalization: V3FinalizationReadModel,
   firstUserAction: { label: string; href: string } | undefined,
 ): V3FinalizationCta {
-  if (finalization.multiProperty) return { kind: "multi_property", actionLabel: null, actionHref: null };
+  if (finalization.multiProperty && finalization.multiPropertyDomain !== "supported") return { kind: "multi_property", actionLabel: null, actionHref: null };
   if (!finalization.dossierComplete) {
     return { kind: "dossier_incomplete", actionLabel: firstUserAction?.label ?? null, actionHref: firstUserAction?.href ?? null };
   }
@@ -105,6 +113,8 @@ function buildV3FinalizationReadModel(
   const draft = workspace.declarationDraft;
   const blockers = buildMissingItems(buildDossierSteps(draft, workspace.fiscalYear.year)).map(item => item.label);
   const multiProperty = isMultiProperty(workspace);
+  const domainStatus = multiProperty ? resolveMultiPropertyDomainReadiness(workspace).status : "not_multi";
+  const multiPropertyDomain = domainStatus === "supported" ? "supported" : domainStatus === "not_multi" ? "not_multi" : "unsupported";
 
   const externalOpeningProof = resolveExternalOpeningProofFromFiscalYear(workspace.fiscalYear);
   const priorHistory = resolvePriorHistoryEligibility(workspace.fiscalYear, externalOpeningProof);
@@ -128,11 +138,16 @@ function buildV3FinalizationReadModel(
   // "/documents" is property-required (R12.1A OWNER_ROUTES) — a multi-property or
   // otherwise-unresolved scope makes this null, never a first-dossier/first-year guess.
   const base = v3CorrectionHrefForResolvedScope("/documents", correctionScope);
-  const finalizeHref = base ? `${base}&step=validation` : null;
+  // Mono : lien scopé existant. Multi : la validation est une étape d'ACTIVITÉ (sans bien) ; sa route de production non scopée est aussi la
+  // route de retour de Stripe — proposée SEULEMENT si le domaine ADR-011 est supporté (hors domaine : null, fail-closed). Jamais un bien deviné.
+  const finalizeHref = multiProperty
+    ? (multiPropertyDomain === "supported" ? PRODUCTION_VALIDATION_HREF : null)
+    : base ? `${base}&step=validation` : null;
 
   return {
     dossierComplete: blockers.length === 0,
     multiProperty,
+    multiPropertyDomain,
     blockers,
     priorHistory,
     generationState,

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopedOwnerHref } from "@/components/lmnp/app-shell/scoped-owner-navigation";
-import { useV3CorrectionScope } from "@/lab/v2-dossier/correction-context";
 
 import { Button } from "@/design-system/components/Button";
 import { ActiviteAiProcessing } from "@/components/lmnp/activite/ActiviteAiProcessing";
@@ -80,7 +79,6 @@ type FlowPhase = "idle" | "checkout" | "generating";
 
 export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   const router = useRouter();
-  const correctionScope = useV3CorrectionScope();
   const declarationsHref = useScopedOwnerHref(LMNP_ROUTES.declarations);
   const { workspace, dispatch, dossierInpiStatus, updateInpiStatus, inpiStatusUpdating, resolveDeliveryRevision } = useLmnp();
   const { showSuccess } = useFeedback();
@@ -283,10 +281,9 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
   }, [continueAfterPayment, declarationsHref, gate.canGenerate, generated, paid, router]);
 
   const handleStartCheckout = useCallback(async () => {
-    // The existing Stripe return URL contains only `fy`; it cannot restore an
-    // exact V3 dossier/year/property scope. Keep this exit closed until that
-    // separate payment flow accepts a verified scoped return destination.
-    if (correctionScope) throw new Error("Le paiement depuis ce parcours multi-dossier n'est pas encore disponible.");
+    // MB-MULTI-JOURNEY-COMPLETION-2 — plus d'interdiction de portée : le paiement est (dossier, exercice), jamais un bien. Le retour Stripe
+    // (`/documents?step=validation&fy=…`) est une route de production non scopée qui recharge le dossier ; le contexte multi est reconstruit
+    // depuis l'état persisté. Le serveur reste seul juge (snapshot persisté → admission de domaine → ligne → session).
     // Défense en profondeur : même résolveur + même preuve Opening que la porte.
     const externalOpeningProof = resolveExternalOpeningProofFromFiscalYear(fiscalYear);
     if (!resolvePriorHistoryEligibility(fiscalYear, externalOpeningProof).eligible) {
@@ -317,7 +314,7 @@ export function ValidationDocumentStep({ isActive = true }: TunnelStepProps) {
         await verifyPayment();
       },
     });
-  }, [correctionScope, fiscalYear, fiscalYearOpening, resolveDeliveryRevision, verifyPayment]);
+  }, [fiscalYear, fiscalYearOpening, resolveDeliveryRevision, verifyPayment]);
 
   // G1-P0 — écrit directement `bilanPatrimonial` sur le draft via le même
   // mécanisme générique que les autres assistants (DECLARATION_PATCH_DRAFT) ;

@@ -7,6 +7,7 @@ import { FeedbackProvider } from "@/components/lmnp/shared/FeedbackProvider";
 import { DashboardLayout } from "@/design-system/layouts/DashboardLayout";
 import { DossierProvider } from "@/lib/lmnp/dossier";
 import { LmnpProvider, useLmnp } from "@/lib/lmnp/store";
+import { ProductionPropertiesEntry } from "@/components/lmnp/biens/ProductionPropertiesEntry";
 import { V3CorrectionEntryGate } from "@/components/lmnp/app-shell/V3CorrectionEntryGate";
 import { V3CorrectionReturnBar } from "@/components/lmnp/app-shell/V3CorrectionReturnBar";
 import { ExplicitDossierScopeGate } from "@/components/lmnp/app-shell/ExplicitDossierScopeGate";
@@ -51,6 +52,7 @@ function DashboardLayoutBridge({ children }: { children: ReactNode }) {
       chapterJourney={chapterJourney}
     >
       <V3CorrectionReturnBar />
+      <ProductionPropertiesEntry />
       {children}
     </DashboardLayout>
   );
