@@ -45,6 +45,7 @@ import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 
 import { A, B, STOCKS, Y, monoWorkspace, multiWorkspace, oracleBien, type BienSpec } from "./multi-property-test-support";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 const ROOT = process.cwd();
 const FIXED = Date.parse("2026-06-01T12:00:00.000Z");
@@ -97,7 +98,7 @@ const form2031Of = (result: ReturnType<typeof generated>["result"]) => (result.l
 
 const ok = (async () => ({ ok: true, fiscalYear: Y })) as never;
 const post = (handler: typeof handleCerfaPdfRequest | typeof handleAide2042PdfRequest, body: unknown, capabilities?: MultiPropertyCapabilities, access = ok) =>
-  handler(new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
+  callDelivery(handler, new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
 const LIASSE_FORMS = ["2031-SD", "2031-bis-SD", "2033-B-SD"];
 const cerfa = (rfs: unknown, capabilities?: MultiPropertyCapabilities, extra: Record<string, unknown> = {}, forms: string[] = LIASSE_FORMS, access = ok) =>
   post(handleCerfaPdfRequest, { rfs, declarationVersionId: "v1", forms, ...extra }, capabilities, access);
@@ -290,12 +291,17 @@ describe("ADMISSION LIVRAISON — capacité ∧ domaine ∧ déclarabilité", ()
     assert.equal("rfs" in result, false);
   });
 
-  it("une seule définition du domaine : les deux handlers délèguent à resolveMultiPropertyDeliveryAdmission ; aucune condition de domaine dans les routes", () => {
+  it("une seule définition du domaine : les deux handlers délèguent à l'autorité serveur, qui appelle resolveMultiPropertyDeliveryAdmission ; aucune condition de domaine dans les routes", () => {
+    const strip = (file: string) => readFileSync(path.join(ROOT, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     for (const file of ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", "src/app/api/lmnp/declaration/aide-2042-pdf/handler.ts"]) {
-      const code = readFileSync(path.join(ROOT, file), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-      assert.match(code, /resolveMultiPropertyDeliveryAdmission/);
+      const code = strip(file);
+      assert.match(code, /resolveDeliveryAuthority/);
       assert.doesNotMatch(code, /deficitsOuverture|amortNonDeduitExercice|amortReportesUtilises|openingDeficits|evaluateMultiPropertyDomain/);
     }
+    const authority = strip("src/lib/lmnp/services/declaration/authoritative-delivery.ts");
+    assert.match(authority, /resolveMultiPropertyDeliveryAdmission/);
+    assert.match(authority, /resolveMultiPropertyGenerationAdmission/);
+    assert.doesNotMatch(authority, /deficitsOuverture|amortNonDeduitExercice|amortReportesUtilises|openingDeficits|evaluateMultiPropertyDomain/);
   });
 });
 
@@ -513,7 +519,7 @@ describe("PAIEMENT — l'entitlement payé reste l'autorité, capacité de livra
     assert.equal(await isMultiPropertyBarrierActive(read, { dossierId: "d", fiscalYear: Y }, "payment", DELIVERY_ON), true);
     assert.equal(GENERATION_PRICE_TTC, 149);
     const checkout = readFileSync(path.join(ROOT, "src/lib/lmnp/services/payment/checkout-handler.ts"), "utf8");
-    assert.match(checkout, /resolveMultiPropertyPaymentAdmission\(deps\.readWorkspaceSnapshot, \{ dossierId, fiscalYear \}/);
+    assert.match(checkout, /resolveMultiPropertyPaymentAdmission\(async \(\) => snapshotRow, \{ dossierId, fiscalYear \}/);
   });
 
   it("l'accès à la livraison ne lit AUCUNE capacité multi : l'entitlement est évalué avant et indépendamment (source)", () => {
@@ -521,7 +527,7 @@ describe("PAIEMENT — l'entitlement payé reste l'autorité, capacité de livra
     assert.doesNotMatch(code, /multi-property|MULTI_PROPERTY|isMultiProperty/);
     for (const file of ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", "src/app/api/lmnp/declaration/aide-2042-pdf/handler.ts"]) {
       const handler = readFileSync(path.join(ROOT, file), "utf8");
-      assert.ok(handler.indexOf("await resolveAccess({") > 0 && handler.indexOf("await resolveAccess({") < handler.lastIndexOf("resolveMultiPropertyDeliveryAdmission("), `${file} : accès payé AVANT l'admission multi`);
+      assert.ok(handler.indexOf("await resolveAccess({") > 0 && handler.indexOf("await resolveAccess({") < handler.indexOf("await resolveDeliveryAuthority("), `${file} : accès payé AVANT l'admission multi (portée par l'autorité serveur)`);
     }
   });
 });

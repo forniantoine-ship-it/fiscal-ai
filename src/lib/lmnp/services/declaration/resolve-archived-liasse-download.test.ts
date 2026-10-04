@@ -17,7 +17,8 @@ import { handleCerfaPdfRequest } from "@/app/api/lmnp/declaration/cerfa-pdf/hand
 // Payment V1 — ces tests portent sur le CONTENU fiscal du PDF, pas sur l'accès
 // payant : le résolveur d'accès est injecté (autorisé). L'authentification, la
 // propriété et l'entitlement payé sont prouvés dans route.payment.test.ts.
-const POST = (request: Request) => handleCerfaPdfRequest(request, async () => ({ ok: true }));
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
+const POST = (request: Request) => callDelivery(handleCerfaPdfRequest, request, async () => ({ ok: true }));
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { extractDrawnStringsForPage } from "@/lib/lmnp/services/liasse-pdf/tests/extract-rendered-text";
 import type { DeclarationDraft, FiscalYear } from "@/lib/lmnp/types/domain";
@@ -26,6 +27,7 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 
 import { assembleLiasseFiscalePdf } from "./download-liasse-fiscale-pdf";
 import { buildCerfaPdfRequestPayload } from "./download-cerfa-pdf";
+import { collectLiasseDossierExtras } from "./collect-liasse-dossier-extras";
 import { liasseFiscalePdfFileName } from "./merge-liasse-dossier-with-cerfa";
 import { LIASSE_DOSSIER_PDF_TITLE } from "./render-liasse-dossier-pdf";
 import {
@@ -186,6 +188,9 @@ async function mockSixPageCerfa(): Promise<Uint8Array> {
   }
   return cerfa.save();
 }
+
+/** Extras documentaires que le SERVEUR dérive désormais lui-même du snapshot clos (même fonction qu'avant dans le résolveur). */
+const extrasOf = (record: ArchivedLiasseDownloadRecord) => collectLiasseDossierExtras({ declarationDraft: record.declarationDraft ?? undefined, fiscalYear: record });
 
 describe("resolveArchivedLiasseDownload — gardes", () => {
   it("RFS absent → liasse indisponible, aucun ID inventé", () => {
@@ -357,18 +362,18 @@ describe("resolveArchivedLiasseDownload — isolation N-1 vs workspace N", () =>
     assert.equal(resolved.input.rfs.fiscalResult.recettes.total, 4242);
     assert.equal(resolved.input.declarationVersionId, VERSION_A);
     assert.equal(resolved.input.fiscalYear, 2025);
-    assert.equal(resolved.input.extras?.bien?.adresse, ADRESSE_A);
-    assert.equal(resolved.input.extras?.pretsDescriptifs?.[0]?.pretId, PRET_A);
-    assert.equal(resolved.input.extras?.pretsDescriptifs?.[0]?.capitalInitial, 130751);
-    assert.notEqual(resolved.input.extras?.bien?.adresse, ADRESSE_B);
-    assert.notEqual(resolved.input.extras?.pretsDescriptifs?.[0]?.pretId, PRET_B);
+    assert.equal(extrasOf(archive.record)?.bien?.adresse, ADRESSE_A);
+    assert.equal(extrasOf(archive.record)?.pretsDescriptifs?.[0]?.pretId, PRET_A);
+    assert.equal(extrasOf(archive.record)?.pretsDescriptifs?.[0]?.capitalInitial, 130751);
+    assert.notEqual(extrasOf(archive.record)?.bien?.adresse, ADRESSE_B);
+    assert.notEqual(extrasOf(archive.record)?.pretsDescriptifs?.[0]?.pretId, PRET_B);
     assert.equal(liasseFiscalePdfFileName(resolved.input.fiscalYear), "liasse-fiscale-lmnp-2025.pdf");
 
     const workspaceResolved = resolveArchivedLiasseDownload(workspaceN.record);
     assert.equal(workspaceResolved.status, "ready");
     if (workspaceResolved.status !== "ready") throw new Error("unreachable");
     assert.equal(workspaceResolved.input.rfs.exercice, 2026);
-    assert.equal(workspaceResolved.input.extras?.bien?.adresse, ADRESSE_B);
+    assert.equal(extrasOf(workspaceN.record)?.bien?.adresse, ADRESSE_B);
   });
 
   it("n'importe aucun workspace / useLmnp / Dossier vivant", () => {
@@ -401,7 +406,7 @@ describe("liasse historique — documentaire A + régénération Cerfa (millési
 
     const merged = await assembleLiasseFiscalePdf({
       rfs: resolved.input.rfs,
-      extras: resolved.input.extras,
+      extras: extrasOf(archive.record),
       cerfaPdfBytes: await mockSixPageCerfa(),
     });
     const extracted = await extractPdfPages(copyBytes(merged));
@@ -431,14 +436,15 @@ describe("liasse historique — documentaire A + régénération Cerfa (millési
     if (resolved.status !== "ready") throw new Error("unreachable");
 
     const payload = buildCerfaPdfRequestPayload(resolved.input.rfs, resolved.input.declarationVersionId);
-    assert.equal(payload.rfs, archive.rfs);
+    assert.equal("rfs" in payload, false, "MB-MULTI-SERVER-TRUST-2 : aucune RFS dans la requête");
     assert.equal(payload.declarationVersionId, VERSION_A);
 
     const response = await POST(
       new Request("http://localhost/api/lmnp/declaration/cerfa-pdf", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        // `rfs` ci-dessous est la fixture que le pipeline serveur simulé produira (retirée par le support) — jamais transmise.
+        body: JSON.stringify({ ...payload, rfs: archive.rfs }),
       }),
     );
     assert.equal(response.status, 200);
@@ -448,7 +454,7 @@ describe("liasse historique — documentaire A + régénération Cerfa (millési
 
     const merged = await assembleLiasseFiscalePdf({
       rfs: resolved.input.rfs,
-      extras: resolved.input.extras,
+      extras: extrasOf(archive.record),
       cerfaPdfBytes: cerfaBytes,
     });
     const extracted = await extractPdfPages(copyBytes(merged));

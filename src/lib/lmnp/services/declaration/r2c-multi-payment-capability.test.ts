@@ -33,6 +33,7 @@ import { GENERATION_PRICE_CENTS, GENERATION_PRICE_TTC, PAYMENT_CURRENCY } from "
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 import { A, B, STOCKS, T, Y, monoWorkspace, multiWorkspace, oracleBien, type BienSpec } from "./multi-property-test-support";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 const ROOT = process.cwd();
 const C = "bien-c";
@@ -327,7 +328,8 @@ describe("ENTITLEMENT — la capacité n'est pas `paid` ; isolation exercice / d
     return result.rfs;
   };
   const deliver = (env: ReturnType<typeof setup>["env"], rfs: unknown, dossierId = "dossier-X", fiscalYear = Y) =>
-    handleCerfaPdfRequest(
+    callDelivery(
+      handleCerfaPdfRequest,
       new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rfs, declarationVersionId: "v1", forms: ["2031-SD"], authToken: "tok", dossierId, fiscalYear }) }),
       (async (input: unknown) => resolveDeliveryAccess(input as never, env.deps)) as never,
       caps(["generation", "delivery", "payment"]),
@@ -493,19 +495,20 @@ describe("CAPACITÉS FINALES — payment ouvert avec generation et delivery ; ed
 });
 
 describe("MONO — checkout, tarif, entitlement et livraison inchangés", () => {
-  it("un dossier mono (snapshot mono ou absent) : mêmes réponses et même session, quelles que soient les capacités multi injectées", async () => {
-    const outcomes: unknown[] = [];
-    for (const capabilities of [PAYMENT_ON, PAYMENT_OFF, caps([]), undefined]) {
-      for (const workspace of [monoWorkspace(), null]) {
+  it("un dossier mono : mêmes réponses et même session, quelles que soient les capacités multi injectées ; sans snapshot serveur, refus identique AVANT tout paiement (MB-MULTI-SERVER-TRUST-2)", async () => {
+    for (const [workspace, expectedStatus] of [[monoWorkspace(), 200], [null, 409]] as const) {
+      const outcomes: unknown[] = [];
+      for (const capabilities of [PAYMENT_ON, PAYMENT_OFF, caps([]), undefined]) {
         const { env, checkout, declareEligible } = setup(workspace);
         await declareEligible();
         const response = await checkout(capabilities);
         outcomes.push({ status: response.status, body: await response.json(), session: env.created[0] && { ...env.created[0], successUrl: undefined, cancelUrl: undefined } });
       }
+      for (const outcome of outcomes) assert.deepEqual(outcome, outcomes[0]);
+      assert.equal((outcomes[0] as { status: number }).status, expectedStatus);
+      if (workspace) assert.equal((outcomes[0] as { session: { amountCents: number } }).session.amountCents, 14900);
+      else assert.equal((outcomes[0] as { body: { code: string } }).body.code, "workspace_snapshot_missing");
     }
-    for (const outcome of outcomes) assert.deepEqual(outcome, outcomes[0]);
-    assert.equal((outcomes[0] as { status: number }).status, 200);
-    assert.equal((outcomes[0] as { session: { amountCents: number } }).session.amountCents, 14900);
   });
 
   it("l'antériorité non éligible est refusée avant tout, mono comme multi (ordre historique)", async () => {

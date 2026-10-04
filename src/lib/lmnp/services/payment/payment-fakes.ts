@@ -3,6 +3,7 @@
  * Supabase + passerelle Stripe). Aucune route ni aucun composant ne les importe ;
  * Stripe n'est jamais appelé pour de vrai dans les tests.
  */
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { OwnershipError, UnauthorizedError } from "@/lib/supabase-server";
 import { GENERATION_PRICE_CENTS, PAYMENT_CURRENCY } from "./price";
 import type {
@@ -16,7 +17,12 @@ import type {
 import type { PriorHistoryDeclarationStatus } from "@/lib/lmnp/types/domain";
 import type { ServerSnapshotRow } from "../server-workspace-snapshot";
 
-export function createFakePaymentEnv() {
+/**
+ * `defaultSnapshot` (MB-MULTI-SERVER-TRUST-2) : le checkout exige désormais un snapshot serveur lisible, même mono. Les tests qui ne portent PAS
+ * sur le snapshot l'activent pour modéliser « un dossier dont la sauvegarde serveur existe » (snapshot mono générique de l'exercice demandé) ;
+ * un snapshot explicite (`setSnapshot`) prime toujours, et sans l'option l'absence de ligne reste modélisée (tests de confiance).
+ */
+export function createFakePaymentEnv(options: { defaultSnapshot?: boolean } = {}) {
   const rows: PaymentRow[] = [];
   const owners = new Map<string, string>(); // dossierId → userId
   const tokens = new Map<string, string>(); // authToken → userId
@@ -118,7 +124,9 @@ export function createFakePaymentEnv() {
     stripe,
     async readWorkspaceSnapshot(dossierId, fiscalYear) {
       snapshotReadCount += 1;
-      return snapshots.get(`${dossierId}:${fiscalYear}`) ?? null;
+      const explicit = snapshots.get(`${dossierId}:${fiscalYear}`);
+      if (explicit) return explicit;
+      return options.defaultSnapshot ? (snapshotRowOf(stubWorkspaceForRfs({ exercice: fiscalYear })) as ServerSnapshotRow) : null;
     },
     // Horloge fixe très postérieure : tous les exercices des tests sont « clos ».
     // Les tests du verrou de clôture la remplacent via `setNow`.

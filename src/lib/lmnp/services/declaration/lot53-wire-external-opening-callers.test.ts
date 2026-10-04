@@ -3,20 +3,30 @@
  *
  * Run: npx tsx --test src/lib/lmnp/services/declaration/lot53-wire-external-opening-callers.test.ts
  */
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { describe, it } from "node:test";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import assert from "node:assert/strict";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { readFileSync } from "node:fs";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import path from "node:path";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { fileURLToPath } from "node:url";
 
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { createConfidenceScore } from "@/lib/documents/types/confidence-score";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import {
   resolveExternalOpeningProofFromFiscalYear,
   resolvePersistedExternalTakeoverOpening,
   resolvePriorHistoryEligibility,
 } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { resolveDeclarationGenerationGate } from "@/lib/lmnp/services/declaration/declaration-generation-gate";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import {
   applyResolvedOpeningDepreciation,
   isAvailable,
@@ -24,31 +34,44 @@ import {
   resolveOpeningDepreciation,
   type FiscalYearOpening,
 } from "@/lib/lmnp/services/fiscal-year-opening";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { computeOpeningContentHash } from "@/lib/lmnp/services/fiscal-year-opening/content-hash";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { unavailable } from "@/lib/lmnp/services/fiscal-year-opening/opening-fact";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import {
   buildExternalTakeoverFiscalYearOpening,
   selectBuiltExternalTakeoverOpening,
   type BuildExternalTakeoverFiscalYearOpeningInput,
 } from "@/lib/lmnp/services/takeover";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import type { CandidateHistoricalAsset } from "@/lib/lmnp/services/takeover/asset-candidates";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import type { CandidateFiscalStocks } from "@/lib/lmnp/services/takeover/fiscal-stocks-candidates";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import {
   missingCandidate,
   presentCandidate,
   type CandidateProvenance,
   type CandidateValue,
 } from "@/lib/lmnp/services/takeover/candidate-value";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { createHistoricalControlReconciliation } from "@/lib/lmnp/services/takeover/historical-control-reconciliation";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import {
   createTaxPackageControlFact,
   type TaxPackageControlFact,
   type TaxPackageControlFactDraft,
 } from "@/lib/lmnp/services/takeover/tax-package-control-facts";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import type { HistoricalTaxPackageControlsReconciliation } from "@/lib/lmnp/services/takeover/reconcile-historical-tax-package-controls";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { resolveServerPriorHistoryEligibility } from "@/lib/lmnp/services/payment/server-prior-history";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { resolveDeliveryAccess } from "@/lib/lmnp/services/payment/delivery-access";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { createFakePaymentEnv } from "@/lib/lmnp/services/payment/payment-fakes";
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import type { DeclarationDraft, FiscalYear, Property } from "@/lib/lmnp/types";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -603,15 +626,16 @@ describe("Lot 5.3 — paiement / livraison serveur", () => {
     assert.equal(denied.ok === false && denied.response.status, 403);
 
     const opening = buildReferenceOpening();
-    const allowed = await resolveDeliveryAccess(
-      {
-        authToken: "tok",
-        dossierId: "dossier-X",
-        fiscalYear: TARGET,
-        fiscalYearOpening: opening,
-      },
+    // MB-MULTI-SERVER-TRUST-2 — une Opening seulement présente dans la requête n'est jamais une preuve ; seule celle PERSISTÉE compte.
+    const forged = await resolveDeliveryAccess(
+      { authToken: "tok", dossierId: "dossier-X", fiscalYear: TARGET, fiscalYearOpening: opening } as never,
       env.deps,
     );
+    assert.equal(forged.ok, false);
+    const persisted = stubWorkspaceForRfs({ exercice: TARGET });
+    (persisted.fiscalYear as { externalTakeoverOpening?: unknown }).externalTakeoverOpening = { opening };
+    env.setSnapshot("dossier-X", TARGET, snapshotRowOf(persisted) as never);
+    const allowed = await resolveDeliveryAccess({ authToken: "tok", dossierId: "dossier-X", fiscalYear: TARGET }, env.deps);
     assert.equal(allowed.ok, true);
   });
 });

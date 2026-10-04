@@ -48,6 +48,7 @@ import { lmnpReducer, type LmnpAction, type LmnpState } from "@/lib/lmnp/store/r
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 
 import { A, B, SPEC_A, SPEC_B, STOCKS, T, Y, multiWorkspace, oracleBien, type BienSpec } from "./multi-property-test-support";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 const ROOT = process.cwd();
 const source = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
@@ -437,7 +438,7 @@ describe("MB-MULTI-DOMAIN-GUARD-1 — oracles multi (entrée de production)", ()
 describe("MB-MULTI-DOMAIN-GUARD-1 — routes Cerfa et aide 2042-C-PRO", () => {
   const access = (async () => ({ ok: true, fiscalYear: Y })) as never;
   const post = (handler: typeof handleCerfaPdfRequest | typeof handleAide2042PdfRequest, body: unknown, capabilities?: MultiPropertyCapabilities) =>
-    handler(new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
+    callDelivery(handler, new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
   const aide = (rfs: unknown, capabilities?: MultiPropertyCapabilities) => post(handleAide2042PdfRequest, { rfs, activityStartDate: "2026-03-01" }, capabilities);
   const cerfa = (rfs: unknown, capabilities?: MultiPropertyCapabilities) => post(handleCerfaPdfRequest, { rfs, declarationVersionId: "v1", forms: ["2033-B-SD", "2031-SD"] }, capabilities);
   const supportedRfs = () => generated(SIMPLE()).result.rfs;
@@ -452,7 +453,8 @@ describe("MB-MULTI-DOMAIN-GUARD-1 — routes Cerfa et aide 2042-C-PRO", () => {
   });
 
   it("activation de LIVRAISON simulée + multi SUPPORTÉ : les deux routes livrent (RFS consolidée d'activité), la clôture reste fermée", async () => {
-    const open = caps(["delivery"]);
+    // MB-MULTI-SERVER-TRUST-2 : la livraison RECALCULE la génération côté serveur — elle exige donc aussi la capacité de génération.
+    const open = caps(["generation", "delivery"]);
     for (const route of [aide, cerfa]) {
       const response = await route(supportedRfs(), open);
       assert.equal(response.status, 200);
@@ -490,12 +492,13 @@ describe("MB-MULTI-DOMAIN-GUARD-1 — routes Cerfa et aide 2042-C-PRO", () => {
     }
   });
 
-  it("une seule définition du domaine : les deux handlers délèguent à resolveMultiPropertyDeliveryAdmission et ne reproduisent aucune condition de domaine", () => {
+  it("une seule définition du domaine : les deux handlers délèguent à l'autorité serveur (qui appelle resolveMultiPropertyDeliveryAdmission) et ne reproduisent aucune condition de domaine", () => {
     for (const file of ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", "src/app/api/lmnp/declaration/aide-2042-pdf/handler.ts"]) {
       const code = source(file);
-      assert.match(code, /resolveMultiPropertyDeliveryAdmission/, file);
+      assert.match(code, /resolveDeliveryAuthority/, file);
       assert.doesNotMatch(code, /deficitsOuverture|amortNonDeduitExercice|amortReportesUtilises|openingDeficits/, file);
     }
+    assert.match(source("src/lib/lmnp/services/declaration/authoritative-delivery.ts"), /resolveMultiPropertyDeliveryAdmission/);
   });
 });
 

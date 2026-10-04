@@ -25,7 +25,7 @@ const workspace = (ids: string[], scoped: boolean) => ({
 const snapshot = (ids: string[], scoped: boolean) => ({ schemaVersion: scoped ? 2 : 1, payload: { schemaVersion: scoped ? 2 : 1, workspace: workspace(ids, scoped) } });
 
 function setup() {
-  const env = createFakePaymentEnv();
+  const env = createFakePaymentEnv({ defaultSnapshot: true });
   env.addUser("tok", "user-1");
   env.addDossier("dossier-X", "user-1");
   const declareEligible = (fiscalYear = 2026) =>

@@ -2,9 +2,15 @@
  * Payment V1 — éligibilité d'antériorité LMNP (P0 1858955) côté SERVEUR, avant
  * tout Checkout : un dossier non éligible n'est jamais facturé.
  *
- * Le serveur ne possède pas l'état de l'exercice (workspace IndexedDB). Il ne
- * peut donc pas rejouer `resolvePriorHistoryEligibility` sur des faits qu'il
- * n'a pas ; il ne fait PAS non plus confiance à un booléen client. Pont V1 :
+ * Le serveur ne rejoue pas `resolvePriorHistoryEligibility` sur tous les faits de
+ * l'exercice et ne fait PAS confiance à un booléen client. Pont V1 :
+ *
+ * MB-MULTI-SERVER-TRUST-2 — depuis, le serveur LIT le snapshot persisté de
+ * l'exercice : l'Opening externe (EXTERNAL_HISTORY) est celle du snapshot, jamais
+ * celle de la requête (le checkout remplace `clientContinuity.fiscalYearOpening`).
+ * Les autres faits de continuité envoyés par le client restent bornés par
+ * `previousYearPaid` (fait serveur) ; la livraison, elle, recalcule l'éligibilité
+ * depuis le snapshot (`authoritative-delivery.ts`).
  *
  *  - la réponse du client (FIRST_REAL_YEAR / FISCAL_AI_PREVIOUS / EXTERNAL_HISTORY)
  *    est ENREGISTRÉE côté serveur (`prior_history_status`) par un endpoint

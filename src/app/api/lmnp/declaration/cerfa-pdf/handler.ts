@@ -13,21 +13,22 @@ import {
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import { assembleLiasseFromRfs } from "@/runtime/capabilities/rfs/projection/assemble-liasse-from-rfs";
 import { isDispense2033AEnEffet } from "@/runtime/capabilities/rfs/dispense-2033a";
-import {
-  MULTI_PROPERTY_NOT_ENABLED_CODE,
-  type MultiPropertyCapabilities,
-} from "@/lib/lmnp/dossier/multi-property-activation";
-import { resolveMultiPropertyDeliveryAdmission } from "@/lib/lmnp/dossier/multi-property-domain";
+import type { MultiPropertyCapabilities } from "@/lib/lmnp/dossier/multi-property-activation";
 import { resolveFinalDeclarabilityState } from "@/lib/lmnp/services/declaration/final-declarability";
 import {
   defaultResolveDeliveryAccess,
   type DeliveryAccessResolver,
 } from "@/lib/lmnp/services/payment/delivery-access";
+import { resolveDeliveryAuthority, type DeliveryHandlerDeps } from "@/lib/lmnp/services/declaration/authoritative-delivery";
+import { assembleLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/assemble-liasse-fiscale-pdf";
+import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
 
 /**
- * P1-1/P1-6C — pont serveur minimal entre le parcours client (RFS déjà
- * calculée par runDeclarationGeneration(), jamais recalculée ici) et le
- * moteur CERFA Node-only (`src/lib/lmnp/services/liasse-pdf/`, inchangé).
+ * P1-1/P1-6C — pont serveur entre le dossier PERSISTÉ et le moteur CERFA Node-only (`src/lib/lmnp/services/liasse-pdf/`, inchangé).
+ *
+ * MB-MULTI-SERVER-TRUST-2 — la RFS livrée n'est PLUS celle du client : le serveur charge le snapshot persisté courant, vérifie
+ * `expectedRevision`, évalue le domaine et RECALCULE la génération (un seul F-006) — voir `authoritative-delivery.ts`. Le corps de
+ * requête ne porte aucune RFS ; une RFS éventuellement envoyée par un ancien client est ignorée (jamais lue, jamais fusionnée).
  * Cette route n'appelle QUE les fonctions publiques `generateCerfa*FromRfs()`
  * des 6 formulaires — aucun accès à produceFiscalResult(), produceLiasse(),
  * ni aux mappers RFS bruts (jamais appelés directement ici).
@@ -55,13 +56,16 @@ function isSupportedForm(value: unknown): value is SupportedForm {
 }
 
 type RequestBody = {
-  rfs?: unknown;
+  /** Étiquette de traçabilité (non fiscale) ; l'identifiant de version persisté, s'il existe, prime. */
   declarationVersionId?: unknown;
   forms?: unknown;
-  /** Payment V1 — contexte d'accès à la livraison payée (jamais l'autorité fiscale : la RFS reste celle du client). */
+  /** `liasse_fiscale` : le serveur renvoie la liasse complète (pages documentaires + Cerfa), toutes deux depuis SA RFS. */
+  bundle?: unknown;
+  /** Contexte d'accès à la livraison payée et fraîcheur : demandes, jamais autorité fiscale. */
   authToken?: unknown;
   dossierId?: unknown;
   fiscalYear?: unknown;
+  expectedRevision?: unknown;
 };
 
 type WrapperResult =
@@ -89,8 +93,10 @@ type FormResult = { form: SupportedForm; result: WrapperResult };
 export async function handleCerfaPdfRequest(
   request: Request,
   resolveAccess: DeliveryAccessResolver = defaultResolveDeliveryAccess,
-  /** Tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES` (toutes fermées). */
+  /** Tests uniquement : capacités multi injectées. En production, toujours `MULTI_PROPERTY_CAPABILITIES`. */
   multiPropertyCapabilities?: MultiPropertyCapabilities,
+  /** Tests uniquement : lecteur de snapshot / pipeline injectés. En production : service role et pipeline réel. */
+  deps: DeliveryHandlerDeps = {},
 ) {
   let body: RequestBody;
   try {
@@ -102,47 +108,16 @@ export async function handleCerfaPdfRequest(
     return NextResponse.json({ error: "Corps de requête JSON invalide." }, { status: 400 });
   }
 
-  // Payment V1 — AUTH → PROPRIÉTÉ → ENTITLEMENT PAYÉ (dossier + exercice), AVANT
-  // toute validation ou génération. La frontière de déclarabilité ci-dessous
-  // reste intacte et s'applique ENSUITE : le paiement la complète, ne la remplace pas.
+  // AUTH → PROPRIÉTÉ → ENTITLEMENT PAYÉ (dossier + exercice), AVANT toute lecture du snapshot ou génération. La frontière de
+  // déclarabilité ci-dessous reste intacte et s'applique ENSUITE : le paiement la complète, ne la remplace pas.
   const access = await resolveAccess({
     authToken: body.authToken,
     dossierId: body.dossierId,
     fiscalYear: body.fiscalYear,
-    fiscalYearOpening: (body as { fiscalYearOpening?: unknown }).fiscalYearOpening,
   });
   if (!access.ok) return access.response;
 
-  const rfs = body.rfs;
-  const declarationVersionId = typeof body.declarationVersionId === "string" ? body.declarationVersionId.trim() : "";
   const forms = body.forms;
-
-  if (!rfs || typeof rfs !== "object") {
-    return NextResponse.json({ error: "rfs requis (FiscalRepresentation)." }, { status: 400 });
-  }
-  // Un exercice payé ne débloque jamais un autre exercice : la RFS livrée doit
-  // porter l'exercice de l'entitlement vérifié.
-  if (access.fiscalYear !== undefined && (rfs as { exercice?: unknown }).exercice !== access.fiscalYear) {
-    return NextResponse.json(
-      { error: "La déclaration ne correspond pas à l'exercice payé.", code: "fiscal_year_mismatch" },
-      { status: 403 },
-    );
-  }
-  // R2C.3c1 — défense en profondeur (la source de vérité reste le snapshot serveur du checkout/de la transition) :
-  // une RFS portant le marqueur multi n'est jamais livrée tant que l'activation utilisateur est fermée.
-  // MB-MULTI-DOMAIN-GUARD-1 : MÊME admission que la route aide 2042-C-PRO (capacité de livraison, puis garde de domaine ADR-011).
-  const admission = resolveMultiPropertyDeliveryAdmission(rfs, multiPropertyCapabilities);
-  if (!admission.allowed) {
-    return NextResponse.json(
-      admission.reason === "multi_property_not_enabled"
-        ? { status: "blocked", reason: MULTI_PROPERTY_NOT_ENABLED_CODE }
-        : { status: "blocked", reason: admission.reason, domainReasons: admission.domainReasons.map((item) => item.code) },
-      { status: 422 },
-    );
-  }
-  if (!declarationVersionId) {
-    return NextResponse.json({ error: "declarationVersionId requis." }, { status: 400 });
-  }
   if (!Array.isArray(forms) || forms.length === 0 || !forms.every(isSupportedForm)) {
     return NextResponse.json(
       { error: `forms doit être un tableau non vide, valeurs autorisées : ${SUPPORTED_FORMS.join(", ")}.` },
@@ -150,7 +125,23 @@ export async function handleCerfaPdfRequest(
     );
   }
 
-  const typedRfs = rfs as FiscalRepresentation;
+  // Autorité serveur : snapshot persisté courant + expectedRevision + domaine + génération RECALCULÉE. La RFS du corps de requête
+  // n'existe pas ici : elle n'est ni lue, ni comparée, ni fusionnée.
+  const authority = await resolveDeliveryAuthority(
+    { dossierId: body.dossierId, fiscalYear: access.fiscalYear ?? body.fiscalYear, expectedRevision: body.expectedRevision },
+    deps,
+    multiPropertyCapabilities,
+  );
+  if (!authority.ok) return authority.response;
+  const typedRfs: FiscalRepresentation = authority.rfs;
+
+  const persistedVersionId = authority.workspace.declarationDraft?.declaration?.currentVersionId?.trim();
+  const declarationVersionId =
+    persistedVersionId || (typeof body.declarationVersionId === "string" ? body.declarationVersionId.trim() : "");
+  if (!declarationVersionId) {
+    return NextResponse.json({ error: "declarationVersionId requis." }, { status: 400 });
+  }
+
   const requestedForms = forms as SupportedForm[];
 
   // Dispense 2033-A (CGI, art. 302 septies A bis, VI) — même frontière que
@@ -169,9 +160,8 @@ export async function handleCerfaPdfRequest(
     // NEXT-5 (server hardening) — même frontière de déclarabilité que
     // DeclarationReadyView/ArchivedDeclarationView (final-declarability.ts,
     // seule source de vérité, jamais reproduite ici) : cette route reste
-    // aujourd'hui joignable indépendamment de l'UI (RFS transmise telle
-    // quelle par le client, jamais recalculée), donc son propre bypass de
-    // l'UI. Bloque AVANT toute génération PDF, jamais après — aucun octet
+    // joignable indépendamment de l'UI (désormais sur la RFS RECALCULÉE par
+    // le serveur, jamais celle du client), donc son propre garde-fou. Bloque AVANT toute génération PDF, jamais après — aucun octet
     // n'est produit pour une projection dont on sait déjà qu'elle est
     // fiscalement incomplète pour ce dossier.
     if (!resolveFinalDeclarabilityState(assembleLiasseFromRfs(typedRfs)).deliverable) {
@@ -202,12 +192,22 @@ export async function handleCerfaPdfRequest(
       (a, b) => ALL_CERFA_FORM_IDS.indexOf(a.form) - ALL_CERFA_FORM_IDS.indexOf(b.form),
     );
 
+    // `bundle: liasse_fiscale` : pages documentaires ET Cerfa produites ICI, depuis la RFS serveur et le workspace persisté — le
+    // navigateur n'assemble plus rien. Sans `bundle`, seul le PDF Cerfa est renvoyé (contrat historique de la route).
+    const respond = async (cerfaBytes: Uint8Array) => {
+      let output = cerfaBytes;
+      if (body.bundle === "liasse_fiscale") {
+        const extras = collectLiasseDossierExtras({
+          declarationDraft: authority.workspace.declarationDraft,
+          fiscalYear: authority.workspace.fiscalYear,
+        });
+        output = await assembleLiasseFiscalePdf({ rfs: typedRfs, extras, cerfaPdfBytes: cerfaBytes });
+      }
+      return new NextResponse(new Uint8Array(output), { status: 200, headers: { "Content-Type": "application/pdf" } });
+    };
+
     if (generated.length === 1) {
-      const bytes = generated[0].result.pdfBytes;
-      return new NextResponse(new Uint8Array(bytes), {
-        status: 200,
-        headers: { "Content-Type": "application/pdf" },
-      });
+      return respond(generated[0].result.pdfBytes);
     }
 
     // Plusieurs formulaires demandés dans la même requête — aucune fonction
@@ -226,12 +226,7 @@ export async function handleCerfaPdfRequest(
       const pages = await merged.copyPages(doc, doc.getPageIndices());
       for (const page of pages) merged.addPage(page);
     }
-    const mergedBytes = await merged.save();
-
-    return new NextResponse(new Uint8Array(mergedBytes), {
-      status: 200,
-      headers: { "Content-Type": "application/pdf" },
-    });
+    return respond(await merged.save());
   } catch (err) {
     console.error("[api/lmnp/declaration/cerfa-pdf]", err);
     return NextResponse.json({ error: "Erreur serveur lors de la génération du PDF." }, { status: 500 });

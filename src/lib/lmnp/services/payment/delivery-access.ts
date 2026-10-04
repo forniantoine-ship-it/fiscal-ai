@@ -11,9 +11,13 @@
  * Lot 5.3 — si `prior_history_status === EXTERNAL_HISTORY`, la livraison exige
  * en plus une FiscalYearOpening usable (même garde 4F.2 que le checkout).
  * Absent / wrong year / pending / wrong source → 403 fail-closed.
+ *
+ * MB-MULTI-SERVER-TRUST-2 — cette Opening est lue dans le snapshot PERSISTÉ du serveur, jamais dans la requête : un client ne peut
+ * ni la fournir ni la remplacer. Sans lecteur de snapshot, sans ligne ou avec un payload illisible : fail-closed (403).
  */
 import type { FiscalYearOpening } from "@/lib/lmnp/services/fiscal-year-opening/types";
 import { isUsableExternalTakeoverOpening } from "@/lib/lmnp/services/fiscal-year-opening/is-usable-external-takeover-opening";
+import { parseWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import { isNonEmptyString, jsonResponse, mapPaymentError, parseFiscalYear } from "./payment-http";
 import { createDeliveryDeps, type PaymentDeps } from "./payment-server";
 
@@ -21,8 +25,6 @@ export type DeliveryAccessInput = {
   authToken?: unknown;
   dossierId?: unknown;
   fiscalYear?: unknown;
-  /** Lot 5.3 — Opening externe persistée, requise si EXTERNAL_HISTORY. */
-  fiscalYearOpening?: unknown;
 };
 
 export type DeliveryAccessResult =
@@ -30,7 +32,16 @@ export type DeliveryAccessResult =
   | { ok: false; response: Response };
 
 export type DeliveryAccessResolver = (input: DeliveryAccessInput) => Promise<DeliveryAccessResult>;
-type DeliveryDeps = Pick<PaymentDeps, "authenticate" | "assertOwnership" | "store">;
+type DeliveryDeps = Pick<PaymentDeps, "authenticate" | "assertOwnership" | "store"> & Partial<Pick<PaymentDeps, "readWorkspaceSnapshot">>;
+
+/** Opening externe PERSISTÉE côté serveur (snapshot courant de l'exercice) ; `undefined` si elle n'est pas établie. */
+async function persistedExternalOpening(deps: DeliveryDeps, dossierId: string, fiscalYear: number): Promise<FiscalYearOpening | undefined> {
+  if (!deps.readWorkspaceSnapshot) return undefined;
+  const row = await deps.readWorkspaceSnapshot(dossierId, fiscalYear);
+  if (!row) return undefined;
+  const parsed = parseWorkspaceSnapshot(row.payload);
+  return parsed.ok ? parsed.envelope.workspace.fiscalYear.externalTakeoverOpening?.opening : undefined;
+}
 
 export async function resolveDeliveryAccess(
   input: DeliveryAccessInput,
@@ -63,10 +74,7 @@ export async function resolveDeliveryAccess(
     }
     // Lot 5.3 — EXTERNAL_HISTORY : livraison seulement avec Opening usable (4F.2).
     if (row.prior_history_status === "EXTERNAL_HISTORY") {
-      const opening =
-        input.fiscalYearOpening && typeof input.fiscalYearOpening === "object"
-          ? (input.fiscalYearOpening as FiscalYearOpening)
-          : undefined;
+      const opening = await persistedExternalOpening(deps, dossierId, fiscalYear);
       if (!isUsableExternalTakeoverOpening(opening, fiscalYear)) {
         return {
           ok: false,

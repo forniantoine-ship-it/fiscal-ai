@@ -78,7 +78,11 @@ describe("DeclarationReadyView — deux documents fiscaux client", () => {
     // Payment V1 — le PDF est produit par le serveur (exercice payé requis), plus rendu dans le navigateur.
     assert.ok(source.includes('from "@/lib/lmnp/services/declaration/download-aide-2042-pdf"'));
     assert.ok(source.includes("downloadAide2042Pdf({"));
-    assert.ok(source.includes("fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear)"));
+    // MB-MULTI-SERVER-TRUST-2 — ni RFS ni Opening dans la requête ; la révision CONFIRMÉE est envoyée, le serveur recalcule.
+    assert.ok(source.includes("resolveDeliveryRevision()"));
+    assert.ok(source.includes("expectedRevision: revision.revision"));
+    assert.equal(/downloadAide2042Pdf\(\{[^}]*\brfs\b/.test(source), false);
+    assert.equal(source.includes("fiscalYearOpening:"), false);
     assert.equal(source.includes("render-aide-2042-pdf"), false);
     assert.equal(source.includes("buildClientSummaryDocument"), false);
     assert.equal(source.includes("render-client-summary-pdf"), false);

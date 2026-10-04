@@ -32,9 +32,9 @@ function notEligible(): Dispense2033AState["eligibilite"] {
 const EXPECTED_SIX_FORMS = ["2031-SD", "2031-bis-SD", "2033-A-SD", "2033-B-SD", "2033-C-SD", "2033-D-SD"] as const;
 
 describe("buildCerfaPdfRequestPayload", () => {
-  it("transporte la RFS et le declarationVersionId tels quels, jamais transformés", () => {
-    const payload = buildCerfaPdfRequestPayload(FAKE_RFS, "version-1");
-    assert.equal(payload.rfs, FAKE_RFS, "la RFS doit être la MÊME référence, jamais reconstruite");
+  it("MB-MULTI-SERVER-TRUST-2 — ne transporte AUCUNE RFS (le serveur recalcule) ; le declarationVersionId reste tel quel", () => {
+    const payload = buildCerfaPdfRequestPayload(FAKE_RFS, "version-1") as unknown as Record<string, unknown>;
+    assert.equal("rfs" in payload, false, "jamais de RFS dans la requête de livraison");
     assert.equal(payload.declarationVersionId, "version-1");
   });
 

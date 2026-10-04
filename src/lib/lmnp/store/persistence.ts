@@ -518,6 +518,15 @@ export async function flushWorkspaceSave(
   }
 }
 
+/**
+ * MB-MULTI-SERVER-TRUST-2 — dernière révision serveur CONFIRMÉE par cet onglet pour CE workspace (jamais lue sur le serveur : adopter
+ * la révision vivante masquerait un changement fait ailleurs). `null` si inconnue : l'appelant échoue fermé.
+ */
+export async function readLastSyncedServerRevision(userId: string, workspace: PersistedWorkspace): Promise<number | null> {
+  const record = await readWorkspaceRecord(userId, workspace);
+  return normalizeLastSyncedServerRevision(record?.lastSyncedServerRevision) ?? null;
+}
+
 export type StrictWorkspaceFlushResult =
   | { status: "ok"; revision: number }
   | {

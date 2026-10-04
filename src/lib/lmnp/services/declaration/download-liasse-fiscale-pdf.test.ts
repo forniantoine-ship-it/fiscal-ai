@@ -14,7 +14,8 @@ import { handleCerfaPdfRequest } from "@/app/api/lmnp/declaration/cerfa-pdf/hand
 // Payment V1 — ces tests portent sur le CONTENU fiscal du PDF, pas sur l'accès
 // payant : le résolveur d'accès est injecté (autorisé). L'authentification, la
 // propriété et l'entitlement payé sont prouvés dans route.payment.test.ts.
-const POST = (request: Request) => handleCerfaPdfRequest(request, async () => ({ ok: true }));
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
+const POST = (request: Request) => callDelivery(handleCerfaPdfRequest, request, async () => ({ ok: true }));
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { extractDrawnStringsForPage } from "@/lib/lmnp/services/liasse-pdf/tests/extract-rendered-text";
 import type { DeclarationDraft } from "@/lib/lmnp/types/domain";

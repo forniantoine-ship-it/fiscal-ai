@@ -15,6 +15,7 @@ import {
 import {
   createDefaultWorkspace,
   flushWorkspaceSaveConfirmed,
+  readLastSyncedServerRevision,
   flushWorkspaceSave,
   hydrateLmnpStore,
   reconcileLocalWorkspaceWithSnapshots,
@@ -86,6 +87,11 @@ interface LmnpContextValue {
   flushWorkspace: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<void>;
   /** Correction V3 only: revision returned solely after a successful server CAS. */
   confirmWorkspaceSave: (patch?: { declarationDraft?: Partial<DeclarationDraft> }) => Promise<ConfirmedWorkspaceSaveResult>;
+  /**
+   * MB-MULTI-SERVER-TRUST-2 — vide l'autosave, puis renvoie la révision serveur CONFIRMÉE que le serveur comparera à `expectedRevision`
+   * avant toute livraison. Jamais une valeur lue sur le serveur ni devinée : sans confirmation, `failed` (la livraison n'est pas demandée).
+   */
+  resolveDeliveryRevision: () => Promise<{ status: "ok"; revision: number } | { status: "failed"; reason: string }>;
   /** Document ids currently awaiting server-side deletion confirmation (Supabase-backed documents only). */
   pendingDocumentDeletions: Set<string>;
   /** Last document-deletion error, if any — cleared on the next removal attempt for that document. */
@@ -637,6 +643,16 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     [awaitCommittedActions, correctionScope, isReady],
   );
 
+  const resolveDeliveryRevision = useCallback(async (): Promise<{ status: "ok"; revision: number } | { status: "failed"; reason: string }> => {
+    const saved = await confirmWorkspaceSave();
+    if (saved.status === "confirmed") return { status: "ok", revision: saved.revision };
+    if (saved.status === "failed") return { status: "failed", reason: saved.reason };
+    // « clean » : aucune écriture en attente — la révision à envoyer est celle que cet onglet a confirmée en dernier.
+    const userId = authUserIdRef.current;
+    const revision = userId ? await readLastSyncedServerRevision(userId, toPersisted(stateRef.current)) : null;
+    return revision !== null ? { status: "ok", revision } : { status: "failed", reason: "revision_unknown" };
+  }, [confirmWorkspaceSave]);
+
   // P3-SOCLE-CYCLE-FISCAL — P0-1 v2 — même dossier, exercice suivant.
   // Chemin entièrement distinct de CREATE_NEW_DECLARATION (dispatchWithPersistence
   // ci-dessous) : aucune purge de document, préconditions vérifiées avant tout
@@ -750,6 +766,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       persistenceUserId,
       flushWorkspace,
       confirmWorkspaceSave,
+      resolveDeliveryRevision,
       pendingDocumentDeletions,
       documentDeletionError,
       createNextFiscalYear,
@@ -770,6 +787,7 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
       persistenceUserId,
       flushWorkspace,
       confirmWorkspaceSave,
+      resolveDeliveryRevision,
       pendingDocumentDeletions,
       documentDeletionError,
       createNextFiscalYear,

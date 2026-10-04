@@ -13,7 +13,7 @@ import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { documentJourneyRoute, LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-aide-2042-pdf";
-import { collectLiasseDossierExtras } from "@/lib/lmnp/services/declaration/collect-liasse-dossier-extras";
+import { DELIVERY_REVISION_UNAVAILABLE_MESSAGE } from "@/lib/lmnp/services/declaration/resolve-delivery-revision";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { resolveDeclarationOutOfDate } from "@/lib/lmnp/services/declaration/declaration-freshness";
 import { isMultiPropertyDeliveryBlocked } from "@/lib/lmnp/dossier/multi-property-activation";
@@ -23,7 +23,6 @@ import {
   FINAL_DECLARABILITY_BLOCKED_MESSAGE,
 } from "@/lib/lmnp/services/declaration/final-declarability";
 import { canCloseFiscalYear } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
-import { resolvePersistedExternalTakeoverOpening } from "@/lib/lmnp/services/declaration/prior-history-eligibility";
 import { useLmnp } from "@/lib/lmnp/store";
 
 function fmtEur(value: number): string {
@@ -33,9 +32,9 @@ function fmtEur(value: number): string {
 export function DeclarationReadyView() {
   const router = useRouter();
   const dashboardHref = useScopedOwnerHref(LMNP_ROUTES.dashboard);
-  const { workspace, closeFiscalYearAndCreateNext, closeFiscalYearError } = useLmnp();
+  const { workspace, closeFiscalYearAndCreateNext, closeFiscalYearError, resolveDeliveryRevision } = useLmnp();
   const { fiscalYear } = workspace;
-  const { fiscalResult, liasseResult, rfs, activityStartDate, declaration } = workspace.declarationDraft ?? {};
+  const { fiscalResult, liasseResult, rfs, declaration } = workspace.declarationDraft ?? {};
 
   // Design Gate "Clôture N → N+1", Décision 1 — geste utilisateur unique
   // "Clôturer et continuer". Précondition affichage = précondition métier
@@ -128,16 +127,19 @@ export function DeclarationReadyView() {
     setLiasseDownloading(true);
     setLiasseDownloadError(undefined);
     try {
+      // MB-MULTI-SERVER-TRUST-2 — vider l'autosave et obtenir la révision CONFIRMÉE ; le serveur recalcule depuis son snapshot
+      // courant (aucune RFS envoyée) et refuse (409) si le dossier a changé depuis.
+      const revision = await resolveDeliveryRevision();
+      if (revision.status !== "ok") {
+        setLiasseDownloadError(DELIVERY_REVISION_UNAVAILABLE_MESSAGE);
+        return;
+      }
       await downloadLiasseFiscalePdf({
         rfs,
-        extras: collectLiasseDossierExtras({
-          declarationDraft: workspace.declarationDraft,
-          fiscalYear,
-        }),
         declarationVersionId,
         fiscalYear: fiscalYear.year,
         dossierId: fiscalYear.dossierId,
-        fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
+        expectedRevision: revision.revision,
       });
     } catch (err) {
       setLiasseDownloadError(
@@ -302,20 +304,24 @@ export function DeclarationReadyView() {
               onClick={() => {
                 if (!rfs) return;
                 setAideDownloadError(undefined);
-                // Payment V1 — PDF produit par le serveur (exercice payé requis).
-                downloadAide2042Pdf({
-                  rfs,
-                  activityStartDate,
-                  fiscalYear: fiscalYear.year,
-                  dossierId: fiscalYear.dossierId,
-                  fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
-                }).catch((err) =>
-                  setAideDownloadError(
-                    err && typeof err === "object" && "message" in err && typeof err.message === "string"
-                        ? err.message
-                        : "L'aide n'a pas pu être générée. Réessayez dans quelques instants.",
-                  ),
-                );
+                // Payment V1 — PDF produit par le serveur (exercice payé requis). MB-MULTI-SERVER-TRUST-2 — révision confirmée
+                // envoyée ; ni RFS ni date d'activité : le serveur les tire du dossier persisté.
+                resolveDeliveryRevision()
+                  .then((revision) => {
+                    if (revision.status !== "ok") throw { message: DELIVERY_REVISION_UNAVAILABLE_MESSAGE };
+                    return downloadAide2042Pdf({
+                      fiscalYear: fiscalYear.year,
+                      dossierId: fiscalYear.dossierId,
+                      expectedRevision: revision.revision,
+                    });
+                  })
+                  .catch((err) =>
+                    setAideDownloadError(
+                      err && typeof err === "object" && "message" in err && typeof err.message === "string"
+                          ? err.message
+                          : "L'aide n'a pas pu être générée. Réessayez dans quelques instants.",
+                    ),
+                  );
               }}
             >
               Télécharger mon aide pour la déclaration 2042-C-PRO

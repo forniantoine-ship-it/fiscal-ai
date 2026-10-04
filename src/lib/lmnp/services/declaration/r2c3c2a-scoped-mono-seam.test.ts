@@ -360,7 +360,9 @@ describe("R2C.3c2a — garde-fous de périmètre", () => {
       ["src/lib/lmnp/services/payment/checkout-handler.ts", /resolveMultiPropertyPaymentAdmission\(/],
       ["src/lib/lmnp/services/payment/multi-payment-admission.ts", /"payment"[\s\S]*"generation"[\s\S]*"delivery"/],
       ["src/lib/lmnp/services/fiscal-year-transition/transition-handler.ts", /"closing"[\s\S]*"nextYear"/],
-      ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", /resolveMultiPropertyDeliveryAdmission/],
+      // MB-MULTI-SERVER-TRUST-2 : la route délègue à l'autorité serveur, qui porte l'admission de livraison multi.
+      ["src/app/api/lmnp/declaration/cerfa-pdf/handler.ts", /resolveDeliveryAuthority/],
+      ["src/lib/lmnp/services/declaration/authoritative-delivery.ts", /resolveMultiPropertyDeliveryAdmission/],
       ["src/lib/lmnp/services/dossier/fiscal-year-cycle.ts", /isMultiPropertyClosingBlocked[\s\S]*isMultiPropertyNextYearBlocked|isMultiPropertyNextYearBlocked[\s\S]*isMultiPropertyClosingBlocked/],
       ["src/lib/lmnp/services/fiscal-year-transition/prepare-transition.ts", /isMultiPropertyClosingBlocked/],
       ["src/lib/lmnp/store/server-fiscal-year-transition.ts", /isMultiPropertyClosingBlocked/],

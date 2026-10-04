@@ -58,7 +58,7 @@ describe("isFiscalYearClosed — helper pur, horloge injectée", () => {
 });
 
 function setup(now: Date) {
-  const env = createFakePaymentEnv();
+  const env = createFakePaymentEnv({ defaultSnapshot: true });
   env.setNow(now);
   env.addUser("tok-antoine", "user-antoine");
   env.addDossier("dossier-X", "user-antoine");

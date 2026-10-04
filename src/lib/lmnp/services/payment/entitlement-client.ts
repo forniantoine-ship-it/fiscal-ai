@@ -110,8 +110,11 @@ export type DeliveryAccessContext = {
   authToken: string;
   dossierId: string;
   fiscalYear: number;
-  /** Lot 5.3 — Opening externe persistée (requise côté serveur si EXTERNAL_HISTORY). */
-  fiscalYearOpening?: import("@/lib/lmnp/services/fiscal-year-opening/types").FiscalYearOpening;
+  /**
+   * MB-MULTI-SERVER-TRUST-2 — révision du snapshot que l'utilisateur consulte (livraison uniquement ; le checkout l'ignore : le
+   * paiement n'est jamais lié à une révision). Le serveur la compare à la révision persistée (409 `workspace_snapshot_stale`).
+   */
+  expectedRevision?: number;
 };
 
 /** Contexte envoyé aux routes de livraison : même convention que la suppression de document (`authToken` dans le corps). */
@@ -120,7 +123,7 @@ export async function resolveDeliveryContext(
   deps: {
     client?: SupabaseLike;
     dossierId?: string | null;
-    fiscalYearOpening?: DeliveryAccessContext["fiscalYearOpening"];
+    expectedRevision?: number;
   } = {},
 ): Promise<DeliveryAccessContext> {
   const client = deps.client ?? (await defaultClient());
@@ -134,7 +137,7 @@ export async function resolveDeliveryContext(
     authToken: session.access_token,
     dossierId,
     fiscalYear,
-    ...(deps.fiscalYearOpening ? { fiscalYearOpening: deps.fiscalYearOpening } : {}),
+    ...(deps.expectedRevision !== undefined ? { expectedRevision: deps.expectedRevision } : {}),
   };
 }
 

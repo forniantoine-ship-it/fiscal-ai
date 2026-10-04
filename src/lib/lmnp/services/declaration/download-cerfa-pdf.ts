@@ -3,16 +3,15 @@ import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
 import type { DeliveryAccessContext } from "@/lib/lmnp/services/payment/entitlement-client";
 
 /**
- * P1-2 — pont client vers la route serveur P1-1 (`/api/lmnp/declaration/cerfa-pdf`).
- * Ce module ne recalcule jamais de fiscalité, ne reconstruit jamais la RFS,
- * n'invente aucun identifiant : la RFS et le `declarationVersionId` reçus
- * en paramètre sont ceux fournis par l'appelant.
+ * P1-2 — pont client vers la route serveur (`/api/lmnp/declaration/cerfa-pdf`).
  *
- * L'appelant peut être l'exercice actif ou un exercice archivé. Dans les
- * deux cas, `fetchOfficialCerfaPdfBytes` n'ouvre pas le workspace : il
- * envoie le RFS et le `declarationVersionId` tels quels. Une régénération
- * historique utilise donc le millésime actuel du moteur Cerfa ; elle ne
- * restitue pas les bytes PDF produits au moment de la clôture.
+ * MB-MULTI-SERVER-TRUST-2 — la requête ne transporte AUCUNE RFS : le serveur charge le snapshot persisté courant, vérifie
+ * `expectedRevision` (portée par le contexte d'accès) et recalcule la déclaration. La RFS locale ne sert ici qu'à choisir les
+ * formulaires à DEMANDER (indication non autoritative : le serveur reste strict, ex. dispense 2033-A) ; elle n'est jamais envoyée.
+ * Ce module ne recalcule jamais de fiscalité et n'invente aucun identifiant.
+ *
+ * Une régénération historique (exercice archivé) utilise le millésime actuel du moteur Cerfa ; elle ne restitue pas les bytes PDF
+ * produits au moment de la clôture.
  */
 
 export const CERFA_PDF_ROUTE = "/api/lmnp/declaration/cerfa-pdf";
@@ -36,9 +35,10 @@ export const CERFA_PDF_FORMS = [
 export type CerfaFormId = (typeof CERFA_PDF_FORMS)[number];
 
 export type CerfaPdfRequestPayload = {
-  rfs: FiscalRepresentation;
   declarationVersionId: string;
   forms: CerfaFormId[];
+  /** `liasse_fiscale` : le serveur renvoie la liasse complète (pages documentaires + Cerfa), toutes deux depuis SA RFS. */
+  bundle?: "liasse_fiscale";
 };
 
 /**
@@ -56,11 +56,12 @@ export type CerfaPdfRequestPayload = {
 export function buildCerfaPdfRequestPayload(
   rfs: FiscalRepresentation,
   declarationVersionId: string,
+  options: { bundle?: "liasse_fiscale" } = {},
 ): CerfaPdfRequestPayload {
   const forms = isDispense2033AEnEffet(rfs.dispense2033A)
     ? CERFA_PDF_FORMS.filter((form) => form !== "2033-A-SD")
     : [...CERFA_PDF_FORMS];
-  return { rfs, declarationVersionId, forms };
+  return { declarationVersionId, forms, ...(options.bundle ? { bundle: options.bundle } : {}) };
 }
 
 /**

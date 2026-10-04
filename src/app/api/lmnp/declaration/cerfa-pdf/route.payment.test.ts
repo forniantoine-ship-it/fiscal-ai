@@ -17,6 +17,7 @@ import { handleCerfaPdfRequest } from "./handler";
 import { handleAide2042PdfRequest } from "../aide-2042-pdf/handler";
 import { resolveDeliveryAccess } from "@/lib/lmnp/services/payment/delivery-access";
 import { createFakePaymentEnv, jsonPost } from "@/lib/lmnp/services/payment/payment-fakes";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import type { DeclarationDraft } from "@/lib/lmnp/types/domain";
 import type { FiscalRepresentation } from "@/runtime/capabilities/rfs/types";
@@ -77,8 +78,8 @@ function setup() {
   env.addDossier("dossier-Y", "user-antoine");
   env.addDossier("dossier-EVE", "user-eve");
   const access = (input: Parameters<typeof resolveDeliveryAccess>[0]) => resolveDeliveryAccess(input, env.deps);
-  const cerfa = (body: unknown) => handleCerfaPdfRequest(jsonPost(URL_CERFA, body), access);
-  const aide = (body: unknown) => handleAide2042PdfRequest(jsonPost(URL_AIDE, body), access);
+  const cerfa = (body: unknown) => callDelivery(handleCerfaPdfRequest, jsonPost(URL_CERFA, body), access, undefined, { defaults: false });
+  const aide = (body: unknown) => callDelivery(handleAide2042PdfRequest, jsonPost(URL_AIDE, body), access, undefined, { defaults: false });
   return { env, cerfa, aide };
 }
 
@@ -268,7 +269,7 @@ describe("garde de câblage — aucune livraison finale ne contourne le serveur"
     }
   });
 
-  it("les handlers appellent le résolveur d'accès AVANT toute validation de RFS ou génération", () => {
+  it("les handlers appellent le résolveur d'accès AVANT toute lecture du snapshot, recalcul ou génération", () => {
     for (const rel of [
       "app/api/lmnp/declaration/cerfa-pdf/handler.ts",
       "app/api/lmnp/declaration/aide-2042-pdf/handler.ts",
@@ -276,7 +277,9 @@ describe("garde de câblage — aucune livraison finale ne contourne le serveur"
       const source = read(rel);
       const accessAt = source.indexOf("await resolveAccess(");
       assert.ok(accessAt > 0, rel);
-      assert.ok(accessAt < source.indexOf("const rfs = body.rfs"), `${rel} : accès avant lecture de la RFS`);
+      const authorityAt = source.indexOf("await resolveDeliveryAuthority(");
+      assert.ok(authorityAt > 0, `${rel} : l'autorité serveur est le seul chemin vers la RFS`);
+      assert.ok(accessAt < authorityAt, `${rel} : accès (auth, propriété, paiement) avant snapshot et recalcul`);
     }
   });
 });

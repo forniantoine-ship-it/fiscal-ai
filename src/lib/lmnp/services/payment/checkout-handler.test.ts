@@ -4,6 +4,7 @@
  * Stripe est doublé (aucun appel réseau).
  * Run: npx tsx --test src/lib/lmnp/services/payment/checkout-handler.test.ts
  */
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import Stripe from "stripe";
@@ -19,7 +20,7 @@ const URL_PRIOR = "https://app.fiscal-ai.test/api/lmnp/payment/prior-history";
 const VALID_STOCKS = { sourceClosureId: "closure-1", stocks: { deficits: [], amortissementsReportes: 0 } };
 
 function setup() {
-  const env = createFakePaymentEnv();
+  const env = createFakePaymentEnv({ defaultSnapshot: true });
   env.addUser("tok-antoine", "user-antoine");
   env.addUser("tok-eve", "user-eve");
   env.addDossier("dossier-X", "user-antoine");
@@ -112,12 +113,15 @@ describe("checkout — l'éligibilité d'antériorité (P0) passe AVANT tout Str
       ran: { status: "unavailable", reason: "n/a" },
       fieldProvenance: {},
     };
-    const res = await checkout({
-      authToken: "tok-antoine",
-      dossierId: "dossier-X",
-      fiscalYear: 2026,
-      continuity: { fiscalYearOpening: opening },
-    });
+    // MB-MULTI-SERVER-TRUST-2 — l'Opening qui compte est celle PERSISTÉE côté serveur (snapshot), jamais celle de la requête.
+    const body = { authToken: "tok-antoine", dossierId: "dossier-X", fiscalYear: 2026, continuity: { fiscalYearOpening: opening } };
+    const refused = await checkout(body);
+    assert.equal(refused.status, 403, "Opening seulement dans la requête : jamais une preuve");
+    assert.equal(env.created.length, 0);
+    const persisted = stubWorkspaceForRfs({ exercice: 2026 });
+    (persisted.fiscalYear as { externalTakeoverOpening?: unknown }).externalTakeoverOpening = { opening };
+    env.setSnapshot("dossier-X", 2026, snapshotRowOf(persisted) as never);
+    const res = await checkout({ authToken: "tok-antoine", dossierId: "dossier-X", fiscalYear: 2026 });
     assert.equal(res.status, 200);
     assert.equal(env.created.length, 1);
   });

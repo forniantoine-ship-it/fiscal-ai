@@ -318,11 +318,13 @@ export function createDefaultPaymentDeps(): PaymentDeps {
 }
 
 /** Dépendances SANS Stripe (accès livraison uniquement) : n'exige que Supabase. */
-export function createDeliveryDeps(): Pick<PaymentDeps, "authenticate" | "assertOwnership" | "store"> {
+export function createDeliveryDeps(): Pick<PaymentDeps, "authenticate" | "assertOwnership" | "store" | "readWorkspaceSnapshot"> {
   const client = getPaymentServiceClient();
   return {
     authenticate: (authToken) => getServerSupabaseForUser(authToken),
     assertOwnership: (dossierId, userId) => assertDossierOwnership(client, dossierId, userId),
     store: createSupabasePaymentStore(client),
+    // MB-MULTI-SERVER-TRUST-2 — snapshot PERSISTÉ du serveur : Opening externe et recalcul de génération (jamais un fait du client).
+    readWorkspaceSnapshot: createSupabaseSnapshotReader(client),
   };
 }

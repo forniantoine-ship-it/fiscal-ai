@@ -10,11 +10,13 @@ import { describe, it } from "node:test";
 
 import type { MultiPropertyCapabilities } from "@/lib/lmnp/dossier/multi-property-activation";
 import { handleCerfaPdfRequest } from "./handler";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 const DELIVERY_CLOSED = { edition: false, generation: true, delivery: false, payment: false, closing: false, nextYear: false } as MultiPropertyCapabilities;
 
 const post = (body: unknown, onAccess?: () => void, capabilities?: MultiPropertyCapabilities) =>
-  handleCerfaPdfRequest(
+  callDelivery(
+    handleCerfaPdfRequest,
     new Request("http://localhost/api/lmnp/declaration/cerfa-pdf", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
     async () => { onAccess?.(); return { ok: true }; },
     capabilities,

@@ -61,17 +61,19 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
     // Payment V1 — PDF produit par le serveur pour l'exercice archivé payé.
     assert.ok(viewSource.includes('from "@/lib/lmnp/services/declaration/download-aide-2042-pdf"'));
     assert.ok(viewSource.includes("downloadAide2042Pdf({"));
-    assert.ok(viewSource.includes("fiscalYearOpening: record.externalTakeoverOpening?.opening"));
+    // MB-MULTI-SERVER-TRUST-2 — le snapshot clos est immuable : sa révision persistée est l'attendue ; aucune RFS ni Opening envoyée.
+    assert.ok(viewSource.includes("resolveArchivedDeliveryRevision("));
+    assert.ok(viewSource.includes("expectedRevision: revision.revision"));
+    assert.equal(viewSource.includes("fiscalYearOpening:"), false);
     assert.equal(viewSource.includes("render-aide-2042-pdf"), false);
     assert.ok(viewSource.includes("const archivedDraft = record.declarationDraft"));
     assert.ok(viewSource.includes("const rfs = archivedDraft?.rfs"));
-    assert.ok(viewSource.includes("const activityStartDate = archivedDraft?.activityStartDate"));
   });
 
   it("expose la liasse fiscale via resolveArchivedLiasseDownload + downloadLiasseFiscalePdf", () => {
     assert.ok(viewSource.includes(LIASSE_BUTTON));
     assert.ok(viewSource.includes("resolveArchivedLiasseDownload(record)"));
-    assert.ok(viewSource.includes("await downloadLiasseFiscalePdf(resolved.input)"));
+    assert.ok(viewSource.includes("await downloadLiasseFiscalePdf({ ...resolved.input, dossierId: currentDossierId ?? undefined, expectedRevision: revision.revision })"));
     assert.equal(viewSource.includes("downloadOfficialCerfaPdf"), false);
   });
 
@@ -113,9 +115,8 @@ describe("ArchivedDeclarationView — deux documents fiscaux historiques", () =>
   });
 
   it("les extras et le versionId viennent du record historique, sans ID inventé", () => {
-    assert.ok(resolverSource.includes("collectLiasseDossierExtras({"));
-    assert.ok(resolverSource.includes("declarationDraft: archivedDraft"));
-    assert.ok(resolverSource.includes("fiscalYear: record"));
+    // MB-MULTI-SERVER-TRUST-2 — les extras documentaires sont dérivés par le SERVEUR depuis le snapshot clos, plus par le client.
+    assert.equal(resolverSource.includes("collectLiasseDossierExtras"), false);
     assert.ok(resolverSource.includes("declaration?.currentVersionId"));
     assert.ok(resolverSource.includes("latestClosure(record)?.sourceDeclarationVersionId"));
     assert.ok(resolverSource.includes('reason: "missing_rfs"'));

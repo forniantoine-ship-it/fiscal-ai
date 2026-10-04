@@ -6,6 +6,10 @@
  *
  *   1. authentification            → 401
  *   2. propriété du dossier        → 403
+ *   2a. snapshot SERVEUR courant de l'exercice (MB-MULTI-SERVER-TRUST-2) : lu UNE fois, jamais un fait du client. Absent ou illisible
+ *       → 409 `workspace_snapshot_missing` / `workspace_snapshot_unreadable` AVANT toute ligne et toute session (la livraison est
+ *       fail-closed sans lui : on n'encaisse pas un dossier qu'on ne pourrait pas livrer). Ce n'est PAS une liaison du paiement à une
+ *       révision : l'entitlement reste « dossier + exercice ».
  *   2b. dossier multi-bien (snapshot SERVEUR, R2C.3c1) → 409 : `multi_property_not_enabled` (capacités fermées) ou, capacités
  *       ouvertes (MB-MULTI-PAYMENT-WIRING-1), `multi_property_domain_unsupported` / `multi_property_not_payable` (domaine ADR-011,
  *       aptitude à livrer) — AVANT toute ligne, toute session Stripe ; jamais un booléen client, jamais un paiement multi distinct :
@@ -22,8 +26,10 @@
 import {
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
+  isMultiPropertySnapshotRow,
   type MultiPropertyCapabilities,
 } from "@/lib/lmnp/dossier/multi-property-activation";
+import { parseWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
 import { resolveMultiPropertyPaymentAdmission } from "./multi-payment-admission";
 import {
   isNonEmptyString,
@@ -111,7 +117,15 @@ export async function handleCheckoutRequest(
 
     await deps.assertOwnership(dossierId, userId);
 
-    const multiAdmission = await resolveMultiPropertyPaymentAdmission(deps.readWorkspaceSnapshot, { dossierId, fiscalYear }, multiPropertyCapabilities);
+    // Lecture UNIQUE du snapshot persisté courant : même ligne pour la présence, l'Opening externe et l'admission multi (pas de TOCTOU).
+    const snapshotRow = await deps.readWorkspaceSnapshot(dossierId, fiscalYear);
+    if (!snapshotRow) {
+      return jsonResponse(409, {
+        error: "Aucune sauvegarde serveur de ce dossier n'existe pour cet exercice : aucun paiement n'a été demandé.",
+        code: "workspace_snapshot_missing",
+      });
+    }
+    const multiAdmission = await resolveMultiPropertyPaymentAdmission(async () => snapshotRow, { dossierId, fiscalYear }, multiPropertyCapabilities);
     if (!multiAdmission.allowed) {
       if (multiAdmission.reason === "multi_property_not_enabled") {
         return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
@@ -123,6 +137,18 @@ export async function handleCheckoutRequest(
       });
     }
 
+    // Mono (ou snapshot scopé mono) : la barrière multi ci-dessus ne s'applique pas ; le snapshot doit néanmoins être lisible, de
+    // l'exercice demandé, sinon la livraison (qui recalcule depuis lui) échouerait après encaissement.
+    const parsedSnapshot = parseWorkspaceSnapshot(snapshotRow.payload);
+    if (!isMultiPropertySnapshotRow(snapshotRow) && (!parsedSnapshot.ok || parsedSnapshot.envelope.workspace.fiscalYear.year !== fiscalYear)) {
+      return jsonResponse(409, {
+        error: "La sauvegarde serveur du dossier est illisible : aucun paiement n'a été demandé.",
+        code: "workspace_snapshot_unreadable",
+      });
+    }
+    // Opening externe : celle PERSISTÉE par le serveur (snapshot), jamais celle que le client enverrait dans `continuity`.
+    const persistedOpening = parsedSnapshot.ok ? parsedSnapshot.envelope.workspace.fiscalYear.externalTakeoverOpening?.opening : undefined;
+
     const notClosed = rejectUnclosedFiscalYear(deps, fiscalYear);
     if (notClosed) return notClosed;
 
@@ -131,7 +157,7 @@ export async function handleCheckoutRequest(
     const eligibility = resolveServerPriorHistoryEligibility({
       declaration: existing?.prior_history_status,
       previousYearPaid: previous?.status === "paid",
-      clientContinuity: safeContinuity(body.continuity),
+      clientContinuity: { ...safeContinuity(body.continuity), fiscalYearOpening: persistedOpening },
       requestedFiscalYear: fiscalYear,
     });
     if (!eligibility.eligible) {

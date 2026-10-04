@@ -16,7 +16,8 @@ import { handleCerfaPdfRequest } from "./handler";
 // Payment V1 — ces tests portent sur le CONTENU fiscal du PDF, pas sur l'accès
 // payant : le résolveur d'accès est injecté (autorisé). L'authentification, la
 // propriété et l'entitlement payé sont prouvés dans route.payment.test.ts.
-const POST = (request: Request) => handleCerfaPdfRequest(request, async () => ({ ok: true }));
+import { callDelivery, deliveryDepsForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
+const POST = (request: Request) => callDelivery(handleCerfaPdfRequest, request, async () => ({ ok: true }));
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import {
   generateCerfa2031FromRfs,
@@ -384,9 +385,15 @@ describe("POST /api/lmnp/declaration/cerfa-pdf", () => {
     assert.equal(response.status, 400);
   });
 
-  it("entrée invalide — rfs manquant → 400", async () => {
-    const response = await POST(jsonRequest({ declarationVersionId: "v1", forms: ["2033-A-SD"] }));
-    assert.equal(response.status, 400);
+  it("MB-MULTI-SERVER-TRUST-2 — le corps ne porte aucune RFS : la requête est valide, la RFS livrée est celle du pipeline serveur", async () => {
+    const rfs = realRfs();
+    const response = await handleCerfaPdfRequest(
+      jsonRequest({ declarationVersionId: "v1", forms: ["2033-A-SD"], dossierId: "dossier-test", fiscalYear: rfs.exercice, expectedRevision: 1 }),
+      async () => ({ ok: true }),
+      undefined,
+      deliveryDepsForRfs(rfs),
+    );
+    assert.equal(response.status, 200);
   });
 
   it("entrée invalide — declarationVersionId manquant → 400", async () => {

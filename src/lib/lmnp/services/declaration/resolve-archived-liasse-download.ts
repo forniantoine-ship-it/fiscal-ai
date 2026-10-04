@@ -11,7 +11,6 @@
 
 import type { DeclarationDraft, FiscalYear } from "@/lib/lmnp/types/domain";
 import { latestClosure } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
-import { collectLiasseDossierExtras } from "./collect-liasse-dossier-extras";
 import type { DownloadLiasseFiscalePdfInput } from "./download-liasse-fiscale-pdf";
 import { resolveFinalDeclarabilityState } from "./final-declarability";
 
@@ -28,7 +27,7 @@ export type ArchivedLiasseDownloadUnavailableReason =
   | "internal_projection_issue";
 
 export type ArchivedLiasseDownloadResult =
-  | { status: "ready"; input: DownloadLiasseFiscalePdfInput }
+  | { status: "ready"; input: Omit<DownloadLiasseFiscalePdfInput, "expectedRevision" | "dossierId"> }
   | { status: "unavailable"; reason: ArchivedLiasseDownloadUnavailableReason };
 
 function nonEmptyId(value: string | undefined): string | undefined {
@@ -76,15 +75,10 @@ export function resolveArchivedLiasseDownload(
   return {
     status: "ready",
     input: {
+      // Indication NON autoritative (choix des formulaires demandés) : jamais envoyée ; le serveur recalcule depuis le snapshot clos.
       rfs,
-      extras: collectLiasseDossierExtras({
-        declarationDraft: archivedDraft,
-        fiscalYear: record,
-      }),
       declarationVersionId,
       fiscalYear: record.year,
-      // Lot 5.3 — même Opening persistée si l'archive en porte une.
-      fiscalYearOpening: record.externalTakeoverOpening?.opening,
     },
   };
 }

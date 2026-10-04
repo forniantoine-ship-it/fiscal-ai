@@ -3,6 +3,7 @@
  * (SDK Stripe, corps brut) ; seul le réseau est absent.
  * Run: npx tsx --test src/lib/lmnp/services/payment/webhook-handler.test.ts
  */
+import { snapshotRowOf, stubWorkspaceForRfs } from "@/lib/lmnp/services/declaration/delivery-test-support";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -20,7 +21,7 @@ const stripe = new Stripe("sk_test_dummy");
 const realGateway = createStripeGateway(stripe as never, SECRET);
 
 function setup() {
-  const env = createFakePaymentEnv();
+  const env = createFakePaymentEnv({ defaultSnapshot: true });
   env.addUser("tok", "user-antoine");
   env.addDossier("dossier-X", "user-antoine");
   env.addDossier("dossier-Y", "user-antoine");
@@ -294,10 +295,16 @@ describe("paiement reçu alors que l'historique externe est déclaré (course r�
       ran: { status: "unavailable", reason: "n/a" },
       fieldProvenance: {},
     };
-    const access = await resolveDeliveryAccess(
-      { authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026, fiscalYearOpening: opening },
+    // MB-MULTI-SERVER-TRUST-2 — l'Opening est lue dans le snapshot PERSISTÉ du serveur, jamais dans la requête de livraison.
+    const forged = await resolveDeliveryAccess(
+      { authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026, fiscalYearOpening: opening } as never,
       env.deps,
     );
+    assert.equal(forged.ok, false, "Opening seulement dans la requête : jamais une preuve");
+    const persisted = stubWorkspaceForRfs({ exercice: 2026 });
+    (persisted.fiscalYear as { externalTakeoverOpening?: unknown }).externalTakeoverOpening = { opening };
+    env.setSnapshot("dossier-X", 2026, snapshotRowOf(persisted) as never);
+    const access = await resolveDeliveryAccess({ authToken: "tok", dossierId: "dossier-X", fiscalYear: 2026 }, env.deps);
     assert.equal(access.ok, true);
   });
 });

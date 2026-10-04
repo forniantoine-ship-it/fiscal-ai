@@ -40,6 +40,7 @@ import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-
 import type { FiscalEngineInputs } from "@/runtime/capabilities/f006/types";
 
 import { A, B, CONFIRMED_ATTESTATIONS, STOCKS, T, Y, monoWorkspace, multiWorkspace, oracleBien, type BienSpec } from "./multi-property-test-support";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 const ROOT = process.cwd();
 const FIXED = Date.parse("2026-06-01T12:00:00.000Z");
@@ -413,7 +414,7 @@ describe("DOCUMENTS — la génération ne mélange ni n'invente de portée", ()
 describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1 restent fermés", () => {
   const access = (async () => ({ ok: true, fiscalYear: Y })) as never;
   const post = (handler: typeof handleCerfaPdfRequest | typeof handleAide2042PdfRequest, body: unknown, capabilities?: MultiPropertyCapabilities) =>
-    handler(new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
+    callDelivery(handler, new Request("http://x", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), access, capabilities);
 
   it("18. LIVRAISON : générer n'autorise pas la livraison — Cerfa ET aide 2042 refusent avec la seule génération ouverte", async () => {
     const { result } = generated(SIMPLE());

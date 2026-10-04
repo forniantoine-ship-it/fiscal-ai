@@ -13,6 +13,7 @@ import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { useDossier } from "@/lib/lmnp/dossier";
 import { downloadLiasseFiscalePdf } from "@/lib/lmnp/services/declaration/download-liasse-fiscale-pdf";
 import { downloadAide2042Pdf } from "@/lib/lmnp/services/declaration/download-aide-2042-pdf";
+import { resolveArchivedDeliveryRevision } from "@/lib/lmnp/services/declaration/resolve-delivery-revision";
 import {
   resolveArchivedLiasseDownload,
   type ArchivedLiasseDownloadRecord,
@@ -42,7 +43,6 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
   const { currentDossierId } = useDossier();
   const archivedDraft = record.declarationDraft ?? undefined;
   const rfs = archivedDraft?.rfs;
-  const activityStartDate = archivedDraft?.activityStartDate;
   const fiscalResult = archivedDraft?.fiscalResult ?? rfs?.fiscalResult;
   const liasseDownload = resolveArchivedLiasseDownload(record);
   const canDownloadLiasse = liasseDownload.status === "ready";
@@ -61,7 +61,13 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
     setLiasseDownloading(true);
     setLiasseDownloadError(undefined);
     try {
-      await downloadLiasseFiscalePdf({ ...resolved.input, dossierId: currentDossierId ?? undefined });
+      // MB-MULTI-SERVER-TRUST-2 — l'exercice archivé a un snapshot clos (immuable) : sa révision persistée est celle attendue.
+      const revision = await resolveArchivedDeliveryRevision(currentDossierId ?? undefined, record.year);
+      if (revision.status !== "ok") {
+        setLiasseDownloadError(revision.message);
+        return;
+      }
+      await downloadLiasseFiscalePdf({ ...resolved.input, dossierId: currentDossierId ?? undefined, expectedRevision: revision.revision });
     } catch (err) {
       setLiasseDownloadError(
         err && typeof err === "object" && "message" in err && typeof err.message === "string"
@@ -180,13 +186,16 @@ export function ArchivedDeclarationView({ record }: ArchivedDeclarationViewProps
                 if (!rfs) return;
                 setAideDownloadError(undefined);
                 // Payment V1 — PDF produit par le serveur (exercice payé requis).
-                downloadAide2042Pdf({
-                  rfs,
-                  activityStartDate,
-                  fiscalYear: record.year,
-                  dossierId: currentDossierId ?? undefined,
-                  fiscalYearOpening: record.externalTakeoverOpening?.opening,
-                }).catch((err) =>
+                resolveArchivedDeliveryRevision(currentDossierId ?? undefined, record.year)
+                  .then((revision) => {
+                    if (revision.status !== "ok") throw { message: revision.message };
+                    return downloadAide2042Pdf({
+                      fiscalYear: record.year,
+                      dossierId: currentDossierId ?? undefined,
+                      expectedRevision: revision.revision,
+                    });
+                  })
+                  .catch((err) =>
                   setAideDownloadError(
                     err && typeof err === "object" && "message" in err && typeof err.message === "string"
                         ? err.message

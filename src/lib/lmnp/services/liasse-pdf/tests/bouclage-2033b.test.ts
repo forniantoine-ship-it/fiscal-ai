@@ -15,6 +15,7 @@ import { handleCerfaPdfRequest } from "@/app/api/lmnp/declaration/cerfa-pdf/hand
 import { generateCerfa2033BFromRfs } from "../generate-cerfa-2033b";
 import { generateCerfaLiassePdf } from "../generator/render-cerfa-liasse";
 import { buildScenarioRfs } from "./scenario-beneficiaire.test";
+import { callDelivery } from "@/lib/lmnp/services/declaration/delivery-test-support";
 
 function brokenRfs(): FiscalRepresentation {
   const base = buildScenarioRfs();
@@ -34,7 +35,8 @@ function legacyRfs(): FiscalRepresentation {
 }
 
 const POST = (body: unknown) =>
-  handleCerfaPdfRequest(
+  callDelivery(
+    handleCerfaPdfRequest,
     new Request("http://localhost/api/lmnp/declaration/cerfa-pdf", {
       method: "POST",
       headers: { "content-type": "application/json" },
