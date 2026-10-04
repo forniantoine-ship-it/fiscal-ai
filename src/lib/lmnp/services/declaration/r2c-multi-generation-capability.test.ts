@@ -450,7 +450,7 @@ describe("CAPACITÉS — génération seule : livraison, paiement, clôture, N+1
   });
 
   it("valeurs FINALES de production : génération, livraison et paiement ouverts ; édition, clôture, N+1 fermés (MB-MULTI-PAYMENT-WIRING-1)", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: true, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
   });
 });
 

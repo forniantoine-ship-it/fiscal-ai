@@ -538,7 +538,7 @@ describe("PAIEMENT — l'entitlement payé reste l'autorité, capacité de livra
 
 describe("CAPACITÉS FINALES", () => {
   it("valeurs finales de production : generation, delivery et payment ouverts ; edition, closing, nextYear fermés (MB-MULTI-PAYMENT-WIRING-1)", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: true, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
   });
 
   it("21–22. CLÔTURE et N+1 : bloqués structurellement, même avec les six capacités à true", () => {
@@ -556,7 +556,9 @@ describe("CAPACITÉS FINALES", () => {
     assert.equal(isMultiPropertyDeliveryBlocked(THREE()), false, "production : livraison ouverte");
     assert.equal(isMultiPropertyGenerationBlocked(THREE()), false, "production : génération ouverte");
     for (const other of ALL) assert.equal(isMultiPropertyCapabilityOpen(other, caps(["delivery"])), other === "delivery", other);
-    assert.equal(isMultiPropertyCapabilityOpen("edition"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("edition"), true);
+    assert.equal(isMultiPropertyCapabilityOpen("closing"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("nextYear"), false);
     assert.equal(isMultiPropertyCapabilityOpen("payment", caps(["delivery"])), false, "la livraison seule n'ouvre pas le paiement");
   });
 });

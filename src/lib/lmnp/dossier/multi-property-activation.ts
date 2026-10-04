@@ -28,7 +28,7 @@ export type MultiPropertyCapabilities = Readonly<Record<MultiPropertyCapability,
  * suivant restent FERMÉS : le multi utilisateur reste dormant (aucun moyen de créer un second bien en production).
  */
 export const MULTI_PROPERTY_CAPABILITIES = {
-  edition: false,
+  edition: true,
   generation: true,
   delivery: true,
   payment: true,

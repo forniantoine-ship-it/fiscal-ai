@@ -475,7 +475,7 @@ describe("FAIL-CLOSED AU CHECKOUT — payment ON : aucun dossier hors ADR-011 ou
 
 describe("CAPACITÉS FINALES — payment ouvert avec generation et delivery ; edition, closing, nextYear fermés", () => {
   it("22–26. valeurs finales : edition false, generation true, delivery true, payment true, closing false, nextYear false", () => {
-    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
+    assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: true, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
   });
 
   it("25/26. CLÔTURE et N+1 : bloqués structurellement, même avec les six capacités à true", () => {
@@ -489,8 +489,10 @@ describe("CAPACITÉS FINALES — payment ouvert avec generation et delivery ; ed
     }
   });
 
-  it("l'ÉDITION de production reste fermée : aucun moyen de créer un second bien", () => {
-    assert.equal(isMultiPropertyCapabilityOpen("edition"), false);
+  it("l'ÉDITION est ouverte (MB-MULTI-EDITION-FLIP-1) ; clôture et N+1 restent fermés", () => {
+    assert.equal(isMultiPropertyCapabilityOpen("edition"), true);
+    assert.equal(isMultiPropertyCapabilityOpen("closing"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("nextYear"), false);
   });
 });
 

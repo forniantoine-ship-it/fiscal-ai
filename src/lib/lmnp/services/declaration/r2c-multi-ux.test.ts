@@ -56,6 +56,7 @@ import { A, B, CONFIRMED_ATTESTATIONS, SPEC_A, T, Y, monoWorkspace, multiWorkspa
 const ROOT = process.cwd();
 const source = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
 const clone = <V>(value: V): V => JSON.parse(JSON.stringify(value));
+const EDITION_CLOSED = { edition: false, generation: false, delivery: false, payment: false, closing: false, nextYear: false } as MultiPropertyCapabilities;
 const EDITION_OPEN = { edition: true, generation: false, delivery: false, payment: false, closing: false, nextYear: false } as MultiPropertyCapabilities;
 const toState = (workspace: PersistedWorkspace) => ({ ...clone(workspace), fileRegistry: new Map() }) as unknown as LmnpState;
 const act = (state: LmnpState, action: unknown) => lmnpReducer(state, action as LmnpAction);
@@ -67,10 +68,10 @@ const SCOPE: V3CorrectionScope = { dossierId: "11111111-1111-4111-8111-111111111
 // ---------------------------------------------------------------------------
 
 describe("MB-MULTI-UX-1 — ADD PROPERTY", () => {
-  it("capacité d'ÉDITION fermée (défaut, production) : refus, aucun dispatch possible", () => {
-    const plan = planAddProperty(monoWorkspace(), { label: "Studio Lyon" });
+  it("capacité d'ÉDITION fermée (explicite) : refus, aucun dispatch possible", () => {
+    const plan = planAddProperty(monoWorkspace(), { label: "Studio Lyon" }, { capabilities: EDITION_CLOSED });
     assert.deepEqual(plan, { ok: false, reason: "edition_not_enabled" });
-    assert.equal(isMultiPropertyCapabilityOpen("edition"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("edition", EDITION_CLOSED), false);
   });
 
   it("mono → A + B sans perte de A ; B a un identifiant neuf et stable, démarre vide ; le bien créé devient le bien actif", () => {
@@ -512,8 +513,8 @@ describe("MB-MULTI-UX-1 — sélecteur de bien et entrée Dossier", () => {
 
   it("ENTRÉE « Mes biens » dormante : invisible en mono avec l'édition fermée (production) ; visible pour un dossier multi ou l'édition ouverte (test)", () => {
     const mono = monoWorkspace();
-    assert.equal(shouldShowV3PropertiesSection(mono), false);
-    assert.equal(renderToStaticMarkup(createElement(V3PropertiesSection, { workspace: mono, scope: null })), "");
+    assert.equal(shouldShowV3PropertiesSection(mono, EDITION_CLOSED), false);
+    assert.equal(renderToStaticMarkup(createElement(V3PropertiesSection, { workspace: mono, scope: null, capabilities: EDITION_CLOSED })), "");
     assert.equal(shouldShowV3PropertiesSection(mono, EDITION_OPEN), true);
     const html = renderToStaticMarkup(createElement(V3PropertiesSection, { workspace: mono, scope: { ...SCOPE, property: { kind: "required", propertyId: A } }, capabilities: EDITION_OPEN }));
     assert.match(html, /Ajouter un bien/);
@@ -538,7 +539,7 @@ describe("MB-MULTI-UX-1 — GENERATION / DELIVERY / PAYMENT / CLOSING / N+1 rest
     assert.equal(isMultiPropertyClosingBlocked(ws), true);
     assert.equal(isMultiPropertyNextYearBlocked(ws), true);
     for (const capability of ["edition", "generation", "delivery", "payment", "closing", "nextYear"] as const) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["edition", "generation", "delivery", "payment"].includes(capability), capability);
     }
   });
 
@@ -567,6 +568,8 @@ describe("MB-MULTI-UX-1 — GENERATION / DELIVERY / PAYMENT / CLOSING / N+1 rest
     for (const file of ["src/components/lmnp/biens/PropertiesManager.tsx", "src/components/lmnp/biens/V3PropertiesSection.tsx", "src/lib/lmnp/dossier/add-property-plan.ts"]) {
       assert.doesNotMatch(source(file), /generation: true|delivery: true|payment: true|closing: true|nextYear: true|edition: true/, file);
     }
-    assert.equal(isMultiPropertyCapabilityOpen("edition"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("edition"), true);
+    assert.equal(isMultiPropertyCapabilityOpen("closing"), false);
+    assert.equal(isMultiPropertyCapabilityOpen("nextYear"), false);
   });
 });

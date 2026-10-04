@@ -209,7 +209,9 @@ describe("modèle de finalisation : le multi reflète l'état réel, jamais une 
     assert.equal(cta.kind, "dossier_incomplete");
   });
 
-  it("N — l'édition reste fermée en production", () => {
-    assert.equal(MULTI_PROPERTY_CAPABILITIES.edition, false);
+  it("N — l'édition est ouverte (MB-MULTI-EDITION-FLIP-1) ; clôture et N+1 restent fermés", () => {
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.edition, true);
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.closing, false);
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.nextYear, false);
   });
 });

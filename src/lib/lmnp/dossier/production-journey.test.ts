@@ -35,6 +35,7 @@ const ROOT = process.cwd();
 const source = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
 const clone = <V>(value: V): V => JSON.parse(JSON.stringify(value));
 const DOSSIER = "11111111-1111-4111-8111-111111111111";
+const EDITION_CLOSED = { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false } as MultiPropertyCapabilities;
 const EDITION_OPEN = { edition: true, generation: true, delivery: true, payment: true, closing: false, nextYear: false } as MultiPropertyCapabilities;
 
 const withDossier = (workspace: PersistedWorkspace): PersistedWorkspace => {
@@ -109,9 +110,11 @@ describe("routage de production : le parcours multi n'a besoin d'aucun drapeau L
     }
   });
 
-  it("N — la capacité d'ÉDITION reste FERMÉE en production ; l'entrée « Mes biens » n'apparaît ni pour un mono ni sans capacité", () => {
-    assert.equal(MULTI_PROPERTY_CAPABILITIES.edition, false);
-    assert.equal(shouldShowV3PropertiesSection(mono()), false);
+  it("N — la capacité d'ÉDITION est ouverte (MB-MULTI-EDITION-FLIP-1) ; sous capacité fermée l'entrée « Mes biens » n'apparaît pas pour un mono", () => {
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.edition, true);
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.closing, false);
+    assert.equal(MULTI_PROPERTY_CAPABILITIES.nextYear, false);
+    assert.equal(shouldShowV3PropertiesSection(mono(), EDITION_CLOSED), false);
     assert.equal(shouldShowV3PropertiesSection(mono(), EDITION_OPEN), true);
     assert.equal(shouldShowV3PropertiesSection(multi()), true);
   });
@@ -205,9 +208,9 @@ describe("ADD_PROPERTY : le domaine est vérifié AVANT l'entrée irréversible 
     });
   }
 
-  it("N — l'édition fermée prime : refus d'édition, indépendamment du domaine (production)", () => {
-    assert.deepEqual(resolveAddPropertyEligibility(mono()), { status: "edition_not_enabled" });
-    assert.deepEqual(planAddProperty(mono(), { label: "Studio" }), { ok: false, reason: "edition_not_enabled" });
+  it("N — l'édition fermée prime : refus d'édition, indépendamment du domaine (capacité explicitement fermée)", () => {
+    assert.deepEqual(resolveAddPropertyEligibility(mono(), { capabilities: EDITION_CLOSED }), { status: "edition_not_enabled" });
+    assert.deepEqual(planAddProperty(mono(), { label: "Studio" }, { capabilities: EDITION_CLOSED }), { ok: false, reason: "edition_not_enabled" });
   });
 
   it("l'écran « Mes biens » ne dispatche ADD_PROPERTY qu'après un plan accepté et affiche le motif de domaine avant le clic", () => {

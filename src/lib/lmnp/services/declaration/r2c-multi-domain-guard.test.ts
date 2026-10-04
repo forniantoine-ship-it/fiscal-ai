@@ -101,8 +101,8 @@ const LOSSES_WITH_DEPRECIATION = (): PersistedWorkspace => multiWorkspace({ spec
 describe("MB-MULTI-DOMAIN-GUARD-1 — capacités d'activation multi", () => {
   it("valeurs finales : génération et livraison = ON ; édition, paiement, clôture, N+1 = OFF", () => {
     for (const capability of ALL) {
-      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["generation", "delivery", "payment"].includes(capability), capability);
-      assert.equal(isMultiPropertyCapabilityOpen(capability), ["generation", "delivery", "payment"].includes(capability), capability);
+      assert.equal(MULTI_PROPERTY_CAPABILITIES[capability], ["edition", "generation", "delivery", "payment"].includes(capability), capability);
+      assert.equal(isMultiPropertyCapabilityOpen(capability), ["edition", "generation", "delivery", "payment"].includes(capability), capability);
     }
   });
 

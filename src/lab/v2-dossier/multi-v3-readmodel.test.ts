@@ -138,5 +138,5 @@ test("MONO inchangé — le bien actif est ignoré ; une rubrique n'est jamais �
 });
 
 test("PRODUCTION DORMANCY — génération, livraison et paiement ouverts ; l'édition de production reste fermée", () => {
-  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: false, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
+  assert.deepEqual(MULTI_PROPERTY_CAPABILITIES, { edition: true, generation: true, delivery: true, payment: true, closing: false, nextYear: false });
 });
