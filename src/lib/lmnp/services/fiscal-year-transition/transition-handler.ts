@@ -26,6 +26,11 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
 import {
+  F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+  isF013V2ContinuityPayload,
+} from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
+import {
   createSupabaseSnapshotReader,
   isMultiPropertyBarrierActive,
   type ReadServerSnapshot,
@@ -225,6 +230,19 @@ export async function handleFiscalYearTransitionRequest(
       (await isMultiPropertyBarrierActive(deps.readWorkspaceSnapshot, transitionBarrierInput, "nextYear"))
     ) {
       return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
+    }
+
+    // F013 v2 — continuité N→N+1 non définie : snapshot SERVEUR de la source ET payloads transmis, AVANT paiement et RPC.
+    const storedSource = await deps.readWorkspaceSnapshot(dossierId, fromYear);
+    if (
+      isF013V2ContinuityPayload(storedSource?.payload) ||
+      isF013V2ContinuityPayload(closedNPayload) ||
+      isF013V2ContinuityPayload(nextPayload)
+    ) {
+      return jsonResponse(409, {
+        error: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+        code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+      });
     }
 
     // Lot 6B — paiement N (fromYear) obligatoire avant commit. Clé exacte :

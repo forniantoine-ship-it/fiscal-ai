@@ -11,6 +11,10 @@
  *     (serveur déjà N+1 — reload/cold restore ; jamais reseed)
  */
 import {
+  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+  isF013V2ContinuityBlocked,
+} from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
+import {
   isMultiPropertyClosingBlocked,
   isMultiPropertyNextYearBlocked,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
@@ -183,6 +187,11 @@ export async function runServerFiscalYearTransition(
     // multi AVANT le flush (écriture du snapshot), le serveur et tout dispatch.
     if (isMultiPropertyClosingBlocked(workspace) || isMultiPropertyNextYearBlocked(workspace)) {
       onError(MULTI_PROPERTY_NOT_ENABLED_MESSAGE);
+      return;
+    }
+    // F013 v2 — continuité N→N+1 non définie : refus AVANT le flush, le serveur et tout dispatch.
+    if (isF013V2ContinuityBlocked(workspace)) {
+      onError(F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE);
       return;
     }
 

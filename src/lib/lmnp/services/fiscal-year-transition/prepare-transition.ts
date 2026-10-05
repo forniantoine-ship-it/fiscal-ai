@@ -19,10 +19,15 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
+import {
+  F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+  isF013V2ContinuityBlocked,
+} from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 export type PrepareTransitionFailure =
-  | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" | "multi_property_not_enabled" };
+  | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" | "multi_property_not_enabled" | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
 
 export type PrepareTransitionSuccess = {
   ok: true;
@@ -51,6 +56,10 @@ export function prepareFiscalYearTransitionCandidate(input: {
   // multi-compatibles). Source ouverte ou déjà close : même refus.
   if (isMultiPropertyClosingBlocked(workspace) || isMultiPropertyNextYearBlocked(workspace)) {
     return { ok: false, reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE };
+  }
+  // F013 v2 — continuité N→N+1 non définie : refus AVANT toute préparation (source ouverte ou déjà close).
+  if (isF013V2ContinuityBlocked(workspace)) {
+    return { ok: false, reason: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE, code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
   }
   const sourceAlreadyClosed = workspace.fiscalYear.status === "closed";
 

@@ -34,6 +34,11 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_CODE,
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "../../dossier/multi-property-activation";
+import {
+  F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+  isF013V2ContinuityBlocked,
+} from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
 import { resolveMonoPropertyId } from "../../dossier/property-scope";
 import { scopedBienView, type BienDraft } from "../../dossier/bien-draft";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
@@ -347,7 +352,16 @@ export function latestClosure(fiscalYear: Pick<FiscalYear, "closures">): FiscalY
 }
 
 /** `code` : raison structurée optionnelle (R2C.3c1 : barrière multi-bien). Les refus historiques n'en portent pas. */
-export type CreateNextFiscalYearPrecondition = { ok: true } | { ok: false; reason: string; code?: typeof MULTI_PROPERTY_NOT_ENABLED_CODE };
+export type CreateNextFiscalYearPrecondition =
+  | { ok: true }
+  | { ok: false; reason: string; code?: typeof MULTI_PROPERTY_NOT_ENABLED_CODE | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
+
+/** F013 v2 : continuité N→N+1 non définie — refus explicite (voir f013-v2-transition-guard.ts). */
+const F013_V2_CONTINUITY_REFUSAL: CreateNextFiscalYearPrecondition = {
+  ok: false,
+  reason: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+  code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+};
 
 const MULTI_PROPERTY_REFUSAL: CreateNextFiscalYearPrecondition = {
   ok: false,
@@ -370,6 +384,7 @@ export function canCreateNextFiscalYear(
   if (isMultiPropertyNextYearBlocked({ fiscalYear, properties: context?.properties, declarationDraft: context?.declarationDraft })) {
     return MULTI_PROPERTY_REFUSAL;
   }
+  if (isF013V2ContinuityBlocked(context)) return F013_V2_CONTINUITY_REFUSAL;
   if (fiscalYear.status !== "closed") {
     return { ok: false, reason: "L'exercice courant n'est pas clôturé — impossible de créer l'exercice suivant." };
   }
@@ -402,6 +417,7 @@ export function canCloseFiscalYear(input: {
 
   // R2C.3c1 — refus multi explicite, AVANT tout autre contrôle : indépendant du statut, de la génération et du gate.
   if (isMultiPropertyClosingBlocked({ fiscalYear, properties, declarationDraft })) return MULTI_PROPERTY_REFUSAL;
+  if (isF013V2ContinuityBlocked({ declarationDraft })) return F013_V2_CONTINUITY_REFUSAL;
 
   if (fiscalYear.status !== "ready_to_close") {
     return { ok: false, reason: "L'exercice n'est pas prêt à être clôturé." };
