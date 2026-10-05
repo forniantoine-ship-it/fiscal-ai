@@ -3,7 +3,7 @@ id: SAV-031
 title: "Granularité du plafond 39 C en LMNP multi-bien et classification des montants"
 type: savoir
 status: approved
-version: "0.2"
+version: "0.3"
 created: 2026-10-02
 updated: 2026-10-05
 owner: product-owner
@@ -34,6 +34,22 @@ Le **calcul du plafond est global**. Si une fraction de l'annuité est écartée
 Conserver l'origine est également nécessaire pour traiter une cessation de location ou une cession du bien : le 3 du II de l'article 39 C prévoit des conséquences attachées au **bien** concerné. Le présent Savoir ne fixe pas l'algorithme de répartition, de consommation ultérieure ou de sortie d'un stock par bien.
 
 Granularité fiscale obligatoire supplémentaire par immobilisation ou composant *à l'intérieur d'un même logement* : **OFFICIAL EVIDENCE INSUFFICIENT**. Les plans d'amortissement comptables peuvent requérir leur propre détail ; ce constat ne démontre pas une obligation de stock 39 C par composant.
+
+## Charges ACTIVITY communes à l'activité (multi, décision PO 2026-10-05)
+
+Une charge `ACTIVITY` ne diminue pas `C` (§70) ; son attribution à un bien n'est donc **jamais nécessaire** pour calculer la capacité. Elle est portée **au niveau de l'activité**, sans `propertyId` :
+
+- niveau bien (`PropertyFiscalContribution`) : `L`, `B`, `OTHER_PRODUCT` éventuel, traces `propertyId` ;
+- niveau activité (`ActivityFiscalContribution`, concept logique) : charges `ACTIVITY` globales, provenance, qualification, source ; **aucun `propertyId` artificiel** ;
+- consolidation (`ConsolidatedFiscalInputs`) : somme des `L` et des `B` des biens, `ACTIVITY` d'activité, autres produits, qualifications ; **un seul appel F-006**, une seule capacité globale.
+
+Exemple : bien A (L 10 000, B 2 000), bien B (L 8 000, B 1 000), comptabilité globale `ACTIVITY` 1 000 → `L` global 18 000, `B` global 3 000, `C` 15 000, résultat avant amortissement 14 000. L'`ACTIVITY` n'entre dans aucun `B`, ne réduit pas `C`, ne crée aucune écriture inter-biens.
+
+**Une charge ACTIVITY globale ne reçoit jamais de `propertyId` fictif et n'est jamais répartie** (ni 50/50, ni au prorata des loyers, de la valeur ou des charges) pour satisfaire une structure technique.
+
+**Frontière fail-closed.** Seules les charges communes **définitivement qualifiées `ACTIVITY`** peuvent être ouvertes. Toute charge commune `B`, `B_OR_ACTIVITY` matérielle, `NEEDS_QUALIFICATION`, `OUT_OF_DOMAIN` ou exigeant une allocation par bien reste bloquée (`common_charges_not_supported`) : ce code n'est pas supprimé globalement, il devra évoluer vers une règle plus précise. ADR-011 §1 et §6 (attestation `noCommonCharges`) restent en vigueur tant que ce changement n'est pas implémenté et recetté ; aucune capacité n'est modifiée par ce Savoir.
+
+**FEC (compatibilité conceptuelle).** Une charge d'activité globale appartient à l'activité LMNP ; elle peut ne pas avoir de `propertyId` analytique, mais elle exige une écriture comptable normale et ne crée aucune écriture inter-biens fictive. Le futur FEC reste au niveau activité ; `propertyId` est analytique, non une obligation comptable. FEC : NOT STARTED.
 
 ## Déficits antérieurs et ordre de calcul
 
@@ -72,8 +88,22 @@ Produit fiscal imposable ≠ automatiquement `L`.
 
 Les sources officielles consultées n'ont pas permis de décider les catégories suivantes. Le Product Owner ne les tranche pas ; seul le comportement du moteur est décidé (fail-closed, SAV-030).
 
-- **CFE : `UNRESOLVED — FAIL-CLOSED WHEN MATERIAL`.** Ni `B` ni `ACTIVITY` tant qu'une preuve fiscale supplémentaire n'existe pas.
+- **CFE** : voir la section « CFE » ci-dessous (décision du Product Owner du 2026-10-05). Elle n'est jamais classée automatiquement en `B`.
 - Frais bancaires génériques ; agios et commissions non qualifiés ; régularisations de revenus non qualifiées ; remboursements génériques ; CAF / tiers payant dont la nature fiscale n'est pas démontrée ; versement plateforme net ; dépôt de garantie conservé ; frais d'acquisition passés immédiatement en charges si leur position 39 C n'est pas démontrée ; charges de pré-exploitation selon nature et période ; perte exceptionnelle ; autres catégories « divers » non qualifiées.
+
+### CFE (décision PO 2026-10-05, après 39C-PROOF-3)
+
+Preuve : aucune source officielle actuelle ne classe la CFE pour l'article 39 C (BOI-BIC-AMT-20-40-10-20 §60/§70, version 2017, ne la cite pas). La version du 12/09/2012 du §70 citait « la taxe professionnelle dès lors qu'elle est liée à l'activité de location » parmi les charges de pure activité ; la CFE (CGI art. 1447 : due par l'exploitant pour son activité ; art. 1647 D : cotisation minimum unique, au principal établissement, selon le chiffre d'affaires ou les recettes ; art. 1467 : valeur locative des biens dont le redevable a disposé ; BOI-IF-CFE-20-20-10-10 §30 et §80 : biens donnés en location imposables chez le locataire, locaux d'habitation non retenus) converge vers l'activité sans qu'une phrase actuelle le dise.
+
+| Cas | Fait requis | Classe | Niveau de preuve |
+|---|---|---|---|
+| A — CFE établie sur la **base minimum**, ou logement loué hors base de la CFE | `cfeBaseKind = MINIMUM` | `ACTIVITY` : réduit le résultat, **pas** `C` | `STRONG_INFERENCE` (jamais DIRECT) |
+| B — CFE assise sur la **valeur locative du bien loué** | `cfeBaseKind = RENTAL_VALUE` | `B_OR_ACTIVITY` → `NEEDS_QUALIFICATION` si matériel | `AMBIGUOUS` |
+| C — **base inconnue** | `cfeBaseKind = UNKNOWN` | `B_OR_ACTIVITY`, moteur de matérialité | `UNRESOLVED` |
+
+Matérialité (SAV-030, fail-closed) : si `B` et `ACTIVITY` ne changent aucun `D`, `H`, ARD, résultat ni déficit pertinent → `COMPUTED_UNRESOLVED_IMMATERIAL` ; sinon `NEEDS_QUALIFICATION`, aucun résultat définitif. **Jamais de classement automatique de la CFE en `B`.** Le client ne choisit jamais « B ou ACTIVITY » : on lui demande uniquement un fait : « votre avis de CFE est-il calculé sur une base minimum, ou sur la valeur locative d'un établissement ? ». Il n'est pas établi ici que l'avis de CFE permette d'extraire ce fait automatiquement (à vérifier sur des avis réels) ; sinon la réponse reste une déclaration du client.
+
+Contrat de qualification (sémantique) : `{ sourceId (avis CFE), exercice, cfeBaseKind ∈ {MINIMUM, RENTAL_VALUE, UNKNOWN}, provenance ∈ {document, déclaration}, sourceFingerprint, réponse datée }` ; périmée si le montant, le document, l'exercice ou la nature changent ; absence de réponse = `UNKNOWN`.
 
 ### Règles de qualification précisées
 
@@ -107,5 +137,6 @@ La répartition des mêmes totaux admissibles entre les biens ne change donc pas
 - [CGI, article 39 C, II, 2 et 3](https://www.legifrance.gouv.fr/loda/article_lc/LEGIARTI000029355753/2020-12-21) : limite, report, cessation de location et cession.
 - [BOI-BIC-AMT-20-40-10-20, §§ 40 à 100](https://bofip.impots.gouv.fr/bofip/4527-PGP.html/identifiant=BOI-BIC-AMT-20-40-10-20-20170301) : périmètre des loyers et charges (§§ 50 à 70), limite (§§ 80 à 90), plusieurs biens et répartition du non-déduit (§ 100).
 - [BOI-FORM-000038, § 1](https://bofip.impots.gouv.fr/bofip/4547-PGP.html/identifiant=BOI-FORM-000038-20130826) et [BOI-BIC-AMT-20-40-10-40](https://bofip.impots.gouv.fr/bofip/4545-PGP.html/identifiant=BOI-BIC-AMT-20-40-10-40-20130826) : suivi des amortissements écartés.
+- [BOI-BIC-AMT-20-40-10-30, § 10](https://bofip.impots.gouv.fr/bofip/4555-PGP.html/identifiant=BOI-BIC-AMT-20-40-10-30-20120912) : déduction de l'ARD « en sus de l'annuité normale ». CFE : CGI art. 1447, 1467, 1647 D ; BOI-IF-CFE-10-20-20-30 ; BOI-IF-CFE-20-20-10-10 ; BOI-BIC-AMT-20-40-10-20 version du 12/09/2012 (§70).
 - [CGI, article 156, I, 1° ter](https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000053544806/2026-04-19) et [BOI-BIC-DEF-20-20, §§ 110 à 130](https://bofip.impots.gouv.fr/bofip/2011-PGP.html/identifiant=BOI-BIC-DEF-20-20-20120912) : déficits LMNP.
 - [2033-SD 2026](https://www.impots.gouv.fr/sites/default/files/formulaires/2033-sd/2026/2033-sd_5394.pdf) et [notice 2033-NOT-SD 2026](https://www.impots.gouv.fr/sites/default/files/formulaires/2033-sd/2026/2033-sd_5395.pdf) : rubriques déclaratives et point à instruire sur la ligne 350.

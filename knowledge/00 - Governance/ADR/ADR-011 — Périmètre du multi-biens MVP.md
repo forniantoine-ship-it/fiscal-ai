@@ -3,9 +3,9 @@ id: ADR-011
 title: "Périmètre du multi-biens MVP : un domaine supporté, jamais un multi universel"
 type: adr
 status: accepted
-version: "1.6"
+version: "1.7"
 created: 2026-10-03
-updated: 2026-10-04
+updated: 2026-10-05
 owner: product-owner
 tags: [adr, multi-biens, lmnp, perimetre, fail-closed, activation]
 triggers: [MB-ACTIVATION-AUDIT-2, MB-MULTI-DOMAIN-GUARD-1, MB-MULTI-JOURNEY-COMPLETION-2, MB-MULTI-STRIPE-RETURN-CONTEXT-1]
@@ -102,3 +102,12 @@ Décision d'ingénierie, sans nouvelle doctrine fiscale : le parcours utilisateu
 - **Paiement** : l'interdiction côté client « parcours multi-dossier » est levée. Le checkout reste le chemin serveur existant (vidage de l'autosave → snapshot serveur → admission → ligne → session) ; le retour Stripe porte uniquement le dossier et l'exercice d'origine (`/documents?step=validation&fy=…&dossierId=…`, MB-MULTI-STRIPE-RETURN-CONTEXT-1), jamais un bien ni une révision, et le contexte multi est reconstruit depuis l'état persisté. Cette URL est un contexte de navigation, jamais une autorité : la porte d'entrée revérifie la propriété du dossier demandé avant de le charger, l'entitlement reste (dossier, exercice) côté serveur, et un retour sans `dossierId` (ancien lien) garde le comportement historique (dossier par défaut du fournisseur).
 - **Ouverture** : basculer `edition` reste une décision et une mission distinctes, après recette de bout en bout.
 
+# 11. Charges ACTIVITY communes à l'activité (INT-0-CLOSE, 2026-10-05) — décision PO, dormante
+
+Décision du Product Owner, **sans effet tant qu'elle n'est ni implémentée ni recettée** : le §1 (« aucune charge commune ») et l'attestation `noCommonCharges` du §6 **restent en vigueur**, aucune capacité n'est modifiée.
+
+- **Principe.** Une charge **définitivement qualifiée `ACTIVITY`** (SAV-031 : ne diminue pas la capacité 39 C) peut, à terme, être portée **au niveau de l'activité** (`ActivityFiscalContribution`), sans `propertyId`, puisqu'aucune allocation entre biens n'est nécessaire pour calculer `C`. Elle ne devient jamais un `B`, ne réduit pas `C`, ne crée aucune écriture inter-biens, et un seul F-006 est appelé sur l'activité.
+- **Jamais de fausse allocation** : pas de `propertyId` fictif, pas de répartition (50/50, prorata de loyers, de valeur ou de charges).
+- **Frontière fail-closed.** Toute autre charge commune (`B`, `B_OR_ACTIVITY` matériel, `NEEDS_QUALIFICATION`, `OUT_OF_DOMAIN`, ou nécessitant une allocation par bien) reste bloquée (`common_charges_not_supported`). Le code de blocage n'est pas supprimé globalement : il évoluera vers une règle plus précise, lors d'une mission d'implémentation distincte.
+- **Inchangés** : prêt partagé, ARD généré non allouable (TRF-0035 non établi), ARD historique et déficits antérieurs en multi, clôture, N+1.
+- **Revue adversariale (posture « Principal Software Architect », conduite par l'agent : limite structurelle de GOUV-001 § VII).** Attaques tentées : (1) qualifier `ACTIVITY` une charge qui est en réalité `B` ferait surestimer `C` → l'ouverture exige une qualification définitive, jamais un libellé ; (2) une charge ACTIVITY globale peut créer un déficit en multi → le domaine ne bloque que les déficits antérieurs, pas un déficit nouveau (SAV-032, oracle A/B) ; (3) l'attestation `noCommonCharges` deviendrait trompeuse → elle doit être reformulée avant l'ouverture. Aucune faille fatale identifiée ; ces trois points sont des prérequis de l'implémentation. Revisitation : à l'ouverture de la capacité `edition`.
