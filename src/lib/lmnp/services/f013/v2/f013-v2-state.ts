@@ -13,6 +13,7 @@ import {
   type MoneyFact,
   type RentReconciliationV2,
 } from "./f013-v2-contract";
+import { parseRentObservation, type RentObservation } from "./f013-v2-observation";
 import { reconcileRentV2, type ReconciliationReason, type ReconciliationResult, type ReconciliationScope } from "./f013-v2-engine";
 
 export const RENT_RECONCILIATION_V2_STATE_VERSION = 1 as const;
@@ -31,6 +32,13 @@ export interface RentReconciliationV2State {
   stateVersion: typeof RENT_RECONCILIATION_V2_STATE_VERSION;
   facts: RentReconciliationV2;
   confirmation?: RentReconciliationConfirmation;
+  /**
+   * V2.3 — observations documentaires (preuves, corrections, états) : additif, hors empreinte des faits. Ne porte aucune
+   * autorité fiscale ; sa modification seule ne change ni la révision ni la confirmation. Restent dans le contrat v3.
+   */
+  observations?: RentObservation[];
+  /** V2.3 — couverture PROPOSÉE par les documents (la couverture retenue vit dans `facts.collectionsCoverage`). */
+  documentCoverage?: { completeness: "COMPLETE" | "PARTIAL"; coveredMonths: readonly string[]; basis: "document_spans" };
 }
 
 const UNKNOWN_FACT: MoneyFact = { status: "UNKNOWN" };
@@ -90,6 +98,7 @@ export type RentFactsChange = Partial<
     | "closingAdvances"
     | "exceptionsReviewed"
     | "outOfDomain"
+    | "links"
   >
 >;
 
@@ -104,10 +113,10 @@ export function applyFactsChange(state: RentReconciliationV2State, change: RentF
     if (nextFacts[key] === undefined) delete nextFacts[key];
   }
   if (factsDigest(nextFacts) === factsDigest(state.facts)) return state;
-  return {
-    stateVersion: state.stateVersion,
-    facts: { ...nextFacts, revision: state.facts.revision + 1 },
-  };
+  // Les données additives (observations, couverture documentaire) sont conservées ; la confirmation, jamais.
+  const { confirmation: _dropped, ...rest } = state;
+  void _dropped;
+  return { ...rest, facts: { ...nextFacts, revision: state.facts.revision + 1 } };
 }
 
 export interface RentReconciliationEvaluation {
@@ -171,7 +180,11 @@ export function parseRentReconciliationState(raw: unknown): RentReconciliationV2
   if (classifyF013Contract(facts) !== F013_V2_CONTRACT_VERSION) return null;
   const f = facts as Record<string, unknown>;
   if (typeof f.propertyId !== "string" || !Number.isInteger(f.fiscalYear) || !Number.isInteger(f.revision)) return null;
-  return raw as RentReconciliationV2State;
+  const state = raw as RentReconciliationV2State;
+  if (state.observations === undefined) return state;
+  // V2.3 — une observation mal formée ou dont un champ VALIDATED n'est pas justifié par une correction est écartée :
+  // jamais promue, jamais « réparée ».
+  return { ...state, observations: (Array.isArray(state.observations) ? state.observations : []).filter((o) => parseRentObservation(o) !== null) };
 }
 
 /** Une donnée F013 v2 est-elle présente dans ce draft (plat ou au sein d'un bien) ? Détermine la version de snapshot. */
