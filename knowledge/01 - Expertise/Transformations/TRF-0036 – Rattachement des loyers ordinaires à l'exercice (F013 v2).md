@@ -3,7 +3,7 @@ id: TRF-0036
 title: "Rattachement des loyers ordinaires à l'exercice (F013 v2)"
 type: transformation
 status: review
-version: "1.0"
+version: "1.1"
 created: 2026-10-05
 updated: 2026-10-05
 owner: product-owner
@@ -18,6 +18,8 @@ supersedes: TRF-0029
 > **Statut : `review`** (non approuvé : KS-004). **TARGET CONTRACT.**
 > **CURRENT PRODUCTION :** F013 v1 reste productif ([[TRF-0029 – Calcul des recettes]], `LEGACY V1 ONLY`). Le moteur décrit ici existe dans le code mais est **désactivé en production** et **n'est pas branché à F006 ni au bilan productif**.
 > TRF-0035 est réservé à l'allocation 39 C par bien (voir ADR-011) et n'est pas utilisé ici.
+>
+> **Preuve fiscale (V2.5.1).** La règle de rattachement qui fonde cette transformation est établie dans [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]] à partir de sources officielles (CGI, BOFiP). Ce document précise le **contrat technique** ; il n'ajoute aucune règle fiscale.
 
 ## Entrées (par bien et par exercice)
 
@@ -29,7 +31,21 @@ Cinq termes en centimes entiers, chacun `UNKNOWN`, `PROPOSED` ou `VALIDATED` : e
 Loyers acquis N = E + CC − CO + AO − AC
 ```
 
+`DERIVED RECONCILIATION IDENTITY` : aucun texte officiel n'imprime cette formule ; elle est dérivée des règles prouvées (SAV-034, section « Dérivation », fondée sur BOI-BIC-DECLA-30-20-20 § 170). Elle est valable pour le domaine supporté de SAV-034, sous réserve que les cinq termes soient correctement qualifiés.
+
 Appliquée une seule fois. Définition des termes : [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]].
+
+
+## Règle fiscale ou convention technique ?
+
+À ne jamais confondre :
+
+| Élément | Nature |
+|---|---|
+| Rattachement des loyers acquis, créances, avances, neutralisation des encaissements déjà reconnus | **règle fiscale** (SAV-034, sources officielles) |
+| Formule `E + CC − CO + AO − AC` | **identité dérivée** de ces règles |
+| États `UNKNOWN` / `PROPOSED` / `VALIDATED`, couverture, statuts `SUPPORTED` / `NEEDS_CONFIRMATION` / `OUT_OF_DOMAIN`, fail-closed, révision et empreinte, confirmation liée à la révision, snapshot v3 | **conventions techniques** de fiabilité (aucune source fiscale ne les impose ; justifiées par fiscal-proof-standard : ne jamais inventer ni extrapoler) |
+| Liste des situations `OUT_OF_DOMAIN` | **choix de périmètre** : ces situations relèvent de règles distinctes non établies dans le produit, pas d'une absence de règle fiscale |
 
 ## Sorties
 
@@ -70,7 +86,22 @@ Les faits gardent leur `propertyId` avant consolidation : A : CC 1 000 et B : AC
 
 ## Continuité N → N+1 — `NOT IMPLEMENTED / CLOSING BLOCKED`
 
-Contrat futur : `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)`, même bien, continuité démontrable, provenance, révision et empreinte, sans réinterprétation. **Non implémenté.** Le garde `f013_v2_continuity_not_supported` reste nécessaire : la clôture et la création de N+1 sont refusées pour tout dossier portant des données F013 v2, y compris à soldes nuls.
+Contrat futur (conséquence de l'identité : les soldes de début d'exercice sont les valeurs correspondantes de la clôture précédente — BOI-BIC-DECLA-30-20-20 § 170, voir SAV-034) :
+
+```
+CC(N) → CO(N+1)        AC(N) → AO(N+1)
+```
+
+La continuité doit conserver : le **bien** (même `propertyId`), le **montant** (sans réinterprétation), la **nature** (créance vs avance, jamais interverties ; CO ne devient jamais une créance de clôture), la **provenance** (faits et observations d'origine) et la **preuve de la reconnaissance antérieure** (révision et empreinte confirmées de N). Elle ne doit **jamais** reconnaître deux fois le produit : le règlement en N+1 d'une créance de N est un encaissement N+1 neutralisé par CO ; une avance reçue en N est reconnue une seule fois, en N+1, par AO. Un solde sans preuve de reconnaissance en N ne se reporte pas : `UNKNOWN`, jamais zéro.
+
+Oracles (vérifiés arithmétiquement et juridiquement en V2.5.1) :
+
+| Cas | N | N+1 | Résultat |
+|---|---|---|---|
+| Créance | E 11 000, CC 1 000 → acquis 12 000 | E 12 000 (dont règlement de 1 000), CO 1 000 | 12 000 − 1 000 = **11 000** (aucun produit recréé par le règlement) |
+| Avance | E 13 000, AC 1 000 → acquis 12 000 | E 11 000 (hors l'avance encaissée en N), AO 1 000 | 11 000 + 1 000 = **12 000** (produit différé reconnu une fois) |
+
+**Non implémenté.** Le garde `f013_v2_continuity_not_supported` reste nécessaire : la clôture et la création de N+1 sont refusées pour tout dossier portant des données F013 v2, y compris à soldes nuls. Aucun texte consulté n'imprime l'égalité `CC(N) = CO(N+1)` : elle est dérivée.
 
 ## Statut d'implémentation (au 2026-10-05)
 

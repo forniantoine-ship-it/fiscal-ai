@@ -3,7 +3,7 @@ id: SAV-028
 title: "Les recettes sont les loyers encaissés"
 type: savoir
 status: deprecated
-version: "1.1"
+version: "1.2"
 created: 2026-06-29
 updated: 2026-10-05
 owner: product-owner
@@ -32,4 +32,4 @@ Précision : le code F013 v2 (moteur de rapprochement) est implémenté mais **d
 
 En comptabilité BIC, les recettes locatives correspondent aux loyers effectivement encaissés pendant l exercice (CGI art. 38-2), pas aux loyers facturés. Un loyer de décembre payé en janvier est une recette de l exercice suivant.
 
-*La référence « CGI art. 38-2 » citée ici n'a pas été revérifiée ; elle ne doit pas être reprise sans validation (fiscal-proof-standard).*
+*Vérification V2.5.1 : le 2 de l'article 38 du CGI pose le bénéfice net déterminé d'après les résultats d'ensemble des opérations (créances acquises incluses) et son 2 bis rattache les produits à l'exercice de la livraison ou de l'achèvement des prestations (loyers : au fur et à mesure de l'exécution) ; il **ne fonde pas** une règle d'encaissement pour un LMNP au réel. Voir SAV-034.*
