@@ -3,9 +3,9 @@ id: F-013
 title: Assistant Revenus
 type: feature
 status: draft
-version: "1.0"
+version: "2.0"
 created: 2026-07-01
-updated: 2026-07-01
+updated: 2026-10-05
 owner: product-owner
 priorité: haute
 tags: [feature, revenus, recettes, bail, réconciliation, lmnp]
@@ -13,13 +13,75 @@ jtbd: [JTBD-005]
 profils: [PROF-001, PROF-002, PROF-003, PROF-004, PROF-005]
 ux-patterns: [UXP-001, UXP-Reconcile]
 depends_on_ks:
-  confirmed: [SAV-028, SAV-009]
-  candidates: [SAV-REV-01, SAV-REV-02, SAV-REV-03, SAV-REV-04]
+  confirmed: [SAV-009]
+  target_contract_review: [SAV-034, TRF-0036]
+  legacy_v1_only: [SAV-028, TRF-0029]
+  candidates: [SAV-REV-01, SAV-REV-02, SAV-REV-03, SAV-REV-04, SAV-REV-05]
 ---
 
 # F-013 — Assistant Revenus
 
 ---
+
+# Statut de production (lire en premier)
+
+| | Contrat | Statut |
+|---|---|---|
+| **TARGET CONTRACT** | F013 v2 — rattachement des loyers à l'exercice (créances et avances) | règle [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]] et transformation [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]], toutes deux `review` (non approuvées) |
+| **CURRENT PRODUCTION** | F013 v1 — assistant conversationnel et pont documentaire historiques, basés sur les encaissements, avec ajustements janvier/décembre | productif ; décrit dans la partie « LEGACY V1 » plus bas |
+
+**F013 v2 est implémenté mais désactivé en production** (route manuelle `/assistants/revenus-v2` inerte par défaut) et **n'est branché ni à F006 ni au bilan productif.** Aucune section de ce document ne doit laisser croire à une bascule qui n'existe pas.
+
+# TARGET CONTRACT — F013 v2
+
+**Règle.** Pour les loyers ordinaires supportés, par bien et par exercice :
+
+```
+Loyers acquis N = E + CC − CO + AO − AC
+```
+
+| Terme | Sens |
+|---|---|
+| E | encaissements locatifs qualifiés de N (hors dépôt de garantie et mouvements personnels) |
+| CC / CO | créances locatives à la clôture / à l'ouverture |
+| AC / AO | loyers encaissés d'avance à la clôture / à l'ouverture |
+
+Ne jamais réduire la règle à « loyers acquis = loyers encaissés ». Le moteur F013 v2 est l'unique autorité de calcul ; aucun autre composant (OCR, pont documentaire, grille, bilan, RFS, F006) ne reproduit la formule.
+
+**Faits et états.** Chaque fait chiffré est `UNKNOWN`, `PROPOSED` ou `VALIDATED` ; `UNKNOWN ≠ VALIDATED(0)` et `PROPOSED ≠ VALIDATED`. La couverture des encaissements (`UNKNOWN`, `PARTIAL`, `COMPLETE`) est établie séparément : un montant validé ne prouve pas une couverture complète. Statuts de sortie : `SUPPORTED`, `NEEDS_CONFIRMATION`, `OUT_OF_DOMAIN` ; hors `SUPPORTED`, aucun montant fiscal définitif. Détails : [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]].
+
+**Paiement ≠ période.** « Loyer décembre 2025 payé le 05/01/2026 » conserve `paymentDate = 2026-01-05` et `rentalPeriod = 2025-12` ; ce n'est pas un produit de janvier 2026. Un loyer de janvier 2026 payé en décembre 2025 n'est pas un produit 2025.
+
+**Parcours manuel cible (gestion par exception).** Un montant d'encaissements ; la couverture ; quatre réponses d'inventaire (créances et avances, à l'ouverture et à la clôture : « non » explicite = zéro validé, absence de réponse = inconnu) ; les exceptions seulement si nécessaire (indemnité, remboursement, GLI, litige, annulation, dépôt de garantie → `OUT_OF_DOMAIN`) ; récapitulatif et confirmation explicite. Pas de douze mois à saisir.
+
+**Documents et OCR.** Une observation documentaire préserve identité stable, document, texte source, montant, nature, date de paiement, période économique, bien, confiance, corrections utilisateur et provenance. Chaîne : extraction → observation → proposition → correction éventuelle → validation utilisateur → fait validé. La grille agrégée n'est pas une transaction bancaire. La couverture documentaire `COMPLETE` proposée n'équivaut pas à une validation.
+
+**Source unique de l'inventaire locatif.** `rentReconciliationV2` est l'unique propriétaire éditable de CO, CC, AO, AC. Le bilan est un consommateur en lecture seule de l'inventaire de **clôture** : créance de clôture → `LOYER_DU_PAR_LOCATAIRE` (case 068), avance de clôture → `LOYER_ENCAISSE_D_AVANCE` (case 174). CO et AO servent au rattachement de l'exercice et ne deviennent jamais un solde de clôture.
+
+**Multi-biens.** Une source de revenus scopée à un bien ne contribue qu'à ce bien ; une source sans `propertyId` n'est jamais attribuée implicitement au bien actif ; les faits restent par bien (A → créance 1 000, B → avance 700) puis la consolidation intervient : biens → faits par bien → consolidation → **ONE F006** (jamais un F006 par bien). Cadre : [[ADR-011 — Périmètre du multi-biens MVP]].
+
+**Invalidation.** Une modification d'un fait F013 v2 invalide la confirmation et les sorties dépendantes (`fiscalResult`, RFS, liasse, génération) **même si le total des loyers acquis est identique** (E 12 000 / CC 0 → E 11 000 / CC 1 000) : la dépendance porte sur les faits et la révision, pas sur le total.
+
+**Continuité N → N+1 : `NOT IMPLEMENTED / CLOSING BLOCKED`.** Contrat futur `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)`. Non implémenté : le garde `f013_v2_continuity_not_supported` refuse la clôture et N+1 pour tout dossier portant des données F013 v2.
+
+**Décisions d'ingénierie associées** (snapshot v3, anti-downgrade, garde de clôture, proposition ≠ validation, source unique, scope de bien) : [[ADR-012 — Contrat F013 v2 : source unique, snapshot v3 et fail-closed]] (`pending-decision`).
+
+# CURRENT PRODUCTION — F013 v1 et limitations actuelles
+
+- Le parcours productif calcule des recettes à partir des **encaissements** et applique encore des **ajustements janvier/décembre** historiques (risque de double comptage identifié). Il utilise le pont documentaire historique. Ce sont des comportements **LEGACY V1**, pas le contrat cible.
+- Correctif actif (HOTFIX-1) : le pont documentaire v1 peut être **scopé par `propertyId`** (en multi, seules les sources du bien actif contribuent ; une session sans bien n'est jamais attribuée implicitement). Sans scope (mono), comportement historique inchangé.
+- Aucune migration automatique d'un dossier v1 vers v2 : un total v1 (`totalRecettes`) ne devient jamais un rapprochement v2 validé.
+- **Bilan :** la projection F013 v2 → bilan existe et est testée (cases 068 et 174 par le chemin existant), mais n'est **pas branchée** au bilan productif. Les cartes et saisies bilan historiques existent toujours : à la bascule, les représentations concurrentes devront être neutralisées ou verrouillées pour éviter une saisie écrasée silencieusement. **Risque connu non résolu :** une confirmation globale `tiers.dettes = NUL_CONFIRME` peut entrer en conflit avec une avance locative.
+- **F006 :** ONE F006 reste l'invariant ; F013 v2 n'y est pas branché.
+- **Clôture :** bloquée pour F013 v2 (voir ci-dessus).
+- **39 C :** `KNOWN SEPARATE FISCAL CORRECTION — NOT PART OF F013 V2` ([[SAV-030 – Plafond 39 C avant imputation des déficits antérieurs]]).
+- **FEC :** `NOT STARTED`. Observations, périodes, inventaires et provenance F013 v2 pourront alimenter une future couche comptable ; aucun journal ni compte n'est implémenté.
+
+---
+
+> # PARTIE LEGACY V1 — conception de l'assistant conversationnel (CURRENT PRODUCTION)
+>
+> Tout ce qui suit décrit la conception historique de F-013 et le comportement **V1 productif**, **à l'exception des blocs explicitement marqués `TARGET`** (contrat de sortie F013 v2 vers F006 et scripts EXP-F013-V2-xx, en fin de document). Les occurrences de « loyers encaissés », « règle d'encaissement », « SAV-028 », « Jan/Déc », « recalage » ou « un loyer impayé n'est pas une recette » ci-dessous sont des **énoncés LEGACY V1** : elles **ne sont pas** la règle cible (voir TARGET CONTRACT ci-dessus). Le texte est conservé pour ne pas réécrire l'histoire du projet.
 
 # Note structurelle pour les futurs auteurs
 
@@ -42,7 +104,7 @@ Ce pattern — **Ancrage → Déclaration → Confrontation → Sources addition
 
 Cet Assistant ne demande pas à l'utilisateur de connaître les règles fiscales. Il ne demande pas non plus de "remplir un formulaire de revenus". Il pose la question qui importe : est-ce que ce que vous avez encaissé correspond à ce que vous auriez dû encaisser ?
 
-**Règle clé jamais exposée telle quelle à l'utilisateur :** en LMNP réel, les recettes sont les loyers *encaissés* au cours de l'exercice (CGI art. 38-2 — SAV-028), pas les loyers dus ou facturés. Un loyer de décembre payé en janvier est une recette de l'exercice suivant.
+**[LEGACY V1 ONLY — règle remplacée par SAV-034] Règle clé de la conception initiale (jamais exposée telle quelle) :** les recettes étaient considérées comme les loyers *encaissés* au cours de l'exercice (SAV-028, `deprecated`), « un loyer de décembre payé en janvier est une recette de l'exercice suivant ». Cette règle est contredite par le contrat cible : le loyer de décembre appartient à l'exercice de la période (créance de clôture).
 
 ---
 
@@ -669,7 +731,7 @@ n'est pas un revenu — il vous a été confié temporairement et doit
 de 2024, même si vous l'avez bien encaissé cette année-là."
 ```
 
-## EXP-F013-02 — La règle décembre/janvier (SAV-028 sans jargon)
+## EXP-F013-02 — La règle décembre/janvier (SAV-028 sans jargon) — LEGACY V1 ONLY, ne pas réutiliser pour V2
 
 *Déclenché si : l'utilisateur répond "Oui" à la question de recalage Jan/Déc.*
 
@@ -683,7 +745,7 @@ Le loyer de décembre 2024 payé en janvier 2025 : c'est une recette 2025.
 Nous avons ajusté votre total en conséquence."
 ```
 
-## EXP-F013-03 — Le loyer impayé n'est pas une recette
+## EXP-F013-03 — Le loyer impayé n'est pas une recette — LEGACY V1 ONLY, ne pas réutiliser pour V2
 
 *Déclenché dans le micro-flux impayés, si aucune GLI.*
 
@@ -737,9 +799,21 @@ F-013 produit pour F-006 exactement ce dont le Calculation Engine a besoin.
 | `mois_location_effectifs` | F-006 | Vérification cohérence amortissement (prorata SAV-009) |
 | `vacances_exercice[]` | F-006 | Croisement avec charges de la période |
 
-**Contrat de sortie vers F-006 :**
+**Contrat de sortie vers F-006 (CURRENT PRODUCTION, V1) :**
 
 F-006 ne doit jamais calculer ses propres recettes. Il consomme `RecettesExercice.total_recettes` comme une donnée validée, traçable, issue de F-013. La responsabilité de la justesse des recettes appartient entièrement à F-013.
+
+---
+
+> **TARGET — contrat de sortie F013 v2 vers F006.** F013 v2 ne produit pas un « total encaissé » mais des loyers acquis par bien, issus des cinq termes (moteur unique). La consolidation des contributions par bien alimente **ONE F006**. **Non branché aujourd'hui** : F006 productif consomme encore la sortie v1 ci-dessus.
+
+## Scripts de l'Explanation Engine — TARGET (F013 v2, `draft`)
+
+*Ne citent jamais les références fiscales ; vocabulaire immobilier.*
+
+- **EXP-F013-V2-01 — Loyer payé après la fin de l'année.** « Le loyer de décembre appartient à votre année 2025, même si votre locataire l'a payé en janvier. Nous le comptons donc dans 2025 comme un loyer qui vous restait à recevoir au 31 décembre. »
+- **EXP-F013-V2-02 — Loyer payé d'avance.** « Un loyer de janvier payé en décembre est bien arrivé sur votre compte en 2025, mais il concerne 2026. Nous ne le comptons pas dans vos loyers 2025. »
+- **EXP-F013-V2-03 — Loyer impayé.** « Un loyer non payé reste un loyer que vous deviez recevoir : il compte pour l'année qu'il concerne, tant que nous n'avons pas de situation particulière à traiter (assurance, litige, perte). Dans ces cas, nous vous le signalons au lieu de deviner. »
 
 ---
 

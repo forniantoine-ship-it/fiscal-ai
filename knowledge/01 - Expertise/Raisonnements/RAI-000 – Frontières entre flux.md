@@ -5,7 +5,7 @@ type: raisonnement
 status: approved
 version: "1.0"
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-10-05
 owner: product-owner
 tags: [raisonnement, flux, frontières, architecture]
 objectif: "Documenter les interfaces entre les flux métier du Knowledge System"
@@ -137,7 +137,7 @@ Le domaine Résultat fiscal est un moteur d'orchestration. Il consomme les sorti
 
 | Entrée | Source | Transformation |
 |---|---|---|
-| `total_recettes` | Recettes | TRF-0029 |
+| `total_recettes` | Recettes | TRF-0029 (LEGACY V1, production actuelle ; contrat cible : TRF-0036, non branché) |
 | `total_charges_déductibles` | Charges | TRF-0020 |
 | `frais_en_charges` | Acquisition | TRF-0001 |
 | `charges_pré_exploitation` | Pré-exploitation | TRF-0025 |

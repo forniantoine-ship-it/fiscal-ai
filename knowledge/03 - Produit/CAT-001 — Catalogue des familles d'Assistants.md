@@ -136,6 +136,8 @@ Un Assistant mal classifié dans sa famille produit inévitablement une mauvaise
 
 **Famille :** RÉCONCILIATION
 
+> *Note 2026-10-05 :* cette fiche décrit le pattern cognitif et le parcours conversationnel **V1** (CURRENT PRODUCTION). La « référence théorique » (loyer × mois) n'est qu'un repère de vraisemblance, jamais un fait fiscal. Le contrat fiscal cible est F013 v2 (rattachement par créances et avances, désactivé en production) : voir [[F-013 — Assistant Revenus]], section TARGET CONTRACT.
+
 ---
 
 # Challenge de la taxonomie
