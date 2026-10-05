@@ -2,7 +2,7 @@
 id: ADR-012
 title: "Contrat F013 v2 : source unique, snapshot v3 et fail-closed"
 type: adr
-status: pending-decision
+status: accepted
 version: "1.1"
 created: 2026-10-05
 updated: 2026-10-05
@@ -16,7 +16,9 @@ triggers: [F013-V2.1, F013-V2.2, F013-V2.2.1, F013-V2.3, F013-HOTFIX-1, F013-V2.
 
 # Statut
 
-🟡 **En attente de décision (régularisation).** Les décisions ci-dessous ont **déjà été implémentées dans le code** (F013-V2.1 à V2.4, désactivées en production) avant d'être formalisées ici. Cet ADR les consigne pour qu'elles ne vivent pas uniquement dans des rapports de mission. La revue adversariale, la vérification des conditions A et B de GOUV-001 (occurrences, cause racine commune) et la décision du Product Owner restent à faire. Il ne modifie ni code ni Knowledge approuvé.
+✅ **Acceptée** — décision explicite du Product Owner du 2026-10-05, prise après la gate fiscale F013-V2.5.1, **avec les conditions d'activation ci-dessous (inchangées)**. Les décisions ont **déjà été implémentées dans le code** (F013-V2.1 à V2.4, désactivées en production) avant d'être formalisées ici (régularisation). Cet ADR les consigne pour qu'elles ne vivent pas uniquement dans des rapports de mission. Il ne modifie ni code ni Knowledge approuvé.
+
+> **L'acceptation de cet ADR ne signifie PAS `F013 V2 ACTIVATED`.** F013 v2 reste **OFF**. Conditions d'activation toujours applicables : (1) la continuité N → N+1 n'est **pas implémentée** et le garde `f013_v2_continuity_not_supported` reste **actif** ; (2) la projection F013 v2 → bilan n'est **pas branchée** en production ; (3) les saisies de bilan concurrentes ne sont **pas neutralisées** ; (4) la protection anti-downgrade **distante** doit être **rechecked** avant toute activation ; (5) aucun drapeau d'activation n'est posé.
 
 # Contexte
 
@@ -48,7 +50,7 @@ Le contrat F013 v1 prend les encaissements comme base des recettes ([[SAV-028 �
 
 # Revue adversariale (F013-V2.5.1, 2026-10-05)
 
-*Conduite par l'agent d'implémentation (IA), qui est aussi l'auteur des décisions : elle n'est donc pas indépendante. Le Product Owner doit la contre-vérifier ; cet ADR n'est pas approuvé par son auteur.*
+*Conduite par l'agent d'implémentation (IA), qui est aussi l'auteur des décisions : elle n'est donc pas indépendante. Cet ADR n'a pas été approuvé par son auteur : il l'a été par le Product Owner le 2026-10-05, après contre-vérification de cette revue.*
 
 ## Décision fiscale ≠ décision d'architecture
 
@@ -78,10 +80,10 @@ Le contrat F013 v1 prend les encaissements comme base des recettes ([[SAV-028 �
 
 ## Conditions de GOUV-001
 
-- Condition A (trois occurrences) et condition B (cause racine commune) : **non vérifiées formellement** — décisions prises par tranches successives avant la formalisation. Le Product Owner peut lever cette condition en connaissance de cause (régularisation).
+- Condition A (trois occurrences) et condition B (cause racine commune) : **non vérifiées formellement** — décisions prises par tranches successives avant la formalisation. Le Product Owner peut lever cette condition en connaissance de cause (régularisation). Le Product Owner a approuvé l'ADR après avoir pris connaissance de cette réserve ; la levée formelle des conditions A et B n'est pas consignée comme telle.
 - Revue adversariale : faite (ci-dessus), non indépendante.
 
-## Prêt pour décision du Product Owner ?
+## Prêt pour décision du Product Owner ? — décision rendue : acceptée le 2026-10-05, conditions d'activation maintenues
 
 **Oui, sous conditions d'activation** : (1) preuve distante du trigger SQL ; (2) continuité F013-V2.6 ou décision explicite sur les dossiers non clôturables ; (3) neutralisation des saisies de bilan concurrentes. Ces conditions bloquent **l'activation**, pas l'approbation des principes.
 

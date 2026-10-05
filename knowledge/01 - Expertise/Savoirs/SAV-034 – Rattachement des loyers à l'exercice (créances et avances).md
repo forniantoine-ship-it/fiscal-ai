@@ -2,7 +2,7 @@
 id: SAV-034
 title: "Rattachement des loyers à l'exercice : loyers acquis, créances et avances"
 type: savoir
-status: review
+status: approved
 version: "1.1"
 created: 2026-10-05
 updated: 2026-10-05
@@ -19,7 +19,7 @@ justifie: [TRF-0036]
 
 # SAV-034 — Rattachement des loyers à l'exercice
 
-> **Statut : `review`.** Cet objet remplace la règle de SAV-028 dans le Knowledge cible. Il n'est pas encore `approved` : seul le Product Owner peut l'approuver (KS-004). **Preuve fiscale établie en V2.5.1** (voir « Sources officielles ») : la règle de rattachement et la formule sont étayées par des sources officielles ; recommandation d'approbation préparée pour le Product Owner.
+> **Statut : `approved`** — décision explicite du Product Owner du 2026-10-05, prise après la gate fiscale F013-V2.5.1. Cet objet remplace la règle de SAV-028 dans le Knowledge cible. **Preuve fiscale établie en V2.5.1** (voir « Sources officielles ») : la règle de rattachement et la formule sont étayées par des sources officielles. L'approbation ne vaut pas activation : F013 v2 reste désactivé en production (voir ADR-012).
 >
 > **TARGET CONTRACT.** Cette règle décrit le contrat fiscal cible (F013 v2). **CURRENT PRODUCTION :** F013 v1 reste le parcours productif et applique encore l'ancienne logique « encaissements » (voir [[SAV-028 – Les recettes sont les loyers encaissés]], `LEGACY V1 ONLY`).
 

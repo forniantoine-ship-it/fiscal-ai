@@ -14,7 +14,7 @@ profils: [PROF-001, PROF-002, PROF-003, PROF-004, PROF-005]
 ux-patterns: [UXP-001, UXP-Reconcile]
 depends_on_ks:
   confirmed: [SAV-009]
-  target_contract_review: [SAV-034, TRF-0036]
+  target_contract_approved: [SAV-034, TRF-0036]
   legacy_v1_only: [SAV-028, TRF-0029]
   candidates: [SAV-REV-01, SAV-REV-02, SAV-REV-03, SAV-REV-04, SAV-REV-05]
 ---
@@ -27,7 +27,7 @@ depends_on_ks:
 
 | | Contrat | Statut |
 |---|---|---|
-| **TARGET CONTRACT** | F013 v2 — rattachement des loyers à l'exercice (créances et avances) | règle [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]] et transformation [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]], toutes deux `review` (non approuvées) |
+| **TARGET CONTRACT** | F013 v2 — rattachement des loyers à l'exercice (créances et avances) | règle [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]] et transformation [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]], toutes deux `approved` (décision du Product Owner du 2026-10-05) ; l'approbation ne vaut pas activation |
 | **CURRENT PRODUCTION** | F013 v1 — assistant conversationnel et pont documentaire historiques, basés sur les encaissements, avec ajustements janvier/décembre | productif ; décrit dans la partie « LEGACY V1 » plus bas |
 
 **F013 v2 est implémenté mais désactivé en production** (route manuelle `/assistants/revenus-v2` inerte par défaut) et **n'est branché ni à F006 ni au bilan productif.** Aucune section de ce document ne doit laisser croire à une bascule qui n'existe pas.
@@ -64,7 +64,7 @@ Ne jamais réduire la règle à « loyers acquis = loyers encaissés ». Le mote
 
 **Continuité N → N+1 : `NOT IMPLEMENTED / CLOSING BLOCKED`.** Contrat futur `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)`. Non implémenté : le garde `f013_v2_continuity_not_supported` refuse la clôture et N+1 pour tout dossier portant des données F013 v2.
 
-**Décisions d'ingénierie associées** (snapshot v3, anti-downgrade, garde de clôture, proposition ≠ validation, source unique, scope de bien) : [[ADR-012 — Contrat F013 v2 : source unique, snapshot v3 et fail-closed]] (`pending-decision`).
+**Décisions d'ingénierie associées** (snapshot v3, anti-downgrade, garde de clôture, proposition ≠ validation, source unique, scope de bien) : [[ADR-012 — Contrat F013 v2 : source unique, snapshot v3 et fail-closed]] (`accepted`, décision du Product Owner du 2026-10-05 ; conditions d'activation maintenues).
 
 # CURRENT PRODUCTION — F013 v1 et limitations actuelles
 

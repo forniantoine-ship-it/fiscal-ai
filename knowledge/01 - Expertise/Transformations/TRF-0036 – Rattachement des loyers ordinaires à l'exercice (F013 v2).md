@@ -2,7 +2,7 @@
 id: TRF-0036
 title: "Rattachement des loyers ordinaires à l'exercice (F013 v2)"
 type: transformation
-status: review
+status: approved
 version: "1.1"
 created: 2026-10-05
 updated: 2026-10-05
@@ -15,7 +15,7 @@ supersedes: TRF-0029
 
 # TRF-0036 — Rattachement des loyers ordinaires à l'exercice (F013 v2)
 
-> **Statut : `review`** (non approuvé : KS-004). **TARGET CONTRACT.**
+> **Statut : `approved`** — décision explicite du Product Owner du 2026-10-05, après la gate fiscale F013-V2.5.1. **TARGET CONTRACT.** L'approbation ne vaut pas activation : F013 v2 reste désactivé (voir ADR-012).
 > **CURRENT PRODUCTION :** F013 v1 reste productif ([[TRF-0029 – Calcul des recettes]], `LEGACY V1 ONLY`). Le moteur décrit ici existe dans le code mais est **désactivé en production** et **n'est pas branché à F006 ni au bilan productif**.
 > TRF-0035 est réservé à l'allocation 39 C par bien (voir ADR-011) et n'est pas utilisé ici.
 >
