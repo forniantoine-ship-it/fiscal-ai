@@ -16,7 +16,8 @@
  */
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { workspaceSnapshotSchemaVersion, WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION } from "@/lib/lmnp/store/workspace-snapshot";
-import { resolveEffectiveBilanWithRentInventory, type RentBilanStatus } from "@/lib/lmnp/services/f013/v2/f013-v2-bilan-wiring";
+import { describeRentalBilanOwnership, resolveEffectiveBilanWithRentInventory, type RentalBilanOwnership, type RentBilanStatus } from "@/lib/lmnp/services/f013/v2/f013-v2-bilan-wiring";
+import { resolveNoAllocationChargesAttestation, type NoAllocationChargesState } from "@/lib/lmnp/dossier/multi-property-attestations";
 import { projectRentalInventoryToBilan } from "@/lib/lmnp/services/f013/v2/f013-v2-rental-inventory";
 import type { RentReconciliationV2State } from "@/lib/lmnp/services/f013/v2/f013-v2-state";
 import type { LigneCharge } from "@/runtime/capabilities/f012/types";
@@ -40,9 +41,20 @@ export type PreSwitchReadiness = {
   readonly warnings: readonly string[];
   readonly checks: readonly PreSwitchCheck[];
   readonly exact: Article39cReadiness;
-  readonly bilan: { readonly status: RentBilanStatus | "NO_PROPERTY"; readonly conflicts: readonly string[]; readonly superseded: number };
-  /** Garde productive ADR-011 encore en vigueur pour un dossier multi (levée = INT-5). */
-  readonly activationBlockers: readonly string[];
+  readonly bilan: {
+    readonly status: RentBilanStatus | "NO_PROPERTY";
+    readonly conflicts: readonly string[];
+    readonly superseded: number;
+    /** Propriétaire des faits locatifs (F013 v2), sources concurrentes identifiées, plan de switch du bucket (jamais exécuté). */
+    readonly ownership: RentalBilanOwnership;
+  };
+  /** Domaine exact multi (INT-4.1) : stocks globaux, ARD générée, attestation « aucune charge à répartir ». */
+  readonly multi: { readonly applicable: boolean; readonly attestation: NoAllocationChargesState | "NOT_APPLICABLE" };
+  /**
+   * Éléments propres au SWITCH (INT-5), jamais des défauts du dossier : le calcul productif est encore le proxy historique,
+   * son garde de domaine ADR-011 et le libellé productif de l'attestation restent en vigueur jusqu'au switch.
+   */
+  readonly switchBoundItems: readonly string[];
   readonly consumption: "DORMANT";
   readonly productiveF006: "OLD_PROXY";
 };
@@ -79,6 +91,7 @@ export function evaluateArticle39cPreSwitchReadiness(input: {
   let bilanStatus: PreSwitchReadiness["bilan"]["status"] = "NO_PROPERTY";
   let bilanConflicts: string[] = [];
   let superseded = 0;
+  let ownership: RentalBilanOwnership = { owner: "NOT_APPLICABLE", ownedNatures: [], competing: [], switchPlans: [] };
   if (propertyIds.length > 0) {
     const bilanInputs = workspace.declarationDraft?.bilanPatrimonial;
     if (bilanInputs !== undefined) {
@@ -86,6 +99,7 @@ export function evaluateArticle39cPreSwitchReadiness(input: {
       bilanStatus = effective.status;
       bilanConflicts = effective.conflicts.map((c) => c.code);
       superseded = effective.superseded.length;
+      ownership = describeRentalBilanOwnership({ bilan: bilanInputs, fiscalYear, propertyIds, states });
     } else {
       // Pas de saisie bilan concurrente : seule la complétude de l'inventaire compte.
       const projection = projectRentalInventoryToBilan({ fiscalYear, propertyIds, states });
@@ -97,6 +111,15 @@ export function evaluateArticle39cPreSwitchReadiness(input: {
   const snapshotVersion = workspaceSnapshotSchemaVersion(workspace);
   const carriesV3Data = states.length > 0 || workspace.declarationDraft?.article39cActivityQualifications !== undefined || Object.values(identity.ok ? identity.biens : {}).some((b) => b.article39cQualifications !== undefined);
   const snapshotOk = !carriesV3Data || snapshotVersion >= WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
+
+  // --- Domaine exact multi (INT-4.1) : stocks globaux, pas d'ARD générée à répartir, attestation ----------------------------
+  const multi = propertyIds.length > 1;
+  const stocksNow = consolidated.openingStocks;
+  const stockNonZero = stocksNow?.kind === "PROVIDED" && (stocksNow.historicalArdStock > 0 || stocksNow.priorDeficits.length > 0);
+  const stocksGlobalOk = !multi || !stockNonZero || (stocksNow?.kind === "PROVIDED" && stocksNow.scope === "ACTIVITY_GLOBAL");
+  const generatedArd = (exact.engine?.figures?.ardNouvelle ?? 0) > 0;
+  const noAllocationOk = !multi || !generatedArd;
+  const attestation: NoAllocationChargesState | "NOT_APPLICABLE" = multi ? resolveNoAllocationChargesAttestation(workspace.declarationDraft?.multiPropertyAttestations) : "NOT_APPLICABLE";
 
   const checks: PreSwitchCheck[] = [
     { id: "F013_V2_DEFINITIVE", ok: !has(codes, "F013_V2_NOT_PRESENT", "F013_V2_NOT_DEFINITIVE", "F013_V2_OUT_OF_DOMAIN", "F013_V2_CONFIRMATION_MISSING", "F013_V2_CONFIRMATION_STALE", "F013_V2_SCOPE_MISMATCH", "F013_V2_LEGACY_CONTRACT") && consolidated.byClassCents.L > 0 },
@@ -112,32 +135,36 @@ export function evaluateArticle39cPreSwitchReadiness(input: {
     { id: "NO_OUT_OF_DOMAIN", ok: exact.status !== "OUT_OF_DOMAIN" },
     { id: "SCOPE_CORRECT", ok: !has(codes, "CONSOLIDATION_SCOPE_VIOLATION", "QUALIFICATION_WRONG_SCOPE") && consolidated.violations.length === 0 },
     { id: "SNAPSHOT_COMPATIBLE", ok: snapshotOk, detail: `schema v${snapshotVersion}` },
+    { id: "MULTI_STOCKS_GLOBAL", ok: stocksGlobalOk, detail: multi ? "ARD et déficits d'ouverture : stocks de l'activité consolidée, jamais répartis" : "mono" },
+    { id: "MULTI_NO_GENERATED_ARD_ALLOCATION", ok: noAllocationOk, detail: multi ? "TRF-0035 non établi : une ARD générée exigerait un suivi par bien" : "mono" },
+    { id: "MULTI_NO_ALLOCATION_ATTESTATION", ok: !multi || attestation === "confirmed", detail: attestation },
   ];
 
-  // Statut : on part du readiness exact ; le bilan et les stocks ne peuvent que le dégrader.
+  // Statut : on part du readiness exact ; bilan, snapshot et domaine multi ne peuvent que le dégrader.
+  // Sévérité : OUT_OF_DOMAIN > INVALID > NEEDS_QUALIFICATION.
   let status: PreSwitchStatus;
   const reasons: string[] = [...exact.reasons];
   if (exact.status === "READY") {
-    if (!bilanOk) {
-      status = bilanStatus === "CONFLICT" ? "NEEDS_QUALIFICATION" : "INVALID";
-      reasons.push(bilanStatus === "CONFLICT" ? "BILAN_RENTAL_CONFLICT" : "BILAN_RENTAL_INVENTORY_NOT_DEFINITIVE", ...bilanConflicts);
-    } else if (!snapshotOk) {
-      status = "INVALID";
-      reasons.push("SNAPSHOT_SCHEMA_TOO_OLD");
-    } else {
-      status = exact.warnings.length > 0 ? "READY_WITH_IMMATERIAL_UNCERTAINTY" : "READY";
-    }
+    const degradations: Array<{ status: "OUT_OF_DOMAIN" | "INVALID" | "NEEDS_QUALIFICATION"; reasons: string[] }> = [];
+    if (!bilanOk) degradations.push(bilanStatus === "CONFLICT" ? { status: "NEEDS_QUALIFICATION", reasons: ["BILAN_RENTAL_CONFLICT", ...bilanConflicts] } : { status: "INVALID", reasons: ["BILAN_RENTAL_INVENTORY_NOT_DEFINITIVE"] });
+    if (!snapshotOk) degradations.push({ status: "INVALID", reasons: ["SNAPSHOT_SCHEMA_TOO_OLD"] });
+    if (!stocksGlobalOk) degradations.push({ status: "OUT_OF_DOMAIN", reasons: ["OPENING_STOCK_REQUIRES_PROPERTY_ALLOCATION"] });
+    if (!noAllocationOk) degradations.push({ status: "OUT_OF_DOMAIN", reasons: ["GENERATED_ARD_REQUIRES_PROPERTY_ALLOCATION"] });
+    if (multi && attestation === "absent") degradations.push({ status: "INVALID", reasons: ["NO_ALLOCATION_ATTESTATION_MISSING"] });
+    if (multi && attestation === "legacy_declared_common") degradations.push({ status: "NEEDS_QUALIFICATION", reasons: ["NO_ALLOCATION_ATTESTATION_TO_REANSWER"] });
+    if (multi && attestation === "declared_requires_allocation") degradations.push({ status: "OUT_OF_DOMAIN", reasons: ["CHARGES_REQUIRE_ALLOCATION_DECLARED"] });
+    const rank = { OUT_OF_DOMAIN: 3, INVALID: 2, NEEDS_QUALIFICATION: 1 } as const;
+    const worst = degradations.reduce<(typeof degradations)[number] | undefined>((a, d) => (a === undefined || rank[d.status] > rank[a.status] ? d : a), undefined);
+    for (const d of degradations) reasons.push(...d.reasons);
+    status = worst !== undefined ? worst.status : exact.warnings.length > 0 ? "READY_WITH_IMMATERIAL_UNCERTAINTY" : "READY";
   } else {
     status = exact.status;
     if (bilanStatus === "CONFLICT") reasons.push("BILAN_RENTAL_CONFLICT", ...bilanConflicts);
   }
 
-  const activationBlockers: string[] = [];
-  if (propertyIds.length > 1) {
-    const stocks = consolidated.openingStocks;
-    if (stocks?.kind === "PROVIDED") activationBlockers.push("ADR011_MULTI_BLOCKS_OPENING_STOCKS");
-    if (consolidated.activityCents.ACTIVITY > 0) activationBlockers.push("ADR011_MULTI_BLOCKS_COMMON_CHARGES_UNTIL_GUARD_EVOLVES");
-  }
+  const switchBoundItems: string[] = ["PRODUCTIVE_F006_STILL_OLD_PROXY", "F013_V2_GLOBAL_FLAG_OFF"];
+  if (multi) switchBoundItems.push("ADR011_PRODUCTIVE_MULTI_DOMAIN_GUARD_TO_EVOLVE_AT_SWITCH", "PRODUCTIVE_NO_COMMON_CHARGES_WORDING_TO_REPLACE_AT_SWITCH");
+  if (ownership.switchPlans.length > 0) switchBoundItems.push("TIERS_BUCKET_REPLACEMENT_PLAN_APPLIES_AT_SWITCH");
 
   return {
     status,
@@ -146,8 +173,9 @@ export function evaluateArticle39cPreSwitchReadiness(input: {
     warnings: exact.warnings,
     checks,
     exact,
-    bilan: { status: bilanStatus, conflicts: bilanConflicts, superseded },
-    activationBlockers,
+    bilan: { status: bilanStatus, conflicts: bilanConflicts, superseded, ownership },
+    multi: { applicable: multi, attestation },
+    switchBoundItems,
     consumption: "DORMANT",
     productiveF006: "OLD_PROXY",
   };

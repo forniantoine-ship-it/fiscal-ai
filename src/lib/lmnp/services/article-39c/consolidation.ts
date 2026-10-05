@@ -112,6 +112,12 @@ export function consolidateArticle39cFacts(input: {
       blockers.push(blockerOf("CONSOLIDATION_SCOPE_VIOLATION", `Contribution « ${c.contributionId} » invalide au niveau activité.`));
       continue;
     }
+    // INT-4.1 — admission précise des charges COMMUNES (niveau activité) : seule une charge définitivement ACTIVITY est
+    // admise. Une charge non qualifiée / hors domaine reste bloquée (`COMMON_CHARGE_NOT_SUPPORTED`) ; la CFE (B_OR_ACTIVITY
+    // possible) est laissée à la matérialité du moteur exact : immatérielle = avertissement, matérielle = NEEDS_QUALIFICATION.
+    if ((c.class === "NEEDS_QUALIFICATION" && c.source !== "CFE_NOTICE") || c.class === "OUT_OF_DOMAIN") {
+      blockers.push({ code: "COMMON_CHARGE_NOT_SUPPORTED", message: `Charge d'activité « ${c.contributionId} » non qualifiée ACTIVITY : aucune répartition entre biens n'existe, elle reste bloquée.`, scope: { level: "ACTIVITY" }, sourceId: c.sourceId });
+    }
     activityTotals[c.class] += c.amountCents;
     all.push(c);
   }

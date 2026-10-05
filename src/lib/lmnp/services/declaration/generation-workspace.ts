@@ -22,6 +22,7 @@
  */
 import type { Anomaly } from "@/runtime";
 import { inventoryOfBiens } from "./generation-bilan-inputs";
+import { exactOnlyChargeRecordIds, LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE } from "./legacy-proxy-guard";
 import { produceFiscalResult as produceFiscalResultReal } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { sumEuros } from "@/runtime/capabilities/f006/cents";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
@@ -183,6 +184,11 @@ function generateFromWorkspace(
   options: WorkspaceGenerationOptions,
   enforceDomain: boolean,
 ): WorkspaceGenerationResult {
+  // INT-4.1 — le proxy historique ne lit ni charge d'activité globale ni avis de CFE : refus explicite plutôt qu'omission.
+  const omitted = exactOnlyChargeRecordIds(workspace.declarationDraft, workspace.fiscalYear.year);
+  if (omitted.length > 0) {
+    return blockedFromReasons([{ code: LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE, message: `charges collectées non lisibles par le calcul historique : ${omitted.join(", ")}` }]);
+  }
   const view = readBienDrafts(workspace);
 
   // MONO — délégation stricte au chemin historique : ni collecte, ni consolidation, ni adaptateur multi.

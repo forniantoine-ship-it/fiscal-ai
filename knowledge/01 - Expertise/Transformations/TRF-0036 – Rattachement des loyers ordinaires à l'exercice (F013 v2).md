@@ -3,7 +3,7 @@ id: TRF-0036
 title: "Rattachement des loyers ordinaires à l'exercice (F013 v2)"
 type: transformation
 status: approved
-version: "1.1"
+version: "1.2"
 created: 2026-10-05
 updated: 2026-10-05
 owner: product-owner
@@ -110,8 +110,8 @@ Oracles (vérifiés arithmétiquement et juridiquement en V2.5.1) :
 | Contrat et moteur pur | **V2 IMPLEMENTED BUT OFF** |
 | Saisie manuelle, persistance, confirmation | **V2 IMPLEMENTED BUT OFF** (route `/assistants/revenus-v2` désactivée par défaut) |
 | Observations documentaires, pont de propositions | **V2 IMPLEMENTED BUT OFF** (aucun appelant en production) |
-| Inventaire commun, projection vers le bilan | **V2 IMPLEMENTED BUT OFF** (non branché au bilan productif) |
-| Projection 2033-A (cases 068 et 174) | testée par le chemin existant bilan → RFS ; non branchée à la génération productive |
+| Inventaire commun, projection vers le bilan | **IMPLÉMENTÉ ET BRANCHÉ dans l'assemblage de génération pour un dossier explicitement F013 v2** (INT-4 / INT-4.1) ; sans état F013 v2 de l'exercice le bilan est inchangé ; F013 v2 reste globalement OFF |
+| Projection 2033-A (cases 068 et 174) | par le chemin existant bilan → RFS, désormais alimentée par l'inventaire pour un dossier explicitement F013 v2 ; sources bilan concurrentes de même nature remplacées / neutralisées ; contradiction `NUL_CONFIRME` bloquante (les autres dettes ne sont jamais effacées) |
 | Branchement F006 productif | **FUTURE / NOT IMPLEMENTED** |
 | Continuité N → N+1 | **V2 IMPLEMENTED BUT OFF** (garde de capacité ; la clôture d'un dossier F013 v2 n'est admise que si l'état N est définitif ; F013 v2 reste désactivé) |
 | FEC / comptabilité | **NOT STARTED** |

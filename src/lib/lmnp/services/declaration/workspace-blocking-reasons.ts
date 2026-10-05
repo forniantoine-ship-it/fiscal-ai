@@ -87,6 +87,8 @@ export const BLOCKING_REASON_ROUTES: Readonly<Record<string, Route>> = {
   charges_nature_needs_review: { domain: "charges", recoverable: NOT_RECOVERABLE },
   legacy_charges_nature_unreviewed: { domain: "charges", recoverable: NOT_RECOVERABLE },
   common_charges_not_supported: { domain: "charges", recoverable: NOT_RECOVERABLE },
+  // INT-4.1 — charge d'activité / CFE collectée mais illisible par le proxy historique : refus plutôt qu'omission.
+  exact_only_charges_not_supported_by_legacy_proxy: { domain: "charges", recoverable: NOT_RECOVERABLE },
   // F014 — amortissements (R2C.4 : 39C par bien, ARD).
   dotation_missing: { domain: "amortissement", recoverable: true },
   multi_property_historical_ard_not_supported: { domain: "amortissement", recoverable: NOT_RECOVERABLE },

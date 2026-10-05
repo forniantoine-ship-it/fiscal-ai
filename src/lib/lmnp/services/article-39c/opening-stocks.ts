@@ -37,6 +37,12 @@ export type Article39cOpeningStocks =
       /** Déficits LMNP antérieurs (millésimés) — JAMAIS de l'ARD. */
       readonly priorDeficits: readonly StockDeficit[];
       readonly basis?: Article39cOpeningStocksBasis;
+      /**
+       * Portée du stock : `ACTIVITY_GLOBAL` = stock de l'activité consolidée (jamais réparti entre biens) — produit par les
+       * sources d'ouverture existantes, activité par construction. `PROPERTY_ATTRIBUTED` ou ABSENT (fourni hors autorité) :
+       * portée non démontrée ; en multi, un stock non nul dans ce cas exigerait une allocation par bien → hors domaine.
+       */
+      readonly scope?: "ACTIVITY_GLOBAL" | "PROPERTY_ATTRIBUTED";
       /** Clôture N−1 ou reprise d'où viennent les stocks (traçabilité). */
       readonly sourceRef?: string;
     };
@@ -75,6 +81,7 @@ export function resolveArticle39cOpeningStocks(input: { fiscalYear: OpeningFisca
         historicalArdStock: resolved.stocks.amortissementsReportes,
         priorDeficits: resolved.stocks.deficits.map((d) => ({ millesime: d.millesime, montant: d.montant })),
         basis: "NATIVE_CONTINUITY",
+        scope: "ACTIVITY_GLOBAL",
         ...(fy.stocksOuverture?.sourceClosureId !== undefined ? { sourceRef: fy.stocksOuverture.sourceClosureId } : {}),
       },
     };
@@ -97,6 +104,7 @@ export function resolveArticle39cOpeningStocks(input: { fiscalYear: OpeningFisca
       historicalArdStock: resolved.stocks.amortissementsReportes,
       priorDeficits: resolved.stocks.deficits.map((d) => ({ millesime: d.millesime, montant: d.montant })),
       basis: "EXTERNAL_TAKEOVER",
+      scope: "ACTIVITY_GLOBAL",
       ...(opening?.source.kind === "external_takeover" ? { sourceRef: opening.source.takeoverId } : {}),
     },
   };

@@ -2,6 +2,7 @@ import type { Anomaly } from "@/runtime";
 import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { produceLiasse } from "@/runtime/capabilities/f007/produce-liasse";
 import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
+import { exactOnlyChargeRecordIds, LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE } from "./legacy-proxy-guard";
 import { effectiveBilanForGeneration, inventoryOfMonoDraft, type GenerationRentInventory } from "./generation-bilan-inputs";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
@@ -222,6 +223,15 @@ export function runDeclarationGeneration(
   const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
   if (integrityBlock) {
     return { status: "blocked", anomalies: [integrityBlock] };
+  }
+
+  // INT-4.1 — le proxy historique ne lit ni charge d'activité globale ni avis de CFE : refus explicite plutôt qu'omission.
+  const omittedExactCharges = exactOnlyChargeRecordIds(draft, fiscalYear);
+  if (omittedExactCharges.length > 0) {
+    return {
+      status: "blocked",
+      anomalies: [{ severity: "error", field: "article39cQualifications", message: `${LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE}: charges collectées non lisibles par le calcul historique (${omittedExactCharges.join(", ")}).` }],
+    };
   }
 
   // Lot 3B — convergence stocks d'ouverture avant F006 (provenance effacée).

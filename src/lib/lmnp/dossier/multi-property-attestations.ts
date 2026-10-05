@@ -79,3 +79,52 @@ export function recordMultiPropertyAttestation(
 ): MultiPropertyAttestations {
   return { ...(current ?? {}), [kind]: { answer, at: now, wordingVersion: MULTI_PROPERTY_ATTESTATION_WORDING_VERSION } };
 }
+
+// ---------------------------------------------------------------------------
+// INT-4.1 — sémantique EXACTE (dormante) de « noCommonCharges »
+// ---------------------------------------------------------------------------
+//
+// Ancienne idée (productive, inchangée) : aucune charge n'est commune à plusieurs biens.
+// Nouvelle idée (domaine exact, futur) : aucune charge ne EXIGE UNE RÉPARTITION entre les biens. Une charge qui concerne
+// l'ensemble de l'activité et qui est définitivement `ACTIVITY` (ex. la comptabilité) n'exige aucune répartition : elle est
+// portée au niveau de l'activité (ADR-011 §11). Une charge commune B (ou non qualifiée) reste hors domaine.
+//
+// Ce module ne change AUCUN comportement productif : `resolveMultiPropertyAttestation` et la garde de domaine ADR-011 lisent
+// toujours `noCommonCharges` comme avant. La nouvelle lecture est consommée uniquement par la readiness exacte dormante.
+
+/** Version du libellé de la sémantique exacte ; une réponse posée sous cette version n'est jamais lue comme l'ancienne. */
+export const NO_ALLOCATION_CHARGES_WORDING_VERSION = "2026-10-05.exact-1";
+
+export const NO_ALLOCATION_CHARGES_WORDING = {
+  label: "Aucune charge à répartir entre les biens",
+  confirm:
+    "Je confirme qu'aucune charge de ce dossier n'est à répartir entre plusieurs biens : chaque charge se rattache à un seul bien, ou concerne l'ensemble de mon activité sans répartition (par exemple ma comptabilité).",
+  decline: "Certaines charges sont à répartir entre plusieurs biens.",
+} as const;
+
+/**
+ * - `confirmed` : aucune charge exigeant une répartition (nouvelle réponse, OU ancienne confirmation « aucune charge commune »
+ *   qui l'implique a fortiori) ;
+ * - `declared_requires_allocation` : réponse négative posée sous le libellé exact → hors domaine ;
+ * - `legacy_declared_common` : ancien « certaines charges sont communes » : ambigu (peut ne viser qu'une charge d'activité) →
+ *   à reposer sous le nouveau libellé, jamais interprété ;
+ * - `absent` : non attesté = refus (fail-closed).
+ */
+export type NoAllocationChargesState = "confirmed" | "declared_requires_allocation" | "legacy_declared_common" | "absent";
+
+export function resolveNoAllocationChargesAttestation(attestations: MultiPropertyAttestations | undefined): NoAllocationChargesState {
+  const record = attestations?.noCommonCharges;
+  if (record === undefined) return "absent";
+  if (record.answer === "confirmed") return "confirmed";
+  if (record.answer === "declared_out_of_domain") return record.wordingVersion === NO_ALLOCATION_CHARGES_WORDING_VERSION ? "declared_requires_allocation" : "legacy_declared_common";
+  return "absent";
+}
+
+/** Réponse posée sous le NOUVEAU libellé (écriture dormante : aucun appelant productif). */
+export function recordNoAllocationChargesAttestation(
+  current: MultiPropertyAttestations | undefined,
+  answer: MultiPropertyAttestationAnswer,
+  now: string,
+): MultiPropertyAttestations {
+  return { ...(current ?? {}), noCommonCharges: { answer, at: now, wordingVersion: NO_ALLOCATION_CHARGES_WORDING_VERSION } };
+}

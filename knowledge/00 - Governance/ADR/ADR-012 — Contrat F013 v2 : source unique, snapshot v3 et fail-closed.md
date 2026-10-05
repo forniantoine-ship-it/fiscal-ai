@@ -3,7 +3,7 @@ id: ADR-012
 title: "Contrat F013 v2 : source unique, snapshot v3 et fail-closed"
 type: adr
 status: accepted
-version: "1.1"
+version: "1.2"
 created: 2026-10-05
 updated: 2026-10-05
 owner: product-owner
@@ -19,6 +19,8 @@ triggers: [F013-V2.1, F013-V2.2, F013-V2.2.1, F013-V2.3, F013-HOTFIX-1, F013-V2.
 ✅ **Acceptée** — décision explicite du Product Owner du 2026-10-05, prise après la gate fiscale F013-V2.5.1, **avec les conditions d'activation ci-dessous (inchangées)**. Les décisions ont **déjà été implémentées dans le code** (F013-V2.1 à V2.4, désactivées en production) avant d'être formalisées ici (régularisation). Cet ADR les consigne pour qu'elles ne vivent pas uniquement dans des rapports de mission. Il ne modifie ni code ni Knowledge approuvé.
 
 > **L'acceptation de cet ADR ne signifie PAS `F013 V2 ACTIVATED`.** F013 v2 reste **OFF**. Conditions d'activation toujours applicables : (1) la continuité N → N+1 n'est **pas implémentée** et le garde `f013_v2_continuity_not_supported` reste **actif** ; (2) la projection F013 v2 → bilan n'est **pas branchée** en production ; (3) les saisies de bilan concurrentes ne sont **pas neutralisées** ; (4) la protection anti-downgrade **distante** doit être **rechecked** avant toute activation ; (5) aucun drapeau d'activation n'est posé.
+
+> **Mise à jour du statut d'implémentation (INT-4 / INT-4.1, 2026-10-05) — statut technique, aucune nouvelle doctrine.** Pour un dossier **explicitement F013 v2**, la projection des soldes de CLÔTURE vers le bilan est désormais **implémentée et branchée dans l'assemblage de génération** (`rentReconciliationV2` reste la source unique : créance de clôture → `LOYER_DU_PAR_LOCATAIRE` / case 068, avance de clôture → `LOYER_ENCAISSE_D_AVANCE` / case 174 ; `UNKNOWN ≠ 0`, `PROPOSED ≠ VALIDATED`). Les sources de bilan concurrentes **de même nature** (postes de ventilation, confirmation « aucun poste », ligne simple de la case 174) sont remplacées ou neutralisées par la valeur de l'inventaire et listées ; une contradiction non résoluble (`tiers.dettes` ou `tiers.creances` = `NUL_CONFIRME` face à une avance ou une créance) reste **bloquante** et n'efface jamais les autres dettes ou créances du bucket. Sans état F013 v2 de l'exercice (tout dossier legacy / F013 v1), le bilan est strictement inchangé. Les conditions d'activation (2) et (3) ci-dessus sont donc techniquement implémentées ; **leur levée formelle, comme celle de (4) (preuve distante non rechecked) et de (5) (aucun drapeau posé), est à constater par le Product Owner. F013 v2 reste globalement OFF ; F006 productif n'est pas branché sur F013 v2 ; aucun dossier n'est migré.**
 
 # Contexte
 

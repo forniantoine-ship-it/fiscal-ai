@@ -51,6 +51,8 @@ async function loadReducer() {
 type Reducer = Awaited<ReturnType<typeof loadReducer>>;
 type State = Parameters<Reducer>[0];
 const AT = "2026-12-01T00:00:00.000Z";
+/** Ancienne attestation « aucune charge commune » : implique a fortiori « aucune charge à répartir ». */
+const ATTEST = { multiPropertyAttestations: { noCommonCharges: { answer: "confirmed", at: AT, wordingVersion: "2026-10-03.1" } } };
 
 async function dispatch(workspace: PersistedWorkspace, action: Article39cQualificationAction | undefined): Promise<PersistedWorkspace> {
   assert.ok(action, "une action était attendue");
@@ -234,6 +236,7 @@ describe("INT-4 — stocks d'ouverture : autorité de lecture explicite", () => 
       historicalArdStock: 2000,
       priorDeficits: [{ millesime: 2025, montant: 3000 }],
       basis: "NATIVE_CONTINUITY",
+      scope: "ACTIVITY_GLOBAL",
       sourceRef: "closure-2025",
     });
   });
@@ -327,7 +330,7 @@ describe("INT-4 — charges ACTIVITY globales : source persistée niveau activit
         multiWorkspace({
           A: exactBien("A", 10000, { taxeFonciere: 2000 }, { dotation: 2500 }),
           B: exactBien("B", 8000, { taxeFonciere: 1000 }, { dotation: 1500 }),
-        }),
+        }, ATTEST),
       ),
     );
     const readiness = pre(ws);
@@ -348,7 +351,7 @@ describe("INT-4 — charges ACTIVITY globales : source persistée niveau activit
     assert.ok(blocked.reasons.includes("COMMON_CHARGE_NOT_SUPPORTED"));
     assert.equal(blocked.checks.find((c) => c.id === "ACTIVITY_GLOBAL_SUPPORTED")!.ok, false);
     // Même montant déjà saisi comme comptabilité dans un logement : jamais compté deux fois en silence.
-    const dup = await addAccounting(firstYear(multiWorkspace({ A: exactBien("A", 10000, { honorairesComptable: 1000 }, { dotation: 0 }), B: exactBien("B", 8000, {}, { dotation: 0 }) })));
+    const dup = await addAccounting(firstYear(multiWorkspace({ A: exactBien("A", 10000, { honorairesComptable: 1000 }, { dotation: 0 }), B: exactBien("B", 8000, {}, { dotation: 0 }) }, ATTEST)));
     const dupReadiness = pre(dup);
     assert.equal(dupReadiness.status, "NEEDS_QUALIFICATION");
     assert.ok(dupReadiness.reasons.includes("ACTIVITY_CHARGE_DUPLICATE_SUSPECTED"));
@@ -583,13 +586,14 @@ describe("INT-4 — readiness pré-switch (dormant) et oracles", () => {
     );
   });
 
-  it("multi : le garde productif ADR-011 (stocks / charges communes) est LISTÉ comme bloquant d'activation, jamais levé ici", async () => {
+  it("multi : le garde productif ADR-011 est listé comme élément du switch, jamais levé ici", async () => {
     const res = buildActivityChargeDeclaration({ draft: undefined, fiscalYear: YEAR, nature: "ACCOUNTING_FEES", amountText: "1000", description: "", answeredAt: AT });
     assert.ok(res.ok);
-    const ws = firstYear(await dispatch(multiWorkspace({ A: exactBien("A", 10000, { taxeFonciere: 2000 }, { dotation: 0 }), B: exactBien("B", 8000, { taxeFonciere: 1000 }, { dotation: 0 }) }, { bilanPatrimonial: NEUTRAL }), res.action));
+    const ws = firstYear(await dispatch(multiWorkspace({ A: exactBien("A", 10000, { taxeFonciere: 2000 }, { dotation: 0 }), B: exactBien("B", 8000, { taxeFonciere: 1000 }, { dotation: 0 }) }, { bilanPatrimonial: NEUTRAL, multiPropertyAttestations: { noCommonCharges: { answer: "confirmed", at: AT, wordingVersion: "2026-10-03.1" } } }), res.action));
     const r = pre(ws);
     assert.equal(r.status, "READY");
-    assert.ok(r.activationBlockers.includes("ADR011_MULTI_BLOCKS_COMMON_CHARGES_UNTIL_GUARD_EVOLVES"));
+    // INT-4.1 : l'attestation « aucune charge à répartir » est exigée en multi ; le garde productif est un élément du SWITCH.
+    assert.ok(r.switchBoundItems.includes("ADR011_PRODUCTIVE_MULTI_DOMAIN_GUARD_TO_EVOLVE_AT_SWITCH"));
   });
 });
 

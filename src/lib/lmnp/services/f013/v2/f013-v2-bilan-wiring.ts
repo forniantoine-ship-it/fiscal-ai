@@ -106,3 +106,84 @@ export function rentStatesOfMonoDraft(draft: { rentReconciliationV2?: RentReconc
   const state = draft?.rentReconciliationV2;
   return state === undefined ? { propertyIds: [], states: [] } : { propertyIds: [state.facts.propertyId], states: [state] };
 }
+
+// ---------------------------------------------------------------------------
+// INT-4.1 — OWNERSHIP des faits locatifs du bilan et plan de switch du bucket `tiers.*` (dormants)
+// ---------------------------------------------------------------------------
+//
+// Pour les deux faits locatifs, l'autorité est F013 v2 (`rentReconciliationV2`) : le bilan ne peut plus les éditer de façon
+// indépendante lorsque F013 v2 est autoritaire. Les AUTRES créances / dettes restent indépendantes et intactes : la
+// neutralisation est limitée au sous-fait locatif concurrent, jamais au bucket entier (jamais `tiers.dettes = INCONNU`).
+
+export const F013_RENTAL_OWNER = "F013_V2_AUTHORITATIVE" as const;
+export const RENTAL_BILAN_NATURES = ["LOYER_DU_PAR_LOCATAIRE", "LOYER_ENCAISSE_D_AVANCE"] as const;
+export type RentalBilanNature = (typeof RENTAL_BILAN_NATURES)[number];
+
+/** Vrai pour les natures dont la source autoritaire est F013 v2 (les autres natures de bilan ne sont pas concernées). */
+export function isRentalBilanNature(nature: string): nature is RentalBilanNature {
+  return (RENTAL_BILAN_NATURES as readonly string[]).includes(nature);
+}
+
+export type RentalCompetingSource = {
+  nature: RentalBilanNature;
+  source: "ventilation_poste" | "ventilation_confirmation_vide" | "ligne_simple_174" | "tiers_bucket";
+  ref?: string;
+  montant?: number;
+  /** REPLACED/NEUTRALIZED : la valeur de l'inventaire fait foi dès aujourd'hui ; CONFLICT_BLOCKING : bloquant tant que non résolu. */
+  resolution: "REPLACED_BY_F013" | "NEUTRALIZED_BY_F013" | "CONFLICT_BLOCKING";
+};
+
+/** Plan appliqué AU SWITCH (INT-5) : jamais exécuté ici. Le bucket n'est jamais mis à INCONNU ; les autres dettes restent intactes. */
+export type TiersBucketSwitchPlan = {
+  bucket: "dettes" | "creances";
+  nature: RentalBilanNature;
+  action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT";
+  /** Le « zéro » confirmé pour les AUTRES postes du bucket reste valable ; seul le composant locatif vient de F013. */
+  resultingBucket: { status: "DECLARE"; montant: number };
+  otherItemsPreserved: true;
+};
+
+export type RentalBilanOwnership = {
+  owner: typeof F013_RENTAL_OWNER | "NOT_APPLICABLE";
+  /** Natures effectivement fournies de façon définitive par l'inventaire (donc possédées par F013). */
+  ownedNatures: readonly RentalBilanNature[];
+  competing: readonly RentalCompetingSource[];
+  switchPlans: readonly TiersBucketSwitchPlan[];
+};
+
+export function describeRentalBilanOwnership(input: {
+  bilan: BilanInputs;
+  fiscalYear: number;
+  propertyIds: readonly string[];
+  states: readonly RentReconciliationV2State[];
+}): RentalBilanOwnership {
+  const relevant = input.states.filter((s) => s.facts.fiscalYear === input.fiscalYear && input.propertyIds.includes(s.facts.propertyId));
+  if (relevant.length === 0) return { owner: "NOT_APPLICABLE", ownedNatures: [], competing: [], switchPlans: [] };
+  const projection = projectRentalInventoryToBilan({ fiscalYear: input.fiscalYear, propertyIds: input.propertyIds, states: relevant });
+  const owned = projection.providedNatures as readonly RentalBilanNature[];
+  const competing: RentalCompetingSource[] = [];
+  const switchPlans: TiersBucketSwitchPlan[] = [];
+
+  for (const poste of input.bilan.ventilationTiers?.postes ?? []) {
+    if (isRentalBilanNature(poste.nature) && owned.includes(poste.nature)) competing.push({ nature: poste.nature, source: "ventilation_poste", ref: poste.id, montant: poste.montant, resolution: "REPLACED_BY_F013" });
+  }
+  for (const nature of input.bilan.ventilationTiers?.naturesConfirmeesVides ?? []) {
+    if (isRentalBilanNature(nature) && owned.includes(nature)) competing.push({ nature, source: "ventilation_confirmation_vide", resolution: "REPLACED_BY_F013" });
+  }
+  const legacy174 = input.bilan.lignesSimples?.produitsConstatesAvance;
+  if (legacy174 !== undefined && owned.includes("LOYER_ENCAISSE_D_AVANCE")) {
+    competing.push({ nature: "LOYER_ENCAISSE_D_AVANCE", source: "ligne_simple_174", ...(legacy174.status === "DECLARE" ? { montant: legacy174.montant } : {}), resolution: "NEUTRALIZED_BY_F013" });
+  }
+  const sumOf = (nature: RentalBilanNature) => projection.postes.filter((p) => p.nature === nature).reduce((n, p) => Math.round((n + p.montant) * 100) / 100, 0);
+  const advances = sumOf("LOYER_ENCAISSE_D_AVANCE");
+  const receivables = sumOf("LOYER_DU_PAR_LOCATAIRE");
+  if (advances > 0 && input.bilan.tiers?.dettes?.status === "NUL_CONFIRME") {
+    competing.push({ nature: "LOYER_ENCAISSE_D_AVANCE", source: "tiers_bucket", ref: "tiers.dettes", resolution: "CONFLICT_BLOCKING" });
+    switchPlans.push({ bucket: "dettes", nature: "LOYER_ENCAISSE_D_AVANCE", action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT", resultingBucket: { status: "DECLARE", montant: advances }, otherItemsPreserved: true });
+  }
+  if (receivables > 0 && input.bilan.tiers?.creances?.status === "NUL_CONFIRME") {
+    competing.push({ nature: "LOYER_DU_PAR_LOCATAIRE", source: "tiers_bucket", ref: "tiers.creances", resolution: "CONFLICT_BLOCKING" });
+    switchPlans.push({ bucket: "creances", nature: "LOYER_DU_PAR_LOCATAIRE", action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT", resultingBucket: { status: "DECLARE", montant: receivables }, otherItemsPreserved: true });
+  }
+  return { owner: owned.length > 0 ? F013_RENTAL_OWNER : "NOT_APPLICABLE", ownedNatures: owned, competing, switchPlans };
+}
