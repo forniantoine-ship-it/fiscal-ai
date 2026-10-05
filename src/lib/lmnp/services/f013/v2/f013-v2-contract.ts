@@ -57,7 +57,11 @@ export type OutOfDomainTreatment =
   | "definitive_loss"
   | "gli"
   | "dispute"
-  | "complex_cancellation";
+  | "complex_cancellation"
+  // V2.2 — sommes qui ne sont pas des loyers ordinaires et ne doivent jamais être déclarées silencieusement comme tels.
+  | "security_deposit"
+  | "insurance_indemnity"
+  | "refund";
 
 /** Rattachement futur (observations, périodes, preuves) — identifiants opaques, non exploités par le moteur v2.1. */
 export interface RentReconciliationLinks {
@@ -82,6 +86,11 @@ export interface RentReconciliationV2 {
   openingAdvances: MoneyFact;
   closingAdvances: MoneyFact;
 
+  /**
+   * V2.2 — l'utilisateur a explicitement passé en revue les sommes nécessitant une qualification distincte.
+   * `false` (défaut d'un rapprochement vierge) = non passé en revue : jamais assimilé à « aucune exception ».
+   */
+  exceptionsReviewed: boolean;
   outOfDomain?: readonly OutOfDomainTreatment[];
   links?: RentReconciliationLinks;
 }

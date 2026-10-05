@@ -973,6 +973,12 @@ export interface DeclarationDraft {
   chargesAssistant?: ChargesAssistantOutput;
   /** Recettes locatives produites par l'Assistant Revenus (F-013). */
   revenusAssistant?: RevenusAssistantOutput;
+  /**
+   * F013 v2 (V2.2) — rapprochement annuel des loyers du bien : faits + révision + confirmation. Distinct de
+   * `revenusAssistant` (contrat `legacy_cash_v1`, jamais converti). Seule source de vérité v2 : le total est dérivé du
+   * moteur. Sa présence impose un snapshot schema v3 (un ancien client ne doit pas le réécrire). Aucun lecteur F006.
+   */
+  rentReconciliationV2?: import("@/lib/lmnp/services/f013/v2/f013-v2-state").RentReconciliationV2State;
   /** Validation du plan d'amortissement produite par l'Assistant Amortissements (F-014). */
   amortissementAssistant?: AmortissementAssistantOutput;
   /**

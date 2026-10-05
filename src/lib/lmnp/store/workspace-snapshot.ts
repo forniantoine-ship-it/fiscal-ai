@@ -6,17 +6,25 @@
  * (no fileRegistry / File / Blob / Map).
  */
 import type { DeclarationDraft } from "../types";
+import { draftCarriesRentReconciliationV2 } from "../services/f013/v2/f013-v2-state";
 import type { PersistedWorkspace } from "./persistence";
 
 /** Version d'un workspace legacy mono (champs à plat) — inchangée pour tout dossier existant. */
 export const WORKSPACE_SNAPSHOT_SCHEMA_VERSION = 1;
 /** R2B.2a — version d'un workspace scopé multi-bien (`declarationDraft.biens`). */
 export const WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION = 2;
+/**
+ * F013 v2 (V2.2) — version d'un workspace portant un rapprochement `rentReconciliationV2` (à plat ou par bien).
+ * Un client < v3 refuse de lire ou de réécrire ce snapshot (garde client) et le trigger SQL refuse toute baisse de
+ * version : il ne peut donc pas détruire un contrat qu'il ne comprend pas. Écrite seulement si la donnée existe.
+ */
+export const WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION = 3;
 /** Plus haute version que ce client sait lire et écrire. */
-export const WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION = WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION;
+export const WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION = WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
 
-/** v2 si et seulement si le workspace est scopé ; un dossier mono reste en v1. */
+/** v3 si une donnée F013 v2 existe ; sinon v2 si le workspace est scopé ; un dossier mono reste en v1. */
 export function workspaceSnapshotSchemaVersion(workspace: Pick<PersistedWorkspace, "declarationDraft">): number {
+  if (draftCarriesRentReconciliationV2(workspace.declarationDraft)) return WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
   return workspace.declarationDraft?.biens !== undefined
     ? WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION
     : WORKSPACE_SNAPSHOT_SCHEMA_VERSION;
@@ -152,13 +160,17 @@ export function parseWorkspaceSnapshot(payload: unknown): ParseWorkspaceSnapshot
   if (raw.schemaVersion > WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION) {
     return { ok: false, reason: "unsupported_schema_version", schemaVersion: raw.schemaVersion };
   }
-  if (raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCHEMA_VERSION && raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION) {
+  if (
+    raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCHEMA_VERSION &&
+    raw.schemaVersion !== WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION &&
+    raw.schemaVersion !== WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION
+  ) {
     return { ok: false, reason: "invalid_payload", schemaVersion: raw.schemaVersion };
   }
   if (!isValidPersistedWorkspace(raw.workspace)) {
     return { ok: false, reason: "invalid_workspace", schemaVersion: raw.schemaVersion };
   }
-  // R2B.2a — la version DOIT correspondre à la forme : v1 jamais scopé, v2 toujours scopé.
+  // R2B.2a — la version DOIT correspondre à la forme : v1 jamais scopé, v2 toujours scopé, v3 ssi donnée F013 v2.
   if (raw.schemaVersion !== workspaceSnapshotSchemaVersion(raw.workspace)) {
     return { ok: false, reason: "invalid_workspace", schemaVersion: raw.schemaVersion };
   }

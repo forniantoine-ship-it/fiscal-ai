@@ -373,7 +373,8 @@ describe("R2B.2a — L, M, Z8 : snapshot v2 et hydratation", () => {
     assert.ok(scopedEnvelope.ok && legacyEnvelope.ok);
     assert.equal(parseWorkspaceSnapshot({ ...scopedEnvelope.envelope, schemaVersion: 1 }).ok, false);
     assert.equal(parseWorkspaceSnapshot({ ...legacyEnvelope.envelope, schemaVersion: 2 }).ok, false);
-    const future = parseWorkspaceSnapshot({ ...scopedEnvelope.envelope, schemaVersion: 3 });
+    // V2.2 : v3 = snapshot portant F013 v2 (supporté) ; la première version réellement future est v4.
+    const future = parseWorkspaceSnapshot({ ...scopedEnvelope.envelope, schemaVersion: 4 });
     assert.equal(future.ok, false);
     assert.equal(!future.ok && future.reason, "unsupported_schema_version");
     assert.ok(parseWorkspaceSnapshot(legacyEnvelope.envelope).ok, "legacy v1 toujours lisible");

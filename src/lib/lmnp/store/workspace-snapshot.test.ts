@@ -260,8 +260,8 @@ describe("E — schema_version future fail closed", () => {
     assert.equal(decision.workspace?.properties[0]?.city, "LocalCity");
   });
 
-  it("parse refuse une version future (v2 est la version scopée R2B.2a ; v3 reste future)", () => {
-    const parsed = parseWorkspaceSnapshot({ schemaVersion: 3, workspace: workspace() });
+  it("parse refuse une version future (v2 = scopée R2B.2a ; v3 = F013 v2 supportée depuis V2.2 ; v4 reste future)", () => {
+    const parsed = parseWorkspaceSnapshot({ schemaVersion: 4, workspace: workspace() });
     assert.equal(parsed.ok, false);
     if (parsed.ok) return;
     assert.equal(parsed.reason, "unsupported_schema_version");

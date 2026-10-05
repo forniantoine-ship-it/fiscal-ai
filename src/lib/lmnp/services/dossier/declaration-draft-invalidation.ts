@@ -176,5 +176,17 @@ export function buildDownstreamInvalidationPatch(
     );
   }
 
+  // F — rapprochement F013 v2 : seuls les FAITS comptent (la confirmation seule ne change aucun fait). Les sorties
+  // consolidées sont périmées ; F006 ne lit pas encore v2 (aucun basculement), l'invalidation est conservatrice.
+  const rentFactsChanged =
+    "rentReconciliationV2" in patch &&
+    !sameValue(current.rentReconciliationV2?.facts, patch.rentReconciliationV2?.facts);
+  if (rentFactsChanged) {
+    invalidation.fiscalResult = undefined;
+    invalidation.rfs = undefined;
+    invalidation.liasseResult = undefined;
+    invalidation.liasseRfs = undefined;
+  }
+
   return invalidation;
 }

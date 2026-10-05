@@ -36,6 +36,7 @@ function facts(
     closingReceivables: V(o.cc ?? 0),
     openingAdvances: V(o.ao ?? 0),
     closingAdvances: V(o.ac ?? 0),
+    exceptionsReviewed: true,
   };
 }
 const run = (input: RentReconciliationV2, propertyId = input.propertyId) =>
@@ -165,6 +166,12 @@ describe("F013 v2 — frontières", () => {
   it("OUT_OF_DOMAIN : traitement distinct déclaré (GLI, provision…)", () => {
     const r = run({ ...facts(12000), outOfDomain: ["gli"] });
     assert.equal(r.status, "OUT_OF_DOMAIN");
+    assert.equal("loyersAcquisCents" in r, false);
+  });
+  it("V2.2 — exceptions non passées en revue : jamais assimilées à « aucune exception »", () => {
+    const r = run({ ...facts(12000), exceptionsReviewed: false });
+    assert.equal(r.status, "NEEDS_CONFIRMATION");
+    assert.ok(r.reasons.some((x) => x.code === "EXCEPTIONS_NOT_REVIEWED"));
     assert.equal("loyersAcquisCents" in r, false);
   });
   it("consolidation : refuse bien non SUPPORTED, doublon, exercices mixtes", () => {

@@ -30,6 +30,8 @@ export const BIEN_DRAFT_FIELDS = [
   "revenueGptSession",
   "revenusAssistant",
   "revenusConfirmedAt",
+  // F013 v2 (V2.2) — rapprochement des loyers du bien (faits + révision + confirmation).
+  "rentReconciliationV2",
   "amortissementAssistant",
   "amortissementConfirmedAt",
   // R2B.2a — crédit et faits d'acquisition propres au bien (décision PO R2B.1).

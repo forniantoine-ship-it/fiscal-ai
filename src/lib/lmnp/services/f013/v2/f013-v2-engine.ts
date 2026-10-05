@@ -39,13 +39,14 @@ export type ReconciliationReasonCode =
   | "FISCAL_YEAR_MISMATCH"
   | "LEGACY_CONTRACT_NOT_V2"
   | "NEGATIVE_RENT_INCOHERENT"
-  | "OUT_OF_DOMAIN_TREATMENT";
+  | "OUT_OF_DOMAIN_TREATMENT"
+  | "EXCEPTIONS_NOT_REVIEWED";
 
 export interface ReconciliationReason {
   code: ReconciliationReasonCode;
   category: "MISSING_FACT" | "INVALID_INPUT" | "INCOHERENT" | "OUT_OF_DOMAIN";
   blocking: true;
-  term?: RentTermKey | "coverage";
+  term?: RentTermKey | "coverage" | "exceptions";
   treatment?: OutOfDomainTreatment;
   message: string;
 }
@@ -240,7 +241,14 @@ export function reconcileRentV2(input: RentReconciliationV2, scope: Reconciliati
   }
   control("collections_coverage_complete_validated", coverageOk);
 
-  // 5. Traitements hors domaine déclarés.
+  // 5a. Revue explicite des exceptions (jamais déduite de leur absence).
+  const reviewedOk = raw?.exceptionsReviewed === true;
+  control("exceptions_reviewed", reviewedOk);
+  if (!reviewedOk) {
+    block({ code: "EXCEPTIONS_NOT_REVIEWED", category: "MISSING_FACT", term: "exceptions", message: "Sommes à qualification distincte non passées en revue." });
+  }
+
+  // 5b. Traitements hors domaine déclarés.
   const oodList = Array.isArray(raw?.outOfDomain) ? (raw.outOfDomain as OutOfDomainTreatment[]) : [];
   control("no_out_of_domain_treatment", oodList.length === 0);
   for (const treatment of oodList) {
