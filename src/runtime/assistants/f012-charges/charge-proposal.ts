@@ -4,7 +4,11 @@
  */
 
 import type { CoproLigneType } from "../../capabilities/f012/types";
-import type { ChargeFamilyId } from "../../capabilities/f012/charge";
+import type { AssuranceProposalKind, ChargeFamilyId, GestionProposalKind } from "../../capabilities/f012/charge";
+
+// INT-2 — vocabulaire déplacé vers `capabilities/f012/charge.ts` (la nature est désormais portée par `Charge`) : une seule
+// définition, réexportée ici pour les appelants existants.
+export type { AssuranceProposalKind, GestionProposalKind };
 
 /** Mêmes choix que F-011 (`resolve_conflict`). */
 export type DocumentConflictChoice = "keep_existing" | "use_document";
@@ -19,19 +23,6 @@ export type DocumentAmountConflict = {
 export const DOCUMENTARY_FAMILY_IDS = ["impots", "syndic", "assurances", "gestion"] as const;
 export type DocumentaryFamilyId = (typeof DOCUMENTARY_FAMILY_IDS)[number];
 
-/** Cycle 9 — nature d'une proposition assurance. Jamais affiché tel quel à l'utilisateur. */
-export type AssuranceProposalKind = "logement" | "gli" | "emprunteur";
-
-/** Cycle 10 — nature d'une proposition agence / comptable. Jamais affiché tel quel à l'utilisateur. */
-export type GestionProposalKind =
-  | "gestion"
-  | "etat_des_lieux"
-  | "mise_en_location"
-  | "comptable"
-  | "logiciel"
-  | "autre"
-  | "loyer"
-  | "financement";
 
 export function isDocumentaryFamily(familyId: ChargeFamilyId): familyId is DocumentaryFamilyId {
   return (DOCUMENTARY_FAMILY_IDS as readonly string[]).includes(familyId);

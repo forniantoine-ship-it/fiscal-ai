@@ -32,6 +32,8 @@ export const BIEN_DRAFT_FIELDS = [
   "revenusConfirmedAt",
   // F013 v2 (V2.2) — rapprochement des loyers du bien (faits + révision + confirmation).
   "rentReconciliationV2",
+  // INT-2 — réponses de qualification article 39 C propres au bien (faits + empreinte, jamais un résultat).
+  "article39cQualifications",
   "amortissementAssistant",
   "amortissementConfirmedAt",
   // R2B.2a — crédit et faits d'acquisition propres au bien (décision PO R2B.1).

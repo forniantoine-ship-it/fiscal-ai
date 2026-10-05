@@ -1,5 +1,5 @@
 /**
- * INT-1 — preuve de NON-ACTIVATION : les adapters article 39 C existent mais ne sont consommés par aucun chemin productif.
+ * INT-1/INT-2 — preuve de NON-ACTIVATION : les adapters article 39 C existent mais ne sont consommés par aucun chemin productif.
  * Run: npx tsx --test src/lib/lmnp/services/article-39c/article-39c-non-activation.test.ts
  *
  * 1. Graphe d'imports : aucun module hors `services/article-39c/` ne les importe.
@@ -28,18 +28,32 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("INT-1 — non-activation : graphe d'imports", () => {
-  it("aucun module en dehors de services/article-39c/ n'importe les adapters", () => {
+/**
+ * INT-2 : seuls deux modules FEUILLES de persistance peuvent être référencés hors du dossier — le type du store (champ
+ * `DeclarationDraft`) et la fonction de présence (version de snapshot). Ni les adapters, ni le contrat de contribution, ni
+ * la reconstruction depuis le workspace, ni les faits de qualification ne sont importés par un module productif.
+ */
+const PERSISTENCE_LEAVES = ["qualification-store", "qualification-draft-carriage"];
+
+describe("INT-1/INT-2 — non-activation : graphe d'imports", () => {
+  it("aucun module en dehors de services/article-39c/ n'importe les adapters (hors feuilles de persistance)", () => {
     const offenders: string[] = [];
     for (const file of walk(SRC)) {
       const rel = relative(SRC, file);
       if (rel.startsWith(ADAPTER_DIR + sep)) continue;
       const text = readFileSync(file, "utf8");
-      if (/services\/article-39c\//.test(text) || /from\s+["'](\.\.?\/)+article-39c\/(contribution|from-|qualification-facts)/.test(text)) {
-        offenders.push(rel);
-      }
+      const targets = [...text.matchAll(/article-39c\/([a-z0-9-]+)/g)].map((m) => m[1]!);
+      if (targets.some((t) => !PERSISTENCE_LEAVES.includes(t))) offenders.push(rel);
     }
     assert.deepEqual(offenders, []);
+  });
+
+  it("les feuilles de persistance n'ont aucune dépendance vers un adapter ou un calcul productif", () => {
+    const carriage = readFileSync(join(SRC, ADAPTER_DIR, "qualification-draft-carriage.ts"), "utf8");
+    assert.ok(!/^import /m.test(carriage), "feuille sans import");
+    const store = readFileSync(join(SRC, ADAPTER_DIR, "qualification-store.ts"), "utf8");
+    const imports = [...store.matchAll(/from "(\.\/[a-z0-9-]+)"/g)].map((m) => m[1]);
+    assert.ok(imports.every((i) => ["./contribution", "./qualification-facts", "./qualification-draft-carriage"].includes(i!)), String(imports));
   });
 
   it("le builder productif, F006 et la consolidation ne référencent aucune contribution 39 C", () => {
@@ -57,7 +71,7 @@ describe("INT-1 — non-activation : graphe d'imports", () => {
   });
 });
 
-describe("INT-1 — non-activation : le chemin productif F006 reste le proxy historique", () => {
+describe("INT-1/INT-2 — non-activation : le chemin productif F006 reste le proxy historique", () => {
   const INPUT = {
     exerciceFiscal: 2024,
     activite: { dateMiseEnService: "2024-04-15", siret: "12345678901234" },

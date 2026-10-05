@@ -73,6 +73,7 @@ function scalarCharge(input: {
   fieldSources: Partial<Record<string, FieldSource>>;
   description?: string;
   documentIds?: string[];
+  gestionKind?: Charge["gestionKind"];
 }): Charge {
   return createRecordedCharge({
     id: scalarChargeId(input.slot, input.exercise),
@@ -84,6 +85,7 @@ function scalarCharge(input: {
     provenance: provenance(input.fieldSources, input.fieldKey),
     source: input.documentIds && input.documentIds.length > 0 ? "document" : undefined,
     documentIds: input.documentIds,
+    ...(input.gestionKind !== undefined ? { gestionKind: input.gestionKind } : {}),
   });
 }
 
@@ -190,6 +192,8 @@ export function collectedToChargeRegistry(input: CollectedToRegistryInput): Char
         fieldKey: "honoraires_gestion",
         fieldSources,
         documentIds: collected.documentIdsByFamily?.gestion,
+        // INT-2 — le slot « état des lieux » est un champ explicite distinct : sa nature est établie par le slot.
+        gestionKind: "etat_des_lieux",
       }),
     );
   }

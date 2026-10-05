@@ -132,6 +132,9 @@ export function expenseFromDecidedProposal(proposal: ChargeProposal, fiscalYear:
     decision: proposal.decision === "confirmed" || proposal.decision === "modified" ? proposal.decision : "ignored",
     coproType: category === "copropriete" ? proposal.coproType ?? "provisions" : undefined,
     financingOverlap: financingOverlapForProposal(proposal),
+    // INT-2 — la nature de la proposition n'est plus écartée à la projection (additif : seulement si présente).
+    ...(proposal.gestionKind !== undefined ? { gestionKind: proposal.gestionKind } : {}),
+    ...(proposal.insuranceKind !== undefined ? { insuranceKind: proposal.insuranceKind } : {}),
   };
 }
 

@@ -26,6 +26,21 @@ export type ChargeStatus = "recorded";
 
 export type ChargeExclusionReason = "f011_overlap";
 
+/**
+ * INT-2 — nature d'assurance / de frais d'agence portée par la proposition documentaire. Source UNIQUE de ces
+ * vocabulaires (réexportés par `charge-proposal.ts`) : jamais une seconde taxonomie. Jamais affichés tels quels.
+ */
+export type AssuranceProposalKind = "logement" | "gli" | "emprunteur";
+export type GestionProposalKind =
+  | "gestion"
+  | "etat_des_lieux"
+  | "mise_en_location"
+  | "comptable"
+  | "logiciel"
+  | "autre"
+  | "loyer"
+  | "financement";
+
 export type ChargeTravauxPayload = {
   choix?: TravauxQualificationChoix;
   natureIntervention?: NatureIntervention;
@@ -54,6 +69,12 @@ export type Charge = {
   /** P0-A — date propre au composant copro (gros travaux), jamais celle du bien. */
   dateDebut?: string;
   financingOverlap?: "assurance_emprunteur" | "frais_dossier";
+  /**
+   * INT-2 — nature fiscalement distinctive conservée (additif, absente des anciens dossiers : jamais déduite). La
+   * catégorie technique regroupe des natures différentes (gestion / mise en location / autre ; PNO / logement générique).
+   */
+  gestionKind?: GestionProposalKind;
+  insuranceKind?: AssuranceProposalKind;
   exclusionReason?: ChargeExclusionReason;
   documentIds?: string[];
   conflict?: string;
@@ -164,6 +185,8 @@ export function createRecordedCharge(
   if (partial.grosTravauxDeductible !== undefined) charge.grosTravauxDeductible = partial.grosTravauxDeductible;
   if (partial.dateDebut !== undefined) charge.dateDebut = partial.dateDebut;
   if (partial.financingOverlap !== undefined) charge.financingOverlap = partial.financingOverlap;
+  if (partial.gestionKind !== undefined) charge.gestionKind = partial.gestionKind;
+  if (partial.insuranceKind !== undefined) charge.insuranceKind = partial.insuranceKind;
   if (partial.exclusionReason !== undefined) charge.exclusionReason = partial.exclusionReason;
   if (partial.documentIds !== undefined) charge.documentIds = partial.documentIds;
   if (partial.conflict !== undefined) charge.conflict = partial.conflict;

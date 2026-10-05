@@ -32,8 +32,10 @@ import type { Anomaly } from "../../contracts/Anomaly";
 import type { FieldSource } from "../../contracts/FieldSource";
 import {
   createRecordedCharge,
+  type AssuranceProposalKind,
   type Charge,
   type ChargeFamilyId,
+  type GestionProposalKind,
 } from "./charge";
 import { createComposantTravaux } from "./create-composant-travaux";
 import { qualifyTravail, splitMixteTravaux } from "./qualify-travail";
@@ -129,6 +131,9 @@ export interface Expense {
    * Neutralisation économique uniquement dans `compute-charges-exercice`.
    */
   financingOverlap?: "assurance_emprunteur" | "frais_dossier";
+  /** INT-2 — nature conservée depuis la proposition documentaire (additif ; absente = inconnue, jamais déduite). */
+  gestionKind?: GestionProposalKind;
+  insuranceKind?: AssuranceProposalKind;
   /** Nature d'intervention (travaux) — mêmes valeurs que `Charge.travaux.natureIntervention`. Absente hors catégorie "travaux". Peut être périmée (proposée puis contredite par `qualificationRetenue`) : voir `resolveNatureIntervention()`, seule autorité de résolution. */
   natureIntervention?: NatureIntervention;
   /** Qualification retenue après arbitrage utilisateur — absente = à arbitrer, jamais une valeur par défaut inventée. AUTORITÉ UNIQUE consommée par `expenseToCharge()` ET `expenseToComposantNouveau()` — les deux ne peuvent donc jamais interpréter différemment la même Expense (correctif post-audit, §1). */
@@ -330,6 +335,8 @@ export function expenseToCharge(expense: Expense): ExpenseToChargeOutput {
     reviewNeeded:
       familyId === "travaux" && expense.qualificationRetenue === undefined ? true : expense.reviewNeeded,
     financingOverlap: expense.financingOverlap,
+    ...(expense.gestionKind !== undefined ? { gestionKind: expense.gestionKind } : {}),
+    ...(expense.insuranceKind !== undefined ? { insuranceKind: expense.insuranceKind } : {}),
   });
 
   return { charge, anomalies };

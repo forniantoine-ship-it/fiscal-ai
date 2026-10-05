@@ -28,7 +28,7 @@ import type { ChargeCategorie, LigneCharge } from "@/runtime/capabilities/f012/t
 import { loanKey } from "@/lib/lmnp/dossier/property-keys";
 import {
   contributionId,
-  fingerprintChargeLineSource,
+  fingerprintF012LineSource,
   NEEDS_QUALIFICATION_DEFAULT_PLAUSIBLE,
   sortContributions,
   type Article39cAdapterBlocker,
@@ -44,8 +44,33 @@ import {
   type AccountingNatureFact,
   type BankFeeNatureFact,
   type ChargeNatureFact,
+  type InsuranceNatureFact,
   type ManagementNatureFact,
 } from "./qualification-facts";
+
+/** Sources d'une ligne (INT-2) : natures structurées et documents, pris dans l'empreinte de la ligne. */
+export type F012LineSources = { natureTags: readonly string[]; documentIds: readonly string[] };
+
+/** Empreinte COURANTE d'une ligne : seule référence de fraîcheur des faits de nature (INT-2). */
+export function f012LineFingerprint(
+  ligne: LigneCharge,
+  ctx: { owner: Article39cScope; fiscalYear: number; sources?: F012LineSources },
+): string {
+  return fingerprintF012LineSource({
+    ownerKey: ctx.owner.level === "PROPERTY" ? ctx.owner.propertyId : "activity",
+    fiscalYear: ctx.fiscalYear,
+    lineId: ligne.id,
+    category: ligne.categorie,
+    deductibilite: ligne.deductibilite,
+    deductibleCents: toCents(ligne.montantDeductible),
+    preOperationalCents: toCents(ligne.montantPreExploitation),
+    amortizableCents: toCents(ligne.montantAmortissable),
+    grossCents: toCents(ligne.montant),
+    ...(ligne.exclusionReason !== undefined ? { exclusionReason: ligne.exclusionReason } : {}),
+    natureTags: ctx.sources?.natureTags ?? [],
+    documentIds: ctx.sources?.documentIds ?? [],
+  });
+}
 
 export type F012Article39cInput = {
   /** Propriétaire de la source : un bien (vrai `propertyId`) ou l'activité (aucun `propertyId`). */
@@ -56,6 +81,13 @@ export type F012Article39cInput = {
   natureFacts?: readonly ChargeNatureFact[];
   /** Optionnel : détecte les charges de copropriété sans type, qui n'alimentent aucune ligne (jamais ignorées). */
   registryCharges?: readonly Charge[];
+  /** INT-2 — natures et documents sources par ligne (pris dans l'empreinte) ; absent = aucune nature connue. */
+  lineSources?: Readonly<Record<string, F012LineSources>>;
+  /**
+   * INT-2 — prêts F011 courants du bien. S'il est fourni, un frais de financement rattaché à un prêt absent de cette liste
+   * (prêt supprimé / réattribué) est `STALE` : jamais B sur une référence de prêt périmée.
+   */
+  knownLoanIds?: readonly string[];
 };
 
 type Classified = {
@@ -90,6 +122,7 @@ function classifyBankFee(
   currentFingerprint: string,
   owner: Article39cScope,
   fiscalYear: number,
+  knownLoanIds: readonly string[] | undefined,
 ): Classified {
   const fact = factOf<BankFeeNatureFact>(facts, "BANK_FEE", ligne.id);
   const freshness = natureFactFreshness(fact, currentFingerprint);
@@ -100,6 +133,13 @@ function classifyBankFee(
     return unresolved("Frais bancaires : la qualification ne correspond plus à la source (montant, nature ou exercice modifié).", "SAV-031:bank_fee", "STALE");
   }
   const bank = fact!;
+  if (bank.nature === "PROPERTY_FINANCING" && bank.loanId !== undefined && knownLoanIds !== undefined && !knownLoanIds.includes(bank.loanId)) {
+    return unresolved(
+      "Frais bancaires de financement : le prêt référencé n'existe plus pour ce bien (supprimé ou réattribué) — qualification périmée.",
+      "SAV-031:bank_fee",
+      "STALE",
+    );
+  }
   if (bank.nature === "PROPERTY_FINANCING") {
     if (bank.alreadyCountedByF011 === true) {
       return {
@@ -150,13 +190,13 @@ function classifyInYear(
   facts: readonly ChargeNatureFact[],
   fiscalYear: number,
   owner: Article39cScope,
+  lineFingerprint: string,
+  knownLoanIds: readonly string[] | undefined,
 ): Classified {
   const category: ChargeCategorie = ligne.categorie;
-  const lineFingerprint = fingerprintChargeLineSource({ lineId: ligne.id, fiscalYear, amountCents, category });
 
   switch (category) {
     case "taxe_fonciere":
-    case "assurance_pno":
     case "assurance_gli": {
       // Table établie UNIQUE du qualificateur existant (jamais une seconde table).
       const q = qualifyArticle39cCharge({ id: ligne.id, category, amount: ligne.montantDeductible, provenance: "f012", deductibilite: "deductible" });
@@ -168,28 +208,31 @@ function classifyInYear(
         status: "VALIDATED",
       };
     }
+    case "assurance_pno":
     case "honoraires_gestion": {
-      const fact = factOf<ManagementNatureFact>(facts, "MANAGEMENT_NATURE", ligne.id);
+      // Catégories AGRÉGÉES : la règle (nature précise requise) vit dans le qualificateur existant — jamais dupliquée ici.
+      const isInsurance = category === "assurance_pno";
+      const fact = isInsurance
+        ? factOf<InsuranceNatureFact>(facts, "INSURANCE_NATURE", ligne.id)
+        : factOf<ManagementNatureFact>(facts, "MANAGEMENT_NATURE", ligne.id);
       const freshness = natureFactFreshness(fact, lineFingerprint);
-      if (freshness === "MISSING") {
-        return unresolved(
-          "Honoraires de gestion : la catégorie regroupe gestion, mise en location, publicité et autres services — nature non démontrée.",
-          "SAV-031:management_fee",
-        );
-      }
+      const ruleId = isInsurance ? "SAV-031:insurance_nature" : "SAV-031:management_fee";
       if (freshness === "STALE") {
-        return unresolved("Honoraires de gestion : qualification périmée (source modifiée).", "SAV-031:management_fee", "STALE");
+        return unresolved("Nature de la charge : qualification périmée (montant, nature, source ou document modifié).", ruleId, "STALE");
       }
-      if (fact!.nature === "PROPERTY_MANAGEMENT") {
-        return {
-          class: "B",
-          proofLevel: "DIRECT",
-          ruleId: "SAV-031:management_fee",
-          reason: "Gestion locative démontrée : B.",
-          status: "VALIDATED",
-        };
+      const nature = freshness === "FRESH" ? fact!.nature : "UNKNOWN";
+      const q = qualifyArticle39cCharge({
+        id: ligne.id,
+        category,
+        amount: ligne.montantDeductible,
+        provenance: "f012",
+        deductibilite: "deductible",
+        ...(isInsurance ? { insuranceNature: nature as InsuranceNatureFact["nature"] } : { managementNature: nature as ManagementNatureFact["nature"] }),
+      });
+      if (q.class === "B") {
+        return { class: "B", proofLevel: levelOfEngine(q.qualificationLevel), ruleId, reason: q.reason, status: "VALIDATED" };
       }
-      return unresolved("Honoraires : prestation autre que la gestion locative (ou mixte) — classement 39 C non fermé.", "SAV-031:management_fee");
+      return unresolved(q.reason, ruleId, "UNRESOLVED", q.plausibleClasses ?? NEEDS_QUALIFICATION_DEFAULT_PLAUSIBLE);
     }
     case "honoraires_comptable": {
       const fact = factOf<AccountingNatureFact>(facts, "ACCOUNTING_NATURE", ligne.id);
@@ -209,7 +252,7 @@ function classifyInYear(
       };
     }
     case "frais_bancaires":
-      return classifyBankFee(ligne, facts, lineFingerprint, owner, fiscalYear);
+      return classifyBankFee(ligne, facts, lineFingerprint, owner, fiscalYear, knownLoanIds);
     case "copropriete":
       if (amountCents > 0) {
         return {
@@ -287,7 +330,7 @@ export function adaptF012ToArticle39cContributions(input: F012Article39cInput): 
       continue;
     }
     const inYearCents = toCents(ligne.montantDeductible);
-    const fingerprint = fingerprintChargeLineSource({ lineId: ligne.id, fiscalYear: input.fiscalYear, amountCents: inYearCents, category: ligne.categorie });
+    const fingerprint = f012LineFingerprint(ligne, { owner: input.owner, fiscalYear: input.fiscalYear, sources: input.lineSources?.[ligne.id] });
 
     if (ligne.exclusionReason === "f011_overlap") {
       push(ligne.id, "overlap", toCents(ligne.montant), {
@@ -336,7 +379,7 @@ export function adaptF012ToArticle39cContributions(input: F012Article39cInput): 
       if (inYearCents < 0 && ligne.categorie !== "copropriete") {
         blockers.push({ code: "INVALID_AMOUNT", sourceId: ligne.id, message: `Ligne « ${ligne.id} » : montant négatif hors régularisation de copropriété.` });
       } else {
-        const classified = classifyInYear(ligne, inYearCents, facts, input.fiscalYear, input.owner);
+        const classified = classifyInYear(ligne, inYearCents, facts, input.fiscalYear, input.owner, fingerprint, input.knownLoanIds);
         push(ligne.id, "in_year", Math.abs(inYearCents), classified, provenance, fingerprint);
       }
     }
@@ -360,7 +403,18 @@ export function adaptF012ToArticle39cContributions(input: F012Article39cInput): 
       "SAV-031:copro_untyped",
       "UNRESOLVED",
       ["B", "EXCLUDED"],
-    ), `f012:${charge.provenance}`, fingerprintChargeLineSource({ lineId: charge.id, fiscalYear: input.fiscalYear, amountCents: cents, category: charge.category }));
+    ), `f012:${charge.provenance}`, fingerprintF012LineSource({
+      ownerKey,
+      fiscalYear: input.fiscalYear,
+      lineId: charge.id,
+      category: charge.category,
+      deductibilite: "deductible",
+      deductibleCents: cents,
+      preOperationalCents: 0,
+      amortizableCents: 0,
+      grossCents: cents,
+      documentIds: charge.documentIds ?? [],
+    }));
   }
 
   return { contributions: sortContributions(out), blockers };

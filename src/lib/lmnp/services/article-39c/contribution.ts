@@ -89,7 +89,16 @@ export type Article39cBlockerCode =
   | "LOAN_EXCLUDED_FROM_F011"
   | "SHARED_LOAN_OUT_OF_DOMAIN"
   | "COMMON_CHARGE_NOT_SUPPORTED"
-  | "SOURCE_QUALIFICATION_MISSING";
+  | "SOURCE_QUALIFICATION_MISSING"
+  // INT-2 — reconstruction depuis le workspace rechargé.
+  | "DOSSIER_IDENTITY_MISSING"
+  | "PROPERTY_SCOPE_UNRESOLVED"
+  | "F012_SOURCE_MISSING"
+  | "F012_NOT_CONFIRMED"
+  | "F012_DATE_MISE_EN_SERVICE_MISSING"
+  | "F012_RECONCILIATION_MISMATCH"
+  | "F011_SOURCE_MISSING"
+  | "QUALIFICATION_WRONG_SCOPE";
 
 export type Article39cAdapterBlocker = {
   readonly code: Article39cBlockerCode;
@@ -129,7 +138,7 @@ export function article39cSourceFingerprint(parts: Readonly<Record<string, unkno
   return hash.toString(16).padStart(8, "0");
 }
 
-/** Empreinte de la source d'une ligne de charge F012 : montant, exercice, catégorie. Toute dérive périme la qualification. */
+/** Empreinte (version simple, INT-1) : conservée pour compatibilité ; l'adapter F012 utilise `fingerprintF012LineSource`. */
 export function fingerprintChargeLineSource(input: {
   lineId: string;
   fiscalYear: number;
@@ -137,6 +146,38 @@ export function fingerprintChargeLineSource(input: {
   category: string;
 }): string {
   return article39cSourceFingerprint({ kind: "f012_line", ...input });
+}
+
+/**
+ * INT-2 — empreinte de la source d'une ligne F012 : tout ce qui est fiscalement pertinent pour la qualification
+ * (bien / activité propriétaire, exercice, catégorie, déductibilité, montants, nature des sources, documents,
+ * statut pré-opérationnel / capitalisé / exclu). Même algorithme que F013 (`article39cSourceFingerprint`).
+ */
+export type F012LineSourceFingerprintInput = {
+  /** `propertyId` d'un bien, ou `"activity"` : un changement de rattachement périme la qualification. */
+  ownerKey: string;
+  fiscalYear: number;
+  lineId: string;
+  category: string;
+  deductibilite: string;
+  deductibleCents: number;
+  preOperationalCents: number;
+  amortizableCents: number;
+  grossCents: number;
+  exclusionReason?: string;
+  /** Natures structurées des charges sources (triées) : `gestionKind:…`, `insuranceKind:…`. */
+  natureTags?: readonly string[];
+  /** Documents sources (triés) : le remplacement d'un document périme la qualification. */
+  documentIds?: readonly string[];
+};
+
+export function fingerprintF012LineSource(input: F012LineSourceFingerprintInput): string {
+  return article39cSourceFingerprint({
+    kind: "f012_line_v2",
+    ...input,
+    natureTags: [...(input.natureTags ?? [])].sort(),
+    documentIds: [...(input.documentIds ?? [])].sort(),
+  });
 }
 
 // ---------------------------------------------------------------------------

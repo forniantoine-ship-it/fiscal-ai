@@ -979,6 +979,14 @@ export interface DeclarationDraft {
    * moteur. Sa présence impose un snapshot schema v3 (un ancien client ne doit pas le réécrire). Aucun lecteur F006.
    */
   rentReconciliationV2?: import("@/lib/lmnp/services/f013/v2/f013-v2-state").RentReconciliationV2State;
+  /**
+   * INT-2 — réponses du client nécessaires à la qualification article 39 C du BIEN (nature d'un frais bancaire, de
+   * gestion, d'assurance ; CFE rattachée au bien). Faits + empreinte de source, jamais un résultat. Aucun lecteur F006.
+   * Sa présence impose le snapshot schema v3 (un ancien client ne doit pas le réécrire).
+   */
+  article39cQualifications?: import("@/lib/lmnp/services/article-39c/qualification-store").Article39cQualificationStore;
+  /** INT-2 — qualifications niveau ACTIVITÉ (ex. CFE de l'exploitant) : jamais de `propertyId`. */
+  article39cActivityQualifications?: import("@/lib/lmnp/services/article-39c/qualification-store").Article39cQualificationStore;
   /** Validation du plan d'amortissement produite par l'Assistant Amortissements (F-014). */
   amortissementAssistant?: AmortissementAssistantOutput;
   /**

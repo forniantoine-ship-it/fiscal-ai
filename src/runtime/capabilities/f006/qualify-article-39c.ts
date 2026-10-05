@@ -5,7 +5,11 @@
  * reçoivent une classe par défaut. Les catégories ambiguës exigent une preuve (`evidence`) fournie par l'appelant ;
  * sans preuve elles sont `NEEDS_QUALIFICATION` (fail-closed, `UNKNOWN ≠ 0 ≠ B ≠ ACTIVITY`).
  *
- * - CFE : `UNRESOLVED` (SAV-031). Aucune preuve fournie ne la classe : ce module ne tranche pas la doctrine.
+ * - CFE : `UNRESOLVED` (SAV-031). Aucune preuve fournie ne la classe : ce module ne tranche pas la doctrine
+ *   (la qualification par `cfeBaseKind` vit dans les adapters INT-1, couche `lib`, jamais importée ici).
+ * - honoraires_gestion / assurance_pno : catégories AGRÉGÉES (INT-2) — la catégorie technique ne suffit pas. B seulement
+ *   si la nature précise est fournie (`PROPERTY_MANAGEMENT` / `PNO`) ; sinon `NEEDS_QUALIFICATION`. Règle unique,
+ *   partagée avec l'adapter INT-1 (jamais une seconde table).
  * - frais bancaires / divers : jamais classés automatiquement.
  * - indemnité GLI : jamais ajoutée à L ; `OUT_OF_DOMAIN` (double reconnaissance possible du loyer impayé acquis).
  * - dépense capitalisée / amortie : `EXCLUDED` de B — sa dotation est plafonnée, jamais soustraite de B.
@@ -25,6 +29,11 @@ export type Article39cEvidence = {
   reason: string;
 };
 
+/** Nature de gestion (INT-2). `PROPERTY_MANAGEMENT` est la seule nature qui devient B automatiquement. */
+export type Article39cManagementNature = "PROPERTY_MANAGEMENT" | "LETTING" | "INVENTORY" | "ADVERTISING" | "OTHER" | "UNKNOWN";
+/** Nature d'assurance (INT-2). `PNO` et `GLI` sont les seules à porter un B ; l'assurance emprunteur relève de F011. */
+export type Article39cInsuranceNature = "PNO" | "GLI" | "BORROWER" | "OTHER" | "UNKNOWN";
+
 export type Article39cQualifierInput = {
   id: string;
   propertyId?: string;
@@ -35,15 +44,17 @@ export type Article39cQualifierInput = {
   /** F-012 : `amortissement` = dépense capitalisée ; `non_deductible` = charge non déductible. */
   deductibilite?: "deductible" | "non_deductible" | "amortissement";
   evidence?: Article39cEvidence;
+  /** Nature précise pour `honoraires_gestion` (absente = UNKNOWN). */
+  managementNature?: Article39cManagementNature;
+  /** Nature précise pour `assurance_pno` (absente = UNKNOWN). */
+  insuranceNature?: Article39cInsuranceNature;
 };
 
 const DEFAULT_PLAUSIBLE: readonly Article39cResolvedClass[] = ["ACTIVITY", "B"];
 
 const ESTABLISHED: Readonly<Record<string, { class: "B" | "ACTIVITY"; reason: string }>> = {
   taxe_fonciere: { class: "B", reason: "Taxe foncière : charge afférente au bien (SAV-031)." },
-  assurance_pno: { class: "B", reason: "Assurance PNO directement attachée au bien (SAV-031)." },
   assurance_gli: { class: "B", reason: "Prime GLI directement attachée au risque locatif du bien (SAV-031)." },
-  honoraires_gestion: { class: "B", reason: "Gestion locative (SAV-031)." },
   honoraires_comptable: {
     class: "ACTIVITY",
     reason: "Frais de comptabilité : charge de pure activité (BOI-BIC-AMT-20-40-10-20 § 70).",
@@ -94,6 +105,14 @@ export function qualifyArticle39cCharge(input: Article39cQualifierInput): Articl
     };
   }
 
+  // Catégories agrégées : la nature précise décide (jamais la catégorie technique seule).
+  if (input.category === "honoraires_gestion" && input.managementNature === "PROPERTY_MANAGEMENT") {
+    return { ...base, class: "B", qualificationLevel: "DIRECT", reason: "Gestion locative démontrée (SAV-031)." };
+  }
+  if (input.category === "assurance_pno" && input.insuranceNature === "PNO") {
+    return { ...base, class: "B", qualificationLevel: "DIRECT", reason: "Assurance PNO identifiée, directement attachée au bien (SAV-031)." };
+  }
+
   const established = ESTABLISHED[input.category];
   if (established) {
     return { ...base, class: established.class, qualificationLevel: "DIRECT", reason: established.reason };
@@ -109,6 +128,12 @@ export function qualifyArticle39cCharge(input: Article39cQualifierInput): Articl
   }
 
   switch (input.category) {
+    case "honoraires_gestion":
+      return unresolved(
+        "Honoraires : la catégorie regroupe gestion, mise en location, état des lieux, publicité et autres services. Nature « gestion locative » non démontrée.",
+      );
+    case "assurance_pno":
+      return unresolved("Assurance « logement » générique : PNO non identifiée — jamais B automatique.");
     case "frais_bancaires":
       return unresolved("Frais bancaires : libellé insuffisant. Nature démontrée requise (financement du bien → B ; frais généraux → ACTIVITY).");
     case "copropriete":

@@ -7,6 +7,7 @@
  */
 import type { DeclarationDraft } from "../types";
 import { draftCarriesRentReconciliationV2 } from "../services/f013/v2/f013-v2-state";
+import { draftCarriesArticle39cQualifications } from "../services/article-39c/qualification-draft-carriage";
 import type { PersistedWorkspace } from "./persistence";
 
 /** Version d'un workspace legacy mono (champs à plat) — inchangée pour tout dossier existant. */
@@ -22,9 +23,13 @@ export const WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION = 3;
 /** Plus haute version que ce client sait lire et écrire. */
 export const WORKSPACE_SNAPSHOT_MAX_SCHEMA_VERSION = WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
 
-/** v3 si une donnée F013 v2 existe ; sinon v2 si le workspace est scopé ; un dossier mono reste en v1. */
+/**
+ * v3 si une donnée F013 v2 OU une qualification article 39 C (INT-2) existe ; sinon v2 si le workspace est scopé ; un
+ * dossier mono reste en v1. Aucune nouvelle version : les qualifications vivent dans le contrat v3 existant (ADR-012 §2).
+ */
 export function workspaceSnapshotSchemaVersion(workspace: Pick<PersistedWorkspace, "declarationDraft">): number {
   if (draftCarriesRentReconciliationV2(workspace.declarationDraft)) return WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
+  if (draftCarriesArticle39cQualifications(workspace.declarationDraft)) return WORKSPACE_SNAPSHOT_RENT_V2_SCHEMA_VERSION;
   return workspace.declarationDraft?.biens !== undefined
     ? WORKSPACE_SNAPSHOT_SCOPED_SCHEMA_VERSION
     : WORKSPACE_SNAPSHOT_SCHEMA_VERSION;

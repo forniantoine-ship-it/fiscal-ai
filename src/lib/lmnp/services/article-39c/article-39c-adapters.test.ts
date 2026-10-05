@@ -21,14 +21,13 @@ import {
 } from "@/lib/lmnp/services/f013/v2/f013-v2-state";
 import type { MoneyFact } from "@/lib/lmnp/services/f013/v2/f013-v2-contract";
 import {
-  fingerprintChargeLineSource,
   summarizeArticle39cContributions,
   toArticle39cQualifiedAmounts,
   validateArticle39cContributions,
   type Article39cContribution,
 } from "./contribution";
 import { adaptF013V2ToArticle39cRent } from "./from-f013-v2";
-import { adaptF012ToArticle39cContributions } from "./from-f012";
+import { adaptF012ToArticle39cContributions, f012LineFingerprint } from "./from-f012";
 import { adaptF011ToArticle39cContributions } from "./from-f011";
 import {
   acquisitionCostTreatmentFromOption,
@@ -92,17 +91,16 @@ function f012(lignes: LigneCharge[], extra: Partial<Parameters<typeof adaptF012T
   return adaptF012ToArticle39cContributions({ owner: PROP_A, fiscalYear: YEAR, lignes, ...extra });
 }
 
+function lineFp(l: LigneCharge, owner: typeof PROP_A | typeof ACTIVITY | typeof PROP_B = PROP_A): string {
+  return f012LineFingerprint(l, { owner, fiscalYear: YEAR });
+}
+
 function bankFact(l: LigneCharge, fact: Partial<BankFeeNatureFact> & Pick<BankFeeNatureFact, "nature">): BankFeeNatureFact {
   return {
     kind: "BANK_FEE",
     lineId: l.id,
     provenance: "document",
-    sourceFingerprint: fingerprintChargeLineSource({
-      lineId: l.id,
-      fiscalYear: YEAR,
-      amountCents: eur(l.montantDeductible),
-      category: l.categorie,
-    }),
+    sourceFingerprint: lineFp(l),
     ...fact,
   };
 }
@@ -236,7 +234,7 @@ describe("INT-1 — oracles", () => {
     assert.equal(c.amountCents, eur(200));
     // Source portée par l'activité : jamais un propertyId fictif.
     const global = only(
-      f012([l], { owner: ACTIVITY, natureFacts: [bankFact(l, { nature: "ACTIVITY_ACCOUNT" })] }).contributions,
+      f012([l], { owner: ACTIVITY, natureFacts: [{ ...bankFact(l, { nature: "ACTIVITY_ACCOUNT" }), sourceFingerprint: lineFp(l, ACTIVITY) }] }).contributions,
     );
     assert.equal(global.class, "ACTIVITY");
     assert.deepEqual(global.scope, { level: "ACTIVITY" });
@@ -402,13 +400,13 @@ describe("INT-1 — fail-closed", () => {
     assert.equal(divers.class, "NEEDS_QUALIFICATION");
     const gestion = ligne({ id: "honoraires-gestion", categorie: "honoraires_gestion", montant: 800 });
     assert.equal(only(f012([gestion]).contributions).class, "NEEDS_QUALIFICATION");
-    const fingerprint = fingerprintChargeLineSource({ lineId: gestion.id, fiscalYear: YEAR, amountCents: eur(800), category: gestion.categorie });
+    const fingerprint = lineFp(gestion);
     const proven = only(
       f012([gestion], { natureFacts: [{ kind: "MANAGEMENT_NATURE", lineId: gestion.id, nature: "PROPERTY_MANAGEMENT", provenance: "document", sourceFingerprint: fingerprint }] }).contributions,
     );
     assert.equal(proven.class, "B");
     const mixed = only(
-      f012([gestion], { natureFacts: [{ kind: "MANAGEMENT_NATURE", lineId: gestion.id, nature: "MIXED_OR_OTHER_SERVICE", provenance: "document", sourceFingerprint: fingerprint }] }).contributions,
+      f012([gestion], { natureFacts: [{ kind: "MANAGEMENT_NATURE", lineId: gestion.id, nature: "LETTING", provenance: "document", sourceFingerprint: fingerprint }] }).contributions,
     );
     assert.equal(mixed.class, "NEEDS_QUALIFICATION");
   });
@@ -462,7 +460,7 @@ describe("INT-1 — fail-closed", () => {
   });
 
   it("charges pré-opérationnelles : jamais résolues opportunistement", () => {
-    const l = ligne({ id: "assurance-pno", categorie: "assurance_pno", montant: 600, montantDeductible: 400, montantPreExploitation: 200 });
+    const l = ligne({ id: "assurance-gli", categorie: "assurance_gli", montant: 600, montantDeductible: 400, montantPreExploitation: 200 });
     const items = f012([l]).contributions;
     assert.equal(items.length, 2);
     const byPart = Object.fromEntries(items.map((c) => [c.contributionId.split("|").pop()!, c]));

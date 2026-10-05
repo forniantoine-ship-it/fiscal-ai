@@ -10,6 +10,10 @@
  * base inconnue) : elles renvoient `NEEDS_QUALIFICATION` et laissent la matérialité au moteur exact.
  */
 import type { Article39cResolvedClass } from "@/runtime/capabilities/f006/article-39c-capacity";
+import type {
+  Article39cInsuranceNature,
+  Article39cManagementNature,
+} from "@/runtime/capabilities/f006/qualify-article-39c";
 import {
   article39cSourceFingerprint,
   contributionId,
@@ -33,6 +37,8 @@ export type CfeNotice = {
   amountCents: number;
   /** Présent seulement si l'avis est rattaché à un bien ; sinon niveau activité (aucun `propertyId` fictif). */
   propertyId?: string;
+  /** Documents de preuve (références) : leur remplacement périme la réponse. Aucune extraction automatique. */
+  evidenceRefs?: readonly string[];
 };
 
 export type CfeQualificationFact = {
@@ -53,6 +59,7 @@ export function fingerprintCfeNotice(notice: CfeNotice): string {
     fiscalYear: notice.fiscalYear,
     amountCents: notice.amountCents,
     propertyId: notice.propertyId,
+    evidenceRefs: notice.evidenceRefs !== undefined && notice.evidenceRefs.length > 0 ? [...notice.evidenceRefs].sort() : undefined,
   });
 }
 
@@ -68,7 +75,8 @@ export function qualifyCfe(notice: CfeNotice, fact: CfeQualificationFact | undef
   if (notice.amountCents === 0) return null;
   const currentFingerprint = fingerprintCfeNotice(notice);
   const base = {
-    contributionId: contributionId("CFE_NOTICE", notice.sourceId, "cfe"),
+    // Le rattachement fait partie de l'identité : deux biens peuvent porter un avis de même identifiant sans collision.
+    contributionId: contributionId("CFE_NOTICE", `${notice.propertyId !== undefined ? `property:${notice.propertyId}` : "activity"}:${notice.sourceId}`, "cfe"),
     source: "CFE_NOTICE" as const,
     sourceId: notice.sourceId,
     fiscalYear: notice.fiscalYear,
@@ -149,7 +157,17 @@ export type BankFeeNatureFact = {
 export type ManagementNatureFact = {
   kind: "MANAGEMENT_NATURE";
   lineId: string;
-  nature: "PROPERTY_MANAGEMENT" | "MIXED_OR_OTHER_SERVICE" | "UNKNOWN";
+  /** Vocabulaire unique du qualificateur 39 C (INT-2) : seul `PROPERTY_MANAGEMENT` peut devenir B. */
+  nature: Article39cManagementNature;
+  provenance: FactProvenanceKind;
+  sourceFingerprint: string;
+};
+
+/** Assurance (INT-2) : « assurance logement » générique ≠ automatiquement PNO. */
+export type InsuranceNatureFact = {
+  kind: "INSURANCE_NATURE";
+  lineId: string;
+  nature: Article39cInsuranceNature;
   provenance: FactProvenanceKind;
   sourceFingerprint: string;
 };
@@ -163,7 +181,7 @@ export type AccountingNatureFact = {
   sourceFingerprint: string;
 };
 
-export type ChargeNatureFact = BankFeeNatureFact | ManagementNatureFact | AccountingNatureFact;
+export type ChargeNatureFact = BankFeeNatureFact | ManagementNatureFact | AccountingNatureFact | InsuranceNatureFact;
 
 export type NatureFactFreshness = "MISSING" | "FRESH" | "STALE";
 
