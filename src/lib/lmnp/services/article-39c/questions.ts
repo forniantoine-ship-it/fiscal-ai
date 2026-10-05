@@ -18,7 +18,7 @@ import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import type { LigneCharge } from "@/runtime/capabilities/f012/types";
 import type { Article39cScope } from "./contribution";
-import { f012LineFingerprint } from "./from-f012";
+import { f011FeesMayExplainAmount, f012LineFingerprint } from "./from-f012";
 import { fingerprintCfeNotice, type BankFeeNatureFact, type ChargeNatureFact } from "./qualification-facts";
 import { parseQualificationStore, scopeKey, selectQualifications, type CfeDiversLinkage } from "./qualification-store";
 import {
@@ -200,7 +200,7 @@ export function pendingArticle39cQuestions(input: { workspace: PersistedWorkspac
           });
         } else if (answered.nature === "PROPERTY_FINANCING" && answered.loanId !== undefined && answered.financingFeeKind === undefined && answered.alreadyCountedByF011 !== true) {
           const pret = prets.find((p) => p.pretId === answered.loanId);
-          const inLoan = pret !== undefined && (toCents(pret.fraisDossierDeductibles) === amountCents || toCents(pret.garantieDeductible) === amountCents);
+          const inLoan = pret !== undefined && f011FeesMayExplainAmount(amountCents, [toCents(pret.fraisDossierDeductibles), toCents(pret.garantieDeductible)]);
           if (inLoan) {
             out.push({
               questionId: questionId("BANK_FEE_ALREADY_IN_LOAN", scope, ligne.id, fiscalYear),

@@ -103,6 +103,17 @@ function exactOnlyChargesCents(draft: StoreHolder, fiscalYear: number): number {
   return cents;
 }
 
+export const FIRST_YEAR_OPENING_BALANCES_UNSUPPORTED_CODE = "first_real_year_opening_rent_balances_unsupported";
+
+type OpeningFact = { status?: string; amountCents?: number } | undefined;
+type OpeningStateHolder = { rentReconciliationV2?: { facts: { fiscalYear: number; openingReceivables?: OpeningFact; openingAdvances?: OpeningFact } }; biens?: Record<string, { rentReconciliationV2?: { facts: { fiscalYear: number; openingReceivables?: OpeningFact; openingAdvances?: OpeningFact } } } | undefined> } | undefined;
+
+/** Vrai si un état F013 v2 de l'exercice porte une créance ou une avance d'ouverture non nulle, ou non définitivement nulle (jamais zéro implicite). */
+function hasOpeningRentBalances(draft: OpeningStateHolder, year: number): boolean {
+  const states = [draft?.rentReconciliationV2, ...Object.values(draft?.biens ?? {}).map((b) => b?.rentReconciliationV2)];
+  return states.some((s) => s?.facts.fiscalYear === year && [s.facts.openingReceivables, s.facts.openingAdvances].some((f) => f !== undefined && f.status !== "UNKNOWN" && (f.amountCents ?? 0) > 0));
+}
+
 export function resolveExactSwitch(
   workspace: Pick<PersistedWorkspace, "properties" | "fiscalYear" | "documents" | "declarationDraft">,
   options: { remoteAntiDowngrade?: RemoteAntiDowngradeAttestation } = {},
@@ -110,6 +121,13 @@ export function resolveExactSwitch(
   if (resolveFiscalCalculationMode(workspace) === "LEGACY_PROXY") return { mode: "LEGACY_PROXY" };
   const dossierId = workspace.fiscalYear.dossierId;
   if (dossierId === undefined || dossierId === "") return { mode: "EXACT_39C_V2", status: "BLOCKED", reasons: [EXACT_GATE_RED_CODE, "DOSSIER_IDENTITY_MISSING"] };
+
+  // GATE-1.1 — première année réelle DÉCLARÉE + créance / avance d'OUVERTURE non nulle : combinaison hors domaine (SAV-034 n'admet une
+  // ouverture nulle que si l'absence d'antériorité est confirmée ; la transition micro-BIC → réel n'est pas traitée). Fail-closed
+  // conservateur : aucune règle fiscale inventée, aucun zéro substitué. ARBITRAGE DOCTRINAL REQUIS avant toute levée.
+  if (workspace.fiscalYear.priorHistoryDeclaration?.status === "FIRST_REAL_YEAR" && !workspace.fiscalYear.previousFiscalYearId && hasOpeningRentBalances(workspace.declarationDraft as OpeningStateHolder, workspace.fiscalYear.year)) {
+    return { mode: "EXACT_39C_V2", status: "BLOCKED", reasons: [EXACT_GATE_RED_CODE, FIRST_YEAR_OPENING_BALANCES_UNSUPPORTED_CODE] };
+  }
 
   const gate = canSwitchToExactFiscalEngine({
     workspace: workspace as PersistedWorkspace,

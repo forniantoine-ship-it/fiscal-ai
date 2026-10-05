@@ -22,6 +22,7 @@
  */
 import type { Anomaly } from "@/runtime";
 import { inventoryOfBiens } from "./generation-bilan-inputs";
+import { chargeDraftsOfWorkspace, detectDuplicateDocumentCharges } from "@/lib/lmnp/services/documents/duplicate-document-charges";
 import { exactOnlyChargeRecordIds, LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE } from "./legacy-proxy-guard";
 import { applyExactContractToEngineInputs, EXACT_RECONCILIATION_FAILED_CODE, reconcileExactFiscalResult, resolveExactSwitch, withExactPropertyRevenues } from "./exact-39c-switch";
 import { resolveNoAllocationChargesAttestation } from "@/lib/lmnp/dossier/multi-property-attestations";
@@ -192,6 +193,15 @@ function generateFromWorkspace(
   options: WorkspaceGenerationOptions,
   enforceDomain: boolean,
 ): WorkspaceGenerationResult {
+  // GATE-1.1 — documents de contenu identique justifiant plusieurs charges : BLOQUÉ avant tout calcul (legacy comme exact), jamais fusionné.
+  const duplicateDocuments = detectDuplicateDocumentCharges({
+    documents: workspace.documents ?? [],
+    drafts: chargeDraftsOfWorkspace(workspace.declarationDraft),
+    fiscalYear: workspace.fiscalYear.year,
+  });
+  if (duplicateDocuments.length > 0) {
+    return blockedFromReasons(duplicateDocuments.map((c) => ({ code: c.code, message: c.message })));
+  }
   // INT-5 — UNE décision explicite par dossier : EXACT_39C_V2 (engagement F013 v2) ou LEGACY_PROXY. Jamais de mélange.
   const switchResolution = resolveExactSwitch(workspace);
   if (switchResolution.mode === "EXACT_39C_V2" && switchResolution.status === "BLOCKED") {

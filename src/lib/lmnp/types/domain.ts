@@ -1131,6 +1131,11 @@ export interface LmnpDocument {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
+  /**
+   * SHA-256 (64 hex minuscules) des octets du fichier ORIGINAL — identité de CONTENU, additive et optionnelle (absente = non calculée,
+   * jamais « document différent »). `SAME_DOCUMENT_CONTENT` ≠ `SAME_ACCOUNTING_FACT` : ne fusionne ni ne supprime jamais une charge.
+   */
+  contentSha256?: string;
   category: DocumentCategory;
   documentType: DocumentType;
   status: DocumentStatus;

@@ -101,6 +101,20 @@ export type F012Article39cInput = {
 };
 
 /**
+ * GATE-1.1 — un montant F012 peut-il être (en tout ou partie) des frais de prêt déjà comptés par F011 ? Égalité à UN frais, ou à la SOMME
+ * d'au moins deux frais (frais de dossier + garantie, éventuellement de plusieurs prêts). Ce n'est qu'un signal de RISQUE : jamais une
+ * déduplication ni une répartition (aucune identité métier démontrée par l'arithmétique) — la ligne reste non résolue jusqu'à réponse.
+ */
+export function f011FeesMayExplainAmount(amountCents: number, feeCents: readonly number[]): boolean {
+  if (!(amountCents > 0)) return false;
+  const fees = feeCents.filter((f) => f > 0).slice(0, 12);
+  if (fees.includes(amountCents)) return true;
+  let sums = new Set<number>([0]);
+  for (const fee of fees) sums = new Set([...sums, ...[...sums].map((x) => x + fee)]);
+  return sums.has(amountCents);
+}
+
+/**
  * Frais bancaires que le client a explicitement déclarés identiques à des frais de prêt F011 (fait lié à une ligne, un prêt
  * et une empreinte). Distincte de `AX-009:f011_overlap` (ligne « divers » déjà neutralisée par F012) : ici la ligne F012
  * reste dans les totaux F012 et F-006 doit la retirer UNE fois (`exact-39c-switch`).
@@ -144,11 +158,16 @@ function classifyBankFee(
 ): Classified {
   const fact = factOf<BankFeeNatureFact>(facts, "BANK_FEE", ligne.id);
   const freshness = natureFactFreshness(fact, currentFingerprint);
+  // GATE-1 — un frais de MÊME montant qu'un frais de prêt F011 peut être ce même frais déjà compté : la branche « EXCLUDED »
+  // (jamais recomptée, AX-009) est plausible et change le résultat (SAV-030 : branches plausibles, jamais choisies arbitrairement).
+  const lineCents = toCents(ligne.montantDeductible);
+  const mayDuplicateF011 = f011FeesMayExplainAmount(lineCents, Object.values(f011FeeCentsByLoan ?? {}).flatMap((f) => [f.application, f.guarantee]));
+  const plausible: readonly Article39cResolvedClass[] = mayDuplicateF011 ? ["B", "ACTIVITY", "EXCLUDED"] : NEEDS_QUALIFICATION_DEFAULT_PLAUSIBLE;
   if (freshness === "MISSING") {
-    return unresolved("Frais bancaires : libellé insuffisant, nature (financement du bien / compte d'activité) non démontrée.", "SAV-031:bank_fee");
+    return unresolved("Frais bancaires : libellé insuffisant, nature (financement du bien / compte d'activité) non démontrée.", "SAV-031:bank_fee", "UNRESOLVED", plausible);
   }
   if (freshness === "STALE") {
-    return unresolved("Frais bancaires : la qualification ne correspond plus à la source (montant, nature ou exercice modifié).", "SAV-031:bank_fee", "STALE");
+    return unresolved("Frais bancaires : la qualification ne correspond plus à la source (montant, nature ou exercice modifié).", "SAV-031:bank_fee", "STALE", plausible);
   }
   const bank = fact!;
   if (bank.nature === "PROPERTY_FINANCING" && bank.loanId !== undefined && knownLoanIds !== undefined && !knownLoanIds.includes(bank.loanId)) {
@@ -156,6 +175,7 @@ function classifyBankFee(
       "Frais bancaires de financement : le prêt référencé n'existe plus pour ce bien (supprimé ou réattribué) — qualification périmée.",
       "SAV-031:bank_fee",
       "STALE",
+      plausible,
     );
   }
   if (bank.nature === "PROPERTY_FINANCING") {
@@ -178,16 +198,13 @@ function classifyBankFee(
     }
     const fees = f011FeeCentsByLoan?.[bank.loanId];
     const cents = toCents(ligne.montantDeductible);
-    if (
-      fees !== undefined &&
-      bank.financingFeeKind === undefined &&
-      cents > 0 &&
-      (cents === fees.application || cents === fees.guarantee)
-    ) {
+    if (fees !== undefined && bank.financingFeeKind === undefined && f011FeesMayExplainAmount(cents, [fees.application, fees.guarantee])) {
       // Même montant que des frais de prêt déjà portés par F011, sans décision explicite : jamais B (risque de double compte).
       return unresolved(
         "Frais bancaires de financement de même montant que des frais de prêt déjà comptés par F011 : s'agit-il du même frais ? Conflit non résolu.",
         "SAV-031:bank_fee:possible_f011_duplicate",
+        "UNRESOLVED",
+        ["B", "EXCLUDED"],
       );
     }
     const dedupeKey =

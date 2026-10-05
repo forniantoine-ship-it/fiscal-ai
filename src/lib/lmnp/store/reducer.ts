@@ -1,3 +1,4 @@
+import { isContentSha256 } from "@/lib/documents/content-identity";
 import { deriveWorkspace, resolveFiscalYearStatus } from "../engine";
 import { invalidateExpensesForDocument } from "@/runtime/capabilities/f012/expense";
 import { buildDownstreamInvalidationPatch } from "@/lib/lmnp/services/dossier/declaration-draft-invalidation";
@@ -78,6 +79,8 @@ export type LmnpAction =
   | { type: "HYDRATE"; payload: PersistedWorkspace; files?: FileRegistry }
   | { type: "AUTH_SESSION_RESET" }
   | { type: "REGISTER_FILE"; documentId: string; file: File }
+  /** SHA-256 des octets du fichier original (calculé hors reducer, async) — identité de contenu, jamais décisionnelle. */
+  | { type: "DOCUMENT_SET_CONTENT_SHA256"; documentId: string; sha256: string }
   | {
       type: "UPLOAD_DOCUMENTS";
       files: {
@@ -668,7 +671,18 @@ function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
     case "REGISTER_FILE": {
       const fileRegistry = new Map(state.fileRegistry);
       fileRegistry.set(action.documentId, action.file);
-      return { ...state, fileRegistry };
+      // Fichier remplacé pour ce document : l'empreinte précédente n'est plus démontrée (recalculée sur les nouveaux octets).
+      const documents = state.documents.some((d) => d.id === action.documentId && d.contentSha256 !== undefined)
+        ? state.documents.map((d) => (d.id === action.documentId ? { ...d, contentSha256: undefined } : d))
+        : state.documents;
+      return { ...state, fileRegistry, documents };
+    }
+
+    case "DOCUMENT_SET_CONTENT_SHA256": {
+      if (!isContentSha256(action.sha256)) return state;
+      const target = state.documents.find((d) => d.id === action.documentId);
+      if (target === undefined || target.contentSha256 === action.sha256) return state;
+      return { ...state, documents: state.documents.map((d) => (d.id === action.documentId ? { ...d, contentSha256: action.sha256 } : d)) };
     }
 
     case "UPLOAD_DOCUMENTS": {

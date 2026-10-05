@@ -331,18 +331,17 @@ describe("INT-5.1 — frais bancaires F012 vs frais de prêt F011 : une contribu
     assert.equal(mustGenerate(ws).g.rfs.fiscalResult.resultatAvantAmort, 12000 - 800);
   });
 
-  it("identité AMBIGUË (même montant, aucune réponse / « je ne sais pas ») : jamais dédupliqué sur le montant ; si matériel → fail-closed", async () => {
-    // immatériel (dotation 0) : calculé, mais le frais F012 reste NON classé (ni EXCLUDED, ni B) et compté une fois par F-006
+  it("identité AMBIGUË (même montant, aucune réponse / « je ne sais pas ») : jamais dédupliqué sur le montant ; fail-closed même si la dotation est immatérielle (GATE-1 : 11 500 et 11 000 sont tous deux plausibles)", async () => {
+    // dotation 0 comme dotation matérielle (11 300) : BLOQUÉ, y compris après « je ne sais pas »
     const immaterial = await financing(500, 0);
     const c = consolidated(immaterial);
     assert.equal(c.contributions.find((x) => x.contributionId.includes("frais-bancaires"))!.class, "NEEDS_QUALIFICATION");
     assert.equal(c.byClassCents.B, 50000, "seul le B de F011 est actif : le montant seul ne déduplique rien");
-    assert.equal(ready(immaterial).contract.f011DuplicateBankFeesEuros, 0);
-    assert.equal(mustGenerate(immaterial).g.rfs.fiscalResult.charges.totalDeductible, 1000, "F-006 ne retire rien sans décision explicite");
-    // matériel (dotation 11 300 : B → C 11 000, ACTIVITY → C 11 500 : l'issue dépend de la classe) : BLOQUÉ, y compris après « je ne sais pas »
+    mustBlock(immaterial);
     const material = await financing(500, 11300);
     mustBlock(material);
     mustBlock(await answer(material, "BANK_FEE_ALREADY_IN_LOAN", "UNKNOWN"));
+    mustBlock(await answer(immaterial, "BANK_FEE_ALREADY_IN_LOAN", "UNKNOWN"));
   });
 });
 

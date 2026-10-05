@@ -1,5 +1,6 @@
 "use client";
 
+import { sha256HexOfFile } from "@/lib/documents/content-identity";
 import {
   createContext,
   useCallback,
@@ -523,6 +524,22 @@ export function LmnpProvider({ children, explicitDossier = null }: { children: R
     if (!isReady) return;
     void syncDocumentBlobs(state.documents, state.fileRegistry, authUserIdRef.current, state.fiscalYear.id);
   }, [isReady, state.documents, state.fileRegistry, state.fiscalYear.id]);
+
+  // Identité de contenu : SHA-256 des octets de chaque fichier chargé dont l'empreinte est absente (uploads, restaurations, anciens
+  // documents). Calcul async hors reducer ; aucune décision fiscale n'en dépend ici (détection de risque de double comptage seulement).
+  useEffect(() => {
+    if (!isReady) return;
+    let cancelled = false;
+    for (const doc of state.documents) {
+      if (doc.contentSha256 !== undefined) continue;
+      const file = state.fileRegistry.get(doc.id);
+      if (file === undefined) continue;
+      void sha256HexOfFile(file)
+        .then((sha256) => { if (!cancelled) dispatch({ type: "DOCUMENT_SET_CONTENT_SHA256", documentId: doc.id, sha256 }); })
+        .catch(() => undefined);
+    }
+    return () => { cancelled = true; };
+  }, [isReady, state.documents, state.fileRegistry, dispatch]);
 
   useEffect(() => {
     if (!isReady) return;
