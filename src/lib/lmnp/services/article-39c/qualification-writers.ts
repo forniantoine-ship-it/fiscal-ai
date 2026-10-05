@@ -17,10 +17,13 @@ import type { Article39cScope } from "./contribution";
 import {
   declareCfeNotice,
   parseQualificationStore,
+  recordActivityCharge,
+  removeQualificationRecord,
   recordCfeAnswer,
   recordChargeNatureAnswer,
   emptyQualificationStore,
   type Article39cQualificationStore,
+  type ActivityChargeSource,
   type CfeDiversLinkage,
 } from "./qualification-store";
 import type { CfeBaseKind, ChargeNatureFact, FactProvenanceKind } from "./qualification-facts";
@@ -78,4 +81,25 @@ export function writeChargeNatureAnswer(
 ): Article39cQualificationAction | undefined {
   const previous = currentQualificationStore(draft, input.scope);
   return actionFor(input.scope, previous, recordChargeNatureAnswer(previous, input));
+}
+
+/**
+ * INT-4 — charge GLOBALE de l'activité (comptabilité, logiciel…) : racine du draft, jamais de `propertyId`. Contenu
+ * identique → `undefined` (no-op, aucune invalidation). Aucune répartition entre biens n'existe ni n'est possible.
+ */
+export function writeActivityCharge(
+  draft: DeclarationDraft | undefined,
+  input: { charge: ActivityChargeSource; answeredAt: string },
+): Article39cQualificationAction | undefined {
+  const scope: Article39cScope = { level: "ACTIVITY" };
+  const previous = currentQualificationStore(draft, scope);
+  return actionFor(scope, previous, recordActivityCharge(previous, input));
+}
+
+/** Retire une charge globale d'activité (ex. : même dépense déjà comptée dans un logement). */
+export function removeActivityCharge(draft: DeclarationDraft | undefined, recordId: string): Article39cQualificationAction | undefined {
+  const scope: Article39cScope = { level: "ACTIVITY" };
+  const previous = currentQualificationStore(draft, scope);
+  if (!previous.records.some((r) => r.recordId === recordId)) return undefined;
+  return actionFor(scope, previous, removeQualificationRecord(previous, recordId));
 }

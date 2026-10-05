@@ -499,7 +499,7 @@ describe("INT-3 — consolidation exacte mono / multi", () => {
     assert.equal(readiness(monoWorkspace("A", tampered)).status, "RECONCILIATION_FAILURE");
     const noStocks = evaluateArticle39cReadiness(buildConsolidatedArticle39cFromWorkspace({ workspace: monoWorkspace("A", b), expectedDossierId: DOSSIER }));
     assert.equal(noStocks.status, "INVALID");
-    assert.ok(noStocks.reasons.includes("OPENING_STOCKS_NOT_PROVIDED"));
+    assert.ok(noStocks.reasons.includes("OPENING_STOCKS_UNKNOWN"));
     const wrongDossier = evaluateArticle39cReadiness(buildConsolidatedArticle39cFromWorkspace({ workspace: monoWorkspace("A", b), expectedDossierId: "autre", openingStocks: NONE }));
     assert.equal(wrongDossier.status, "INVALID");
     assert.equal(wrongDossier.consolidated.contributions.length, 0);

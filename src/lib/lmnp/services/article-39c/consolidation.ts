@@ -15,10 +15,10 @@
  * NON CONSOMMÉ par F006, `buildFiscalEngineInputs`, la consolidation productive, la RFS, la 2033-B / 2031 ou le PDF.
  */
 import { computeArticle39c, type Article39cResult } from "@/runtime/capabilities/f006/article-39c-capacity";
-import type { StockDeficit } from "@/runtime/capabilities/f006/types";
 import { fromCents } from "@/runtime/capabilities/f006/cents";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { createBienDraft } from "@/lib/lmnp/dossier/bien-draft";
+import { resolveArticle39cOpeningStocks, type Article39cOpeningStocks } from "./opening-stocks";
 import { parseQualificationStore, selectQualifications } from "./qualification-store";
 import {
   sortContributions,
@@ -41,10 +41,7 @@ import {
 } from "./workspace-sources";
 import type { LigneCharge } from "@/runtime/capabilities/f012/types";
 
-/** Stocks d'ouverture : fournis EXPLICITEMENT (jamais déduits de l'absence de donnée). */
-export type Article39cOpeningStocks =
-  | { readonly kind: "NONE_FIRST_YEAR" }
-  | { readonly kind: "PROVIDED"; readonly historicalArdStock: number; readonly priorDeficits: readonly StockDeficit[] };
+export type { Article39cOpeningStocks } from "./opening-stocks";
 
 export type ConsolidatedArticle39cFacts = {
   readonly kind: "consolidated_article_39c_facts";
@@ -156,15 +153,29 @@ export function buildConsolidatedArticle39cFromWorkspace(input: {
   sharedLoanIdsByProperty?: Readonly<Record<string, readonly string[]>>;
 }): ConsolidatedArticle39cFacts {
   const fiscalYear = input.workspace.fiscalYear.year;
+  // INT-4 — stocks d'ouverture : fournis explicitement (tests / appelant) sinon LUS par l'autorité d'ouverture existante.
+  // Jamais zéro implicite : sans preuve, `UNKNOWN` → blocage `OPENING_STOCKS_UNKNOWN`.
+  const derivedStocks = input.openingStocks === undefined ? resolveArticle39cOpeningStocks({ fiscalYear: input.workspace.fiscalYear, expectedDossierId: input.expectedDossierId }) : undefined;
+  const openingStocks: Article39cOpeningStocks | undefined = input.openingStocks ?? (derivedStocks?.status === "RESOLVED" ? derivedStocks.stocks : undefined);
   const identity = resolveWorkspaceIdentity(input.workspace, input.expectedDossierId);
+  const withStocksDiagnosis = (facts: ConsolidatedArticle39cFacts): ConsolidatedArticle39cFacts => {
+    if (derivedStocks?.status !== "UNKNOWN") return facts;
+    return {
+      ...facts,
+      blockers: [
+        ...facts.blockers.filter((b) => b.code !== "OPENING_STOCKS_NOT_PROVIDED"),
+        blockerOf("OPENING_STOCKS_UNKNOWN", `Stocks d'ouverture (ARD historique, déficits antérieurs) non démontrés (${derivedStocks.reasons.join(", ")}) : jamais présumés nuls.`),
+      ],
+    };
+  };
   if (!identity.ok) {
     const failed = consolidateArticle39cFacts({
       fiscalYear,
       properties: [],
       activity: { fiscalYear, contributions: [], blockers: [] },
-      ...(input.openingStocks !== undefined ? { openingStocks: input.openingStocks } : {}),
+      ...(openingStocks !== undefined ? { openingStocks } : {}),
     });
-    return { ...failed, blockers: [...identity.blockers, ...failed.blockers] };
+    return withStocksDiagnosis({ ...failed, blockers: [...identity.blockers, ...failed.blockers] });
   }
   const derivedShared = deriveSharedLoanIdsByProperty(identity.biens);
   const activityCfeRecords = selectQualifications(
@@ -189,13 +200,29 @@ export function buildConsolidatedArticle39cFromWorkspace(input: {
     store: input.workspace.declarationDraft?.article39cActivityQualifications,
     ...(input.activityLines !== undefined ? { activityLines: input.activityLines } : {}),
   });
-  return consolidateArticle39cFacts({
+  // INT-4 — une charge globale (comptabilité) de même montant qu'une charge comptable déjà saisie dans un bien : même dépense ?
+  // Jamais comptée deux fois en silence : conflit explicite tant que le client n'a pas déclaré les deux dépenses distinctes.
+  const duplicateBlockers: Article39cWorkspaceBlocker[] = [];
+  for (const record of selectQualifications(parseQualificationStore(input.workspace.declarationDraft?.article39cActivityQualifications), { level: "ACTIVITY" }, fiscalYear).activityCharges) {
+    if (record.charge.nature === "OTHER" || record.charge.distinctFromPropertyCharges === true) continue;
+    const twin = properties.some((p) => p.contributions.some((c) => c.source === "F012_CHARGE" && c.ruleId === "SAV-031:accounting" && c.amountCents === record.charge.amountCents));
+    if (twin) {
+      duplicateBlockers.push({
+        code: "ACTIVITY_CHARGE_DUPLICATE_SUSPECTED",
+        message: "Une charge comptable de même montant est déjà saisie dans un logement : même dépense ? Conflit explicite (jamais comptée deux fois).",
+        scope: { level: "ACTIVITY" },
+        sourceId: record.charge.sourceId,
+      });
+    }
+  }
+  const consolidated = consolidateArticle39cFacts({
     dossierId: identity.dossierId,
     fiscalYear,
     properties,
-    activity,
-    ...(input.openingStocks !== undefined ? { openingStocks: input.openingStocks } : {}),
+    activity: { ...activity, blockers: [...activity.blockers, ...duplicateBlockers] },
+    ...(openingStocks !== undefined ? { openingStocks } : {}),
   });
+  return withStocksDiagnosis(consolidated);
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +246,7 @@ export type Article39cReadiness = {
 const RECONCILIATION_CODES: ReadonlySet<Article39cBlockerCode> = new Set(["F012_RECONCILIATION_MISMATCH"]);
 const OUT_OF_DOMAIN_CODES: ReadonlySet<Article39cBlockerCode> = new Set(["F013_V2_OUT_OF_DOMAIN", "SHARED_LOAN_OUT_OF_DOMAIN", "COMMON_CHARGE_NOT_SUPPORTED"]);
 /** Conflits que le client peut lever par une réponse : aucun résultat définitif, mais pas une donnée invalide. */
-const NEEDS_QUALIFICATION_CODES: ReadonlySet<Article39cBlockerCode> = new Set(["CFE_DIVERS_CONFLICT", "CHARGES_NATURE_NEEDS_REVIEW"]);
+const NEEDS_QUALIFICATION_CODES: ReadonlySet<Article39cBlockerCode> = new Set(["CFE_DIVERS_CONFLICT", "CHARGES_NATURE_NEEDS_REVIEW", "ACTIVITY_CHARGE_DUPLICATE_SUSPECTED"]);
 
 /**
  * READY seulement si : F013 v2 définitif, F012 réconcilié, F011 valide, F010 compatible, F014 validé, stocks fournis,

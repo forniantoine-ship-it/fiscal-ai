@@ -77,6 +77,7 @@ import {
 import { effectiveFinancementCharges } from "@/lib/lmnp/services/declaration/credit-state";
 import { buildChargesAssistantOutput } from "@/lib/lmnp/services/f012/charges-assistant-output";
 import { BienScopeGate } from "./BienScopeGate";
+import { Article39cQualificationCards } from "./Article39cQualificationCards";
 
 const inputStyle = {
   ...typography.body.desktop,
@@ -1847,6 +1848,8 @@ function F012ChargesAssistantPanelBody() {
             />
           </div>
         ))}
+
+        {state.step === "complete" && !showTaxeFonciereIntegrityEscape ? <Article39cQualificationCards /> : null}
 
         {state.step === "complete" && !showTaxeFonciereIntegrityEscape ? (
           <div className="flex flex-col gap-2" style={{ marginTop: spacing.scale[4] }}>

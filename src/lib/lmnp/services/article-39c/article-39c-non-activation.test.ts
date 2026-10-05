@@ -34,6 +34,8 @@ function walk(dir: string, out: string[] = []): string[] {
  * la reconstruction depuis le workspace, ni les faits de qualification ne sont importés par un module productif.
  */
 const PERSISTENCE_LEAVES = ["qualification-store", "qualification-draft-carriage"];
+const UI_BOUNDARY = join("components", "lmnp", "assistants", "Article39cQualificationCards.tsx");
+const UI_TARGETS = ["qualification-ui-model", "questions", "qualification-writers"];
 
 describe("INT-1/INT-2 — non-activation : graphe d'imports", () => {
   it("aucun module en dehors de services/article-39c/ n'importe les adapters (hors feuilles de persistance)", () => {
@@ -43,7 +45,10 @@ describe("INT-1/INT-2 — non-activation : graphe d'imports", () => {
       if (rel.startsWith(ADAPTER_DIR + sep)) continue;
       const text = readFileSync(file, "utf8");
       const targets = [...text.matchAll(/article-39c\/([a-z0-9-]+)/g)].map((m) => m[1]!);
-      if (targets.some((t) => !PERSISTENCE_LEAVES.includes(t))) offenders.push(rel);
+      // INT-4 : UNE seule frontière UI — la carte de qualification importe le modèle d'interface, les questions et les
+      // writers (jamais un adapter, le moteur, la consolidation ni la readiness).
+      const allowed = rel === UI_BOUNDARY ? [...PERSISTENCE_LEAVES, ...UI_TARGETS] : PERSISTENCE_LEAVES;
+      if (targets.some((t) => !allowed.includes(t))) offenders.push(rel);
     }
     assert.deepEqual(offenders, []);
   });

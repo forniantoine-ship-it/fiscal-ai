@@ -21,6 +21,7 @@
  * non déduit de l'exercice > 0 (multi_property_39c_allocation_not_supported : TRF-0035 par bien non implémenté).
  */
 import type { Anomaly } from "@/runtime";
+import { inventoryOfBiens } from "./generation-bilan-inputs";
 import { produceFiscalResult as produceFiscalResultReal } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { sumEuros } from "@/runtime/capabilities/f006/cents";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
@@ -355,6 +356,7 @@ function generateFromWorkspace(
     detailCharges2033B: toConservationDetail(resolveMultiPropertyCharges2033BDetail(contributions)),
     emprunts: rfsEmpruntsMulti(consolidation.inputs),
     bilanInputs: options.bilanInputs,
+    rentInventory: inventoryOfBiens(fiscalYear.propertyIds, view.biens),
     dispense2033AIntake: options.dispense2033AIntake,
   });
 }

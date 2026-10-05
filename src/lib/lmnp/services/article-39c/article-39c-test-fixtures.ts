@@ -59,7 +59,7 @@ export function expense(partial: Partial<Expense> & Pick<Expense, "id" | "catego
   };
 }
 
-export function rentState(propertyId: string, e: number, cc = 0): RentReconciliationV2State {
+export function rentState(propertyId: string, e: number, cc = 0, ac = 0): RentReconciliationV2State {
   let state = createRentReconciliationState({ propertyId, fiscalYear: YEAR });
   state = applyFactsChange(state, {
     collections: validated(eur(e)),
@@ -67,7 +67,7 @@ export function rentState(propertyId: string, e: number, cc = 0): RentReconcilia
     openingReceivables: validated(0),
     closingReceivables: validated(eur(cc)),
     openingAdvances: validated(0),
-    closingAdvances: validated(0),
+    closingAdvances: validated(eur(ac)),
     exceptionsReviewed: true,
   });
   const confirmed = confirmRentReconciliation(state, { propertyId, fiscalYear: YEAR }, "2026-12-31T00:00:00.000Z");

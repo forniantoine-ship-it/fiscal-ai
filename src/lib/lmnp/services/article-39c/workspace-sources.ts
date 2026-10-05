@@ -16,7 +16,7 @@
  *
  * NON BRANCHÉ à F006 / `buildFiscalEngineInputs` / consolidation / RFS (INT-2). Le moteur exact reste NOT CONNECTED.
  */
-import { toCents } from "@/runtime/capabilities/f006/cents";
+import { fromCents, toCents } from "@/runtime/capabilities/f006/cents";
 import { computeChargesExercice } from "@/runtime/capabilities/f012/compute-charges-exercice";
 import { assuranceAnnuelleF011, fraisDossierF011, type FinancementChargesSummary } from "@/runtime/capabilities/f012/detect-financement-overlap";
 import { effectiveFinancementCharges, resolveCreditState } from "@/lib/lmnp/services/declaration/credit-state";
@@ -43,6 +43,7 @@ import {
 } from "./contribution";
 import {
   qualifyCfe,
+  type AccountingNatureFact,
   type ChargeNatureFact,
   type InsuranceNatureFact,
   type ManagementNatureFact,
@@ -364,7 +365,7 @@ export function buildPropertyArticle39cContribution(input: {
         } else {
           excludedLines[linked.id] = { ruleId: "INT3:cfe_dedicated_source", reason: "Ligne « divers » désignée par le client comme étant la CFE déclarée : portée par la source CFE dédiée, jamais comptée deux fois." };
         }
-      } else if (record.diversLinkage === undefined) {
+      } else if (record.diversLinkage === undefined || record.diversLinkage.kind === "UNKNOWN") {
         const twin = lignes.some(
           (l) => l.categorie === "divers" && l.exclusionReason !== "f011_overlap" && l.deductibilite === "deductible" && toCents(l.montantDeductible) + toCents(l.montantPreExploitation) === amount,
         );
@@ -374,10 +375,19 @@ export function buildPropertyArticle39cContribution(input: {
       }
     }
     for (const record of input.activityCfeRecords ?? []) {
-      const twin = lignes.some(
-        (l) => l.categorie === "divers" && l.exclusionReason !== "f011_overlap" && l.deductibilite === "deductible" && toCents(l.montantDeductible) + toCents(l.montantPreExploitation) === record.notice.amountCents,
-      );
-      if (twin && record.diversLinkage?.kind !== "DECLARED_DISTINCT") {
+      const linkage = record.diversLinkage;
+      const linesCents = (l: LigneCharge): number => toCents(l.montantDeductible) + toCents(l.montantPreExploitation);
+      if (linkage?.kind === "LINKED" && linkage.propertyId === propertyId) {
+        const linked = lignes.find((l) => l.id === linkage.lineId);
+        if (linked === undefined || linesCents(linked) !== record.notice.amountCents) {
+          blockers.push(blocker("CFE_DIVERS_CONFLICT", "CFE de l'activité liée à une ligne de charges diverses absente ou de montant différent : conflit explicite.", scope, record.recordId));
+        } else {
+          excludedLines[linked.id] = { ruleId: "INT4:cfe_dedicated_source", reason: "Ligne « divers » désignée par le client comme étant la CFE de l'activité : portée par la source CFE dédiée, jamais comptée deux fois." };
+        }
+        continue;
+      }
+      const twin = lignes.some((l) => l.categorie === "divers" && l.exclusionReason !== "f011_overlap" && l.deductibilite === "deductible" && linesCents(l) === record.notice.amountCents);
+      if (twin && linkage?.kind !== "DECLARED_DISTINCT" && linkage?.kind !== "LINKED") {
         blockers.push(blocker("CFE_DIVERS_CONFLICT", "Une ligne de charges diverses de ce bien a le même montant que la CFE de l'activité : même dépense ? Conflit explicite.", scope, record.recordId));
       }
     }
@@ -490,6 +500,49 @@ export function buildActivityArticle39cContribution(input: {
   for (const record of selected.cfe) {
     const c = qualifyCfe(record.notice, record.fact);
     if (c !== null) contributions.push(c);
+  }
+  // INT-4 — charges globales PERSISTÉES (store d'activité) : une ligne F012 par charge, jamais rattachée à un bien.
+  const persistedLines: LigneCharge[] = [];
+  const persistedSources: Record<string, F012LineSources> = {};
+  const persistedFacts: AccountingNatureFact[] = [];
+  for (const record of selected.activityCharges) {
+    const c = record.charge;
+    const euros = fromCents(c.amountCents);
+    const accounting = c.nature !== "OTHER";
+    persistedLines.push({
+      id: c.sourceId,
+      description: c.description,
+      montant: euros,
+      categorie: accounting ? "honoraires_comptable" : "divers",
+      deductibilite: "deductible",
+      montantDeductible: euros,
+      montantPreExploitation: 0,
+      montantAmortissable: 0,
+      source: "manual",
+    });
+    persistedSources[c.sourceId] = { natureTags: [`activity-charge:${c.nature}`], documentIds: [...(c.documentIds ?? [])].sort() };
+  }
+  if (persistedLines.length > 0) {
+    for (const ligne of persistedLines) {
+      const record = selected.activityCharges.find((r) => r.charge.sourceId === ligne.id)!;
+      if (record.charge.nature === "OTHER") continue;
+      persistedFacts.push({
+        kind: "ACCOUNTING_NATURE",
+        lineId: ligne.id,
+        nature: record.charge.nature,
+        provenance: record.charge.provenance,
+        sourceFingerprint: f012LineFingerprint(ligne, { owner: scope, fiscalYear: input.fiscalYear, sources: persistedSources[ligne.id] }),
+      });
+    }
+    const f012 = adaptF012ToArticle39cContributions({
+      owner: scope,
+      fiscalYear: input.fiscalYear,
+      lignes: persistedLines,
+      natureFacts: [...selected.natureFacts, ...persistedFacts],
+      lineSources: persistedSources,
+    });
+    contributions.push(...f012.contributions);
+    for (const b of f012.blockers) blockers.push({ ...b, scope });
   }
   if ((input.activityLines?.length ?? 0) > 0) {
     const f012 = adaptF012ToArticle39cContributions({

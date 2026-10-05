@@ -44,9 +44,14 @@ type RecordBase = {
 /**
  * Rapprochement explicite d'une CFE déclarée avec une ligne F012 « divers » : jamais déduit d'un libellé.
  * `LINKED` : la ligne F012 désignée EST cette CFE (elle n'est alors plus comptée en F012). `DECLARED_DISTINCT` : le client
- * affirme que la CFE n'est pas déjà saisie en charges diverses. Absent : conflit détecté si un montant identique existe.
+ * affirme que la CFE n'est pas déjà saisie en charges diverses. `UNKNOWN` (« je ne sais pas ») : la question n'est plus posée
+ * mais le conflit reste ouvert (jamais résolu par défaut). Absent : conflit détecté si un montant identique existe.
  */
-export type CfeDiversLinkage = { kind: "LINKED"; lineId: string } | { kind: "DECLARED_DISTINCT" };
+export type CfeDiversLinkage =
+  /** `propertyId` : seulement pour une CFE de niveau ACTIVITÉ liée à une ligne « divers » d'un bien. */
+  | { kind: "LINKED"; lineId: string; propertyId?: string }
+  | { kind: "DECLARED_DISTINCT" }
+  | { kind: "UNKNOWN" };
 
 /**
  * Source fact (avis de CFE déclaré : montant, exercice, rattachement, documents) + qualification (`cfeBaseKind`), absente
@@ -65,7 +70,32 @@ export type ChargeNatureQualificationRecord = RecordBase & {
   fact: ChargeNatureFact;
 };
 
-export type Article39cQualificationRecord = CfeQualificationRecord | ChargeNatureQualificationRecord;
+/**
+ * INT-4 — charge GLOBALE de l'activité (niveau activité, jamais de `propertyId`, jamais répartie). Représentation persistée
+ * minimale sur le modèle d'une ligne F012 (pas de second assistant) : nature décrite en langage courant par le client.
+ * Seules les natures « comptabilité » et « logiciel de comptabilité / de déclaration » sont définitivement ACTIVITY
+ * (SAV-031) ; toute autre charge globale reste non résolue.
+ */
+export type ActivityChargeNature = "ACCOUNTING_FEES" | "ACCOUNTING_OR_TAX_SOFTWARE" | "OTHER";
+
+export type ActivityChargeSource = {
+  sourceId: string;
+  fiscalYear: number;
+  nature: ActivityChargeNature;
+  amountCents: number;
+  description: string;
+  documentIds?: readonly string[];
+  provenance: FactProvenanceKind;
+  /** Le client affirme que cette dépense n'est PAS déjà saisie dans les charges d'un logement (même montant). */
+  distinctFromPropertyCharges?: boolean;
+};
+
+export type ActivityChargeQualificationRecord = RecordBase & {
+  recordKind: "ACTIVITY_CHARGE";
+  charge: ActivityChargeSource;
+};
+
+export type Article39cQualificationRecord = CfeQualificationRecord | ChargeNatureQualificationRecord | ActivityChargeQualificationRecord;
 
 export type Article39cQualificationStore = {
   storeVersion: typeof ARTICLE_39C_QUALIFICATION_STORE_VERSION;
@@ -233,6 +263,40 @@ export function recordChargeNatureAnswer(
   });
 }
 
+function activityChargeRecordId(sourceId: string, fiscalYear: number): string {
+  return `activity-charge|activity|${sourceId}|${fiscalYear}`;
+}
+
+export function activityChargeRecordIdFor(sourceId: string, fiscalYear: number): string {
+  return activityChargeRecordId(sourceId, fiscalYear);
+}
+
+/** Déclare (ou modifie) une charge globale d'activité : identité unique (sourceId, exercice) ; contenu identique = no-op. */
+export function recordActivityCharge(
+  store: Article39cQualificationStore,
+  input: { charge: ActivityChargeSource; answeredAt: string },
+): Article39cQualificationStore {
+  const c = input.charge;
+  return upsertIfChanged(store, {
+    recordKind: "ACTIVITY_CHARGE",
+    recordId: activityChargeRecordId(c.sourceId, c.fiscalYear),
+    scope: { level: "ACTIVITY" },
+    fiscalYear: c.fiscalYear,
+    validation: "VALIDATED",
+    answeredAt: input.answeredAt,
+    charge: {
+      sourceId: c.sourceId,
+      fiscalYear: c.fiscalYear,
+      nature: c.nature,
+      amountCents: c.amountCents,
+      description: c.description,
+      ...(c.documentIds !== undefined ? { documentIds: [...c.documentIds].sort() } : {}),
+      provenance: c.provenance,
+      ...(c.distinctFromPropertyCharges !== undefined ? { distinctFromPropertyCharges: c.distinctFromPropertyCharges } : {}),
+    },
+  });
+}
+
 export function cfeRecordIdFor(scope: Article39cScope, sourceId: string, fiscalYear: number): string {
   return cfeRecordId(scope, sourceId, fiscalYear);
 }
@@ -262,6 +326,21 @@ function isRecord(value: unknown): value is Article39cQualificationRecord {
   if (r.validation !== "VALIDATED" && r.validation !== "PROPOSED") return false;
   if (typeof r.answeredAt !== "string" || r.answeredAt === "") return false;
   const fact = r.fact as Record<string, unknown> | undefined;
+  if (r.recordKind === "ACTIVITY_CHARGE") {
+    const charge = r.charge as Record<string, unknown> | undefined;
+    return (
+      (r.scope as Article39cScope).level === "ACTIVITY" &&
+      typeof charge === "object" &&
+      charge !== null &&
+      typeof charge.sourceId === "string" &&
+      charge.sourceId !== "" &&
+      Number.isInteger(charge.fiscalYear) &&
+      (charge.nature === "ACCOUNTING_FEES" || charge.nature === "ACCOUNTING_OR_TAX_SOFTWARE" || charge.nature === "OTHER") &&
+      Number.isSafeInteger(charge.amountCents) &&
+      (charge.amountCents as number) > 0 &&
+      typeof charge.description === "string"
+    );
+  }
   if (r.recordKind === "CFE") {
     const notice = r.notice as Record<string, unknown> | undefined;
     const noticeOk = typeof notice === "object" && notice !== null && typeof notice.sourceId === "string" && Number.isSafeInteger(notice.amountCents);
@@ -272,7 +351,7 @@ function isRecord(value: unknown): value is Article39cQualificationRecord {
     const linkage = r.diversLinkage as Record<string, unknown> | undefined;
     const linkageOk =
       linkage === undefined ||
-      (typeof linkage === "object" && linkage !== null && (linkage.kind === "DECLARED_DISTINCT" || (linkage.kind === "LINKED" && typeof linkage.lineId === "string" && linkage.lineId !== "")));
+      (typeof linkage === "object" && linkage !== null && (linkage.kind === "DECLARED_DISTINCT" || linkage.kind === "UNKNOWN" || (linkage.kind === "LINKED" && typeof linkage.lineId === "string" && linkage.lineId !== "" && (linkage.propertyId === undefined || (typeof linkage.propertyId === "string" && linkage.propertyId !== "")))));
     return noticeOk && factOk && linkageOk;
   }
   if (typeof fact !== "object" || fact === null || typeof fact.sourceFingerprint !== "string" || fact.sourceFingerprint === "") return false;
@@ -296,6 +375,8 @@ export function parseQualificationStore(raw: unknown): Article39cQualificationSt
 export type SelectedQualifications = {
   readonly cfe: readonly CfeQualificationRecord[];
   readonly natureFacts: readonly ChargeNatureFact[];
+  /** Charges globales de l'activité (store d'activité uniquement). */
+  readonly activityCharges: readonly ActivityChargeQualificationRecord[];
   /** Enregistrements d'un autre bien / niveau présents dans CE store : jamais servis. */
   readonly wrongScopeRecordIds: readonly string[];
 };
@@ -311,6 +392,7 @@ export function selectQualifications(
 ): SelectedQualifications {
   const cfe: CfeQualificationRecord[] = [];
   const natureFacts: ChargeNatureFact[] = [];
+  const activityCharges: ActivityChargeQualificationRecord[] = [];
   const wrongScopeRecordIds: string[] = [];
   for (const record of store?.records ?? []) {
     if (!sameScope(record.scope, scope)) {
@@ -319,9 +401,10 @@ export function selectQualifications(
     }
     if (record.fiscalYear !== fiscalYear || record.validation !== "VALIDATED") continue;
     if (record.recordKind === "CFE") cfe.push(record);
+    else if (record.recordKind === "ACTIVITY_CHARGE") activityCharges.push(record);
     else natureFacts.push(record.fact);
   }
-  return { cfe, natureFacts, wrongScopeRecordIds };
+  return { cfe, natureFacts, activityCharges, wrongScopeRecordIds };
 }
 
 export { draftCarriesArticle39cQualifications } from "./qualification-draft-carriage";

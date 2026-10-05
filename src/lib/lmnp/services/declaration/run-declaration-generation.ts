@@ -2,6 +2,7 @@ import type { Anomaly } from "@/runtime";
 import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { produceLiasse } from "@/runtime/capabilities/f007/produce-liasse";
 import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
+import { effectiveBilanForGeneration, inventoryOfMonoDraft, type GenerationRentInventory } from "./generation-bilan-inputs";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
 import {
@@ -535,6 +536,7 @@ export function runDeclarationGeneration(
     immobilisationsSource,
     emprunts,
     bilanInputs,
+    rentInventory: inventoryOfMonoDraft(draft),
     dispense2033AIntake,
     fiscalYearOpening,
     deficitsOuverture,
@@ -583,6 +585,11 @@ export type GenerationOutputInput = {
   detailCharges2033B?: ConservationDetail2033B;
   emprunts: EmpruntRfs[] | undefined;
   bilanInputs?: BilanInputs;
+  /**
+   * INT-4 — inventaire locatif des biens de l'exercice pour le BILAN seulement (voir `generation-bilan-inputs`). Absent ou
+   * sans état de l'exercice (tout dossier legacy) : le bilan est STRICTEMENT inchangé. Jamais une entrée F006.
+   */
+  rentInventory?: GenerationRentInventory;
   dispense2033AIntake?: { caReferenceN1Declaree?: number; decision?: Dispense2033ADecision };
   fiscalYearOpening?: FiscalYearOpening;
   /** SAV-033 — stock de déficits d'ouverture utilisé par F-006 (transport pur vers `rfs.deficitsOuverture`). */
@@ -592,8 +599,10 @@ export type GenerationOutputInput = {
 export function assembleGenerationOutput(input: GenerationOutputInput): DeclarationGenerationResult {
   const {
     fiscalResult, identite, liasseResult, fiscalYear, immobilisations, immobilisationsSource, immobilisationsParBien,
-    detailCharges2033B, emprunts, bilanInputs, dispense2033AIntake, fiscalYearOpening, deficitsOuverture,
+    detailCharges2033B, emprunts, bilanInputs: legacyBilanInputs, rentInventory, dispense2033AIntake, fiscalYearOpening, deficitsOuverture,
   } = input;
+  // INT-4 — vue effective : l'inventaire F013 v2 remplace les saisies bilan concurrentes de même nature (sans état v2 : inchangé).
+  const bilanInputs = effectiveBilanForGeneration(legacyBilanInputs, fiscalYear, rentInventory);
   const multiBlocks = {
     ...(immobilisationsParBien !== undefined ? { immobilisationsParBien } : {}),
     ...(detailCharges2033B !== undefined ? { detailCharges2033B } : {}),
