@@ -62,7 +62,7 @@ import { createDefaultWorkspace, type PersistedWorkspace } from "./persistence";
 import type { AiActivityEvent, AiActivityResolutionState } from "../types/ai-activity";
 import {
   closeFiscalYear,
-  createNextDeclarationDraft,
+  planNextDeclarationDraft,
 } from "../services/dossier/fiscal-year-cycle";
 import { snapshotImmobilisationsFromGeneratedRfs } from "../services/dossier/immobilisations-comptables";
 import { noCreditSupersessionPatch } from "@/lib/lmnp/services/declaration/credit-state";
@@ -1354,6 +1354,13 @@ function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
       // IndexedDB. Ce reducer ne fait que refléter le résultat en mémoire :
       // aucune précondition n'est revérifiée ici (déjà vérifiées avant tout
       // appel à ce dispatch — voir runCreateNextFiscalYear()).
+      // F013 v2 (V2.6) — même constructeur que la préparation serveur : N+1 porte la continuité des soldes locatifs. Si elle
+      // ne peut pas être démontrée, aucun N+1 n'est reflété en mémoire (jamais un N+1 sans continuité).
+      const nextDraftPlan = planNextDeclarationDraft(state.declarationDraft, {
+        sourceFiscalYear: { year: state.fiscalYear.year, propertyIds: state.fiscalYear.propertyIds },
+        targetPropertyIds: action.nextFiscalYear.propertyIds,
+      });
+      if (!nextDraftPlan.ok) return state;
       return finalizeState({
         ...state,
         fiscalYear: action.nextFiscalYear,
@@ -1367,7 +1374,7 @@ function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
         validationItems: [],
         ledgerEntries: [],
         aiActivityFeed: [],
-        declarationDraft: createNextDeclarationDraft(state.declarationDraft),
+        declarationDraft: nextDraftPlan.draft,
       });
     }
 

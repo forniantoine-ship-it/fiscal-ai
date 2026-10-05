@@ -143,7 +143,7 @@ Loyers **ordinaires** d'un bien donné en location **meublée**, par une personn
 | ADV-09 CAF / tiers payant | **OUT_OF_DOMAIN** (NEEDS_FURTHER_PROOF) | aucune source officielle retenue dans cette mission |
 | ADV-10 dépôt de garantie | **NEEDS_FURTHER_PROOF** | seule source officielle trouvée : revenus fonciers ; le produit l'exclut des encaissements, sa conservation (loyers impayés, charges) reste hors domaine |
 
-## Continuité N → N+1 (contrat futur, `NOT IMPLEMENTED / CLOSING BLOCKED`)
+## Continuité N → N+1 (contrat ; implémentée en F013-V2.6, désactivée en production)
 
 `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)` découlent de l'identité : les soldes de **début** d'exercice sont les valeurs correspondantes de la **clôture** précédente (DECLA-30-20-20 § 170 : « valeurs correspondantes au début de l'exercice »), ce qui permet de ne pas reconnaître deux fois le produit. Conditions : même bien, même nature, montant repris sans réinterprétation, provenance et preuve de la reconnaissance antérieure conservées. *Limite :* aucun texte consulté n'imprime l'égalité `CC(N) = CO(N+1)` ; elle est dérivée.
 

@@ -11,8 +11,8 @@
  *     (serveur déjà N+1 — reload/cold restore ; jamais reseed)
  */
 import {
-  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
-  isF013V2ContinuityBlocked,
+  describeContinuityBlock,
+  evaluateF013V2Continuity,
 } from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
 import {
   isMultiPropertyClosingBlocked,
@@ -189,9 +189,10 @@ export async function runServerFiscalYearTransition(
       onError(MULTI_PROPERTY_NOT_ENABLED_MESSAGE);
       return;
     }
-    // F013 v2 — continuité N→N+1 non définie : refus AVANT le flush, le serveur et tout dispatch.
-    if (isF013V2ContinuityBlocked(workspace)) {
-      onError(F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE);
+    // F013 v2 — garde de capacité : refus AVANT le flush, le serveur et tout dispatch si la continuité ne peut pas être démontrée.
+    const continuityVerdict = evaluateF013V2Continuity(workspace);
+    if (continuityVerdict.status === "BLOCKED") {
+      onError(describeContinuityBlock(continuityVerdict.reasons));
       return;
     }
 

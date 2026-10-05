@@ -20,14 +20,21 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
 import {
+  describeContinuityBlock,
+  evaluateF013V2Continuity,
   F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
-  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
-  isF013V2ContinuityBlocked,
 } from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
+import { planRentContinuity, rentStatesEqualPlan, type ContinuityReason } from "@/lib/lmnp/services/f013/v2/f013-v2-continuity";
 import { resolveMonoPropertyId } from "@/lib/lmnp/dossier/property-scope";
 
 export type PrepareTransitionFailure =
-  | { ok: false; reason: string; code: "not_ready" | "serialize_failed" | "already_closed_without_builder" | "multi_property_not_enabled" | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
+  | {
+      ok: false;
+      reason: string;
+      code: "not_ready" | "serialize_failed" | "already_closed_without_builder" | "multi_property_not_enabled" | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE;
+      /** F013 v2 : raisons structurées lorsque la continuité ne peut pas être démontrée. */
+      reasons?: readonly ContinuityReason[];
+    };
 
 export type PrepareTransitionSuccess = {
   ok: true;
@@ -57,9 +64,16 @@ export function prepareFiscalYearTransitionCandidate(input: {
   if (isMultiPropertyClosingBlocked(workspace) || isMultiPropertyNextYearBlocked(workspace)) {
     return { ok: false, reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE };
   }
-  // F013 v2 — continuité N→N+1 non définie : refus AVANT toute préparation (source ouverte ou déjà close).
-  if (isF013V2ContinuityBlocked(workspace)) {
-    return { ok: false, reason: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE, code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
+  // F013 v2 — garde de capacité : refus AVANT toute préparation si un état F013 v2 est présent et que la continuité
+  // N → N+1 ne peut pas être démontrée (source non définitive, confirmation périmée, bien incohérent…). Sans état v2 : inchangé.
+  const continuityVerdict = evaluateF013V2Continuity(workspace);
+  if (continuityVerdict.status === "BLOCKED") {
+    return {
+      ok: false,
+      reason: describeContinuityBlock(continuityVerdict.reasons),
+      code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+      reasons: continuityVerdict.reasons,
+    };
   }
   const sourceAlreadyClosed = workspace.fiscalYear.status === "closed";
 
@@ -137,6 +151,21 @@ export function prepareFiscalYearTransitionCandidate(input: {
     declarationDraft: built.declarationDraft,
     aiActivityFeed: [],
   };
+
+  // Contrôle de cohérence : N+1 porte EXACTEMENT la continuité attendue (ni plus, ni moins) — sinon aucune transition.
+  const continuityPlan = planRentContinuity({
+    fiscalYear: { year: workspace.fiscalYear.year, propertyIds: workspace.fiscalYear.propertyIds },
+    declarationDraft: workspace.declarationDraft,
+    targetPropertyIds: built.fiscalYear.propertyIds,
+  });
+  if (!continuityPlan.ok || !rentStatesEqualPlan(built.declarationDraft, continuityPlan.nextStates)) {
+    return {
+      ok: false,
+      reason: describeContinuityBlock(continuityPlan.ok ? [{ code: "NEXT_PAYLOAD_MISMATCH" }] : continuityPlan.reasons),
+      code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+      reasons: continuityPlan.ok ? [{ code: "NEXT_PAYLOAD_MISMATCH" }] : continuityPlan.reasons,
+    };
+  }
 
   const closedWorkspace: PersistedWorkspace = {
     ...workspace,

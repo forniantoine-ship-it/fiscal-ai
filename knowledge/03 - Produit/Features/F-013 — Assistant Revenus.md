@@ -62,7 +62,7 @@ Ne jamais réduire la règle à « loyers acquis = loyers encaissés ». Le mote
 
 **Invalidation.** Une modification d'un fait F013 v2 invalide la confirmation et les sorties dépendantes (`fiscalResult`, RFS, liasse, génération) **même si le total des loyers acquis est identique** (E 12 000 / CC 0 → E 11 000 / CC 1 000) : la dépendance porte sur les faits et la révision, pas sur le total.
 
-**Continuité N → N+1 : `NOT IMPLEMENTED / CLOSING BLOCKED`.** Contrat futur `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)`. Non implémenté : le garde `f013_v2_continuity_not_supported` refuse la clôture et N+1 pour tout dossier portant des données F013 v2.
+**Continuité N → N+1 : `V2 IMPLEMENTED BUT OFF`.** `CC(N) → CO(N+1)` et `AC(N) → AO(N+1)` sont implémentés (F013-V2.6) mais F013 v2 reste désactivé. Le garde `f013_v2_continuity_not_supported` est devenu un garde de capacité : la clôture d'un dossier portant F013 v2 n'est admise que si l'état de N est définitif (confirmé, frais) et la continuité constructible ; sinon elle reste refusée.
 
 **Décisions d'ingénierie associées** (snapshot v3, anti-downgrade, garde de clôture, proposition ≠ validation, source unique, scope de bien) : [[ADR-012 — Contrat F013 v2 : source unique, snapshot v3 et fail-closed]] (`accepted`, décision du Product Owner du 2026-10-05 ; conditions d'activation maintenues).
 
@@ -73,7 +73,7 @@ Ne jamais réduire la règle à « loyers acquis = loyers encaissés ». Le mote
 - Aucune migration automatique d'un dossier v1 vers v2 : un total v1 (`totalRecettes`) ne devient jamais un rapprochement v2 validé.
 - **Bilan :** la projection F013 v2 → bilan existe et est testée (cases 068 et 174 par le chemin existant), mais n'est **pas branchée** au bilan productif. Les cartes et saisies bilan historiques existent toujours : à la bascule, les représentations concurrentes devront être neutralisées ou verrouillées pour éviter une saisie écrasée silencieusement. **Risque connu non résolu :** une confirmation globale `tiers.dettes = NUL_CONFIRME` peut entrer en conflit avec une avance locative.
 - **F006 :** ONE F006 reste l'invariant ; F013 v2 n'y est pas branché.
-- **Clôture :** bloquée pour F013 v2 (voir ci-dessus).
+- **Clôture :** admise pour un dossier F013 v2 seulement si l'état N est définitif ; refusée sinon (voir ci-dessus). Le multi-biens reste fermé (`closing = false`, `nextYear = false`).
 - **39 C :** `KNOWN SEPARATE FISCAL CORRECTION — NOT PART OF F013 V2` ([[SAV-030 – Plafond 39 C avant imputation des déficits antérieurs]]).
 - **FEC :** `NOT STARTED`. Observations, périodes, inventaires et provenance F013 v2 pourront alimenter une future couche comptable ; aucun journal ni compte n'est implémenté.
 

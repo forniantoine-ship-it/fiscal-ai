@@ -24,7 +24,19 @@ export type FactProvenance =
   | { kind: "user_declaration"; ref?: string }
   | { kind: "extraction"; ref?: string }
   | { kind: "computation"; ref?: string }
-  | { kind: "prior_year_continuity"; fromFiscalYear: number; ref?: string };
+  | {
+      kind: "prior_year_continuity";
+      fromFiscalYear: number;
+      ref?: string;
+      /** V2.6 — chaîne de preuve d'une ouverture héritée de la clôture précédente (tous champs additifs). */
+      sourcePropertyId?: string;
+      sourceNature?: "closing_receivable" | "closing_advance";
+      sourceStatus?: "VALIDATED";
+      sourceProvenance?: FactProvenance;
+      sourceRevision?: number;
+      sourceFactsDigest?: string;
+      observationIds?: readonly string[];
+    };
 
 /** Fait chiffré, en centimes entiers. `UNKNOWN` ne porte AUCUN montant. */
 export type MoneyFact =

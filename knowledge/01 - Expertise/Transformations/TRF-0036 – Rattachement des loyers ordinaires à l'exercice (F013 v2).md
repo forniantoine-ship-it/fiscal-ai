@@ -84,7 +84,7 @@ Une observation préserve, lorsque disponible : identité stable, document sourc
 
 Les faits gardent leur `propertyId` avant consolidation : A : CC 1 000 et B : AC 700 restent identifiables (A → créance 1 000 ; B → avance 700). Un solde n'est fourni au bilan que s'il est `VALIDATED` pour chaque bien de l'exercice ; `UNKNOWN` laisse le bilan `INCONNU`, `PROPOSED` ne devient jamais un poste définitif.
 
-## Continuité N → N+1 — `NOT IMPLEMENTED / CLOSING BLOCKED`
+## Continuité N → N+1 — `V2 IMPLEMENTED BUT OFF` (F013-V2.6)
 
 Contrat futur (conséquence de l'identité : les soldes de début d'exercice sont les valeurs correspondantes de la clôture précédente — BOI-BIC-DECLA-30-20-20 § 170, voir SAV-034) :
 
@@ -101,7 +101,7 @@ Oracles (vérifiés arithmétiquement et juridiquement en V2.5.1) :
 | Créance | E 11 000, CC 1 000 → acquis 12 000 | E 12 000 (dont règlement de 1 000), CO 1 000 | 12 000 − 1 000 = **11 000** (aucun produit recréé par le règlement) |
 | Avance | E 13 000, AC 1 000 → acquis 12 000 | E 11 000 (hors l'avance encaissée en N), AO 1 000 | 11 000 + 1 000 = **12 000** (produit différé reconnu une fois) |
 
-**Non implémenté.** Le garde `f013_v2_continuity_not_supported` reste nécessaire : la clôture et la création de N+1 sont refusées pour tout dossier portant des données F013 v2, y compris à soldes nuls. Aucun texte consulté n'imprime l'égalité `CC(N) = CO(N+1)` : elle est dérivée.
+**Implémentée (F013-V2.6), désactivée en production.** La continuité est calculée par un module pur et transportée par la transition existante (même transaction que la clôture de N). Le garde `f013_v2_continuity_not_supported` n'est plus un refus global : c'est un **garde de capacité et de validité**. La clôture est admise si et seulement si, pour chaque bien portant un état F013 v2, l'état N est **définitif** (moteur `SUPPORTED` et confirmation fraîche : révision, empreinte et total concordants) et la continuité est constructible ; sinon elle reste refusée avec des raisons structurées. Les ouvertures héritées sont `VALIDATED` avec la provenance `prior_year_continuity` (distincte d'une validation utilisateur) et portent leur chaîne de preuve (bien, exercice source, nature, révision et empreinte de N) ; `VALIDATED(0)` donne `VALIDATED(0)`, `UNKNOWN` ne donne jamais zéro ; CC, AC, encaissements et couverture de N+1 restent `UNKNOWN`, rien n'est confirmé, le total de N n'est pas copié. Aucun texte consulté n'imprime l'égalité `CC(N) = CO(N+1)` : elle est dérivée.
 
 ## Statut d'implémentation (au 2026-10-05)
 
@@ -113,7 +113,7 @@ Oracles (vérifiés arithmétiquement et juridiquement en V2.5.1) :
 | Inventaire commun, projection vers le bilan | **V2 IMPLEMENTED BUT OFF** (non branché au bilan productif) |
 | Projection 2033-A (cases 068 et 174) | testée par le chemin existant bilan → RFS ; non branchée à la génération productive |
 | Branchement F006 productif | **FUTURE / NOT IMPLEMENTED** |
-| Continuité N → N+1 | **NOT IMPLEMENTED — CLOSING BLOCKED** |
+| Continuité N → N+1 | **V2 IMPLEMENTED BUT OFF** (garde de capacité ; la clôture d'un dossier F013 v2 n'est admise que si l'état N est définitif ; F013 v2 reste désactivé) |
 | FEC / comptabilité | **NOT STARTED** |
 
 ## Oracles validés

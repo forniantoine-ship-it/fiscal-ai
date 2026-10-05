@@ -26,9 +26,9 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "@/lib/lmnp/dossier/multi-property-activation";
 import {
+  describeContinuityBlock,
   F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
-  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
-  isF013V2ContinuityPayload,
+  verifyF013V2TransitionPayloads,
 } from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
 import {
   createSupabaseSnapshotReader,
@@ -232,16 +232,21 @@ export async function handleFiscalYearTransitionRequest(
       return jsonResponse(409, { error: MULTI_PROPERTY_NOT_ENABLED_MESSAGE, code: MULTI_PROPERTY_NOT_ENABLED_CODE });
     }
 
-    // F013 v2 — continuité N→N+1 non définie : snapshot SERVEUR de la source ET payloads transmis, AVANT paiement et RPC.
+    // F013 v2 — garde de capacité côté SERVEUR (autorité) : snapshot stocké de N et payloads transmis, AVANT paiement et RPC.
+    // La continuité attendue est recalculée depuis le snapshot STOCKÉ ; N+1 doit la porter exactement.
     const storedSource = await deps.readWorkspaceSnapshot(dossierId, fromYear);
-    if (
-      isF013V2ContinuityPayload(storedSource?.payload) ||
-      isF013V2ContinuityPayload(closedNPayload) ||
-      isF013V2ContinuityPayload(nextPayload)
-    ) {
+    const continuity = verifyF013V2TransitionPayloads({
+      stored: storedSource?.payload,
+      closed: closedNPayload,
+      closedSchemaVersion: closedNSchemaVersion,
+      next: nextPayload,
+      nextSchemaVersion,
+    });
+    if (!continuity.ok) {
       return jsonResponse(409, {
-        error: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
+        error: describeContinuityBlock(continuity.reasons),
         code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+        reasons: continuity.reasons,
       });
     }
 

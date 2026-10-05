@@ -28,6 +28,18 @@ export interface RentReconciliationConfirmation {
   confirmedAt: string;
 }
 
+export interface RentOpeningContinuity {
+  fromFiscalYear: number;
+  sourcePropertyId: string;
+  sourceRevision: number;
+  sourceFactsDigest: string;
+  /**
+   * Confirmation de N d'où provient la continuité : révision et empreinte seulement. Le total des loyers acquis de N
+   * n'est volontairement PAS copié dans N+1 (il se retrouve en rechargeant l'état source).
+   */
+  sourceConfirmation: Pick<RentReconciliationConfirmation, "revision" | "factsDigest" | "confirmedAt">;
+}
+
 export interface RentReconciliationV2State {
   stateVersion: typeof RENT_RECONCILIATION_V2_STATE_VERSION;
   facts: RentReconciliationV2;
@@ -37,6 +49,11 @@ export interface RentReconciliationV2State {
    * autorité fiscale ; sa modification seule ne change ni la révision ni la confirmation. Restent dans le contrat v3.
    */
   observations?: RentObservation[];
+  /**
+   * V2.6 — lignée de l'ouverture : état F013 de l'exercice précédent (révision, empreinte, confirmation) dont CO/AO
+   * sont issus. Absent pour une première année ou une saisie manuelle. Additif, hors empreinte des faits.
+   */
+  openingContinuity?: RentOpeningContinuity;
   /** V2.3 — couverture PROPOSÉE par les documents (la couverture retenue vit dans `facts.collectionsCoverage`). */
   documentCoverage?: { completeness: "COMPLETE" | "PARTIAL"; coveredMonths: readonly string[]; basis: "document_spans" };
 }

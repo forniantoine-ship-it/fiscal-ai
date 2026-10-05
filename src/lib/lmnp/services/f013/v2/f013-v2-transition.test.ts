@@ -149,50 +149,70 @@ describe("SNAP — anti-downgrade et conservation", () => {
   });
 });
 
-describe("CLOSE — clôture mono avec F013 v2 : fail-closed", () => {
+/** État F013 N non définitif : valeurs validées mais jamais confirmées (la clôture doit le refuser). */
+const unconfirmed = (e: number, o: Partial<Record<BalanceKey, number>> = {}) => {
+  const { confirmation: _c, ...rest } = rentState(e, o);
+  void _c;
+  return rest as RentReconciliationV2State;
+};
+
+describe("CLOSE — clôture mono avec F013 v2 : garde de capacité (V2.6, remplace le refus global de V2.2.1)", () => {
   it("CLOSE-V1 mono sans F013 v2 : clôture historique inchangée", () => {
     const ws = closableWorkspace();
     assert.equal(precondition(ws).ok, true);
-    const p = prepare(ws);
-    assert.equal(p.ok, true);
+    assert.equal(prepare(ws).ok, true);
   });
-  it("CLOSE-01 mono v3 (E=11 000, CC=1 000 → 12 000 € confirmé) : clôture refusée, raison structurée", () => {
+  it("CLOSE-01 mono v3 définitif (E=11 000, CC=1 000 → 12 000 € confirmé) : clôture ADMISE, N+1 porte CO = 1 000 €", () => {
     const rent = rentState(11000, { closingReceivables: 1000 });
     const ev = evaluateRentReconciliation(rent, { propertyId: "prop-1", fiscalYear: YEAR });
     assert.equal(ev.result.status === "SUPPORTED" && ev.result.loyersAcquisCents, eur(12000));
     assert.equal(ev.confirmationFresh, true);
     const ws = closableWorkspace(rent);
+    assert.equal(precondition(ws).ok, true);
+    const p = prepare(ws);
+    assert.equal(p.ok, true);
+    if (!p.ok) return;
+    assert.equal(p.nextSchemaVersion, 3, "N+1 reste v3");
+    const nextRent = p.nextWorkspace.declarationDraft?.rentReconciliationV2;
+    assert.equal(nextRent?.facts.openingReceivables.status === "VALIDATED" && nextRent.facts.openingReceivables.amountCents, eur(1000));
+  });
+  it("CLOSE-01b source non définitive (jamais confirmée) : clôture refusée avec raisons structurées", () => {
+    const ws = closableWorkspace(unconfirmed(11000, { closingReceivables: 1000 }));
     const pre = precondition(ws);
     assert.equal(pre.ok, false);
     assert.equal(!pre.ok && pre.code, "f013_v2_continuity_not_supported");
+    assert.ok(!pre.ok && pre.reasons?.some((r) => r.code === "CONFIRMATION_ABSENT"));
     const p = prepare(ws);
-    assert.equal(p.ok, false);
     assert.equal(!p.ok && p.code, "f013_v2_continuity_not_supported");
     assert.match(!p.ok ? p.reason : "", /rapprochement des loyers/);
   });
-  it("CLOSE-03 mono v3 avec soldes nuls : également refusée (aucune continuité v2 définie, pas de zéros transportés)", () => {
+  it("CLOSE-03 mono v3 avec soldes nuls : admise, et les zéros VALIDÉS sont une vraie information (CO = VALIDATED(0))", () => {
     const ws = closableWorkspace(rentState(12000));
-    assert.equal(precondition(ws).ok, false);
+    assert.equal(precondition(ws).ok, true);
     const p = prepare(ws);
-    assert.equal(!p.ok && p.code, "f013_v2_continuity_not_supported");
+    assert.equal(p.ok, true);
+    if (!p.ok) return;
+    const o = p.nextWorkspace.declarationDraft?.rentReconciliationV2?.facts;
+    assert.deepEqual([o?.openingReceivables.status, o?.openingAdvances.status], ["VALIDATED", "VALIDATED"]);
   });
-  it("exercice déjà clos portant F013 v2 : création de N+1 refusée aussi", () => {
-    const ws = closableWorkspace(rentState(12000));
-    const closed: PersistedWorkspace = {
-      ...ws,
-      fiscalYear: { ...ws.fiscalYear, status: "closed", closures: [{ id: "c1" } as never] },
-    };
-    const pre = canCreateNextFiscalYear(closed.fiscalYear, closed);
+  it("exercice déjà clos : N+1 admis seulement si la source est définitive", () => {
+    const closeOf = (ws: PersistedWorkspace): PersistedWorkspace => ({
+      ...ws, fiscalYear: { ...ws.fiscalYear, status: "closed", closures: [{ id: "c1" } as never] },
+    });
+    const ok = closeOf(closableWorkspace(rentState(12000)));
+    assert.equal(canCreateNextFiscalYear(ok.fiscalYear, ok).ok, true);
+    const bad = closeOf(closableWorkspace(unconfirmed(12000)));
+    const pre = canCreateNextFiscalYear(bad.fiscalYear, bad);
     assert.equal(!pre.ok && pre.code, "f013_v2_continuity_not_supported");
-    const p = prepare(closed);
+    const p = prepare(bad);
     assert.equal(!p.ok && p.code, "f013_v2_continuity_not_supported");
   });
-  it("preuve de nécessité : le constructeur N+1 ne reporte jamais rentReconciliationV2 (sans garde, perte silencieuse)", () => {
+  it("sans contexte de continuité, le constructeur n'emporte aucune donnée v2 (liste blanche historique inchangée)", () => {
     const next = createNextDeclarationDraft(closableWorkspace(rentState(11000, { closingReceivables: 1000 })).declarationDraft);
     assert.equal(next.rentReconciliationV2, undefined);
   });
-  it("CLOSE-02 / RELOAD après refus : N intact, rien de partiel, F013 v2 et confirmation identiques", () => {
-    const rent = rentState(11000, { closingReceivables: 1000 });
+  it("CLOSE-02 / RELOAD après refus : N intact, rien de partiel, F013 v2 identique", () => {
+    const rent = unconfirmed(11000, { closingReceivables: 1000 });
     const ws = closableWorkspace(rent);
     const before = JSON.stringify(ws);
     const p = prepare(ws);
@@ -205,7 +225,6 @@ describe("CLOSE — clôture mono avec F013 v2 : fail-closed", () => {
     assert.equal(reloaded.ok, true);
     const restored = parseRentReconciliationState(reloaded.ok ? reloaded.envelope.workspace.declarationDraft.rentReconciliationV2 : undefined);
     assert.deepEqual(restored, rent);
-    assert.equal(evaluateRentReconciliation(restored!, { propertyId: "prop-1", fiscalYear: YEAR }).confirmationFresh, true);
   });
 });
 
@@ -236,14 +255,21 @@ describe("CLOSE — barrière serveur (autorité) et multi", () => {
   }
   const plain = () => envelope(closableWorkspace());
 
-  it("serveur : snapshot source portant F013 v2 → 409 avant paiement et commit, même si le client transmet des payloads propres", async () => {
-    const ctx = setup(closableWorkspace(rentState(12000)), { closed: plain(), next: plain() });
+  it("serveur : source définitive mais N+1 transmis SANS la continuité attendue → 409 avant paiement et commit", async () => {
+    const ctx = setup(closableWorkspace(rentState(12000)), { closed: envelope(closableWorkspace(rentState(12000))), next: plain() });
     const res = await ctx.post();
     assert.equal(res.status, 409);
-    assert.equal(((await res.json()) as { code: string }).code, "f013_v2_continuity_not_supported");
+    const body = (await res.json()) as { code: string; reasons: Array<{ code: string }> };
+    assert.equal(body.code, "f013_v2_continuity_not_supported");
+    assert.ok(body.reasons.some((r) => r.code === "NEXT_PAYLOAD_MISMATCH"));
     assert.deepEqual(ctx.calls, { commit: 0, payment: 0 });
   });
-  it("serveur : payload transmis portant F013 v2 (source propre) → 409", async () => {
+  it("serveur : source non confirmée → 409 (même si le client transmet des payloads propres)", async () => {
+    const ctx = setup(closableWorkspace(unconfirmed(12000)), { closed: plain(), next: plain() });
+    assert.equal((await ctx.post()).status, 409);
+    assert.deepEqual(ctx.calls, { commit: 0, payment: 0 });
+  });
+  it("serveur : payload transmis portant F013 v2 alors que la source stockée n'en a pas → 409", async () => {
     const ctx = setup(closableWorkspace(), { closed: envelope(closableWorkspace(rentState(12000))), next: plain() });
     assert.equal((await ctx.post()).status, 409);
     assert.equal(ctx.calls.commit, 0);

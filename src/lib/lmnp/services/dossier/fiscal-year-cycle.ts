@@ -35,10 +35,11 @@ import {
   MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
 } from "../../dossier/multi-property-activation";
 import {
+  describeContinuityBlock,
+  evaluateF013V2Continuity,
   F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
-  F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
-  isF013V2ContinuityBlocked,
 } from "@/lib/lmnp/services/f013/v2/f013-v2-transition-guard";
+import { planRentContinuity, type ContinuityReason, type RentContinuityInput } from "@/lib/lmnp/services/f013/v2/f013-v2-continuity";
 import { resolveMonoPropertyId } from "../../dossier/property-scope";
 import { scopedBienView, type BienDraft } from "../../dossier/bien-draft";
 import type { F011LoanDraft } from "@/runtime/assistants/f011-financement/types";
@@ -354,20 +355,37 @@ export function latestClosure(fiscalYear: Pick<FiscalYear, "closures">): FiscalY
 /** `code` : raison structurée optionnelle (R2C.3c1 : barrière multi-bien). Les refus historiques n'en portent pas. */
 export type CreateNextFiscalYearPrecondition =
   | { ok: true }
-  | { ok: false; reason: string; code?: typeof MULTI_PROPERTY_NOT_ENABLED_CODE | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE };
-
-/** F013 v2 : continuité N→N+1 non définie — refus explicite (voir f013-v2-transition-guard.ts). */
-const F013_V2_CONTINUITY_REFUSAL: CreateNextFiscalYearPrecondition = {
-  ok: false,
-  reason: F013_V2_CONTINUITY_NOT_SUPPORTED_MESSAGE,
-  code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
-};
+  | {
+      ok: false;
+      reason: string;
+      code?: typeof MULTI_PROPERTY_NOT_ENABLED_CODE | typeof F013_V2_CONTINUITY_NOT_SUPPORTED_CODE;
+      /** Raisons structurées du refus de continuité F013 v2 (V2.6). */
+      reasons?: readonly ContinuityReason[];
+    };
 
 const MULTI_PROPERTY_REFUSAL: CreateNextFiscalYearPrecondition = {
   ok: false,
   reason: MULTI_PROPERTY_NOT_ENABLED_MESSAGE,
   code: MULTI_PROPERTY_NOT_ENABLED_CODE,
 };
+
+/**
+ * F013 v2 (V2.6) — garde de capacité : refus UNIQUEMENT si un état F013 v2 est présent et que la continuité N → N+1
+ * ne peut pas être démontrée (source non définitive, confirmation périmée, bien incohérent…). Sinon : admis.
+ */
+function f013V2ContinuityRefusal(
+  fiscalYear: { year: number; propertyIds: readonly string[] },
+  declarationDraft: DeclarationDraft | undefined,
+): CreateNextFiscalYearPrecondition | undefined {
+  const verdict = evaluateF013V2Continuity({ fiscalYear, declarationDraft });
+  if (verdict.status !== "BLOCKED") return undefined;
+  return {
+    ok: false,
+    reason: describeContinuityBlock(verdict.reasons),
+    code: F013_V2_CONTINUITY_NOT_SUPPORTED_CODE,
+    reasons: verdict.reasons,
+  };
+}
 
 /**
  * Préconditions 3/4 de CREATE_NEXT_FISCAL_YEAR (P0-1 v2) : l'exercice courant
@@ -384,7 +402,8 @@ export function canCreateNextFiscalYear(
   if (isMultiPropertyNextYearBlocked({ fiscalYear, properties: context?.properties, declarationDraft: context?.declarationDraft })) {
     return MULTI_PROPERTY_REFUSAL;
   }
-  if (isF013V2ContinuityBlocked(context)) return F013_V2_CONTINUITY_REFUSAL;
+  const f013Refusal = f013V2ContinuityRefusal(fiscalYear, context?.declarationDraft);
+  if (f013Refusal) return f013Refusal;
   if (fiscalYear.status !== "closed") {
     return { ok: false, reason: "L'exercice courant n'est pas clôturé — impossible de créer l'exercice suivant." };
   }
@@ -417,7 +436,8 @@ export function canCloseFiscalYear(input: {
 
   // R2C.3c1 — refus multi explicite, AVANT tout autre contrôle : indépendant du statut, de la génération et du gate.
   if (isMultiPropertyClosingBlocked({ fiscalYear, properties, declarationDraft })) return MULTI_PROPERTY_REFUSAL;
-  if (isF013V2ContinuityBlocked({ declarationDraft })) return F013_V2_CONTINUITY_REFUSAL;
+  const f013Refusal = f013V2ContinuityRefusal(fiscalYear, declarationDraft);
+  if (f013Refusal) return f013Refusal;
 
   if (fiscalYear.status !== "ready_to_close") {
     return { ok: false, reason: "L'exercice n'est pas prêt à être clôturé." };
@@ -805,7 +825,9 @@ export function buildNextExerciseFromClosedYear(input: {
 
   return {
     fiscalYear,
-    declarationDraft: createNextDeclarationDraft(input.previousDraft),
+    declarationDraft: createNextDeclarationDraft(input.previousDraft, {
+      sourceFiscalYear: { year: input.closedFiscalYear.year, propertyIds: input.closedFiscalYear.propertyIds },
+    }),
     sourceClosureId,
   };
 }
@@ -816,7 +838,59 @@ export function buildNextExerciseFromClosedYear(input: {
  * génération) explicitement vide — "nouvel exercice avec mémoire durable",
  * jamais un clone de N (P3-SOCLE-CYCLE-FISCAL §12 + Lot 4 Phase 12).
  */
-export function createNextDeclarationDraft(previousDraft: DeclarationDraft | undefined): DeclarationDraft {
+/**
+ * Contexte de continuité F013 v2 (V2.6) : exercice SOURCE N (clôturé ou en cours de clôture) et biens cibles. Sans ce
+ * contexte, aucune donnée F013 v2 n'est reportée (comportement historique, liste blanche).
+ */
+export type NextDraftContinuityContext = {
+  sourceFiscalYear: Pick<RentContinuityInput["fiscalYear"] & object, "year" | "propertyIds">;
+  targetPropertyIds?: readonly string[];
+};
+
+export type NextDeclarationDraftPlan =
+  | { ok: true; draft: DeclarationDraft }
+  | { ok: false; reasons: readonly ContinuityReason[] };
+
+/**
+ * Construit le draft de N+1 ET la continuité F013 v2 (CC(N) → CO(N+1), AC(N) → AO(N+1)) quand le draft de N en porte une.
+ * Échoue (jamais de repli silencieux) si la continuité ne peut pas être démontrée. Sans état F013 v2 : identique au
+ * constructeur historique.
+ */
+export function planNextDeclarationDraft(
+  previousDraft: DeclarationDraft | undefined,
+  continuity?: NextDraftContinuityContext,
+): NextDeclarationDraftPlan {
+  const base = buildNextDraftAllowlist(previousDraft);
+  if (!continuity) return { ok: true, draft: base };
+  const plan = planRentContinuity({
+    fiscalYear: continuity.sourceFiscalYear,
+    declarationDraft: previousDraft,
+    ...(continuity.targetPropertyIds ? { targetPropertyIds: continuity.targetPropertyIds } : {}),
+  });
+  if (!plan.ok) return { ok: false, reasons: plan.reasons };
+  if (!plan.applicable) return { ok: true, draft: base };
+  const states = plan.nextStates;
+  if (base.biens !== undefined) {
+    const biens: Record<string, BienDraft> = {};
+    for (const [propertyId, bien] of Object.entries(base.biens)) {
+      biens[propertyId] = states[propertyId] ? { ...bien, rentReconciliationV2: states[propertyId] } : bien;
+    }
+    return { ok: true, draft: { ...base, biens } };
+  }
+  const [only] = Object.values(states);
+  return { ok: true, draft: only ? { ...base, rentReconciliationV2: only } : base };
+}
+
+export function createNextDeclarationDraft(
+  previousDraft: DeclarationDraft | undefined,
+  continuity?: NextDraftContinuityContext,
+): DeclarationDraft {
+  const plan = planNextDeclarationDraft(previousDraft, continuity);
+  // Sans continuité démontrable, on retombe sur la liste blanche SANS donnée F013 v2 (les appelants gardés refusent avant).
+  return plan.ok ? plan.draft : buildNextDraftAllowlist(previousDraft);
+}
+
+function buildNextDraftAllowlist(previousDraft: DeclarationDraft | undefined): DeclarationDraft {
   if (previousDraft?.biens !== undefined) return createNextScopedDeclarationDraft(previousDraft);
   const logementAssistantState = seedLogementAssistantForNextYear(previousDraft);
   const financementAssistantState = seedFinancementAssistantForNextYear(previousDraft);
