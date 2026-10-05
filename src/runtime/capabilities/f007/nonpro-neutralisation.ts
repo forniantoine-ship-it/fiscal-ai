@@ -7,12 +7,15 @@ import { round2 } from "./types";
  *
  *   `resultatFiscalAvantDeficits` (F-006) = résultat LMNP après plafond 39 C et ARD consommés, AVANT déficits antérieurs
  *     → grandeur MÉTIER : alimente 2031 7a (si > 0). Ce n'est PAS la ligne 352/354 du Cerfa.
- *   E = resultatFiscalAvantDeficits + amortReportesUtilises   (= resultatAvantAmort − amortDeduct)
+ * SAV-032 v1.1 (fait foi — INT-5) : avec `après` = resultatFiscalAvantDeficits, `H` = amortReportesUtilises, `ND` = totalNonDeductible :
  *
- *   E < 0  : 330 = −E + totalNonDeductible ; 350 vide ; 7b = deficitNouveau
- *   E ≥ 0  : 330 = totalNonDeductible (si > 0) ; 350 = E (si > 0, ARD consommés inclus : jamais une seconde déduction) ;
- *            7a = resultatFiscalAvantDeficits (si > 0)
+ *   330 = max(−après, 0) + ND         (déficit de l'activité réintégré + charges non déductibles)
+ *   350 = max(après, 0) + H           (bénéfice non professionnel déduit + ARD historique utilisé, une seule fois)
+ *   7a = max(après, 0) ; 7b = deficitNouveau
  *   352 = 370 = 0 imprimés (colonne 1) ; 354 et 372 vides.
+ *
+ * Bouclage : (312 − 314) + 318 + 330 − 350 = 0. La rédaction 1.0 (`E = après + H`, 330 = max(−E,0)+ND, 350 = max(E,0)) ne
+ * diverge de la 1.1 que si H > 0 ET après < 0 (Oracle C : 330 = 1 000 et 350 = 1 500, non 0 et 500).
  *
  * Les déficits antérieurs n'apparaissent ni en 330, ni en 350, ni en 352/354, ni en 370/372 (SAV-032).
  *
@@ -50,8 +53,8 @@ export function resolveNonProNeutralisation(
   const nonDeductible = Number.isFinite(fr.charges?.totalNonDeductible) ? fr.charges.totalNonDeductible : 0;
   const e = round2(avantDeficits + aRD);
 
-  const ligne330 = round2(Math.max(-e, 0) + nonDeductible);
-  const ligne350 = round2(Math.max(e, 0));
+  const ligne330 = round2(Math.max(-avantDeficits, 0) + nonDeductible);
+  const ligne350 = round2(Math.max(avantDeficits, 0) + aRD);
   const case7a = round2(Math.max(avantDeficits, 0));
   const case7b = round2(Math.max(fr.deficitNouveau, 0));
   return { status: "AVAILABLE", e, ligne330, ligne350, case7a, case7b };

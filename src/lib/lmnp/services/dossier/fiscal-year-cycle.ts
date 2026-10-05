@@ -51,6 +51,7 @@ import {
 import type { ComposantNouveau } from "@/runtime/capabilities/f012/types";
 import { round2 } from "@/runtime/capabilities/f012/types";
 import { resolveDeclarationGenerationGate } from "../declaration/declaration-generation-gate";
+import { resolveFiscalCalculationMode } from "../declaration/exact-39c-switch";
 import { isUsableExternalTakeoverOpening } from "../fiscal-year-opening/is-usable-external-takeover-opening";
 import {
   resolveExternalOpeningProofFromFiscalYear,
@@ -504,6 +505,11 @@ export function canCloseFiscalYear(input: {
     }),
     // Lot 5.3 — même Opening que la génération réelle.
     fiscalYearOpening: resolvePersistedExternalTakeoverOpening(fiscalYear),
+    // INT-5 — un dossier engagé dans F013 v2 est recalculé par le calcul EXACT, qui exige le dossier complet : même
+    // génération que la génération réelle (jamais un aperçu avec le proxy historique). Dossier legacy : chemin inchangé.
+    ...(resolveFiscalCalculationMode({ fiscalYear, declarationDraft }) === "EXACT_39C_V2"
+      ? { workspace: { properties, fiscalYear, documents: [], declarationDraft } }
+      : {}),
   });
 
   switch (gate.referenceGenerationStatus) {

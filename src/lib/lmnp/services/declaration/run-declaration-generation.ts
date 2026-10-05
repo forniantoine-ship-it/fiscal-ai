@@ -3,6 +3,14 @@ import { produceFiscalResult } from "@/runtime/capabilities/f006/produce-fiscal-
 import { produceLiasse } from "@/runtime/capabilities/f007/produce-liasse";
 import { assemblePatrimoine } from "@/runtime/capabilities/bilan/assemble-patrimoine";
 import { exactOnlyChargeRecordIds, LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE } from "./legacy-proxy-guard";
+import {
+  applyExactContractToEngineInputs,
+  EXACT_RECONCILIATION_FAILED_CODE,
+  EXACT_REQUIRES_WORKSPACE_CODE,
+  reconcileExactFiscalResult,
+  resolveFiscalCalculationMode,
+  type ExactFiscalContract,
+} from "./exact-39c-switch";
 import { effectiveBilanForGeneration, inventoryOfMonoDraft, type GenerationRentInventory } from "./generation-bilan-inputs";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
 import { buildFiscalRepresentation } from "@/runtime/capabilities/rfs/build-fiscal-representation";
@@ -218,6 +226,11 @@ export function runDeclarationGeneration(
    * unavailable ≠ 0/[] ; double source divergente → blocked.
    */
   fiscalYearOpening?: FiscalYearOpening,
+  /**
+   * INT-5 — contrat EXACT article 39 C (dossier F013 v2, gate vert), fourni par la génération du workspace. Absent = proxy
+   * historique. Un brouillon engagé dans F013 v2 SANS contrat est refusé (jamais de repli silencieux sur le proxy).
+   */
+  exact?: ExactFiscalContract,
 ): DeclarationGenerationResult {
   // Blocker #3 Lot C — avant tout calcul fiscal : TF legacy unresolved bloque.
   const integrityBlock = resolveTaxeFonciereLegacyIntegrityGenerationBlock(draft);
@@ -226,7 +239,13 @@ export function runDeclarationGeneration(
   }
 
   // INT-4.1 — le proxy historique ne lit ni charge d'activité globale ni avis de CFE : refus explicite plutôt qu'omission.
-  const omittedExactCharges = exactOnlyChargeRecordIds(draft, fiscalYear);
+  if (exact === undefined && resolveFiscalCalculationMode({ fiscalYear: { year: fiscalYear }, declarationDraft: draft }) === "EXACT_39C_V2") {
+    return {
+      status: "blocked",
+      anomalies: [{ severity: "error", field: "article39cExact", message: `${EXACT_REQUIRES_WORKSPACE_CODE}: dossier F013 v2 — le calcul exact n'est produit que par la génération du dossier ; aucun repli sur le calcul historique.` }],
+    };
+  }
+  const omittedExactCharges = exact === undefined ? exactOnlyChargeRecordIds(draft, fiscalYear) : [];
   if (omittedExactCharges.length > 0) {
     return {
       status: "blocked",
@@ -250,12 +269,20 @@ export function runDeclarationGeneration(
       })),
     };
   }
-  const openingFiscalStocks = stocksResolution.stocks;
+  // INT-5 — dossier exact : les stocks d'ouverture sont ceux démontrés par l'autorité d'ouverture du gate (une seule source).
+  const openingFiscalStocks =
+    exact !== undefined
+      ? { deficits: exact.stocks.deficits.map((d) => ({ millesime: d.millesime, montant: d.montant })), amortissementsReportes: exact.stocks.ard }
+      : stocksResolution.stocks;
   // SAV-033 — le stock de déficits d'OUVERTURE réellement transmis à F-006 (même objet que `openingFiscalStocks` ci-dessus),
   // transporté tel quel dans la RFS pour les cases 2042-C-PRO 5GA–5GJ. Jamais reconstruit depuis la clôture.
   const deficitsOuverture: NonNullable<FiscalRepresentation["deficitsOuverture"]> = {
     source:
-      fiscalYearOpening !== undefined && stocksOuverture !== undefined
+      exact !== undefined
+        ? exact.stocks.deficits.length > 0
+          ? "fiscal_year_stocks_ouverture"
+          : "none"
+        : fiscalYearOpening !== undefined && stocksOuverture !== undefined
         ? "fiscal_year_opening_and_stocks_ouverture"
         : fiscalYearOpening !== undefined
           ? "fiscal_year_opening"
@@ -413,18 +440,23 @@ export function runDeclarationGeneration(
   const usesTakeoverHistory =
     fiscalYearOpening?.source.kind === "external_takeover" || continuedTakeover !== undefined;
 
-  const fiscalComputation = produceFiscalResult(
-    buildFiscalEngineInputs({
-      draft,
-      fiscalYear,
-      amortissementAssistant,
-      usesTakeoverHistory,
-      openingFiscalStocks,
-    }),
-  );
+  const engineInputs = buildFiscalEngineInputs({
+    draft,
+    fiscalYear,
+    amortissementAssistant,
+    usesTakeoverHistory,
+    openingFiscalStocks,
+  });
+  const fiscalComputation = produceFiscalResult(exact !== undefined ? applyExactContractToEngineInputs(engineInputs, exact) : engineInputs);
 
   if (!fiscalComputation.result) {
     return { status: "blocked", anomalies: fiscalComputation.anomalies };
+  }
+  if (exact !== undefined) {
+    const divergences = reconcileExactFiscalResult(fiscalComputation.result, exact);
+    if (divergences.length > 0) {
+      return { status: "blocked", anomalies: divergences.map((message) => ({ severity: "error" as const, field: "article39cExact", message: `${EXACT_RECONCILIATION_FAILED_CODE}: ${message}` })) };
+    }
   }
 
   const fiscalResult = fiscalComputation.result;

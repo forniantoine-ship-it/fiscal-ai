@@ -1,3 +1,4 @@
+import { evaluateRentReconciliation, parseRentReconciliationState } from "@/lib/lmnp/services/f013/v2/f013-v2-state";
 import { LMNP_ROUTES } from "../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../types";
 import { buildChargesExtraction, chargesFromDraft } from "./charges-profile";
@@ -144,6 +145,13 @@ function isAmortissementComplete(draft?: DeclarationDraft, fiscalYear?: number):
  * `isChargesComplete` ci-dessus (refléter exactement ce que F-006 bloquerait).
  */
 function isRevenusComplete(draft?: DeclarationDraft, fiscalYear?: number): boolean {
+  // INT-5 — un dossier engagé dans F013 v2 (état de l'exercice présent) a ses recettes établies par le rapprochement v2 :
+  // l'étape est complète si ce rapprochement est SUPPORTED et sa confirmation fraîche. `revenusAssistant` (v1) n'est jamais
+  // lu pour un dossier v2 ; l'exactitude fine (stocks, qualifications…) est jugée par le gate exact à la génération.
+  const v2 = parseRentReconciliationState(draft?.rentReconciliationV2);
+  if (v2 !== null && fiscalYear !== undefined && v2.facts.fiscalYear === fiscalYear) {
+    return evaluateRentReconciliation(v2, { propertyId: v2.facts.propertyId, fiscalYear }).confirmationFresh;
+  }
   if (!draft?.revenusConfirmedAt) return false;
   const blocking = draft.revenusAssistant?.anomalies?.some(
     (a) => a.severity === "fatal" || a.severity === "error",

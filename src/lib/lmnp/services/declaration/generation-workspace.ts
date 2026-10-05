@@ -23,6 +23,8 @@
 import type { Anomaly } from "@/runtime";
 import { inventoryOfBiens } from "./generation-bilan-inputs";
 import { exactOnlyChargeRecordIds, LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE } from "./legacy-proxy-guard";
+import { applyExactContractToEngineInputs, EXACT_RECONCILIATION_FAILED_CODE, reconcileExactFiscalResult, resolveExactSwitch, withExactPropertyRevenues } from "./exact-39c-switch";
+import { resolveNoAllocationChargesAttestation } from "@/lib/lmnp/dossier/multi-property-attestations";
 import { produceFiscalResult as produceFiscalResultReal } from "@/runtime/capabilities/f006/produce-fiscal-result";
 import { sumEuros } from "@/runtime/capabilities/f006/cents";
 import type { BilanInputs } from "@/runtime/capabilities/bilan/types";
@@ -115,6 +117,12 @@ function continuityCarriesOpening(continuity: WorkspaceGenerationOptions["contin
   );
 }
 
+/** Lecture de l'attestation sous la sémantique exacte, au vocabulaire de la garde de domaine ADR-011. */
+function exactNoAllocationState(attestations: Parameters<typeof resolveNoAllocationChargesAttestation>[0]): "confirmed" | "declared_out_of_domain" | "absent" {
+  const state = resolveNoAllocationChargesAttestation(attestations);
+  return state === "confirmed" ? "confirmed" : state === "absent" ? "absent" : "declared_out_of_domain";
+}
+
 function blockedFromReasons(blockingReasons: WorkspaceBlockingReason[]): WorkspaceGenerationResult {
   return {
     status: "blocked",
@@ -184,8 +192,15 @@ function generateFromWorkspace(
   options: WorkspaceGenerationOptions,
   enforceDomain: boolean,
 ): WorkspaceGenerationResult {
+  // INT-5 — UNE décision explicite par dossier : EXACT_39C_V2 (engagement F013 v2) ou LEGACY_PROXY. Jamais de mélange.
+  const switchResolution = resolveExactSwitch(workspace);
+  if (switchResolution.mode === "EXACT_39C_V2" && switchResolution.status === "BLOCKED") {
+    // Gate rouge : BLOCAGE, aucun repli sur le proxy historique.
+    return blockedFromReasons(switchResolution.reasons.map((code) => ({ code })));
+  }
+  const exact = switchResolution.mode === "EXACT_39C_V2" ? switchResolution.contract : undefined;
   // INT-4.1 — le proxy historique ne lit ni charge d'activité globale ni avis de CFE : refus explicite plutôt qu'omission.
-  const omitted = exactOnlyChargeRecordIds(workspace.declarationDraft, workspace.fiscalYear.year);
+  const omitted = exact === undefined ? exactOnlyChargeRecordIds(workspace.declarationDraft, workspace.fiscalYear.year) : [];
   if (omitted.length > 0) {
     return blockedFromReasons([{ code: LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE, message: `charges collectées non lisibles par le calcul historique : ${omitted.join(", ")}` }]);
   }
@@ -201,6 +216,7 @@ function generateFromWorkspace(
       options.dispense2033AIntake,
       options.continuity,
       options.fiscalYearOpening,
+      exact,
     );
   }
   if (view.mode === "unresolved") return blockedFromReasons([{ code: view.reason }]);
@@ -219,6 +235,7 @@ function generateFromWorkspace(
       options.dispense2033AIntake,
       options.continuity,
       options.fiscalYearOpening,
+      exact,
     );
   }
   // Scoped mono refusé par ses propres invariants (charges à revoir, documents non attribués…) : refus structuré, jamais
@@ -267,7 +284,7 @@ function generateFromWorkspace(
     if (mode !== undefined) entryModes[propertyId] = mode;
   }
 
-  const collection = collectPropertyFiscalContributions(workspace, { entryModes });
+  const collection = collectPropertyFiscalContributions(exact !== undefined ? withExactPropertyRevenues(workspace, exact) : workspace, { entryModes });
   if (collection.status === "blocked") return block(collection.reasons);
   const { contributions } = collection;
 
@@ -283,12 +300,25 @@ function generateFromWorkspace(
   const consolidation = consolidateFiscalContributions(activity, contributions);
   const reasons: WorkspaceBlockingReason[] = [...consolidation.blockingReasons];
   // ARB-7 bis : le stock d'amortissements reportés est un stock d'ACTIVITÉ ; sa consommation par bien n'est pas établie.
-  if ((stocks?.amortissementsReportes ?? 0) > 0) reasons.push({ code: MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED, field: "stocksOuverture.amortissementsReportes" });
+  // INT-5 : en exact, l'ARD d'ouverture est un stock GLOBAL démontré par le gate (jamais réparti) ; l'ARD GÉNÉRÉE reste bloquée plus bas.
+  if (exact === undefined && (stocks?.amortissementsReportes ?? 0) > 0) reasons.push({ code: MULTI_PROPERTY_HISTORICAL_ARD_NOT_SUPPORTED, field: "stocksOuverture.amortissementsReportes" });
   if (consolidation.status === "blocked" || reasons.length > 0) return block(reasons);
 
   // ADR-011 — domaine vérifié AVANT tout calcul fiscal : un stock d'ouverture ou un indice d'antériorité/reprise bloque, F-006 n'est pas appelé.
   if (enforceDomain) {
-    const preCalculation = evaluateMultiPropertyDomain(multiPropertyDomainFactsFromWorkspace(workspace, openingInputs));
+    const baseFacts = multiPropertyDomainFactsFromWorkspace(workspace, openingInputs);
+    const preCalculation = evaluateMultiPropertyDomain(
+      exact === undefined
+        ? baseFacts
+        : {
+            ...baseFacts,
+            exactEngine: true,
+            // INT-5 : sémantique exacte « aucune charge à répartir entre les biens » (ancienne confirmation incluse a fortiori).
+            ...(baseFacts.attestations !== undefined
+              ? { attestations: { ...baseFacts.attestations, noCommonCharges: exactNoAllocationState(workspace.declarationDraft?.multiPropertyAttestations) } }
+              : {}),
+          },
+    );
     if (preCalculation.status === "UNSUPPORTED") {
       return blockedFromReasons(preCalculation.reasons.map((reason) => ({
         code: reason.code,
@@ -300,9 +330,16 @@ function generateFromWorkspace(
 
   // F-006 : UN SEUL appel, sur l'activité consolidée.
   const engine = options.engine?.produceFiscalResult ?? produceFiscalResultReal;
-  const fiscalComputation = engine(buildFiscalEngineInputsFromConsolidation(consolidation.inputs));
+  const baseInputs = buildFiscalEngineInputsFromConsolidation(consolidation.inputs);
+  const fiscalComputation = engine(exact !== undefined ? applyExactContractToEngineInputs(baseInputs, exact) : baseInputs);
   if (!fiscalComputation.result) return { status: "blocked", anomalies: fiscalComputation.anomalies, blockingReasons: [] };
   const fiscalResult = fiscalComputation.result;
+  if (exact !== undefined) {
+    const divergences = reconcileExactFiscalResult(fiscalResult, exact);
+    if (divergences.length > 0) {
+      return blockedFromReasons(divergences.map((message) => ({ code: EXACT_RECONCILIATION_FAILED_CODE, message })));
+    }
+  }
 
   // ARB-7 : résultat global calculable, mais le cycle d'amortissement non déduit par bien (TRF-0035) n'est pas supporté.
   if (fiscalResult.amortNonDeduitExercice > 0) {
@@ -355,8 +392,8 @@ function generateFromWorkspace(
     fiscalYear: exercice,
     // SAV-033 — stock de déficits d'ouverture tel qu'injecté dans l'appel F-006 unique (transport pur, aucune allocation par bien).
     deficitsOuverture: {
-      source: stocks ? "fiscal_year_stocks_ouverture" : "none",
-      deficits: (stocks?.deficits ?? []).map((deficit) => ({ ...deficit })),
+      source: exact !== undefined ? (exact.stocks.deficits.length > 0 ? "fiscal_year_stocks_ouverture" : "none") : stocks ? "fiscal_year_stocks_ouverture" : "none",
+      deficits: (exact !== undefined ? exact.stocks.deficits : stocks?.deficits ?? []).map((deficit) => ({ ...deficit })),
     },
     immobilisationsParBien,
     detailCharges2033B: toConservationDetail(resolveMultiPropertyCharges2033BDetail(contributions)),

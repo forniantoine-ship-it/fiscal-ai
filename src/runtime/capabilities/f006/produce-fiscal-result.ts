@@ -29,12 +29,25 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
   const { resultatAvantAmort } = computeResultatAvantAmort(data);
   // KNOWN DIVERGENCE (39C-FIX-1, SAV-030) : proxy `capacité = max(0, résultat avant amortissement)` ; le moteur exact
   // `computeArticle39c` n'est pas branché (L exact et qualification B / ACTIVITY indisponibles en production).
+  // INT-5 — contrat exact : le résultat agrégé ici DOIT concorder avec celui du moteur exact (même périmètre L / B /
+  // ACTIVITY / autres produits). Une divergence est un refus (jamais corrigée, jamais arbitrée) ; sinon la capacité exacte
+  // remplace le proxy dans l'unique séquence C → D → H → déficits.
+  const exact = input.article39cExact;
+  if (exact !== undefined && Math.abs(round2(resultatAvantAmort - exact.resultatAvantAmort)) > 0.005) {
+    anomalies.push({
+      severity: "error",
+      message: `Divergence entre le résultat avant amortissement agrégé (${resultatAvantAmort} €) et celui du moteur article 39 C exact (${exact.resultatAvantAmort} €) : génération refusée.`,
+      field: "article39cExact.resultatAvantAmort",
+    });
+    return { anomalies };
+  }
   const application = applyAmortissementStocks({
     exercice: input.exerciceFiscal,
     resultatAvantAmort,
     amortCalcule: data.amortCalcule,
     stockDeficitsAnterieurs: input.stockDeficitsAnterieurs,
     stockAmortissementsReportes: input.stockAmortissementsReportes,
+    ...(exact !== undefined ? { capacite: exact.capacite } : {}),
   });
 
   const computedAt = new Date().toISOString();
@@ -119,6 +132,7 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
     amortReportesUtilises: application.amortReportesUtilises,
     resultatFiscal: application.resultatFiscal,
     resultatFiscalAvantDeficits: application.resultatFiscalAvantDeficits,
+    ...(exact !== undefined ? { article39cMode: "EXACT_39C_V2" as const } : {}),
     deficitNouveau: application.deficitNouveau,
     deficitsImputes: application.deficitsImputes,
     perteExceptionnelle: data.perteExceptionnelle,

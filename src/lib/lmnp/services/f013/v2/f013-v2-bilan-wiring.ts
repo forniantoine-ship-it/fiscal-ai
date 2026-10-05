@@ -44,7 +44,10 @@ export type RentBilanConflict = {
 
 export type EffectiveBilanSuperseded =
   | MergeRentInventoryResult["superseded"][number]
-  | { nature: "LOYER_ENCAISSE_D_AVANCE"; kind: "ligne_simple"; montant?: number };
+  | { nature: "LOYER_ENCAISSE_D_AVANCE"; kind: "ligne_simple"; montant?: number }
+  /** INT-5 : `NUL_CONFIRME` du bucket remplacé par le seul composant locatif F013 (les autres postes restent à zéro confirmé). */
+  | { nature: RentalBilanNatureForBucket; kind: "tiers_bucket"; montant: number };
+type RentalBilanNatureForBucket = "LOYER_DU_PAR_LOCATAIRE" | "LOYER_ENCAISSE_D_AVANCE";
 
 export type EffectiveRentBilan = {
   bilan: BilanInputs;
@@ -77,20 +80,21 @@ export function resolveEffectiveBilanWithRentInventory(input: {
     bilan = { ...bilan, lignesSimples: rest };
   }
 
+  // INT-5 — plan de switch appliqué : F013 v2 est l'autorité des deux postes locatifs. `NUL_CONFIRME` sur le bucket ne dit rien
+  // des AUTRES dettes / créances (confirmées nulles) : seul le composant locatif est apporté par l'inventaire (DECLARE). Le
+  // bucket n'est jamais mis à INCONNU, aucune autre dette n'est effacée ; un bucket DECLARE reste soumis au contrôle de
+  // couverture existant (divergence = conflit explicite, jamais arbitrée).
   const conflicts: RentBilanConflict[] = [];
-  const advances = projection.postes.some((p) => p.nature === "LOYER_ENCAISSE_D_AVANCE");
-  const receivables = projection.postes.some((p) => p.nature === "LOYER_DU_PAR_LOCATAIRE");
-  if (advances && bilan.tiers?.dettes?.status === "NUL_CONFIRME") {
-    conflicts.push({
-      code: "TIERS_DETTES_NUL_CONFIRME_VS_F013_ADVANCE",
-      message: "« Aucune dette » est confirmé dans le bilan alors que l'inventaire locatif porte une avance de loyer à la clôture : contradiction non résolue (jamais conservées toutes les deux).",
-    });
+  const sumOf = (nature: RentalBilanNatureForBucket) => projection.postes.filter((p) => p.nature === nature).reduce((n, p) => Math.round((n + p.montant) * 100) / 100, 0);
+  const advances = sumOf("LOYER_ENCAISSE_D_AVANCE");
+  const receivables = sumOf("LOYER_DU_PAR_LOCATAIRE");
+  if (advances > 0 && bilan.tiers?.dettes?.status === "NUL_CONFIRME") {
+    bilan = { ...bilan, tiers: { ...bilan.tiers, dettes: { status: "DECLARE", montant: advances } } };
+    superseded.push({ nature: "LOYER_ENCAISSE_D_AVANCE", kind: "tiers_bucket", montant: advances });
   }
-  if (receivables && bilan.tiers?.creances?.status === "NUL_CONFIRME") {
-    conflicts.push({
-      code: "TIERS_CREANCES_NUL_CONFIRME_VS_F013_RECEIVABLE",
-      message: "« Aucune créance » est confirmé dans le bilan alors que l'inventaire locatif porte une créance de loyer à la clôture : contradiction non résolue.",
-    });
+  if (receivables > 0 && bilan.tiers?.creances?.status === "NUL_CONFIRME") {
+    bilan = { ...bilan, tiers: { ...bilan.tiers, creances: { status: "DECLARE", montant: receivables } } };
+    superseded.push({ nature: "LOYER_DU_PAR_LOCATAIRE", kind: "tiers_bucket", montant: receivables });
   }
 
   const complete = projection.providedNatures.length === 2;
@@ -129,11 +133,11 @@ export type RentalCompetingSource = {
   source: "ventilation_poste" | "ventilation_confirmation_vide" | "ligne_simple_174" | "tiers_bucket";
   ref?: string;
   montant?: number;
-  /** REPLACED/NEUTRALIZED : la valeur de l'inventaire fait foi dès aujourd'hui ; CONFLICT_BLOCKING : bloquant tant que non résolu. */
+  /** REPLACED/NEUTRALIZED : la valeur de l'inventaire fait foi (INT-5 : y compris le composant locatif d'un bucket `NUL_CONFIRME`). */
   resolution: "REPLACED_BY_F013" | "NEUTRALIZED_BY_F013" | "CONFLICT_BLOCKING";
 };
 
-/** Plan appliqué AU SWITCH (INT-5) : jamais exécuté ici. Le bucket n'est jamais mis à INCONNU ; les autres dettes restent intactes. */
+/** Plan de switch — APPLIQUÉ par `resolveEffectiveBilanWithRentInventory` depuis INT-5 (descriptif, audit). Le bucket n'est jamais mis à INCONNU ; les autres dettes restent intactes. */
 export type TiersBucketSwitchPlan = {
   bucket: "dettes" | "creances";
   nature: RentalBilanNature;
@@ -178,11 +182,11 @@ export function describeRentalBilanOwnership(input: {
   const advances = sumOf("LOYER_ENCAISSE_D_AVANCE");
   const receivables = sumOf("LOYER_DU_PAR_LOCATAIRE");
   if (advances > 0 && input.bilan.tiers?.dettes?.status === "NUL_CONFIRME") {
-    competing.push({ nature: "LOYER_ENCAISSE_D_AVANCE", source: "tiers_bucket", ref: "tiers.dettes", resolution: "CONFLICT_BLOCKING" });
+    competing.push({ nature: "LOYER_ENCAISSE_D_AVANCE", source: "tiers_bucket", ref: "tiers.dettes", resolution: "REPLACED_BY_F013" });
     switchPlans.push({ bucket: "dettes", nature: "LOYER_ENCAISSE_D_AVANCE", action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT", resultingBucket: { status: "DECLARE", montant: advances }, otherItemsPreserved: true });
   }
   if (receivables > 0 && input.bilan.tiers?.creances?.status === "NUL_CONFIRME") {
-    competing.push({ nature: "LOYER_DU_PAR_LOCATAIRE", source: "tiers_bucket", ref: "tiers.creances", resolution: "CONFLICT_BLOCKING" });
+    competing.push({ nature: "LOYER_DU_PAR_LOCATAIRE", source: "tiers_bucket", ref: "tiers.creances", resolution: "REPLACED_BY_F013" });
     switchPlans.push({ bucket: "creances", nature: "LOYER_DU_PAR_LOCATAIRE", action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT", resultingBucket: { status: "DECLARE", montant: receivables }, otherItemsPreserved: true });
   }
   return { owner: owned.length > 0 ? F013_RENTAL_OWNER : "NOT_APPLICABLE", ownedNatures: owned, competing, switchPlans };

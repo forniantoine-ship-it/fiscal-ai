@@ -3,6 +3,7 @@ import { documentJourneyRoute, LMNP_ROUTES } from "../../routes";
 import type { DeclarationDraft, FiscalEngineOutput, Property } from "../../types";
 import { runDeclarationGeneration, TAXE_FONCIERE_LEGACY_INTEGRITY_UNRESOLVED } from "./run-declaration-generation";
 import { runDeclarationGenerationFromWorkspace } from "./generation-workspace";
+import { resolveFiscalCalculationMode } from "./exact-39c-switch";
 import { resolveWorkspaceReadiness, type WorkspaceReadiness } from "./workspace-readiness";
 import { resolveConsolidationInput } from "../../dossier/bien-draft";
 import { isMultiPropertyWorkspace, resolveWorkspacePropertyMode, type MultiPropertyCapabilities } from "../../dossier/multi-property-activation";
@@ -402,6 +403,24 @@ type GateWorkspace = Pick<PersistedWorkspace, "properties" | "fiscalYear" | "doc
  * serait bloquée, et autorise un nouvel essai si le paiement a déjà été
  * marqué (état coincé historique).
  */
+/**
+ * INT-5 — aperçu de génération du chemin mono. Un dossier engagé dans F013 v2 (calcul EXACT) ne peut être évalué que sur le
+ * dossier complet : l'aperçu passe alors par la génération du workspace (même contrat que la génération réelle) ; sans
+ * workspace, `runDeclarationGeneration` refuse (jamais d'aperçu calculé avec le proxy historique).
+ */
+function previewGeneration(input: Parameters<typeof resolveDeclarationGenerationGate>[0], draft: Parameters<typeof runDeclarationGeneration>[0]) {
+  if (input.workspace !== undefined && resolveFiscalCalculationMode(input.workspace) === "EXACT_39C_V2") {
+    return runDeclarationGenerationFromWorkspace(input.workspace, {
+      stocksOuverture: input.stocksOuverture,
+      bilanInputs: draft?.bilanPatrimonial,
+      dispense2033AIntake: draft?.dispense2033A,
+      continuity: input.continuity,
+      fiscalYearOpening: input.fiscalYearOpening,
+    });
+  }
+  return runDeclarationGeneration(draft, input.fiscalYear, input.stocksOuverture, draft?.bilanPatrimonial, draft?.dispense2033A, input.continuity, input.fiscalYearOpening);
+}
+
 export function resolveDeclarationGenerationGate(input: {
   draft: DeclarationDraft | undefined;
   properties: Property[];
@@ -525,15 +544,7 @@ export function resolveDeclarationGenerationGate(input: {
     // désynchronisait ce preview de la génération réelle pour un exercice
     // en continuité.
     // Lot 5 B2 — même continuité immobilisations que ValidationDocumentStep.
-    const preview = runDeclarationGeneration(
-      draft,
-      input.fiscalYear,
-      input.stocksOuverture,
-      draft?.bilanPatrimonial,
-      draft?.dispense2033A,
-      input.continuity,
-      input.fiscalYearOpening,
-    );
+    const preview = previewGeneration(input, draft);
     if (preview.status === "blocked") {
       return {
         snapshot,
@@ -600,15 +611,7 @@ export function resolveDeclarationGenerationGate(input: {
   // P0-1A — idem : même stocksOuverture que la génération réelle.
   // Lot 5 B2 — idem : même continuité immobilisations.
   // Lot 4F.2 — idem : même fiscalYearOpening que la génération réelle.
-  const preview = runDeclarationGeneration(
-    draft,
-    input.fiscalYear,
-    input.stocksOuverture,
-    draft?.bilanPatrimonial,
-    draft?.dispense2033A,
-    input.continuity,
-    input.fiscalYearOpening,
-  );
+  const preview = previewGeneration(input, draft);
   if (preview.status === "blocked") {
     return {
       snapshot,

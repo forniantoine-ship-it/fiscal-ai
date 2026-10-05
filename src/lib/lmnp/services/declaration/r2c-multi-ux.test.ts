@@ -414,7 +414,8 @@ describe("MB-MULTI-UX-1 — attestations SSI / détention directe / charges comm
     assert.match(html, /régime LMNP pris en charge par L&#x27;Assistant du Réel/);
     assert.match(html, /cotisations sociales des indépendants/);
     assert.match(html, /détenus directement/);
-    assert.match(html, /aucune charge de ce dossier n&#x27;est commune/);
+    // INT-5 : sémantique « aucune charge à répartir entre les biens » (une charge d'activité sans répartition reste admise).
+    assert.match(html, /aucune charge de ce dossier n&#x27;est à répartir entre plusieurs biens/);
     assert.equal((html.match(/data-state="absent"/g) ?? []).length, 3);
     assert.doesNotMatch(html, /vous devez|nous vous recommandons/i);
   });

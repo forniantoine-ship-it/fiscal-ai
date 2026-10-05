@@ -448,20 +448,22 @@ describe("INT-4 — bilan F013 : propriétaire unique des soldes de clôture", (
     assert.deepEqual(c.v.conflits, []);
   });
 
-  it("INT4-21 — `tiers.dettes = NUL_CONFIRME` face à une avance F013 → contradiction EXPLICITE, jamais « aucune dette » + « avance 500 »", () => {
+  it("INT4-21 — `tiers.dettes = NUL_CONFIRME` face à une avance F013 → plan de switch APPLIQUÉ (INT-5) : le composant locatif vient de F013, jamais « aucune dette » + « avance 500 »", () => {
     const legacy: BilanInputs = { ...NEUTRAL, tiers: { dettes: { status: "NUL_CONFIRME" } } };
     const r = effective(legacy, [rentState("A", 12500, 0, 500)]);
-    assert.equal(r.status, "CONFLICT");
-    assert.deepEqual(r.conflicts.map((c) => c.code), ["TIERS_DETTES_NUL_CONFIRME_VS_F013_ADVANCE"]);
+    assert.equal(r.status, "READY");
+    assert.deepEqual(r.conflicts, []);
+    assert.deepEqual(r.bilan.tiers?.dettes, { status: "DECLARE", montant: 500 }, "le bucket n'est jamais mis à INCONNU : seul le composant locatif est apporté");
+    assert.ok(r.superseded.some((x) => x.kind === "tiers_bucket"));
     const patrimoine = assemblePatrimoine(RFS, r.bilan);
-    assert.equal(patrimoine.ventilationTiers.projectionFiable, false, "le conflit reste actif en aval : aucune contradiction finale publiée");
-    const ws = firstYear(monoWorkspace("A", exactBien("A", 12500, {}, {}, 0, 500), { bilanPatrimonial: legacy }));
-    const readiness = pre(ws);
-    assert.equal(readiness.status, "NEEDS_QUALIFICATION");
-    assert.ok(readiness.reasons.includes("BILAN_RENTAL_CONFLICT"));
-    // Même type de contradiction pour une créance.
+    assert.equal(patrimoine.ventilationTiers.projectionFiable, true, "aucune contradiction finale");
+    assert.equal(cases(r.bilan).c174, 500);
+    const ws = firstYear(monoWorkspace("A", exactBien("A", 12500, { taxeFonciere: 7000 }, {}, 0, 500), { bilanPatrimonial: legacy }));
+    assert.equal(pre(ws).status, "READY");
+    // Même règle pour une créance.
     const cc = effective({ ...NEUTRAL, tiers: { creances: { status: "NUL_CONFIRME" } } }, [rentState("A", 11000, 1000)]);
-    assert.deepEqual(cc.conflicts.map((c) => c.code), ["TIERS_CREANCES_NUL_CONFIRME_VS_F013_RECEIVABLE"]);
+    assert.deepEqual(cc.bilan.tiers?.creances, { status: "DECLARE", montant: 1000 });
+    assert.deepEqual(cc.conflicts, []);
   });
 
   it("INT4-22 — multi : A créance 1 000 + B avance 500 → 068 = 1 000 / 174 = 500 ; un bien non validé empêche la publication", () => {

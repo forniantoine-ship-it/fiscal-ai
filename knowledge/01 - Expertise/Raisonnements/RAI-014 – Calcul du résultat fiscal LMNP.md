@@ -28,7 +28,7 @@ Ce Raisonnement est un orchestrateur, pas un simple calcul. Il consomme les sort
 3. Appliquer l'amortissement dans la limite de `C`, puis imputer les déficits antérieurs (TRF-0031, SAV-030)
 4. Produire le FiscalResult (TRF-0032)
 
-> **Note 2026-10-05 — recettes.** TRF-0029 et SAV-028 sont `deprecated` (`LEGACY V1 ONLY`) : la production actuelle (F013 v1) applique encore la logique « encaissements ». Le contrat cible des recettes locatives ordinaires est [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]] (règle : [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]], `approved`). F013 v2 est implémenté mais désactivé et **non branché à F006** : le présent raisonnement n'est pas modifié tant que cette bascule n'est pas décidée et réalisée. Le plafond 39 C reste une correction fiscale distincte, hors F013.
+> **Note 2026-10-05 — recettes.** TRF-0029 et SAV-028 sont `deprecated` (`LEGACY V1 ONLY`) : la production actuelle (F013 v1) applique encore la logique « encaissements ». Le contrat cible des recettes locatives ordinaires est [[TRF-0036 – Rattachement des loyers ordinaires à l'exercice (F013 v2)]] (règle : [[SAV-034 – Rattachement des loyers à l'exercice (créances et avances)]], `approved`). F013 v2 est implémenté mais désactivé et **non branché à F006** : le présent raisonnement n'est pas modifié tant que cette bascule n'est pas décidée et réalisée. **Mise à jour INT-5 (2026-10-05) :** la bascule est réalisée pour un dossier explicitement F013 v2 (capacité exacte, stocks démontrés, gate fail-closed) ; un dossier F013 v1 reste sur la logique historique. Le plafond 39 C reste une correction fiscale distincte, hors F013.
 
 ## Entrées consommées
 

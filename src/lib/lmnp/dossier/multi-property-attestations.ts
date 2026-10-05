@@ -7,7 +7,7 @@
  *
  *   ssi            — l'activité reste dans le LMNP pris en charge, hors situation SSI hors périmètre ;
  *   directHolding  — les logements sont détenus directement dans le périmètre pris en charge ;
- *   noCommonCharges — aucune charge n'est commune à plusieurs biens.
+ *   noCommonCharges — aucune charge n'est à répartir entre plusieurs biens (INT-5 ; auparavant : « aucune charge commune »).
  *
  * Ces libellés sont factuels : ils ne sont ni un conseil fiscal ni une qualification juridique.
  */
@@ -17,7 +17,10 @@ export type MultiPropertyAttestationKind = "ssi" | "directHolding" | "noCommonCh
 export const MULTI_PROPERTY_ATTESTATION_KINDS: readonly MultiPropertyAttestationKind[] = ["ssi", "directHolding", "noCommonCharges"];
 
 /** Version des libellés : à incrémenter si un libellé change (les anciennes réponses restent auditables). */
-export const MULTI_PROPERTY_ATTESTATION_WORDING_VERSION = "2026-10-03.1";
+export const MULTI_PROPERTY_ATTESTATION_WORDING_VERSION = "2026-10-05.exact-1";
+
+/** Version du libellé « aucune charge commune » antérieure à l'INT-5 (réponses anciennes : toujours auditables). */
+export const LEGACY_NO_COMMON_CHARGES_WORDING_VERSION = "2026-10-03.1";
 
 export type MultiPropertyAttestationAnswer = "confirmed" | "declared_out_of_domain";
 
@@ -45,10 +48,13 @@ export const MULTI_PROPERTY_ATTESTATION_WORDING: Readonly<Record<MultiPropertyAt
     confirm: "Je confirme que les logements de ce dossier sont détenus directement dans le périmètre actuellement pris en charge.",
     decline: "Mes logements ne sont pas détenus directement dans ce périmètre.",
   },
+  // INT-5 : sémantique « aucune charge à répartir entre les biens » (une charge qui concerne l'ensemble de l'activité, comme la
+  // comptabilité, n'exige aucune répartition). Une charge commune B ou non qualifiée reste hors domaine.
   noCommonCharges: {
-    label: "Aucune charge commune",
-    confirm: "Je confirme qu'aucune charge de ce dossier n'est commune à plusieurs biens : chaque charge se rattache à un seul bien.",
-    decline: "Certaines charges sont communes à plusieurs biens.",
+    label: "Aucune charge à répartir entre les biens",
+    confirm:
+      "Je confirme qu'aucune charge de ce dossier n'est à répartir entre plusieurs biens : chaque charge se rattache à un seul bien, ou concerne l'ensemble de mon activité sans répartition (par exemple ma comptabilité).",
+    decline: "Certaines charges sont à répartir entre plusieurs biens.",
   },
 };
 
@@ -89,18 +95,14 @@ export function recordMultiPropertyAttestation(
 // l'ensemble de l'activité et qui est définitivement `ACTIVITY` (ex. la comptabilité) n'exige aucune répartition : elle est
 // portée au niveau de l'activité (ADR-011 §11). Une charge commune B (ou non qualifiée) reste hors domaine.
 //
-// Ce module ne change AUCUN comportement productif : `resolveMultiPropertyAttestation` et la garde de domaine ADR-011 lisent
-// toujours `noCommonCharges` comme avant. La nouvelle lecture est consommée uniquement par la readiness exacte dormante.
+// INT-5 : le libellé productif affiché est désormais celui de la sémantique exacte (même clé `noCommonCharges`, version de
+// libellé distincte). `resolveMultiPropertyAttestation` lit toujours confirmed / declared_out_of_domain comme avant ; la lecture
+// fine ci-dessous (ancien refus ambigu à reposer) est consommée par le domaine exact.
 
 /** Version du libellé de la sémantique exacte ; une réponse posée sous cette version n'est jamais lue comme l'ancienne. */
-export const NO_ALLOCATION_CHARGES_WORDING_VERSION = "2026-10-05.exact-1";
+export const NO_ALLOCATION_CHARGES_WORDING_VERSION = MULTI_PROPERTY_ATTESTATION_WORDING_VERSION;
 
-export const NO_ALLOCATION_CHARGES_WORDING = {
-  label: "Aucune charge à répartir entre les biens",
-  confirm:
-    "Je confirme qu'aucune charge de ce dossier n'est à répartir entre plusieurs biens : chaque charge se rattache à un seul bien, ou concerne l'ensemble de mon activité sans répartition (par exemple ma comptabilité).",
-  decline: "Certaines charges sont à répartir entre plusieurs biens.",
-} as const;
+export const NO_ALLOCATION_CHARGES_WORDING = MULTI_PROPERTY_ATTESTATION_WORDING.noCommonCharges;
 
 /**
  * - `confirmed` : aucune charge exigeant une répartition (nouvelle réponse, OU ancienne confirmation « aucune charge commune »

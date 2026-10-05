@@ -105,6 +105,13 @@ export type MultiPropertyDomainFacts = {
   attestations?: Record<MultiPropertyAttestationKind, MultiPropertyAttestationState>;
   /** Faits requis non établis par l'appelant. */
   unverifiable?: readonly string[];
+  /**
+   * INT-5 — dossier calculé par le moteur article 39 C EXACT (gate de switch vert : stocks d'ouverture globaux démontrés,
+   * charges communes ACTIVITY admises, attestation « aucune charge à répartir »). Les motifs que ce moteur a déjà tranchés
+   * (antériorité native, stocks d'ouverture, ARD / déficits consommés) ne sont plus des motifs de domaine ; l'ARD GÉNÉRÉE
+   * (allocation par bien, TRF-0035 non établi), la reprise externe multi et tous les autres motifs restent bloquants.
+   */
+  exactEngine?: true;
 };
 
 /** Traduction des motifs de blocage des seams existants vers les motifs de domaine (seuls ceux qui relèvent du domaine). */
@@ -157,13 +164,15 @@ export function evaluateMultiPropertyDomain(facts: MultiPropertyDomainFacts): Mu
     else if (noCommonCharges === "declared_out_of_domain") push(C.commonChargesNotSupported, { detail: "attestation" });
   }
 
-  for (const indicium of facts.priorYearIndicia ?? []) push(C.notFirstYear, { detail: indicium });
+  if (facts.exactEngine !== true) for (const indicium of facts.priorYearIndicia ?? []) push(C.notFirstYear, { detail: indicium });
   for (const indicium of facts.takeoverIndicia ?? []) push(C.takeoverNotSupported, { detail: indicium });
 
-  if ((facts.openingDeficits ?? []).some((deficit) => positive(deficit.montant))) push(C.priorDeficitNotSupported, { detail: "opening" });
-  if (positive(facts.usedPriorDeficits)) push(C.priorDeficitNotSupported, { detail: "imputed" });
-  if (positive(facts.openingArd)) push(C.historicalArdNotSupported, { detail: "opening" });
-  if (positive(facts.usedHistoricalArd)) push(C.historicalArdNotSupported, { detail: "used" });
+  if (facts.exactEngine !== true) {
+    if ((facts.openingDeficits ?? []).some((deficit) => positive(deficit.montant))) push(C.priorDeficitNotSupported, { detail: "opening" });
+    if (positive(facts.usedPriorDeficits)) push(C.priorDeficitNotSupported, { detail: "imputed" });
+    if (positive(facts.openingArd)) push(C.historicalArdNotSupported, { detail: "opening" });
+    if (positive(facts.usedHistoricalArd)) push(C.historicalArdNotSupported, { detail: "used" });
+  }
   if (positive(facts.generatedArd)) push(C.allocation39cNotSupported);
 
   for (const block of facts.seamBlocks ?? []) {
@@ -280,6 +289,7 @@ export function multiPropertyDomainFactsFromRfs(rfs: FiscalRepresentation): Mult
   const fiscalResult = rfs.fiscalResult;
   const fiscalResultValid = fiscalResult !== undefined && fiscalResult !== null && typeof fiscalResult === "object";
   if (!fiscalResultValid) unverifiable.push("rfs.fiscalResult");
+  const exact = fiscalResultValid && (fiscalResult as { article39cMode?: string }).article39cMode === "EXACT_39C_V2";
   const propertyIds = parBien.flatMap((bloc) => (bloc && typeof bloc === "object" && typeof bloc.propertyId === "string" && bloc.propertyId ? [bloc.propertyId] : []));
   return {
     propertyCount: new Set(propertyIds).size,
@@ -287,6 +297,7 @@ export function multiPropertyDomainFactsFromRfs(rfs: FiscalRepresentation): Mult
     ...(fiscalResultValid ? multiPropertyDomainFactsOfFiscalResult(fiscalResult) : {}),
     ...(openingValid && opening.source !== "none" ? { priorYearIndicia: [`rfs.deficitsOuverture.source=${opening.source}`] } : {}),
     ...(unverifiable.length > 0 ? { unverifiable } : {}),
+    ...(exact ? { exactEngine: true as const } : {}),
   };
 }
 

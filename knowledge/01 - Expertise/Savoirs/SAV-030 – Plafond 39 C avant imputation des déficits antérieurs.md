@@ -103,7 +103,7 @@ Principe : `UNKNOWN QUALIFICATION ≠ 0 ≠ B ≠ ACTIVITY`. Le moteur ne choisi
 
 ## Dépendance F013 v1 / v2
 
-- F013 v2 fournit conceptuellement le bon `L` : loyers acquis N (SAV-034, TRF-0036). État : **IMPLEMENTED BUT OFF**, non branché à F006.
+- F013 v2 fournit conceptuellement le bon `L` : loyers acquis N (SAV-034, TRF-0036). État : **IMPLEMENTED BUT OFF** pour le parcours de saisie. Statut d'implémentation (INT-5, 2026-10-05 — technique, sans nouvelle doctrine) : pour un dossier **explicitement F013 v2** (état `rentReconciliationV2` de l'exercice), F-006 productif consomme la capacité EXACTE `C = max(0, L − B)` du moteur exact (via une seule séquence C → D → H → déficits) et les stocks d'ouverture démontrés ; un dossier F013 v1 reste sur le calcul historique, non recalculé. Un dossier exact dont le gate échoue est BLOQUÉ (aucun repli sur le calcul historique). Le parcours de saisie F013 v2 reste soumis à sa variable de déploiement (`NEXT_PUBLIC_F013_V2_MANUAL`) ; aucun dossier n'est migré.
 - F013 v1 (production) repose sur les encaissements et peut mélanger d'autres produits dans certains chemins d'import. Le proxy V1 n'est **pas** fiscalement équivalent à `L`.
 - Le moteur pur 39 C et son contrat de classification pourront être construits avant ; son branchement productif sur un `L` exact doit tenir compte de F013 v2. Ce Savoir ne réouvre pas F013.
 

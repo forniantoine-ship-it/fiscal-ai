@@ -7,6 +7,12 @@ export type ApplyAmortissementStocksInput = {
   amortCalcule: number;
   stockDeficitsAnterieurs?: StockDeficit[];
   stockAmortissementsReportes?: number;
+  /**
+   * INT-5 — capacité 39 C EXACTE `C = max(0, L − B)` fournie par le moteur exact (euros). Absente = proxy historique
+   * (`max(0, résultat avant amortissement)`), strictement inchangé. Jamais recalculée ici : l'ordre C → D → H → déficits reste
+   * porté par `applyArticle39cSequence` (source unique), qu'il y ait proxy ou capacité exacte.
+   */
+  capacite?: number;
 };
 
 /**
@@ -30,7 +36,7 @@ export function applyAmortissementStocks(
   const deficitsAnterieurs = input.stockDeficitsAnterieurs ?? [];
   const sequence = applyArticle39cSequence({
     exercice: input.exercice,
-    capacite: Math.max(0, input.resultatAvantAmort),
+    capacite: input.capacite ?? Math.max(0, input.resultatAvantAmort),
     resultatAvantAmort: input.resultatAvantAmort,
     currentDepreciation: input.amortCalcule,
     historicalArdStock: stockAmortInitial,

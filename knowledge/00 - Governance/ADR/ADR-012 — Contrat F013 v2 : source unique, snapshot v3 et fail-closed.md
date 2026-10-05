@@ -3,7 +3,7 @@ id: ADR-012
 title: "Contrat F013 v2 : source unique, snapshot v3 et fail-closed"
 type: adr
 status: accepted
-version: "1.2"
+version: "1.3"
 created: 2026-10-05
 updated: 2026-10-05
 owner: product-owner
@@ -21,6 +21,9 @@ triggers: [F013-V2.1, F013-V2.2, F013-V2.2.1, F013-V2.3, F013-HOTFIX-1, F013-V2.
 > **L'acceptation de cet ADR ne signifie PAS `F013 V2 ACTIVATED`.** F013 v2 reste **OFF**. Conditions d'activation toujours applicables : (1) la continuité N → N+1 n'est **pas implémentée** et le garde `f013_v2_continuity_not_supported` reste **actif** ; (2) la projection F013 v2 → bilan n'est **pas branchée** en production ; (3) les saisies de bilan concurrentes ne sont **pas neutralisées** ; (4) la protection anti-downgrade **distante** doit être **rechecked** avant toute activation ; (5) aucun drapeau d'activation n'est posé.
 
 > **Mise à jour du statut d'implémentation (INT-4 / INT-4.1, 2026-10-05) — statut technique, aucune nouvelle doctrine.** Pour un dossier **explicitement F013 v2**, la projection des soldes de CLÔTURE vers le bilan est désormais **implémentée et branchée dans l'assemblage de génération** (`rentReconciliationV2` reste la source unique : créance de clôture → `LOYER_DU_PAR_LOCATAIRE` / case 068, avance de clôture → `LOYER_ENCAISSE_D_AVANCE` / case 174 ; `UNKNOWN ≠ 0`, `PROPOSED ≠ VALIDATED`). Les sources de bilan concurrentes **de même nature** (postes de ventilation, confirmation « aucun poste », ligne simple de la case 174) sont remplacées ou neutralisées par la valeur de l'inventaire et listées ; une contradiction non résoluble (`tiers.dettes` ou `tiers.creances` = `NUL_CONFIRME` face à une avance ou une créance) reste **bloquante** et n'efface jamais les autres dettes ou créances du bucket. Sans état F013 v2 de l'exercice (tout dossier legacy / F013 v1), le bilan est strictement inchangé. Les conditions d'activation (2) et (3) ci-dessus sont donc techniquement implémentées ; **leur levée formelle, comme celle de (4) (preuve distante non rechecked) et de (5) (aucun drapeau posé), est à constater par le Product Owner. F013 v2 reste globalement OFF ; F006 productif n'est pas branché sur F013 v2 ; aucun dossier n'est migré.**
+
+> **Mise à jour du statut d'implémentation (INT-5, 2026-10-05) — statut technique.** Pour un dossier explicitement F013 v2, F006 productif est désormais branché sur le calcul article 39 C exact (voir SAV-030, TRF-0036) et le plan de bilan est appliqué : `NUL_CONFIRME` d'un bucket `tiers.*` est remplacé par le seul composant locatif F013 (jamais mis à INCONNU, les autres postes restent intacts). Le contrôle distant anti-downgrade a été constaté par le Product Owner sur le projet `jviyqblcjuqennfvgrdg` (fonction et deux triggers présents et activés, ACL explicites sans PUBLIC / anon / authenticated) : c'est un constat daté, sans lien technique prouvé avec le déploiement courant ni contrôle continu. Un dossier F013 v1 reste calculé par le proxy historique ; aucun dossier n'est migré ; la variable de déploiement du parcours de saisie n'est pas modifiée par le code.
+
 
 # Contexte
 

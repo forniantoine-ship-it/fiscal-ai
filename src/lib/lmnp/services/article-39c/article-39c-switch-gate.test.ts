@@ -130,21 +130,21 @@ describe("INT-4.1 — ACTIVITY globale et charges communes : admission précise"
     assert.deepEqual(globals[0]!.scope, ACTIVITY);
   });
 
-  it("4.1-06 — même dossier sur OLD_PROXY : le garde productif reste FERMÉ (aucune charge d'activité omise en silence)", async () => {
-    const mono = await addAccounting(firstYear(monoWorkspace("A", exactBien("A", 10000, { taxeFonciere: 7000 }, { dotation: 0 }), { bilanPatrimonial: NEUTRAL })));
-    assert.equal(pre(mono).status, "READY", "prêt pour le futur moteur exact");
-    const viaWorkspace = runDeclarationGenerationFromWorkspace(mono, {});
+  it("4.1-06 — dossier LEGACY (OLD_PROXY) : le garde productif reste FERMÉ (aucune charge d'activité omise en silence) ; dossier exact : jamais de repli proxy", async () => {
+    const legacyBien = bien("A", { collected: collected({ taxeFonciere: 7000 }), logement: {}, dotation: 0 });
+    const legacy = await addAccounting(monoWorkspace("A", legacyBien, { revenusAssistant: { exerciceFiscal: YEAR, totalRecettes: 12000 } }));
+    const viaWorkspace = runDeclarationGenerationFromWorkspace(legacy, {});
     assert.equal(viaWorkspace.status, "blocked");
     assert.ok(viaWorkspace.status === "blocked" && "blockingReasons" in viaWorkspace && viaWorkspace.blockingReasons.some((b) => b.code === LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE));
-    const direct = runDeclarationGeneration(mono.declarationDraft, YEAR);
-    assert.equal(direct.status, "blocked");
+    const direct = runDeclarationGeneration(legacy.declarationDraft, YEAR);
     assert.ok(direct.status === "blocked" && direct.anomalies.some((a) => a.message.includes(LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE)));
-    // Multi : idem.
-    const multi = await addAccounting(firstYear(multiBase()));
-    const m = runDeclarationGenerationFromWorkspace(multi, {});
-    assert.ok(m.status === "blocked" && "blockingReasons" in m && m.blockingReasons.some((b) => b.code === LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE));
-    // Une simple réponse de nature (PNO…) ne crée aucune charge : le garde ne se déclenche pas.
-    const plain = firstYear(monoWorkspace("A", exactBien("A", 10000, { taxeFonciere: 7000 }, { dotation: 0 })));
+    // Dossier exact : le calcul exact consomme la charge ; ni le garde OLD_PROXY ni un repli ne s'appliquent.
+    const exactWs = await addAccounting(firstYear(monoWorkspace("A", exactBien("A", 10000, { taxeFonciere: 7000 }, { dotation: 0 }), { bilanPatrimonial: NEUTRAL })));
+    assert.equal(pre(exactWs).status, "READY");
+    const exactRun = runDeclarationGenerationFromWorkspace(exactWs, {});
+    assert.ok(!(exactRun.status === "blocked" && "blockingReasons" in exactRun && exactRun.blockingReasons.some((b) => b.code === LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE)));
+    // Une simple réponse de nature (PNO…) ne crée aucune charge : le garde ne se déclenche pas sur un dossier legacy.
+    const plain = monoWorkspace("A", legacyBien, { revenusAssistant: { exerciceFiscal: YEAR, totalRecettes: 12000 } });
     const g = runDeclarationGenerationFromWorkspace(plain, {});
     assert.ok(!(g.status === "blocked" && "blockingReasons" in g && g.blockingReasons.some((b) => b.code === LEGACY_PROXY_OMITS_EXACT_CHARGES_CODE)));
   });
@@ -215,13 +215,13 @@ describe("INT-4.1 — bilan : ownership F013 des postes locatifs, autres dettes 
   } as unknown as FiscalRepresentation;
   const states = [rentState("A", 12500, 0, 500)];
 
-  it("4.1-11 — avance F013 + `tiers.dettes = NUL_CONFIRME` → le pré-switch BLOQUE (jamais « aucune dette » + « avance 500 »)", () => {
+  it("4.1-11 — avance F013 + `tiers.dettes = NUL_CONFIRME` : le plan est APPLIQUÉ au switch (INT-5), plus aucune contradiction, le pré-switch est vert", () => {
     const ws = firstYear(monoWorkspace("A", exactBien("A", 12500, { taxeFonciere: 7000 }, {}, 0, 500), { bilanPatrimonial: { ...NEUTRAL, tiers: { dettes: { status: "NUL_CONFIRME" } } } }));
     const g = gate(ws);
-    assert.equal(g.canSwitch, false);
-    assert.equal(g.preSwitch.status, "NEEDS_QUALIFICATION");
-    assert.ok(g.blockers.includes("BILAN_RENTAL_CONFLICT"));
-    assert.equal(g.f013V2ActivationBlocker, "DOSSIER_NOT_READY");
+    assert.equal(g.preSwitch.status, "READY");
+    assert.deepEqual(g.blockers, []);
+    assert.deepEqual(g.preSwitch.bilan.conflicts, []);
+    assert.ok(g.preSwitch.bilan.superseded >= 1);
   });
 
   it("4.1-12 — l'ownership identifie PRÉCISÉMENT chaque source concurrente du poste locatif", () => {
@@ -236,24 +236,26 @@ describe("INT-4.1 — bilan : ownership F013 des postes locatifs, autres dettes 
     assert.deepEqual(o.ownedNatures.slice().sort(), ["LOYER_DU_PAR_LOCATAIRE", "LOYER_ENCAISSE_D_AVANCE"]);
     assert.deepEqual(
       o.competing.map((c) => [c.source, c.ref ?? null, c.resolution]),
-      [["ventilation_poste", "legacy-ac", "REPLACED_BY_F013"], ["ligne_simple_174", null, "NEUTRALIZED_BY_F013"], ["tiers_bucket", "tiers.dettes", "CONFLICT_BLOCKING"]],
+      [["ventilation_poste", "legacy-ac", "REPLACED_BY_F013"], ["ligne_simple_174", null, "NEUTRALIZED_BY_F013"], ["tiers_bucket", "tiers.dettes", "REPLACED_BY_F013"]],
     );
     assert.ok(!o.competing.some((c) => c.ref === "fourn"), "une dette fournisseur n'est jamais une source concurrente du loyer");
     assert.deepEqual(o.switchPlans, [{ bucket: "dettes", nature: "LOYER_ENCAISSE_D_AVANCE", action: "REPLACE_NUL_CONFIRME_BY_F013_RENTAL_COMPONENT", resultingBucket: { status: "DECLARE", montant: 500 }, otherItemsPreserved: true }]);
     assert.equal(describeRentalBilanOwnership({ bilan: legacy, fiscalYear: YEAR, propertyIds: ["A"], states: [] }).owner, "NOT_APPLICABLE");
   });
 
-  it("4.1-13 — les autres dettes restent INTACTES : le bucket n'est jamais mis à INCONNU, les postes non locatifs sont conservés", () => {
-    const tiers = { dettes: { status: "NUL_CONFIRME" } } as const;
+  it("4.1-13 — les autres dettes restent INTACTES : bucket DECLARE conservé tel quel, postes non locatifs conservés, jamais INCONNU", () => {
+    const tiers = { dettes: { status: "DECLARE", montant: 700 } } as const;
     const legacy: BilanInputs = { ...NEUTRAL, tiers, ventilationTiers: { postes: [{ id: "legacy-ac", montant: 500, nature: "LOYER_ENCAISSE_D_AVANCE" }, { id: "fourn", montant: 200, nature: "FOURNISSEUR_NON_PAYE" }] } };
     const eff = resolveEffectiveBilanWithRentInventory({ bilan: legacy, fiscalYear: YEAR, propertyIds: ["A"], states });
-    assert.equal(eff.bilan.tiers, tiers, "le bucket n'est pas modifié (ni effacé ni mis à INCONNU)");
+    assert.equal(eff.bilan.tiers, tiers, "un bucket DECLARE n'est pas modifié (ni effacé ni mis à INCONNU)");
     const patrimoine = assemblePatrimoine(RFS, eff.bilan);
     const cases = patrimoine.ventilationTiers.cases;
     assert.deepEqual([cases.fournisseurs.status, (cases.fournisseurs as { montant: number }).montant], ["DECLARE", 200]);
     assert.equal((cases.produitsConstatesAvance as { montant: number }).montant, 500, "avance comptée une seule fois");
-    const plan = describeRentalBilanOwnership({ bilan: legacy, fiscalYear: YEAR, propertyIds: ["A"], states }).switchPlans[0]!;
-    assert.equal(plan.resultingBucket.status, "DECLARE");
+    assert.deepEqual(patrimoine.ventilationTiers.conflits, [], "bucket 700 = 200 + 500 : couverture complète");
+    // NUL_CONFIRME : seul le composant locatif est apporté ; le bucket n'est jamais INCONNU.
+    const plan = describeRentalBilanOwnership({ bilan: { ...NEUTRAL, tiers: { dettes: { status: "NUL_CONFIRME" } } }, fiscalYear: YEAR, propertyIds: ["A"], states }).switchPlans[0]!;
+    assert.deepEqual(plan.resultingBucket, { status: "DECLARE", montant: 500 });
     assert.equal(plan.otherItemsPreserved, true);
   });
 });

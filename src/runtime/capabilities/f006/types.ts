@@ -143,6 +143,13 @@ export type FiscalEngineInputs = {
   stockAmortissementsReportes?: number;
   /** TRF-0027 — perte exceptionnelle composant sorti (0 si non applicable). */
   perteExceptionnelle?: number;
+  /**
+   * INT-5 — contrat EXACT article 39 C (dossier explicitement F013 v2) : capacité `C = max(0, L − B)` déterminée UNE fois par le
+   * moteur exact (`computeArticle39c`) et résultat global avant amortissement exact. F-006 ne requalifie rien : il vérifie que
+   * son agrégation concorde avec ce résultat (sinon refus, jamais de correction silencieuse) et fournit `capacite` à
+   * l'unique séquence C → D → H → déficits. Absent = proxy historique (dossiers legacy, strictement inchangés).
+   */
+  article39cExact?: { capacite: number; resultatAvantAmort: number };
 };
 
 export type AggregatedFiscalData = {
@@ -265,6 +272,8 @@ export type FiscalResult = {
    * à ce champ ne l'ont pas ; le moteur de production le renseigne toujours.
    */
   resultatFiscalAvantDeficits?: number;
+  /** INT-5 — mode de calcul de la capacité 39 C : `EXACT_39C_V2` (moteur exact) ou `LEGACY_PROXY` (historique). Absent = legacy. */
+  article39cMode?: "EXACT_39C_V2" | "LEGACY_PROXY";
   deficitNouveau: number;
   deficitsImputes: number;
   perteExceptionnelle: number;

@@ -8,6 +8,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { MULTI_PROPERTY_CAPABILITIES } from "@/lib/lmnp/dossier/multi-property-activation";
+import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
+import { bien as exactBienDraft, collected as exactCollected } from "@/lib/lmnp/services/article-39c/article-39c-test-fixtures";
 import { canCloseFiscalYear, planNextDeclarationDraft } from "@/lib/lmnp/services/dossier/fiscal-year-cycle";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
 import { createInMemoryFiscalYearTransitionStore } from "@/lib/lmnp/services/fiscal-year-transition/in-memory-store";
@@ -34,7 +36,7 @@ import {
 import { evaluateF013V2Continuity } from "./f013-v2-transition-guard";
 
 const NOW = "2026-09-21T20:00:00.000Z";
-const N = 2025;
+const N = 2026;
 const DOSSIER = "dossier-1";
 const eur = (n: number) => Math.round(n * 100);
 const ok = <T extends { ok: boolean }>(r: T): Extract<T, { ok: true }> => {
@@ -84,12 +86,36 @@ function closableDraft(): DeclarationDraft {
   return { ...draft, fiscalResult: g.fiscalResult, rfs: g.rfs } as DeclarationDraft;
 }
 const prop = (id: string) => ({ id, label: id, address: "1 rue X", city: "Lyon", postalCode: "69000" });
+/**
+ * INT-5 — un dossier portant un état F013 v2 est calculé par le moteur EXACT (jamais le proxy) : sa génération de référence doit
+ * donc être exacte. La fixture v2 est un dossier exact complet (F012 confirmé et réconcilié, F010 / F014 validés, première
+ * année déclarée) dont la génération de référence est produite par la génération du dossier — comme en production.
+ */
 function monoWs(state?: RentReconciliationV2State): PersistedWorkspace {
   const d = closableDraft();
-  return {
+  const base = (draft: DeclarationDraft): PersistedWorkspace => ({
     fiscalYear: baseFy(), properties: [prop("prop-1")], documents: [], extractions: [], validationItems: [], ledgerEntries: [],
-    declarationDraft: state ? { ...d, rentReconciliationV2: state } : d, aiActivityFeed: [],
-  };
+    declarationDraft: draft, aiActivityFeed: [],
+  });
+  if (!state) return base(d);
+  const { propertyId: _id, completedSteps: _steps, ...exactFields } = exactBienDraft("prop-1", { rent: state, collected: exactCollected({ taxeFonciere: 2000 }), logement: {}, dotation: 1500 });
+  void _id; void _steps;
+  const draft = {
+    ...d,
+    ...exactFields,
+    logementAmortissement: { ...d.logementAmortissement!, exerciceFiscal: N },
+    amortissementAssistant: { exerciceFiscal: N, totalDotations: 1500, status: "validated" },
+    revenusAssistant: undefined,
+    revenusConfirmedAt: undefined,
+    rentReconciliationV2: state,
+  } as DeclarationDraft;
+  delete (draft as { fiscalResult?: unknown }).fiscalResult;
+  delete (draft as { rfs?: unknown }).rfs;
+  const generated = runDeclarationGenerationFromWorkspace(base(draft), {});
+  // État F013 non définitif (UNKNOWN / PROPOSED / confirmation périmée…) : le calcul exact REFUSE (aucun repli sur le proxy) ;
+  // le dossier garde alors une génération de référence ancienne, et la clôture doit être refusée (tests de refus ci-dessous).
+  if (generated.status !== "generated") return base({ ...draft, fiscalResult: d.fiscalResult, rfs: d.rfs } as DeclarationDraft);
+  return base({ ...draft, fiscalResult: generated.fiscalResult, rfs: generated.rfs } as DeclarationDraft);
 }
 const prepare = (ws: PersistedWorkspace) => prepareFiscalYearTransitionCandidate({ workspace: ws, dossierId: DOSSIER, now: NOW, nextFiscalYearId: "fy-next" });
 const mono = (state?: RentReconciliationV2State) => ({ fiscalYear: { year: N, propertyIds: ["prop-1"] }, declarationDraft: state ? { completedSteps: [], rentReconciliationV2: state } : undefined });

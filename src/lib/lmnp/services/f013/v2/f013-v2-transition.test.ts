@@ -16,6 +16,8 @@ import {
 } from "@/lib/lmnp/services/fiscal-year-transition/transition-handler";
 import type { TransitionCommitResult } from "@/lib/lmnp/services/fiscal-year-transition/types";
 import { runDeclarationGeneration } from "@/lib/lmnp/services/declaration/run-declaration-generation";
+import { runDeclarationGenerationFromWorkspace } from "@/lib/lmnp/services/declaration/generation-workspace";
+import { bien as exactBienDraft, collected as exactCollected } from "@/lib/lmnp/services/article-39c/article-39c-test-fixtures";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { lmnpReducer, type LmnpState } from "@/lib/lmnp/store/reducer";
 import { parseWorkspaceSnapshot, serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
@@ -32,7 +34,7 @@ import {
 } from "./f013-v2-state";
 
 const NOW = "2026-09-21T20:00:00.000Z";
-const YEAR = 2025;
+const YEAR = 2026;
 const DOSSIER = "dossier-1";
 const OWNER = "user-owner";
 const eur = (n: number) => Math.round(n * 100);
@@ -82,15 +84,37 @@ function closableDraft(): DeclarationDraft {
   if (generation.status !== "generated") throw new Error("unreachable");
   return { ...draft, fiscalResult: generation.fiscalResult, rfs: generation.rfs } as DeclarationDraft;
 }
+/**
+ * INT-5 — un dossier portant un état F013 v2 est calculé par le moteur EXACT : sa génération de référence est produite par la
+ * génération du dossier (F012 confirmé et réconcilié, F010 / F014 validés, première année déclarée), comme en production. Un
+ * état non définitif fait REFUSER le calcul exact (aucun repli sur le proxy) : le dossier garde alors sa génération ancienne.
+ */
 function closableWorkspace(rent?: RentReconciliationV2State): PersistedWorkspace {
   const draft = closableDraft();
-  return {
+  const make = (declarationDraft: DeclarationDraft): PersistedWorkspace => ({
     fiscalYear: baseFiscalYear(),
     properties: [{ id: "prop-1", label: "Mon bien", address: "1 rue X", city: "Lyon", postalCode: "69000" }],
     documents: [], extractions: [], validationItems: [], ledgerEntries: [],
-    declarationDraft: rent ? { ...draft, rentReconciliationV2: rent } : draft,
+    declarationDraft,
     aiActivityFeed: [],
-  };
+  });
+  if (!rent) return make(draft);
+  const { propertyId: _id, completedSteps: _steps, ...exactFields } = exactBienDraft("prop-1", { rent, collected: exactCollected({ taxeFonciere: 2000 }), logement: {}, dotation: 1500 });
+  void _id; void _steps;
+  const exactDraft = {
+    ...draft,
+    ...exactFields,
+    logementAmortissement: { ...draft.logementAmortissement!, exerciceFiscal: YEAR },
+    amortissementAssistant: { exerciceFiscal: YEAR, totalDotations: 1500, status: "validated" },
+    revenusAssistant: undefined,
+    revenusConfirmedAt: undefined,
+    rentReconciliationV2: rent,
+  } as DeclarationDraft;
+  delete (exactDraft as { fiscalResult?: unknown }).fiscalResult;
+  delete (exactDraft as { rfs?: unknown }).rfs;
+  const generated = runDeclarationGenerationFromWorkspace(make(exactDraft), {});
+  if (generated.status !== "generated") return make({ ...exactDraft, fiscalResult: draft.fiscalResult, rfs: draft.rfs } as DeclarationDraft);
+  return make({ ...exactDraft, fiscalResult: generated.fiscalResult, rfs: generated.rfs } as DeclarationDraft);
 }
 const prepare = (workspace: PersistedWorkspace) =>
   prepareFiscalYearTransitionCandidate({ workspace, dossierId: DOSSIER, now: NOW, nextFiscalYearId: "fy-next" });

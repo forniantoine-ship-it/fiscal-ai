@@ -35,6 +35,7 @@ function walk(dir: string, out: string[] = []): string[] {
  */
 const PERSISTENCE_LEAVES = ["qualification-store", "qualification-draft-carriage"];
 const UI_BOUNDARY = join("components", "lmnp", "assistants", "Article39cQualificationCards.tsx");
+const SWITCH_BOUNDARY = join("lib", "lmnp", "services", "declaration", "exact-39c-switch.ts");
 const UI_TARGETS = ["qualification-ui-model", "questions", "qualification-writers"];
 
 describe("INT-1/INT-2 — non-activation : graphe d'imports", () => {
@@ -43,11 +44,15 @@ describe("INT-1/INT-2 — non-activation : graphe d'imports", () => {
     for (const file of walk(SRC)) {
       const rel = relative(SRC, file);
       if (rel.startsWith(ADAPTER_DIR + sep)) continue;
+      // Les tests d'autres domaines peuvent réutiliser les fixtures de dossiers exacts : ils ne sont pas du code productif.
+      if (/\.test\.tsx?$/.test(rel)) continue;
       const text = readFileSync(file, "utf8");
       const targets = [...text.matchAll(/article-39c\/([a-z0-9-]+)/g)].map((m) => m[1]!);
       // INT-4 : UNE seule frontière UI — la carte de qualification importe le modèle d'interface, les questions et les
       // writers (jamais un adapter, le moteur, la consolidation ni la readiness).
-      const allowed = rel === UI_BOUNDARY ? [...PERSISTENCE_LEAVES, ...UI_TARGETS] : PERSISTENCE_LEAVES;
+      // INT-5 : UNE seule frontière productive vers le moteur exact — le module de switch, qui n'importe que le gate final
+      // (jamais un adapter, le moteur ni la consolidation directement) et les feuilles de persistance.
+      const allowed = rel === UI_BOUNDARY ? [...PERSISTENCE_LEAVES, ...UI_TARGETS] : rel === SWITCH_BOUNDARY ? [...PERSISTENCE_LEAVES, "switch-gate"] : PERSISTENCE_LEAVES;
       if (targets.some((t) => !allowed.includes(t))) offenders.push(rel);
     }
     assert.deepEqual(offenders, []);
