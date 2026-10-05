@@ -100,6 +100,13 @@ export type F012Article39cInput = {
   knownLoanIds?: readonly string[];
 };
 
+/**
+ * Frais bancaires que le client a explicitement déclarés identiques à des frais de prêt F011 (fait lié à une ligne, un prêt
+ * et une empreinte). Distincte de `AX-009:f011_overlap` (ligne « divers » déjà neutralisée par F012) : ici la ligne F012
+ * reste dans les totaux F012 et F-006 doit la retirer UNE fois (`exact-39c-switch`).
+ */
+export const F011_DECLARED_SAME_FEE_RULE_ID = "AX-009:f011_overlap:declared_same_fee";
+
 type Classified = {
   class: Article39cContribution["class"];
   plausibleClasses?: readonly Article39cResolvedClass[];
@@ -156,7 +163,7 @@ function classifyBankFee(
       return {
         class: "EXCLUDED",
         proofLevel: "DIRECT",
-        ruleId: "AX-009:f011_overlap",
+        ruleId: F011_DECLARED_SAME_FEE_RULE_ID,
         reason: "Frais de financement déjà portés par F011 : jamais recomptés.",
         status: "VALIDATED",
         ...(bank.loanId !== undefined ? { loanId: bank.loanId } : {}),

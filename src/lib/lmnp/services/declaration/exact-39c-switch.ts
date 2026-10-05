@@ -61,6 +61,8 @@ export type ExactFiscalContract = {
   readonly loyersAcquisParBienEuros: Readonly<Record<string, number>>;
   /** Charges d'activité / CFE que les assistants F-012 / F-011 ne portent pas (euros) : transmises à F-006 une seule fois. */
   readonly exactOnlyChargesEuros: number;
+  /** Frais bancaires F012 déclarés par le client comme DÉJÀ portés par F011 : retirés des charges F-006 (comptés une seule fois, par F011). */
+  readonly f011DuplicateBankFeesEuros: number;
   readonly stocks: { readonly ard: number; readonly deficits: readonly StockDeficit[]; readonly basis: string };
   /** Sorties du moteur exact : F-006 doit les retrouver (réconciliation). */
   readonly expected: {
@@ -137,6 +139,7 @@ export function resolveExactSwitch(
         exact.consolidated.contributions.flatMap((c) => (c.class === "L" && c.scope.level === "PROPERTY" ? [[c.scope.propertyId, round2(c.amountCents / 100)] as const] : [])),
       ),
       exactOnlyChargesEuros: round2(exactOnlyChargesCents(workspace.declarationDraft as StoreHolder, workspace.fiscalYear.year) / 100),
+      f011DuplicateBankFeesEuros: round2(exact.consolidated.f011DeclaredSameFeeCents / 100),
       stocks:
         stocks.kind === "PROVIDED"
           ? { ard: stocks.historicalArdStock, deficits: stocks.priorDeficits, basis: stocks.basis ?? "PROVIDED" }
@@ -163,14 +166,26 @@ export function resolveExactSwitch(
 export function applyExactContractToEngineInputs(inputs: FiscalEngineInputs, contract: ExactFiscalContract): FiscalEngineInputs {
   const charges = inputs.chargesAssistant;
   const extra = contract.exactOnlyChargesEuros;
+  // Même frais déclaré en F011 et en F012 : F012 le porte encore dans ses totaux, F011 le porte aussi → retiré une fois côté F012.
+  // Si la ligne F012 ne couvre pas ce montant, rien n'est corrigé : F-006 diverge du moteur exact et la génération est refusée.
+  const duplicate = contract.f011DuplicateBankFeesEuros;
+  const dedupe = charges !== undefined && duplicate > 0 && (charges.parCategorie?.frais_bancaires ?? 0) >= duplicate;
   return {
     ...inputs,
     revenusAssistant: { exerciceFiscal: inputs.exerciceFiscal, totalRecettes: contract.recettesEuros },
     ...(charges !== undefined
       ? {
           chargesAssistant:
-            extra > 0
-              ? { ...charges, totalDeductible: round2(charges.totalDeductible + extra), parCategorie: { ...charges.parCategorie, divers: round2((charges.parCategorie?.divers ?? 0) + extra) } }
+            extra > 0 || dedupe
+              ? {
+                  ...charges,
+                  totalDeductible: round2(charges.totalDeductible + extra - (dedupe ? duplicate : 0)),
+                  parCategorie: {
+                    ...charges.parCategorie,
+                    ...(extra > 0 ? { divers: round2((charges.parCategorie?.divers ?? 0) + extra) } : {}),
+                    ...(dedupe ? { frais_bancaires: round2((charges.parCategorie?.frais_bancaires ?? 0) - duplicate) } : {}),
+                  },
+                }
               : charges,
         }
       : {}),

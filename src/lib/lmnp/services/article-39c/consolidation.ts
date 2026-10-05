@@ -18,6 +18,7 @@ import { computeArticle39c, type Article39cResult } from "@/runtime/capabilities
 import { fromCents } from "@/runtime/capabilities/f006/cents";
 import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { createBienDraft } from "@/lib/lmnp/dossier/bien-draft";
+import { F011_DECLARED_SAME_FEE_RULE_ID } from "./from-f012";
 import { resolveArticle39cOpeningStocks, type Article39cOpeningStocks } from "./opening-stocks";
 import { parseQualificationStore, selectQualifications } from "./qualification-store";
 import {
@@ -56,6 +57,11 @@ export type ConsolidatedArticle39cFacts = {
   readonly byPropertyCents: Readonly<Record<string, Readonly<Record<Article39cContributionClass, number>>>>;
   readonly activityCents: Readonly<Record<Article39cContributionClass, number>>;
   readonly currentDepreciationCents?: number;
+  /**
+   * Frais bancaires F012 que le client a déclarés identiques à des frais de prêt F011 (EXCLUDED, jamais B) : F012 les porte
+   * encore dans ses totaux, F011 aussi — l'appelant productif les retire UNE fois côté F012 (jamais déduit du montant seul).
+   */
+  readonly f011DeclaredSameFeeCents: number;
   readonly openingStocks?: Article39cOpeningStocks;
   readonly blockers: readonly Article39cWorkspaceBlocker[];
   readonly violations: readonly Article39cViolation[];
@@ -140,6 +146,9 @@ export function consolidateArticle39cFacts(input: {
     byClassCents: summary.byClassCents,
     byPropertyCents: byProperty,
     activityCents: activityTotals,
+    f011DeclaredSameFeeCents: sorted
+      .filter((c) => c.source === "F012_CHARGE" && c.class === "EXCLUDED" && c.ruleId === F011_DECLARED_SAME_FEE_RULE_ID)
+      .reduce((sum, c) => sum + c.amountCents, 0),
     ...(currentDepreciationCents !== undefined ? { currentDepreciationCents } : {}),
     ...(input.openingStocks !== undefined ? { openingStocks: input.openingStocks } : {}),
     blockers,
