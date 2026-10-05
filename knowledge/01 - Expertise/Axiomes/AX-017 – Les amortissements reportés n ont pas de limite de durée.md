@@ -19,4 +19,4 @@ stability: stable
 
 # AX-017 — Les amortissements reportés n ont pas de limite de durée
 
-Les amortissements réputés différés (non déduits car le résultat ne le permettait pas) sont reportables indéfiniment sur les bénéfices futurs de même nature.
+Les amortissements réputés différés (non déduits car excédant la capacité 39 C, SAV-030) sont reportables indéfiniment sur les bénéfices futurs de même nature.

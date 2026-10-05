@@ -289,7 +289,7 @@ Calcul : 950 - 120 (TEOM récupérée) = 830.
 
 Résultat avant amortissement = 3 000 - 5 287 = **-2 287 €** (déficit).
 
-L'amortissement ne s'applique pas (le résultat est déjà négatif). L'intégralité de l'amortissement (2 266,10 €) est reportée.
+L'amortissement ne s'applique pas : la capacité 39 C est nulle, `C = max(0, L − B)` avec `L` = 3 000 € et `B` ≥ 4 787 € (charges 5 287 € dont l'expert-comptable 500 €, charge de pure activité, hors `B`), donc `C` = 0 (SAV-030). L'intégralité de l'amortissement (2 266,10 €) est reportée. Sorties inchangées ; seule la justification est précisée (le signe du résultat global n'est pas le critère).
 
 ---
 

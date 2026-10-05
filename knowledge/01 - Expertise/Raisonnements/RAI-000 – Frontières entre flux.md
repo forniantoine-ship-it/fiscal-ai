@@ -58,7 +58,7 @@ Le flux Amortissements produit :
 | `total_annuel_exercice` | TRF-0012 | montant |
 | `plan_validé` | TRF-0014 | booléen |
 
-Le flux Résultat fiscal (à modéliser) consommera `total_annuel_exercice` comme dotation déductible, sous réserve de la règle de plafonnement (l'amortissement ne crée pas de déficit — AX futur).
+Le flux Résultat fiscal (à modéliser) consommera `total_annuel_exercice` comme dotation déductible, sous réserve de la règle de plafonnement (plafond 39 C : `C = max(0, L − B)`, AX-015, SAV-030).
 
 ## Charges déductibles → Résultat fiscal
 

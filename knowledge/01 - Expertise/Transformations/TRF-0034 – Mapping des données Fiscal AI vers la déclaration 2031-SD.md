@@ -24,7 +24,7 @@ requiert: [SAV-029, SAV-032]
 - exercice : année de l'exercice fiscal traité — voir FIELD-075 (exercice figé pour ce calcul) lorsqu'une référence documentaire est utile
 - résultat_fiscal : résultat imposable de l'exercice — voir FIELD-084
 - résultat_fiscal_avant_déficits : résultat LMNP après plafond 39 C et ARD consommés, avant imputation des déficits antérieurs (sortie de TRF-0031, SAV-030 étape 4)
-- déficit_nouveau : déficit de l'exercice, si le résultat avant amortissement est négatif (sortie de TRF-0031)
+- déficit_nouveau : déficit de l'exercice, si le résultat courant après amortissements déduits est négatif (sortie de TRF-0031, SAV-030)
 
 ## Sorties
 
