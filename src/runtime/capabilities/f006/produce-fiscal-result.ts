@@ -27,6 +27,8 @@ export function produceFiscalResult(input: FiscalEngineInputs): ComputeFiscalRes
 
   const data = aggregated.data;
   const { resultatAvantAmort } = computeResultatAvantAmort(data);
+  // KNOWN DIVERGENCE (39C-FIX-1, SAV-030) : proxy `capacité = max(0, résultat avant amortissement)` ; le moteur exact
+  // `computeArticle39c` n'est pas branché (L exact et qualification B / ACTIVITY indisponibles en production).
   const application = applyAmortissementStocks({
     exercice: input.exerciceFiscal,
     resultatAvantAmort,

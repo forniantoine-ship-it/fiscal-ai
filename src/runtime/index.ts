@@ -425,6 +425,14 @@ export { validateFiscalInputs } from "./capabilities/f006/validate-fiscal-inputs
 export { aggregateFiscalInputs } from "./capabilities/f006/aggregate-inputs";
 export { computeResultatAvantAmort } from "./capabilities/f006/compute-resultat-avant-amort";
 export { applyAmortissementStocks } from "./capabilities/f006/apply-amortissement-stocks";
+export { computeArticle39c, applyArticle39cSequence } from "./capabilities/f006/article-39c-capacity";
+export type {
+  Article39cClass,
+  Article39cInput,
+  Article39cQualifiedAmount,
+  Article39cResult,
+} from "./capabilities/f006/article-39c-capacity";
+export { qualifyArticle39cCharge } from "./capabilities/f006/qualify-article-39c";
 
 // F-006 — présentation
 export type {
