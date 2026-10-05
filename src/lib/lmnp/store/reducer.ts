@@ -1245,6 +1245,11 @@ function lmnpBaseReducer(state: LmnpState, action: LmnpAction): LmnpState {
           // rouvrir canRetryAfterPayment, même mécanisme générique que
           // bilanPatrimonial ci-dessus — jamais un sous-système dédié.
           "dispense2033A",
+          // INT-3 — réponses de qualification article 39 C (bien / activité) : elles conditionnent la capacité 39 C
+          // d'une future génération. Une modification ne doit jamais laisser une génération fiscale fraîche. Aucun effet
+          // sur le calcul F006 productif (le moteur exact n'est pas connecté).
+          "article39cQualifications",
+          "article39cActivityQualifications",
         ] as const
       ).some((key) => key in action.patch && !isDeepEqualDraftValue(draft[key], action.patch[key]));
 

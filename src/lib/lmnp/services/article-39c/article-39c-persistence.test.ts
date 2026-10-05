@@ -11,22 +11,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeArticle39c } from "@/runtime/capabilities/f006/article-39c-capacity";
-import type { Expense } from "@/runtime/capabilities/f012/expense";
 import type { PretFinancementExercice } from "@/runtime/capabilities/f011/types";
-import type { LigneCharge } from "@/runtime/capabilities/f012/types";
-import { collectedToChargeRegistry } from "@/runtime/assistants/f012-charges/collected-to-registry";
-import { chargeRegistryToComputeInput } from "@/runtime/assistants/f012-charges/registry-to-compute-input";
-import { computeChargesExercice } from "@/runtime/capabilities/f012/compute-charges-exercice";
-import type { F012CollectedData, F012PersistedState } from "@/runtime/assistants/f012-charges/types";
-import { buildChargesAssistantOutput } from "@/lib/lmnp/services/f012/charges-assistant-output";
-import { createBienDraft, type BienDraft } from "@/lib/lmnp/dossier/bien-draft";
+import type { F012CollectedData, } from "@/runtime/assistants/f012-charges/types";
+import { type BienDraft } from "@/lib/lmnp/dossier/bien-draft";
 import { loanKey } from "@/lib/lmnp/dossier/property-keys";
-import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
-import { parseWorkspaceSnapshot, serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
-import { applyFactsChange, confirmRentReconciliation, createRentReconciliationState, type RentReconciliationV2State } from "@/lib/lmnp/services/f013/v2/f013-v2-state";
-import type { MoneyFact } from "@/lib/lmnp/services/f013/v2/f013-v2-contract";
-import { toArticle39cQualifiedAmounts, type Article39cContribution, type Article39cScope } from "./contribution";
-import { f012LineFingerprint } from "./from-f012";
+import { toArticle39cQualifiedAmounts, } from "./contribution";
 import {
   editCfeNotice,
   cfeRecordIdFor,
@@ -36,192 +25,30 @@ import {
   recordChargeNatureAnswer,
   type Article39cQualificationStore,
 } from "./qualification-store";
-import type { ChargeNatureFact } from "./qualification-facts";
 import {
   buildArticle39cContributionsFromWorkspace,
-  resolveF012LinesForBien,
   type Article39cWorkspaceResult,
 } from "./workspace-sources";
 
-const YEAR = 2026;
-const DOSSIER = "dossier-1";
-const eur = (n: number) => Math.round(n * 100);
-const validated = (cents: number): MoneyFact => ({ status: "VALIDATED", amountCents: cents });
-const prop = (propertyId: string): Article39cScope => ({ level: "PROPERTY", propertyId });
-const ACTIVITY: Article39cScope = { level: "ACTIVITY" };
-
-// ---------------------------------------------------------------------------
-// Fixtures : un vrai workspace sérialisable (F012 → registre → LigneCharge → sortie confirmée)
-// ---------------------------------------------------------------------------
-
-function collected(extra: Partial<F012CollectedData> = {}): F012CollectedData {
-  return { coproLignes: [], travaux: [], divers: [], skippedCategories: [], ...extra };
-}
-
-function expense(partial: Partial<Expense> & Pick<Expense, "id" | "category" | "montant">): Expense {
-  return {
-    exerciceFiscal: YEAR,
-    description: partial.id,
-    origin: "document",
-    documentId: `doc-${partial.id}`,
-    fieldSources: { montant: "extracted" },
-    decision: "confirmed",
-    ...partial,
-  };
-}
-
-function rentState(propertyId: string, e: number, cc = 0): RentReconciliationV2State {
-  let state = createRentReconciliationState({ propertyId, fiscalYear: YEAR });
-  state = applyFactsChange(state, {
-    collections: validated(eur(e)),
-    collectionsCoverage: { completeness: "COMPLETE", validation: "VALIDATED" },
-    openingReceivables: validated(0),
-    closingReceivables: validated(eur(cc)),
-    openingAdvances: validated(0),
-    closingAdvances: validated(0),
-    exceptionsReviewed: true,
-  });
-  const confirmed = confirmRentReconciliation(state, { propertyId, fiscalYear: YEAR }, "2026-12-31T00:00:00.000Z");
-  assert.ok(confirmed.ok);
-  return confirmed.state;
-}
-
-function pret(partial: Partial<PretFinancementExercice> & { pretId: string }): PretFinancementExercice {
-  return {
-    typePret: "amortissable",
-    interetsEmpruntExercice: 0,
-    interetsPreExploitation: 0,
-    assuranceEmpruntExercice: 0,
-    assurancePreExploitation: 0,
-    capitalRembourseExercice: 0,
-    capitalRestantDu31_12: 0,
-    fraisDossierDeductibles: 0,
-    garantieDeductible: 0,
-    iraDeductible: 0,
-    ...partial,
-  };
-}
-
-function financement(prets: PretFinancementExercice[]): NonNullable<BienDraft["financementCharges"]> {
-  return {
-    exerciceFiscal: YEAR,
-    totalInteretsEmprunt: 0,
-    totalInteretsPreExploitation: 0,
-    totalAssurance: 0,
-    totalCapitalRembourse: 0,
-    totalChargesFinancementExercice: 0,
-    prets,
-    fieldSources: {},
-    computedAt: "t",
-  };
-}
-
-type BienOptions = {
-  collected?: F012CollectedData;
-  rent?: RentReconciliationV2State;
-  financement?: PretFinancementExercice[];
-  qualifications?: Article39cQualificationStore;
-  noF012?: boolean;
-};
-
-/** Reproduit ce que l'assistant persiste : état (collected) + sortie confirmée calculée par le moteur F012 existant. */
-function bien(propertyId: string, opts: BienOptions = {}): BienDraft {
-  const out = createBienDraft(propertyId);
-  out.dateMiseEnService = "2025-01-01";
-  if (opts.rent) out.rentReconciliationV2 = opts.rent;
-  if (opts.financement) out.financementCharges = financement(opts.financement);
-  else out.creditDeclaredNoneAt = "t";
-  if (opts.qualifications) out.article39cQualifications = opts.qualifications;
-  if (opts.noF012) return out;
-  const col = opts.collected ?? collected();
-  const state: F012PersistedState = {
-    step: "complete",
-    categoryInventory: [],
-    currentCategoryIndex: 0,
-    collected: col,
-    fieldSources: {},
-    updatedAt: "t",
-  };
-  const registry = collectedToChargeRegistry({ collected: col, categoryInventory: [], fieldSources: {}, exercise: YEAR });
-  const { charges } = computeChargesExercice(
-    chargeRegistryToComputeInput(registry, { dateMiseEnService: out.dateMiseEnService, fieldSources: {} }),
-  );
-  out.chargesAssistantState = { ...state, registry };
-  out.chargesAssistant = buildChargesAssistantOutput(charges, {}, "t");
-  out.chargesConfirmedAt = "t";
-  return out;
-}
-
-function monoWorkspace(propertyId: string, b: BienDraft, extraDraft: Record<string, unknown> = {}): PersistedWorkspace {
-  const { propertyId: _id, completedSteps, ...fields } = b;
-  void _id;
-  return {
-    fiscalYear: { id: "fy-1", year: YEAR, status: "draft", regime: "reel_simplifie", propertyIds: [propertyId], createdAt: "t", updatedAt: "t", dossierId: DOSSIER },
-    properties: [{ id: propertyId, label: propertyId, address: "a", city: "c", postalCode: "75000" }],
-    documents: [],
-    extractions: [],
-    validationItems: [],
-    ledgerEntries: [],
-    declarationDraft: { completedSteps, ...fields, ...extraDraft },
-  } as unknown as PersistedWorkspace;
-}
-
-function multiWorkspace(biens: Record<string, BienDraft>, extraDraft: Record<string, unknown> = {}): PersistedWorkspace {
-  const ids = Object.keys(biens);
-  return {
-    fiscalYear: { id: "fy-1", year: YEAR, status: "draft", regime: "reel_simplifie", propertyIds: ids, createdAt: "t", updatedAt: "t", dossierId: DOSSIER },
-    properties: ids.map((id) => ({ id, label: id, address: "a", city: "c", postalCode: "75000" })),
-    documents: [],
-    extractions: [],
-    validationItems: [],
-    ledgerEntries: [],
-    declarationDraft: { completedSteps: [], biens, ...extraDraft },
-  } as unknown as PersistedWorkspace;
-}
-
-/** save → serialize → JSON → reload : le chemin RÉEL de persistance du snapshot. */
-function roundtrip(workspace: PersistedWorkspace): { reloaded: PersistedWorkspace; schemaVersion: number } {
-  const serialized = serializeWorkspaceSnapshot(workspace);
-  assert.ok(serialized.ok, "sérialisation attendue");
-  const payload = JSON.parse(JSON.stringify(serialized.envelope));
-  const parsed = parseWorkspaceSnapshot(payload);
-  assert.ok(parsed.ok, "relecture attendue");
-  return { reloaded: parsed.envelope.workspace, schemaVersion: parsed.envelope.schemaVersion };
-}
-
-function build(workspace: PersistedWorkspace): Article39cWorkspaceResult {
-  return buildArticle39cContributionsFromWorkspace({ workspace, expectedDossierId: DOSSIER });
-}
-
-function after(workspace: PersistedWorkspace): Article39cWorkspaceResult {
-  return build(roundtrip(workspace).reloaded);
-}
-
-function byPart(items: readonly Article39cContribution[], sourceFragment: string, part: string): Article39cContribution | undefined {
-  return items.find((c) => c.contributionId.includes(sourceFragment) && c.contributionId.endsWith(`|${part}`));
-}
-
-/** Empreinte COURANTE d'une ligne, telle que la collecte (INT-3) la calculera avant d'enregistrer une réponse. */
-function currentLineFingerprint(b: BienDraft, propertyId: string, lineId: string): string {
-  const lines = resolveF012LinesForBien({ bien: b, fiscalYear: YEAR, scope: prop(propertyId) });
-  assert.ok(lines.ok, "lignes F012 attendues");
-  const ligne = lines.charges.lignes.find((l: LigneCharge) => l.id === lineId);
-  assert.ok(ligne, `ligne ${lineId}`);
-  return f012LineFingerprint(ligne, { owner: prop(propertyId), fiscalYear: YEAR, sources: lines.lineSources[lineId] });
-}
-
-function natureAnswer(b: BienDraft, propertyId: string, lineId: string, fact: Omit<ChargeNatureFact, "sourceFingerprint" | "lineId" | "provenance"> & { loanId?: string }): ChargeNatureFact {
-  return { ...fact, lineId, provenance: "declaration", sourceFingerprint: currentLineFingerprint(b, propertyId, lineId) } as ChargeNatureFact;
-}
-
-function store(answers: Array<{ scope: Article39cScope; fact: ChargeNatureFact }>): Article39cQualificationStore {
-  return answers.reduce(
-    (acc, a) => recordChargeNatureAnswer(acc, { scope: a.scope, fiscalYear: YEAR, fact: a.fact, answeredAt: "2026-12-01T00:00:00.000Z" }),
-    emptyQualificationStore(),
-  );
-}
-
-const first = (r: Article39cWorkspaceResult, fragment: string, part: string) => byPart(r.contributions, fragment, part);
+import {
+  ACTIVITY,
+  YEAR,
+  after,
+  bien,
+  build,
+  collected,
+  eur,
+  expense,
+  first,
+  monoWorkspace,
+  multiWorkspace,
+  natureAnswer,
+  pret,
+  prop,
+  rentState,
+  roundtrip,
+  store,
+  } from "./article-39c-test-fixtures";
 
 // ---------------------------------------------------------------------------
 // Oracles INT2-01 → INT2-18

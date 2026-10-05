@@ -84,6 +84,16 @@ export type F012Article39cInput = {
   /** INT-2 — natures et documents sources par ligne (pris dans l'empreinte) ; absent = aucune nature connue. */
   lineSources?: Readonly<Record<string, F012LineSources>>;
   /**
+   * INT-3 — lignes désignées EXPLICITEMENT comme déjà portées par une autre source (ex. CFE dédiée liée à une ligne
+   * « divers » par le client) : elles ne produisent aucune contribution active (EXCLUDED), jamais supprimées.
+   */
+  excludedLines?: Readonly<Record<string, { ruleId: string; reason: string }>>;
+  /**
+   * INT-3 — frais de dossier / garantie portés par F011, en centimes, par prêt. Un frais bancaire de financement de
+   * MÊME montant, sans décision explicite (`alreadyCountedByF011` / `financingFeeKind`), n'est jamais B : conflit non résolu.
+   */
+  f011FeeCentsByLoan?: Readonly<Record<string, { application: number; guarantee: number }>>;
+  /**
    * INT-2 — prêts F011 courants du bien. S'il est fourni, un frais de financement rattaché à un prêt absent de cette liste
    * (prêt supprimé / réattribué) est `STALE` : jamais B sur une référence de prêt périmée.
    */
@@ -123,6 +133,7 @@ function classifyBankFee(
   owner: Article39cScope,
   fiscalYear: number,
   knownLoanIds: readonly string[] | undefined,
+  f011FeeCentsByLoan: F012Article39cInput["f011FeeCentsByLoan"],
 ): Classified {
   const fact = factOf<BankFeeNatureFact>(facts, "BANK_FEE", ligne.id);
   const freshness = natureFactFreshness(fact, currentFingerprint);
@@ -156,6 +167,20 @@ function classifyBankFee(
       return unresolved(
         "Frais bancaires de financement : prêt ou bien d'attache non référencé — rattachement non démontré.",
         "SAV-031:bank_fee",
+      );
+    }
+    const fees = f011FeeCentsByLoan?.[bank.loanId];
+    const cents = toCents(ligne.montantDeductible);
+    if (
+      fees !== undefined &&
+      bank.financingFeeKind === undefined &&
+      cents > 0 &&
+      (cents === fees.application || cents === fees.guarantee)
+    ) {
+      // Même montant que des frais de prêt déjà portés par F011, sans décision explicite : jamais B (risque de double compte).
+      return unresolved(
+        "Frais bancaires de financement de même montant que des frais de prêt déjà comptés par F011 : s'agit-il du même frais ? Conflit non résolu.",
+        "SAV-031:bank_fee:possible_f011_duplicate",
       );
     }
     const dedupeKey =
@@ -192,6 +217,7 @@ function classifyInYear(
   owner: Article39cScope,
   lineFingerprint: string,
   knownLoanIds: readonly string[] | undefined,
+  f011FeeCentsByLoan: F012Article39cInput["f011FeeCentsByLoan"],
 ): Classified {
   const category: ChargeCategorie = ligne.categorie;
 
@@ -252,7 +278,7 @@ function classifyInYear(
       };
     }
     case "frais_bancaires":
-      return classifyBankFee(ligne, facts, lineFingerprint, owner, fiscalYear, knownLoanIds);
+      return classifyBankFee(ligne, facts, lineFingerprint, owner, fiscalYear, knownLoanIds, f011FeeCentsByLoan);
     case "copropriete":
       if (amountCents > 0) {
         return {
@@ -332,6 +358,21 @@ export function adaptF012ToArticle39cContributions(input: F012Article39cInput): 
     const inYearCents = toCents(ligne.montantDeductible);
     const fingerprint = f012LineFingerprint(ligne, { owner: input.owner, fiscalYear: input.fiscalYear, sources: input.lineSources?.[ligne.id] });
 
+    const explicitlyExcluded = input.excludedLines?.[ligne.id];
+    if (explicitlyExcluded !== undefined) {
+      for (const [part, cents] of [["in_year", inYearCents], ["pre_operational", toCents(ligne.montantPreExploitation)]] as const) {
+        if (cents === 0) continue;
+        push(ligne.id, part, Math.abs(cents), {
+          class: "EXCLUDED",
+          proofLevel: "DIRECT",
+          ruleId: explicitlyExcluded.ruleId,
+          reason: explicitlyExcluded.reason,
+          status: "VALIDATED",
+        }, provenance, fingerprint);
+      }
+      continue;
+    }
+
     if (ligne.exclusionReason === "f011_overlap") {
       push(ligne.id, "overlap", toCents(ligne.montant), {
         class: "EXCLUDED",
@@ -379,7 +420,7 @@ export function adaptF012ToArticle39cContributions(input: F012Article39cInput): 
       if (inYearCents < 0 && ligne.categorie !== "copropriete") {
         blockers.push({ code: "INVALID_AMOUNT", sourceId: ligne.id, message: `Ligne « ${ligne.id} » : montant négatif hors régularisation de copropriété.` });
       } else {
-        const classified = classifyInYear(ligne, inYearCents, facts, input.fiscalYear, input.owner, fingerprint, input.knownLoanIds);
+        const classified = classifyInYear(ligne, inYearCents, facts, input.fiscalYear, input.owner, fingerprint, input.knownLoanIds, input.f011FeeCentsByLoan);
         push(ligne.id, "in_year", Math.abs(inYearCents), classified, provenance, fingerprint);
       }
     }

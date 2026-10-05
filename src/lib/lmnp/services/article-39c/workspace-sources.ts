@@ -18,7 +18,9 @@
  */
 import { toCents } from "@/runtime/capabilities/f006/cents";
 import { computeChargesExercice } from "@/runtime/capabilities/f012/compute-charges-exercice";
-import { assuranceAnnuelleF011, fraisDossierF011 } from "@/runtime/capabilities/f012/detect-financement-overlap";
+import { assuranceAnnuelleF011, fraisDossierF011, type FinancementChargesSummary } from "@/runtime/capabilities/f012/detect-financement-overlap";
+import { effectiveFinancementCharges, resolveCreditState } from "@/lib/lmnp/services/declaration/credit-state";
+import type { DeclarationDraft } from "@/lib/lmnp/types";
 import type { Charge } from "@/runtime/capabilities/f012/charge";
 import type { ChargeCategorie, ChargesExerciceResult, LigneCharge } from "@/runtime/capabilities/f012/types";
 import { collectedToChargeRegistry } from "@/runtime/assistants/f012-charges/collected-to-registry";
@@ -28,6 +30,7 @@ import type { PersistedWorkspace } from "@/lib/lmnp/store/persistence";
 import { adaptF011ToArticle39cContributions } from "./from-f011";
 import { adaptF012ToArticle39cContributions, f012LineFingerprint, type F012LineSources } from "./from-f012";
 import { adaptF013V2ToArticle39cRent } from "./from-f013-v2";
+import { adaptF010ToArticle39cContributions } from "./from-f010";
 import {
   sortContributions,
   summarizeArticle39cContributions,
@@ -44,7 +47,7 @@ import {
   type InsuranceNatureFact,
   type ManagementNatureFact,
 } from "./qualification-facts";
-import { parseQualificationStore, selectQualifications } from "./qualification-store";
+import { parseQualificationStore, selectQualifications, type CfeQualificationRecord } from "./qualification-store";
 import type { Article39cInsuranceNature, Article39cManagementNature } from "@/runtime/capabilities/f006/qualify-article-39c";
 
 export type Article39cWorkspaceBlocker = Article39cAdapterBlocker & { readonly scope?: Article39cScope };
@@ -73,6 +76,27 @@ export type Article39cWorkspaceInput = {
   /** Prêts partagés entre biens par `propertyId` (garde de domaine multi existante). */
   sharedLoanIdsByProperty?: Readonly<Record<string, readonly string[]>>;
 };
+
+/**
+ * Prêt partagé (fait EXISTANT, `unsupported_shared_loan` de la consolidation productive) : le même document de prêt
+ * (`creditDocumentId`) déclaré sur plusieurs biens. Jamais d'heuristique, jamais d'allocation : tous les prêts de ces
+ * biens sont signalés partagés (fail-closed → `OUT_OF_DOMAIN`).
+ */
+export function deriveSharedLoanIdsByProperty(biens: Readonly<Record<string, BienDraft>>): Record<string, string[]> {
+  const byDocument = new Map<string, string[]>();
+  for (const [propertyId, bien] of Object.entries(biens)) {
+    if (bien.creditDocumentId === undefined) continue;
+    byDocument.set(bien.creditDocumentId, [...(byDocument.get(bien.creditDocumentId) ?? []), propertyId]);
+  }
+  const out: Record<string, string[]> = {};
+  for (const owners of byDocument.values()) {
+    if (owners.length < 2) continue;
+    for (const propertyId of owners) {
+      out[propertyId] = [...new Set([...(out[propertyId] ?? []), ...(biens[propertyId]?.financementCharges?.prets ?? []).map((p) => p.pretId)])];
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Nature des sources F012 (dérivée du registre : jamais d'un libellé)
@@ -174,15 +198,28 @@ export function resolveF012LinesForBien(input: {
     fieldSources: state.fieldSources,
     exercise: fiscalYear,
   });
-  const financement = bien.financementCharges;
+  // Même construction que l'assistant F012 en production : charges de financement EFFECTIVES (état crédit existant) et
+  // total des frais de dossier = somme des prêts (le champ n'existe pas sur `FinancementChargesOutput`).
+  const financement = effectiveFinancementCharges(bien as unknown as DeclarationDraft);
+  const totalFraisDossier = (financement?.prets ?? []).reduce((acc, p) => acc + (p.fraisDossierDeductibles ?? 0), 0);
+  const summary: FinancementChargesSummary | undefined =
+    financement !== undefined && (financement.totalAssurance !== undefined || financement.totalCapitalRembourse !== undefined || totalFraisDossier > 0)
+      ? {
+          totalAssurance: financement.totalAssurance ?? 0,
+          totalAssurancePreExploitation: financement.totalAssurancePreExploitation,
+          totalFraisDossier,
+          totalCapitalRembourse: financement.totalCapitalRembourse ?? 0,
+          exerciceFiscal: financement.exerciceFiscal,
+        }
+      : undefined;
   const { charges } = computeChargesExercice(
     chargeRegistryToComputeInput(registry, {
       dateMiseEnService: bien.dateMiseEnService,
       fieldSources: state.fieldSources,
-      ...(financement
+      ...(summary
         ? {
-            assuranceEmprunteurF011: { exerciceFiscal: financement.exerciceFiscal, montantAnnuel: assuranceAnnuelleF011(financement) },
-            fraisDossierF011: { exerciceFiscal: financement.exerciceFiscal, montantAnnuel: fraisDossierF011(financement) },
+            assuranceEmprunteurF011: { exerciceFiscal: summary.exerciceFiscal, montantAnnuel: assuranceAnnuelleF011(summary) },
+            fraisDossierF011: { exerciceFiscal: summary.exerciceFiscal, montantAnnuel: fraisDossierF011(summary) },
           }
         : {}),
     }),
@@ -254,7 +291,221 @@ function mergeNatureFacts(
 }
 
 // ---------------------------------------------------------------------------
-// Reconstruction
+// Contribution d'UN bien (contrat 39 C exact, dormant)
+// ---------------------------------------------------------------------------
+
+export type PropertyArticle39cContribution = {
+  readonly propertyId: string;
+  readonly fiscalYear: number;
+  /** Contributions de ce bien UNIQUEMENT (toutes de portée `PROPERTY` avec CE `propertyId`). */
+  readonly contributions: readonly Article39cContribution[];
+  readonly blockers: readonly Article39cWorkspaceBlocker[];
+  /** Dotation de l'exercice (F014 validé), en centimes : un FAIT d'entrée du moteur, jamais une contribution. */
+  readonly dotationCents?: number;
+};
+
+/**
+ * Rassemble les contributions d'un bien : F013 v2 → L, F012 → B / ACTIVITY / non résolu / EXCLUDED, F011 → B, CFE rattachée
+ * au bien, et — si `exactSources` — F010 (frais d'acquisition) et F014 (dotation validée). Ne calcule PAS C : le moteur
+ * exact consomme ces contributions ailleurs, une seule fois pour l'activité.
+ */
+export function buildPropertyArticle39cContribution(input: {
+  bien: BienDraft;
+  propertyId: string;
+  fiscalYear: number;
+  expectedDossierId: string;
+  stateDossierId: string;
+  sharedLoanIds?: readonly string[];
+  exactSources?: boolean;
+  /** CFE de niveau ACTIVITÉ : aucune liaison à une ligne de bien n'est possible, mais un jumeau « divers » est un conflit. */
+  activityCfeRecords?: readonly CfeQualificationRecord[];
+}): PropertyArticle39cContribution {
+  const { bien, propertyId, fiscalYear } = input;
+  const scope: Article39cScope = { level: "PROPERTY", propertyId };
+  const blockers: Article39cWorkspaceBlocker[] = [];
+  const contributions: Article39cContribution[] = [];
+  const effectiveFinancement = effectiveFinancementCharges(bien as unknown as DeclarationDraft);
+  const prets = effectiveFinancement?.prets ?? [];
+
+  // --- F013 v2 → L -----------------------------------------------------------
+  const rent = adaptF013V2ToArticle39cRent({
+    dossierId: input.expectedDossierId,
+    stateDossierId: input.stateDossierId,
+    propertyId,
+    fiscalYear,
+    state: bien.rentReconciliationV2,
+  });
+  if (rent.status === "DEFINITIVE") contributions.push(rent.contribution);
+  else for (const b of rent.blockers) blockers.push({ ...b, scope });
+
+  // --- Qualifications du bien --------------------------------------------------
+  const selected = selectQualifications(parseQualificationStore(bien.article39cQualifications), scope, fiscalYear);
+  for (const recordId of selected.wrongScopeRecordIds) {
+    blockers.push(blocker("QUALIFICATION_WRONG_SCOPE", `Qualification « ${recordId} » d'un autre bien présente dans ce bien : jamais servie.`, scope, recordId));
+  }
+  if (bien.chargesNatureReview !== undefined) {
+    blockers.push(blocker("CHARGES_NATURE_NEEDS_REVIEW", "Charges d'un dossier mono historique de nature inconnue (peut-être communes) : à revoir, jamais ventilées.", scope));
+  }
+
+  // --- F012 → B / ACTIVITY (liaison CFE explicite, dedupe F011) -----------------
+  const lines = resolveF012LinesForBien({ bien, fiscalYear, scope });
+  if (!lines.ok) {
+    blockers.push(...lines.blockers);
+  } else {
+    const lignes = lines.charges.lignes as readonly LigneCharge[];
+    const excludedLines: Record<string, { ruleId: string; reason: string }> = {};
+    for (const record of selected.cfe as readonly CfeQualificationRecord[]) {
+      const amount = record.notice.amountCents;
+      if (record.diversLinkage?.kind === "LINKED") {
+        const linked = lignes.find((l) => l.id === (record.diversLinkage as { lineId: string }).lineId);
+        const linkedCents = linked === undefined ? undefined : toCents(linked.montantDeductible) + toCents(linked.montantPreExploitation);
+        if (linked === undefined || linkedCents !== amount) {
+          blockers.push(blocker("CFE_DIVERS_CONFLICT", "CFE dédiée liée à une ligne de charges diverses absente ou de montant différent : conflit explicite, aucune suppression arbitraire.", scope, record.recordId));
+        } else {
+          excludedLines[linked.id] = { ruleId: "INT3:cfe_dedicated_source", reason: "Ligne « divers » désignée par le client comme étant la CFE déclarée : portée par la source CFE dédiée, jamais comptée deux fois." };
+        }
+      } else if (record.diversLinkage === undefined) {
+        const twin = lignes.some(
+          (l) => l.categorie === "divers" && l.exclusionReason !== "f011_overlap" && l.deductibilite === "deductible" && toCents(l.montantDeductible) + toCents(l.montantPreExploitation) === amount,
+        );
+        if (twin) {
+          blockers.push(blocker("CFE_DIVERS_CONFLICT", "Une ligne de charges diverses a le même montant que la CFE déclarée : s'agit-il de la même dépense ? Conflit explicite (lier ou déclarer distinct).", scope, record.recordId));
+        }
+      }
+    }
+    for (const record of input.activityCfeRecords ?? []) {
+      const twin = lignes.some(
+        (l) => l.categorie === "divers" && l.exclusionReason !== "f011_overlap" && l.deductibilite === "deductible" && toCents(l.montantDeductible) + toCents(l.montantPreExploitation) === record.notice.amountCents,
+      );
+      if (twin && record.diversLinkage?.kind !== "DECLARED_DISTINCT") {
+        blockers.push(blocker("CFE_DIVERS_CONFLICT", "Une ligne de charges diverses de ce bien a le même montant que la CFE de l'activité : même dépense ? Conflit explicite.", scope, record.recordId));
+      }
+    }
+    const f011FeeCentsByLoan: Record<string, { application: number; guarantee: number }> = {};
+    for (const pret of prets) {
+      f011FeeCentsByLoan[pret.pretId] = { application: toCents(pret.fraisDossierDeductibles), guarantee: toCents(pret.garantieDeductible) };
+    }
+    const f012 = adaptF012ToArticle39cContributions({
+      owner: scope,
+      fiscalYear,
+      lignes,
+      natureFacts: mergeNatureFacts(lines.derivedNatureFacts, selected.natureFacts),
+      registryCharges: lines.registryCharges,
+      lineSources: lines.lineSources,
+      excludedLines,
+      f011FeeCentsByLoan,
+      ...(effectiveFinancement !== undefined ? { knownLoanIds: prets.map((p) => p.pretId) } : {}),
+    });
+    contributions.push(...f012.contributions);
+    for (const b of f012.blockers) blockers.push({ ...b, scope });
+  }
+
+  // --- F011 → B (état crédit existant : jamais « aucun crédit » déduit d'une absence) ----------------
+  const creditState = resolveCreditState(bien as unknown as DeclarationDraft);
+  const financement = effectiveFinancementCharges(bien as unknown as DeclarationDraft);
+  if (creditState.etat === "AUCUN_CREDIT_ETABLI") {
+    // Aucun crédit déclaré explicitement : aucune charge de financement, ce n'est pas un inconnu.
+  } else if (financement === undefined || creditState.etat === "INCONNU" || creditState.etat === "AMBIGU") {
+    blockers.push(
+      blocker(
+        "F011_SOURCE_MISSING",
+        creditState.etat === "AMBIGU"
+          ? `État du crédit ambigu (${creditState.raisons.join(" ; ")}) : charges de financement non établies.`
+          : "Financement non établi (ni prêt confirmé, ni absence de prêt déclarée) : charges de financement INCONNUES.",
+        scope,
+      ),
+    );
+  } else if (financement.exerciceFiscal !== fiscalYear) {
+    blockers.push(blocker("FISCAL_YEAR_MISMATCH", `Financement de l'exercice ${financement.exerciceFiscal} pour ${fiscalYear}.`, scope));
+  } else {
+    const f011 = adaptF011ToArticle39cContributions({
+      propertyId,
+      fiscalYear,
+      prets: financement.prets,
+      excludedLoanIds: financement.excludedLoanIds ?? [],
+      sharedLoanIds: input.sharedLoanIds ?? [],
+    });
+    contributions.push(...f011.contributions);
+    for (const b of f011.blockers) blockers.push({ ...b, scope });
+  }
+
+  // --- CFE rattachée au bien -----------------------------------------------------
+  for (const record of selected.cfe) {
+    const c = qualifyCfe(record.notice, record.fact);
+    if (c !== null) contributions.push(c);
+  }
+
+  let dotationCents: number | undefined;
+  if (input.exactSources === true) {
+    // --- F010 : frais d'acquisition ------------------------------------------------
+    const f010 = adaptF010ToArticle39cContributions({
+      propertyId,
+      fiscalYear,
+      logementAmortissement: bien.logementAmortissement,
+      state: bien.logementAssistantState,
+    });
+    contributions.push(...f010.contributions);
+    for (const b of f010.blockers) blockers.push({ ...b, scope });
+
+    // --- F014 : dotation validée de l'exercice -------------------------------------
+    const amort = bien.amortissementAssistant;
+    if (amort === undefined || amort.status !== "validated" || amort.exerciceFiscal !== fiscalYear || !Number.isFinite(amort.totalDotations) || amort.totalDotations < 0) {
+      blockers.push(blocker("F014_NOT_VALIDATED", "Dotation d'amortissement non validée pour l'exercice : dotation INCONNUE (jamais zéro).", scope));
+    } else {
+      dotationCents = toCents(amort.totalDotations);
+    }
+  }
+
+  return { propertyId, fiscalYear, contributions: sortContributions(contributions), blockers, ...(dotationCents !== undefined ? { dotationCents } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// Contribution de l'ACTIVITÉ (jamais de propertyId)
+// ---------------------------------------------------------------------------
+
+export type ActivityArticle39cContribution = {
+  readonly fiscalYear: number;
+  /** Contributions de niveau ACTIVITÉ uniquement : aucune n'a de `propertyId`. */
+  readonly contributions: readonly Article39cContribution[];
+  readonly blockers: readonly Article39cWorkspaceBlocker[];
+};
+
+/**
+ * Faits réellement globaux : CFE de l'exploitant (store d'activité) et charges d'activité globales fournies explicitement
+ * (`activityLines`, structure dormante ADR-011 §11 — aucun F012 niveau activité n'est persisté aujourd'hui). Une charge
+ * globale classée B reste bloquée (`common_charges_not_supported`) ; une charge ACTIVITY globale n'est jamais répartie.
+ */
+export function buildActivityArticle39cContribution(input: {
+  fiscalYear: number;
+  store: unknown;
+  activityLines?: readonly LigneCharge[];
+}): ActivityArticle39cContribution {
+  const scope: Article39cScope = { level: "ACTIVITY" };
+  const blockers: Article39cWorkspaceBlocker[] = [];
+  const contributions: Article39cContribution[] = [];
+  const selected = selectQualifications(parseQualificationStore(input.store), scope, input.fiscalYear);
+  for (const recordId of selected.wrongScopeRecordIds) {
+    blockers.push(blocker("QUALIFICATION_WRONG_SCOPE", `Qualification « ${recordId} » rattachée à un bien dans le store d'activité : jamais servie.`, scope, recordId));
+  }
+  for (const record of selected.cfe) {
+    const c = qualifyCfe(record.notice, record.fact);
+    if (c !== null) contributions.push(c);
+  }
+  if ((input.activityLines?.length ?? 0) > 0) {
+    const f012 = adaptF012ToArticle39cContributions({
+      owner: scope,
+      fiscalYear: input.fiscalYear,
+      lignes: input.activityLines!,
+      natureFacts: selected.natureFacts,
+    });
+    contributions.push(...f012.contributions);
+    for (const b of f012.blockers) blockers.push({ ...b, scope });
+  }
+  return { fiscalYear: input.fiscalYear, contributions: sortContributions(contributions), blockers };
+}
+
+// ---------------------------------------------------------------------------
+// Reconstruction depuis un workspace (INT-2 : sans F010 / F014)
 // ---------------------------------------------------------------------------
 
 export function buildArticle39cContributionsFromWorkspace(input: Article39cWorkspaceInput): Article39cWorkspaceResult {
@@ -277,105 +528,57 @@ export function buildArticle39cContributionsFromWorkspace(input: Article39cWorks
     return { status, ...(workspaceDossierId !== undefined ? { dossierId: workspaceDossierId } : {}), fiscalYear, contributions: sorted, blockers, violations };
   };
 
-  // Identité du dossier : fournie par le workspace chargé, comparée à l'attendu. Absente → fail-closed.
-  if (workspaceDossierId === undefined || workspaceDossierId === "") {
-    blockers.push(blocker("DOSSIER_IDENTITY_MISSING", "Le workspace chargé ne porte aucune identité de dossier.", undefined));
-    return finish();
-  }
-  if (workspaceDossierId !== expectedDossierId) {
-    blockers.push(blocker("DOSSIER_MISMATCH", "Workspace chargé depuis un autre dossier que celui attendu.", undefined));
+  const identity = resolveWorkspaceIdentity(workspace, expectedDossierId);
+  if (!identity.ok) {
+    blockers.push(...identity.blockers);
     return finish();
   }
 
-  const view = readBienDrafts(workspace);
-  if (view.mode === "none" || view.mode === "unresolved") {
-    blockers.push(
-      blocker(
-        "PROPERTY_SCOPE_UNRESOLVED",
-        view.mode === "none" ? "Aucun bien dans l'exercice." : `Biens non résolus (${view.reason}) : jamais le premier bien, jamais le bien actif.`,
-        undefined,
-      ),
-    );
-    return finish();
-  }
-
-  const propertyIds = [...workspace.fiscalYear.propertyIds].sort();
-  for (const propertyId of propertyIds) {
-    const scope: Article39cScope = { level: "PROPERTY", propertyId };
-    const bien = view.biens[propertyId] ?? createBienDraft(propertyId);
-
-    // --- F013 v2 → L ---------------------------------------------------------
-    const rent = adaptF013V2ToArticle39cRent({
-      dossierId: expectedDossierId,
-      stateDossierId: workspaceDossierId,
+  for (const propertyId of identity.propertyIds) {
+    const part = buildPropertyArticle39cContribution({
+      bien: identity.biens[propertyId] ?? createBienDraft(propertyId),
       propertyId,
       fiscalYear,
-      state: bien.rentReconciliationV2,
+      expectedDossierId,
+      stateDossierId: identity.dossierId,
+      sharedLoanIds: input.sharedLoanIdsByProperty?.[propertyId] ?? [],
     });
-    if (rent.status === "DEFINITIVE") contributions.push(rent.contribution);
-    else for (const b of rent.blockers) blockers.push({ ...b, scope });
-
-    // --- Qualifications du bien ------------------------------------------------
-    const selected = selectQualifications(parseQualificationStore(bien.article39cQualifications), scope, fiscalYear);
-    for (const recordId of selected.wrongScopeRecordIds) {
-      blockers.push(blocker("QUALIFICATION_WRONG_SCOPE", `Qualification « ${recordId} » d'un autre bien présente dans ce bien : jamais servie.`, scope, recordId));
-    }
-
-    // --- F012 → B / ACTIVITY ---------------------------------------------------
-    const lines = resolveF012LinesForBien({ bien, fiscalYear, scope });
-    const prets = bien.financementCharges?.prets ?? [];
-    if (!lines.ok) {
-      blockers.push(...lines.blockers);
-    } else {
-      const f012 = adaptF012ToArticle39cContributions({
-        owner: scope,
-        fiscalYear,
-        lignes: lines.charges.lignes as readonly LigneCharge[],
-        natureFacts: mergeNatureFacts(lines.derivedNatureFacts, selected.natureFacts),
-        registryCharges: lines.registryCharges,
-        lineSources: lines.lineSources,
-        ...(bien.financementCharges !== undefined ? { knownLoanIds: prets.map((p) => p.pretId) } : {}),
-      });
-      contributions.push(...f012.contributions);
-      for (const b of f012.blockers) blockers.push({ ...b, scope });
-    }
-
-    // --- F011 → B --------------------------------------------------------------
-    if (bien.financementCharges === undefined) {
-      if (bien.creditDeclaredNoneAt === undefined) {
-        blockers.push(blocker("F011_SOURCE_MISSING", "Financement non établi (ni prêt confirmé, ni absence de prêt déclarée) : charges de financement INCONNUES.", scope));
-      }
-    } else if (bien.financementCharges.exerciceFiscal !== fiscalYear) {
-      blockers.push(blocker("FISCAL_YEAR_MISMATCH", `Financement de l'exercice ${bien.financementCharges.exerciceFiscal} pour ${fiscalYear}.`, scope));
-    } else {
-      const f011 = adaptF011ToArticle39cContributions({
-        propertyId,
-        fiscalYear,
-        prets,
-        excludedLoanIds: bien.financementCharges.excludedLoanIds ?? [],
-        sharedLoanIds: input.sharedLoanIdsByProperty?.[propertyId] ?? [],
-      });
-      contributions.push(...f011.contributions);
-      for (const b of f011.blockers) blockers.push({ ...b, scope });
-    }
-
-    // --- CFE rattachée au bien -------------------------------------------------
-    for (const record of selected.cfe) {
-      const c = qualifyCfe(record.notice, record.fact);
-      if (c !== null) contributions.push(c);
-    }
+    contributions.push(...part.contributions);
+    blockers.push(...part.blockers);
   }
 
-  // --- Niveau activité : CFE de l'exploitant (aucun propertyId) -------------------
-  const activityScope: Article39cScope = { level: "ACTIVITY" };
-  const activity = selectQualifications(parseQualificationStore(workspace.declarationDraft?.article39cActivityQualifications), activityScope, fiscalYear);
-  for (const recordId of activity.wrongScopeRecordIds) {
-    blockers.push(blocker("QUALIFICATION_WRONG_SCOPE", `Qualification « ${recordId} » rattachée à un bien dans le store d'activité : jamais servie.`, activityScope, recordId));
-  }
-  for (const record of activity.cfe) {
-    const c = qualifyCfe(record.notice, record.fact);
-    if (c !== null) contributions.push(c);
-  }
-
+  const activity = buildActivityArticle39cContribution({ fiscalYear, store: workspace.declarationDraft?.article39cActivityQualifications });
+  contributions.push(...activity.contributions);
+  blockers.push(...activity.blockers);
   return finish();
+}
+
+/** Identité dossier + biens du workspace chargé (contrat mono / multi existant) — fail-closed. */
+export function resolveWorkspaceIdentity(
+  workspace: PersistedWorkspace,
+  expectedDossierId: string,
+):
+  | { ok: true; dossierId: string; propertyIds: string[]; biens: Readonly<Record<string, BienDraft>> }
+  | { ok: false; blockers: Article39cWorkspaceBlocker[] } {
+  const dossierId = workspace.fiscalYear.dossierId;
+  if (dossierId === undefined || dossierId === "") {
+    return { ok: false, blockers: [blocker("DOSSIER_IDENTITY_MISSING", "Le workspace chargé ne porte aucune identité de dossier.", undefined)] };
+  }
+  if (dossierId !== expectedDossierId) {
+    return { ok: false, blockers: [blocker("DOSSIER_MISMATCH", "Workspace chargé depuis un autre dossier que celui attendu.", undefined)] };
+  }
+  const view = readBienDrafts(workspace);
+  if (view.mode === "none" || view.mode === "unresolved") {
+    return {
+      ok: false,
+      blockers: [
+        blocker(
+          "PROPERTY_SCOPE_UNRESOLVED",
+          view.mode === "none" ? "Aucun bien dans l'exercice." : `Biens non résolus (${view.reason}) : jamais le premier bien, jamais le bien actif.`,
+          undefined,
+        ),
+      ],
+    };
+  }
+  return { ok: true, dossierId, propertyIds: [...workspace.fiscalYear.propertyIds].sort(), biens: view.biens };
 }

@@ -203,6 +203,8 @@ export type AcquisitionCostFact = {
   fiscalYear: number;
   amountCents: number;
   treatment: AcquisitionCostTreatment;
+  /** Origine de la donnée (ex. `f010:state`) — tracée dans la contribution. */
+  provenance?: string;
 };
 
 /**
@@ -228,7 +230,7 @@ export function qualifyAcquisitionCost(fact: AcquisitionCostFact): Article39cCon
     fiscalYear: fact.fiscalYear,
     amountCents: fact.amountCents,
     scope: { level: "PROPERTY", propertyId: fact.propertyId } as Article39cScope,
-    provenance: "acquisition_cost:fact",
+    provenance: fact.provenance ?? "acquisition_cost:fact",
     sourceFingerprint: article39cSourceFingerprint({ kind: "acquisition_cost", ...fact }),
   };
   if (fact.treatment === "CAPITALIZED") {

@@ -41,11 +41,22 @@ type RecordBase = {
   answeredAt: string;
 };
 
-/** Source fact (avis de CFE déclaré) + qualification (`cfeBaseKind`). Aucune lecture automatique de l'avis. */
+/**
+ * Rapprochement explicite d'une CFE déclarée avec une ligne F012 « divers » : jamais déduit d'un libellé.
+ * `LINKED` : la ligne F012 désignée EST cette CFE (elle n'est alors plus comptée en F012). `DECLARED_DISTINCT` : le client
+ * affirme que la CFE n'est pas déjà saisie en charges diverses. Absent : conflit détecté si un montant identique existe.
+ */
+export type CfeDiversLinkage = { kind: "LINKED"; lineId: string } | { kind: "DECLARED_DISTINCT" };
+
+/**
+ * Source fact (avis de CFE déclaré : montant, exercice, rattachement, documents) + qualification (`cfeBaseKind`), absente
+ * tant que le client n'a pas répondu. Aucune lecture automatique de l'avis.
+ */
 export type CfeQualificationRecord = RecordBase & {
   recordKind: "CFE";
   notice: CfeNotice;
-  fact: CfeQualificationFact;
+  fact?: CfeQualificationFact;
+  diversLinkage?: CfeDiversLinkage;
 };
 
 /** Fait de nature rattaché à une ligne de charge F012 (frais bancaires, gestion, assurance, comptabilité). */
@@ -87,6 +98,63 @@ function upsert(store: Article39cQualificationStore, record: Article39cQualifica
   return { storeVersion: ARTICLE_39C_QUALIFICATION_STORE_VERSION, records };
 }
 
+function sameIgnoringAnsweredAt(a: Article39cQualificationRecord, b: Article39cQualificationRecord): boolean {
+  const strip = (r: Article39cQualificationRecord): unknown =>
+    JSON.parse(JSON.stringify(r, (key, value) => (key === "answeredAt" ? undefined : value)));
+  return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
+}
+
+/** Insertion qui ne modifie RIEN (même référence) si le contenu fiscal est identique : pas d'invalidation parasite. */
+function upsertIfChanged(store: Article39cQualificationStore, record: Article39cQualificationRecord): Article39cQualificationStore {
+  const existing = store.records.find((r) => r.recordId === record.recordId);
+  if (existing !== undefined && sameIgnoringAnsweredAt(existing, record)) return store;
+  return upsert(store, record);
+}
+
+function buildCfeNotice(
+  scope: Article39cScope,
+  notice: { sourceId: string; fiscalYear: number; amountCents: number; evidenceRefs?: readonly string[] },
+): CfeQualificationRecord["notice"] {
+  return {
+    sourceId: notice.sourceId,
+    fiscalYear: notice.fiscalYear,
+    amountCents: notice.amountCents,
+    ...(scope.level === "PROPERTY" ? { propertyId: scope.propertyId } : {}),
+    ...(notice.evidenceRefs !== undefined ? { evidenceRefs: [...notice.evidenceRefs].sort() } : {}),
+  };
+}
+
+/**
+ * Déclare la SOURCE d'une CFE (avis) sans réponse sur sa base : identité unique (scope, sourceId, exercice). La réponse
+ * reste absente = `UNKNOWN` (jamais MINIMUM) tant que le client n'a pas répondu. Redéclarer un avis modifié conserve une
+ * éventuelle réponse précédente, qui devient `STALE` (jamais réécrite).
+ */
+export function declareCfeNotice(
+  store: Article39cQualificationStore,
+  input: {
+    scope: Article39cScope;
+    notice: { sourceId: string; fiscalYear: number; amountCents: number; evidenceRefs?: readonly string[] };
+    answeredAt: string;
+    diversLinkage?: CfeDiversLinkage;
+  },
+): Article39cQualificationStore {
+  const notice = buildCfeNotice(input.scope, input.notice);
+  const recordId = cfeRecordId(input.scope, notice.sourceId, notice.fiscalYear);
+  const previous = store.records.find((r): r is CfeQualificationRecord => r.recordKind === "CFE" && r.recordId === recordId);
+  const linkage = input.diversLinkage ?? previous?.diversLinkage;
+  return upsertIfChanged(store, {
+    recordKind: "CFE",
+    recordId,
+    scope: input.scope,
+    fiscalYear: notice.fiscalYear,
+    validation: "VALIDATED",
+    answeredAt: input.answeredAt,
+    notice,
+    ...(previous?.fact !== undefined ? { fact: previous.fact } : {}),
+    ...(linkage !== undefined ? { diversLinkage: linkage } : {}),
+  });
+}
+
 /**
  * Enregistre la réponse CFE du client (« base minimum » / « valeur locative » / « je ne sais pas »). L'empreinte est
  * calculée sur l'avis tel que déclaré : montant, document, exercice, rattachement. Une réponse « je ne sais pas » est
@@ -100,18 +168,16 @@ export function recordCfeAnswer(
     cfeBaseKind: CfeBaseKind;
     provenance: FactProvenanceKind;
     answeredAt: string;
+    diversLinkage?: CfeDiversLinkage;
   },
 ): Article39cQualificationStore {
-  const notice: CfeQualificationRecord["notice"] = {
-    sourceId: input.notice.sourceId,
-    fiscalYear: input.notice.fiscalYear,
-    amountCents: input.notice.amountCents,
-    ...(input.scope.level === "PROPERTY" ? { propertyId: input.scope.propertyId } : {}),
-    ...(input.notice.evidenceRefs !== undefined ? { evidenceRefs: [...input.notice.evidenceRefs].sort() } : {}),
-  };
-  const record: CfeQualificationRecord = {
+  const notice = buildCfeNotice(input.scope, input.notice);
+  const recordId = cfeRecordId(input.scope, notice.sourceId, notice.fiscalYear);
+  const previous = store.records.find((r): r is CfeQualificationRecord => r.recordKind === "CFE" && r.recordId === recordId);
+  const linkage = input.diversLinkage ?? previous?.diversLinkage;
+  return upsertIfChanged(store, {
     recordKind: "CFE",
-    recordId: cfeRecordId(input.scope, notice.sourceId, notice.fiscalYear),
+    recordId,
     scope: input.scope,
     fiscalYear: notice.fiscalYear,
     validation: "VALIDATED",
@@ -125,8 +191,8 @@ export function recordCfeAnswer(
       sourceFingerprint: fingerprintCfeNotice(notice),
       answeredAt: input.answeredAt,
     },
-  };
-  return upsert(store, record);
+    ...(linkage !== undefined ? { diversLinkage: linkage } : {}),
+  });
 }
 
 /**
@@ -156,7 +222,7 @@ export function recordChargeNatureAnswer(
   store: Article39cQualificationStore,
   input: { scope: Article39cScope; fiscalYear: number; fact: ChargeNatureFact; answeredAt: string },
 ): Article39cQualificationStore {
-  return upsert(store, {
+  return upsertIfChanged(store, {
     recordKind: "CHARGE_NATURE",
     recordId: natureRecordId(input.scope, input.fact, input.fiscalYear),
     scope: input.scope,
@@ -196,18 +262,20 @@ function isRecord(value: unknown): value is Article39cQualificationRecord {
   if (r.validation !== "VALIDATED" && r.validation !== "PROPOSED") return false;
   if (typeof r.answeredAt !== "string" || r.answeredAt === "") return false;
   const fact = r.fact as Record<string, unknown> | undefined;
-  if (typeof fact !== "object" || fact === null || typeof fact.sourceFingerprint !== "string" || fact.sourceFingerprint === "") return false;
   if (r.recordKind === "CFE") {
     const notice = r.notice as Record<string, unknown> | undefined;
-    return (
-      typeof notice === "object" &&
-      notice !== null &&
-      typeof notice.sourceId === "string" &&
-      Number.isSafeInteger(notice.amountCents) &&
-      typeof fact.cfeBaseKind === "string" &&
-      CFE_KINDS.has(fact.cfeBaseKind)
-    );
+    const noticeOk = typeof notice === "object" && notice !== null && typeof notice.sourceId === "string" && Number.isSafeInteger(notice.amountCents);
+    // La réponse est facultative (source déclarée, base non répondue) ; si elle est présente, elle doit être complète.
+    const factOk =
+      fact === undefined ||
+      (typeof fact === "object" && fact !== null && typeof fact.sourceFingerprint === "string" && fact.sourceFingerprint !== "" && typeof fact.cfeBaseKind === "string" && CFE_KINDS.has(fact.cfeBaseKind));
+    const linkage = r.diversLinkage as Record<string, unknown> | undefined;
+    const linkageOk =
+      linkage === undefined ||
+      (typeof linkage === "object" && linkage !== null && (linkage.kind === "DECLARED_DISTINCT" || (linkage.kind === "LINKED" && typeof linkage.lineId === "string" && linkage.lineId !== "")));
+    return noticeOk && factOk && linkageOk;
   }
+  if (typeof fact !== "object" || fact === null || typeof fact.sourceFingerprint !== "string" || fact.sourceFingerprint === "") return false;
   if (r.recordKind === "CHARGE_NATURE") {
     return typeof fact.kind === "string" && NATURE_KINDS.has(fact.kind) && typeof fact.lineId === "string" && typeof fact.nature === "string";
   }
