@@ -287,7 +287,7 @@ describe("IMPORT-11, 12 : multi-bien", () => {
     const obsB = observationsForProperty({ sessions: forB.sessions, scope: { propertyId: "B", fiscalYear: Y }, attributionOf: () => asProperty("B") });
     assert.equal(proposals(obsB, "B").collections?.amountCents, 70000);
   });
-  it("AUDIT bridge v1 (volontairement non corrigé) : une grille corrigée somme les grilles de TOUS les biens de la session", () => {
+  it("AUDIT bridge v1 : sans scope (historique) toutes les sessions sont sommées ; HOTFIX-1 : avec scope, isolation par bien", () => {
     const row = (loyers: number) => [{ monthKey: "2025-11", month: "Novembre", loyers, autresRevenus: 0, charges: 0 }];
     const session: RevenueGptSession = { properties: [
       { id: "sA", label: "A", propertyId: "A", rows: row(1000), gridUserEdited: true },
@@ -296,7 +296,9 @@ describe("IMPORT-11, 12 : multi-bien", () => {
     const both = buildRevenusAssistantFromSession(session, Y).revenusAssistant;
     const onlyA = buildRevenusAssistantFromSession({ properties: [session.properties[0]!] }, Y).revenusAssistant;
     assert.equal(onlyA.totalRecettes, 1000);
-    assert.equal(both.totalRecettes, 1700, "le bien A (corrigé) entraîne la grille du bien B : bug v1 confirmé, non corrigé (pipeline productif)");
+    assert.equal(both.totalRecettes, 1700, "sans scope : comportement historique inchangé (mono)");
+    const scopedA = buildRevenusAssistantFromSession(session, Y, undefined, { kind: "property", propertyId: "A" }).revenusAssistant;
+    assert.equal(scopedA.totalRecettes, 1000, "HOTFIX-1 : avec scope, le bien A n'agrège plus le bien B");
     // Le pont V2 ne reproduit pas ce comportement : sélection par propertyId.
     assert.deepEqual(selectPropertySessions(session, { propertyId: "A", fiscalYear: Y }).map((p) => p.id), ["sA"]);
   });

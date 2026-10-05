@@ -43,7 +43,7 @@ import {
   REVENUE_OCR_READ_FAILURE_MESSAGE,
   runRevenusDocumentPipeline,
 } from "@/lib/lmnp/services/revenus-document-pipeline";
-import { buildRevenusAssistantFromSession } from "@/lib/lmnp/services/revenus-upload-to-assistant-bridge";
+import { buildRevenusAssistantFromSession, resolveRevenusBridgeScope } from "@/lib/lmnp/services/revenus-upload-to-assistant-bridge";
 import { isRevenusMockEnabled } from "@/lib/lmnp/services/revenus-mock";
 import {
   inferSessionRenderOrigin,
@@ -89,7 +89,7 @@ function shouldDisplayRevenueGrid(session: RevenueGptSession, ocrReadFailure: bo
 
 export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
   const revenusHref = useScopedOwnerHref(LMNP_ROUTES.revenusAssistant);
-  const { workspace, dispatch, getFile } = useLmnp();
+  const { workspace, dispatch, getFile, activePropertyId } = useLmnp();
   const uploadScope = useUploadPropertyScope();
   const { showSuccess, showInfo } = useFeedback();
   const router = useRouter();
@@ -531,7 +531,13 @@ export function RevenusDocumentStep({ isActive = true }: TunnelStepProps) {
     // Cycle 15A — pont vers le moteur fiscal : le même calcul que l'assistant
     // conversationnel (computeRecettesExercice), pas une nouvelle logique.
     // draft.revenusAssistant devient la source canonique lue par F-006.
-    const bridged = buildRevenusAssistantFromSession(session, fiscalYear, draft?.dateMiseEnService);
+    // HOTFIX-1 — en multi, seules les sources du bien actif alimentent la sortie ; mono : comportement historique.
+    const bridged = buildRevenusAssistantFromSession(
+      session,
+      fiscalYear,
+      draft?.dateMiseEnService,
+      resolveRevenusBridgeScope(workspace, activePropertyId),
+    );
     dispatch({
       type: "DECLARATION_PATCH_DRAFT",
       // NEXT-1 (REV-P0-03) — `bridged.anomalies` était calculé puis jamais

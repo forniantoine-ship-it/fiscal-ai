@@ -88,6 +88,7 @@
     "test:revenue-gpt-ui-prefill-multi-upload": "npx tsx --test src/lib/lmnp/services/revenue-gpt-ui-prefill-multi-upload.test.ts",
     "test:revenus-upload-bridge": "npx tsx --test src/lib/lmnp/services/revenus-upload-to-assistant-bridge.test.ts",
     "test:revenus-grid-edit": "npx tsx --test src/lib/lmnp/services/revenus-grid-edit-to-f006.test.ts",
+    "test:revenus-bridge-property-scope": "npx tsx --test src/lib/lmnp/services/revenus-bridge-property-scope.test.ts",
     "test:revenus-fiscal-trace": "npx tsx --test src/lib/lmnp/services/revenus-fiscal-trace.test.ts",
     "test:revenus-header-classification": "npx tsx --test src/lib/lmnp/services/revenus-header-classification.test.ts",
     "test:revenus-column-semantics": "npx tsx --test src/lib/lmnp/services/revenus-column-semantics.test.ts",

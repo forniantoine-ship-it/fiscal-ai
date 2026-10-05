@@ -1,5 +1,6 @@
 import { computeRecettesExercice, type Anomaly, type FieldSource } from "@/runtime";
 
+import { resolveWorkspacePropertyMode, type PropertyModeInput } from "../dossier/multi-property-activation";
 import { monthKeyForTransaction } from "./revenue-aggregation";
 import type { RevenueGptSession, RevenusAssistantOutput } from "../types";
 
@@ -64,15 +65,55 @@ function totalsFromEditedGrid(session: RevenueGptSession): {
   return { loyersEtAutres, recettesPlateforme };
 }
 
+/**
+ * HOTFIX-1 — périmètre « bien » du bridge. Absent : comportement historique (toutes les sessions — correct en mono, où
+ * il n'y en a qu'une). `property` : seules les sessions explicitement attribuées à ce `propertyId` contribuent, AVANT
+ * toute agrégation ; une session sans `propertyId` n'est jamais attribuée implicitement (sauf `includeUnattributed`,
+ * réservé au contexte mono). `propertyId` indéfini en multi : aucune session éligible (fail-closed).
+ */
+export type RevenusBridgeScope = { kind: "property"; propertyId: string | undefined; includeUnattributed?: boolean };
+
+/** Scope à fournir au bridge : multi → bien actif explicite (jamais « toutes les sessions ») ; mono/aucun → historique. */
+export function resolveRevenusBridgeScope(
+  workspace: PropertyModeInput,
+  activePropertyId: string | undefined,
+): RevenusBridgeScope | undefined {
+  const kind = resolveWorkspacePropertyMode(workspace).kind;
+  return kind === "scoped_multi" || kind === "legacy_multi" ? { kind: "property", propertyId: activePropertyId } : undefined;
+}
+
+function sessionForScope(session: RevenueGptSession, scope: RevenusBridgeScope | undefined): RevenueGptSession {
+  if (!scope) return session;
+  return {
+    ...session,
+    properties: session.properties.filter((property) =>
+      property.propertyId !== undefined
+        ? scope.propertyId !== undefined && property.propertyId === scope.propertyId
+        : scope.includeUnattributed === true),
+  };
+}
+
 export function buildRevenusAssistantFromSession(
-  session: RevenueGptSession,
+  allSession: RevenueGptSession,
   fiscalYear: number,
   dateMiseEnService?: string,
+  scope?: RevenusBridgeScope,
 ): BuildRevenusAssistantResult {
+  // Sélection de la source du bien AVANT toute agrégation (grilles corrigées comprises).
+  const session = sessionForScope(allSession, scope);
   let loyersEtAutres = 0;
   let recettesPlateforme = 0;
   let indemnitesAssurance = 0;
   const anomalies: Anomaly[] = [];
+  if (scope && session.properties.length === 0) {
+    anomalies.push({
+      severity: "error",
+      message:
+        "Aucune source de revenus n'est attribuée à ce bien : les revenus d'un autre bien ne sont jamais utilisés — " +
+        "importez ou saisissez les revenus de ce bien.",
+      field: "revenu_document",
+    });
+  }
   const useEditedGrid = sessionHasUserEditedGrid(session);
 
   if (useEditedGrid) {
