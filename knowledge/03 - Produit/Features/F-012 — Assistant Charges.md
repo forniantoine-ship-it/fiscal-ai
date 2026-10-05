@@ -407,6 +407,19 @@ Pour chaque item saisi : description + montant
 | Charges de bien non loué toute l'année (vacance) | Si vacance = recherche active de locataire → déductible. Si vacance = usage personnel → proratisation requise |
 | Charge payée pour plusieurs biens (PROF-005) | Saisie du montant total + répartition manuelle entre les biens |
 | Régularisation de charges de l'exercice précédent | Déductible dans l'exercice courant (méthode caisse) — information utilisateur si date couverte ≠ date exercice |
+| Deux charges justifiées par des documents de contenu identique | Voir « Identité documentaire ≠ identité du fait comptable » ci-dessous : fail-closed tant que deux faits distincts ne sont pas démontrés |
+
+## Identité documentaire ≠ identité du fait comptable (décision PO, SG-1.1)
+
+**Décision approuvée : `DOCUMENT IDENTITY != ACCOUNTING FACT IDENTITY`.**
+
+- Un SHA-256 identique des octets du fichier original démontre que le **contenu documentaire** est identique. Il ne démontre pas, à lui seul, que deux charges ou écritures représentent le **même fait économique**.
+- Le même montant, la même date, le même nom de fichier, le même texte OCR ou la même catégorie ne constituent **pas** une identité suffisante, ni documentaire ni comptable.
+- Le système ne supprime, ne fusionne, n'exclut et ne requalifie **jamais automatiquement** une charge sur la seule identité documentaire. Le hash détecte un risque ; il ne décide jamais d'une classe, d'un montant déductible ni d'une suppression.
+- Si le même contenu documentaire peut conduire à une double déduction et que l'identité métier n'est pas démontrée, le système **fail-closed** (génération bloquée) ; la sortie passe par le client (retirer la copie ou la charge en double), jamais par le système.
+- Plusieurs lignes explicitement distinctes issues légitimement d'un même justificatif (par exemple les lignes d'un décompte de syndic) restent possibles lorsque leur identité métier est démontrée.
+
+*Statut d'implémentation (technique, non doctrinal) :* l'implémentation actuelle utilise le champ `contentSha256` des documents (SHA-256 des octets originaux, additif, sans migration) comme signal d'identité documentaire, et traite comme « identité métier démontrée » uniquement des dépenses d'un même document à identifiants de ligne dérivés distincts. Ces choix sont des moyens d'implémentation, pas une règle générale ; un document sans empreinte calculée reste d'identité inconnue (aucune détection).
 
 ---
 

@@ -128,6 +128,17 @@ Signe par signe : **+CC** (acquis non encaissé : produit sans trésorerie) ; **
 
 Loyers **ordinaires** d'un bien donné en location **meublée**, par une personne physique relevant du **BIC au régime réel** (normal ou simplifié, avec ou sans comptabilité super-simplifiée), avec une **obligation locative identifiable** (bail, loyer et charges récupérées stipulés : créance certaine dans son principe et déterminée dans son montant), **sans événement juridique affectant la créance**. La formulation proposée a été challengée : elle est retenue à trois précisions près — (a) régime réel obligatoire (le micro-BIC est un régime d'encaissements hors champ) ; (b) qualification contractuelle des « loyers d'avance » sans ambiguïté ; (c) exercice de rattachement établi (première année : ouverture à zéro seulement si l'absence d'antériorité est confirmée, jamais déduite).
 
+### Frontière du domaine produit : première année réelle et ouverture non nulle (décision PO, SG-1.1)
+
+`FIRST_REAL_YEAR` (première année réelle déclarée) avec une créance d'ouverture CO ou une avance d'ouverture AO **non nulle** est **non supporté / fail-closed** dans l'état actuel du domaine produit :
+
+- une telle ouverture implique une antériorité que le contrat `NONE_FIRST_YEAR` ne couvre pas ;
+- aucune ouverture à zéro n'est inventée, et aucune provenance (micro-BIC → réel ou autre transition) n'est supposée ;
+- tant qu'une doctrine dédiée n'est pas approuvée, le produit **bloque** ce cas ;
+- restent supportés : la continuité native N → N+1 démontrée, et un zéro d'ouverture explicitement validé.
+
+Ceci décrit uniquement la frontière du domaine produit approuvée ; ce Savoir n'énonce aucune règle fiscale sur la transition micro-BIC → réel (**doctrine non établie**).
+
 ## Revue adversariale de la règle
 
 | Cas | Verdict | Fondement / limite |
