@@ -3,7 +3,6 @@ import type { FieldSource } from "../../contracts/FieldSource";
 import { computeCoproDeductible, type CoproLigneInput } from "./compute-copro-deductible";
 import { createComposantTravaux } from "./create-composant-travaux";
 import { computeTaxeFonciereDeductible } from "./compute-taxe-fonciere-deductible";
-import { isolatePreExploitationCharge } from "./isolate-pre-exploitation-charge";
 import { allocateAssuranceRecouvrement, allocateFraisDossierRecouvrement, type EnvelopeF011Reference } from "./assurance-recouvrement";
 import { qualifyTravail, splitMixteTravaux } from "./qualify-travail";
 import type {
@@ -86,25 +85,20 @@ function simpleDeductibleCharge(
   description: string,
   montant: number,
   categorie: ChargeCategorie,
-  exerciceFiscal: number,
-  dateMiseEnService: string,
   source: FieldSource,
 ): LigneCharge {
-  const isolated = isolatePreExploitationCharge({
-    montant,
-    exerciceFiscal,
-    dateMiseEnService,
-  });
+  // Ces montants ne portent aucune période de couverture établie. La date
+  // de mise en service du bien ne permet pas de ventiler une facture.
+  // La taxe foncière garde sa règle annuelle dédiée (TRF-0018) ci-dessous.
   return ligne({
     id,
     description,
     montant,
     categorie,
     deductibilite: "deductible",
-    montantDeductible: isolated.montantDeductible,
-    montantPreExploitation: isolated.montantPreExploitation,
+    montantDeductible: round2(montant),
     source,
-    regleAppliquee: "Charge déductible — prorata pré-exploitation appliqué si nécessaire",
+    regleAppliquee: "Charge déductible — aucune période de couverture établie, sans ventilation pré-exploitation",
   });
 }
 
@@ -164,8 +158,6 @@ export function computeChargesExercice(
         "Assurance PNO",
         input.assurancePno,
         "assurance_pno",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src("assurance_pno"),
       ),
     );
@@ -178,8 +170,6 @@ export function computeChargesExercice(
         "Assurance GLI",
         input.assuranceGli,
         "assurance_gli",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src("assurance_gli"),
       ),
     );
@@ -263,8 +253,6 @@ export function computeChargesExercice(
         "Honoraires et frais de gestion",
         gestionTotal,
         "honoraires_gestion",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src("honoraires_gestion"),
       ),
     );
@@ -277,8 +265,6 @@ export function computeChargesExercice(
         "Honoraires comptables",
         input.honorairesComptable,
         "honoraires_comptable",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src("honoraires_comptable"),
       ),
     );
@@ -291,8 +277,6 @@ export function computeChargesExercice(
         "Frais bancaires",
         input.fraisBancaires,
         "frais_bancaires",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src("frais_bancaires"),
       ),
     );
@@ -332,8 +316,6 @@ export function computeChargesExercice(
           item.description,
           item.montant,
           "divers",
-          input.exerciceFiscal,
-          input.dateMiseEnService,
           src(item.id),
         ),
       );
@@ -360,8 +342,6 @@ export function computeChargesExercice(
           allocation.recouvert > 0 ? `${item.description} (part non couverte par F-011)` : item.description,
           allocation.reliquat,
           "divers",
-          input.exerciceFiscal,
-          input.dateMiseEnService,
           src(item.id),
         ),
       );
@@ -393,8 +373,6 @@ export function computeChargesExercice(
         item.description,
         item.montant,
         "divers",
-        input.exerciceFiscal,
-        input.dateMiseEnService,
         src(item.id),
       ),
     );

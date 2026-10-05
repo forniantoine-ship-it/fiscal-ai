@@ -214,15 +214,18 @@ describe("F-012 — correction doublon totalPreExploitation (taxe foncière)", (
     assert.equal(result.charges.totalNonDeductible, 0);
   });
 
-  it("E. plusieurs catégories : une seule part pré-exploitation par catégorie", () => {
+  it("E. taxe annuelle : une seule part pré-exploitation ; PNO sans période établie : aucune part inventée", () => {
     const result = computeChargesExercice({
       exerciceFiscal: 2024,
       dateMiseEnService: "2024-08-01",
       taxeFonciere: 1200,
       assurancePno: 600,
     });
-    // taxe foncière : 700 pré-exploitation ; assurance PNO : 350 pré-exploitation
-    assert.equal(result.charges.totalPreExploitation, 1050);
+    // TRF-0018 est conservée pour la taxe annuelle. La mise en service
+    // n'établit aucune période de couverture pour les 600 € de PNO (B1).
+    assert.equal(result.charges.totalPreExploitation, 700);
+    assert.equal(result.charges.parCategorie.assurance_pno, 600);
+    assert.equal(result.charges.lignes.find(l => l.categorie === "assurance_pno")?.montantPreExploitation, 0);
   });
 
   it("F. montant 0 : aucune ligne, aucune duplication", () => {

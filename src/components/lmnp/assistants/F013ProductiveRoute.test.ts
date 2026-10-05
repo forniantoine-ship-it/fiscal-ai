@@ -13,19 +13,22 @@ import { productionOwnerHref } from "@/lib/lmnp/dossier/production-dossier-scope
 import { lmnpReducer, type LmnpState } from "@/lib/lmnp/store/reducer";
 import { createDefaultWorkspace } from "@/lib/lmnp/store/persistence";
 import { parseWorkspaceSnapshot, serializeWorkspaceSnapshot } from "@/lib/lmnp/store/workspace-snapshot";
+import { __resetWorkspaceSnapshotSyncForTests, __setWorkspaceSnapshotStoreForTests, saveWorkspaceSnapshotToServer, setWorkspaceSnapshotSyncGate, type WorkspaceSnapshotStore } from "@/lib/lmnp/store/workspace-snapshot-client";
 import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import { readV3CorrectionQuery, v3ScopedNavigationHref, type V3CorrectionScope } from "@/lab/v2-dossier/correction-scope";
 import { answerBalance, answerCollections, answerCoverage, answerExceptions } from "@/lib/lmnp/services/f013/v2/f013-v2-manual-flow";
 import { confirmRentReconciliation, createRentReconciliationState } from "@/lib/lmnp/services/f013/v2/f013-v2-state";
+import { resolveFiscalCalculationMode } from "@/lib/lmnp/services/declaration/exact-39c-switch";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const originalFlag = process.env.NEXT_PUBLIC_F013_V2_MANUAL;
 afterEach(() => {
+  __resetWorkspaceSnapshotSyncForTests();
   if (originalFlag === undefined) delete process.env.NEXT_PUBLIC_F013_V2_MANUAL;
   else process.env.NEXT_PUBLIC_F013_V2_MANUAL = originalFlag;
 });
 
-type Props = { children?: React.ReactNode; label?: string; href?: string; onSubmit?: (cents: number) => void };
+type Props = { children?: React.ReactNode; label?: string; href?: string; onSubmit?: (cents: number) => void; onClick?: () => void; variant?: string };
 type Element = React.ReactElement<Props>;
 
 // Execute the actual page, panel and gate. Only React hook hosting, store context
@@ -178,6 +181,58 @@ test("flag OFF leaves previously persisted v2 facts untouched", () => {
   assert.deepEqual(h.workspace().declarationDraft, before);
   assert.equal(h.writes.length, 0);
 });
+
+for (const [multi, selected, expected] of [[false, undefined, "A"], [true, "A", "A"], [true, "B", "B"]] as const) {
+  test(`B2: ${multi ? "multi" : "mono"} ${expected} productive panel answers and real confirmation survive snapshot/reload in EXACT mode`, async () => {
+    process.env.NEXT_PUBLIC_F013_V2_MANUAL = "1";
+    const h = harness(multi, selected);
+    const beforeOther = multi ? structuredClone(h.workspace().declarationDraft!.biens![expected === "A" ? "B" : "A"]) : undefined;
+    const click = (text: string, variant?: string) => {
+      const node = h.nodes().find(n => n.props.children === text && n.props.onClick && (!variant || n.props.variant === variant));
+      assert.ok(node, `actual panel action: ${text}`);
+      node.props.onClick!();
+    };
+    assert.equal(resolveFiscalCalculationMode(h.workspace()), "LEGACY_PROXY", "opening the v2 screen alone is not a migration");
+    const input = h.nodes().find(n => n.props.label === "Loyers reçus" && n.props.onSubmit);
+    assert.ok(input);
+    input.props.onSubmit!(1200000);
+    assert.equal(resolveFiscalCalculationMode(h.workspace()), "EXACT_39C_V2", "incomplete explicit v2 must never fall back to legacy");
+    click("Oui, tous");
+    for (let i = 0; i < 4; i++) click("Non", "secondary");
+    click("Aucun de ces éléments");
+    click("Confirmer ces loyers");
+    const scope = h.scope();
+    assert.equal(scope.status, "ready");
+    if (scope.status !== "ready") return;
+    const confirmed = scope.draft.rentReconciliationV2;
+    assert.ok(confirmed?.confirmation);
+    assert.equal(confirmed.facts.propertyId, expected);
+    assert.equal(confirmed.facts.fiscalYear, h.workspace().fiscalYear.year);
+    assert.ok(h.nodes().some(n => n.type === "a" && n.props.href?.startsWith("/assistants/charges")));
+    if (multi) assert.deepEqual(h.workspace().declarationDraft!.biens![expected === "A" ? "B" : "A"], beforeOther);
+    // Exercise the real server-save boundary against an in-memory store, starting
+    // from schema v1. No network or user data writes: only the store is replaced.
+    const serverWrites: Parameters<WorkspaceSnapshotStore["upsert"]>[0][] = [];
+    __setWorkspaceSnapshotStoreForTests({
+      listByDossier: async () => [],
+      getMeta: async () => ({ revision: 50, closedAt: null, schemaVersion: 1 }),
+      upsert: async input => { serverWrites.push(input); return { revision: 51 }; },
+    });
+    setWorkspaceSnapshotSyncGate("ready", { dossierId: "dossier", fiscalYear: h.workspace().fiscalYear.year });
+    const saved = await saveWorkspaceSnapshotToServer({ dossierId: "dossier", workspace: h.workspace() });
+    assert.equal(saved.status, "ok");
+    assert.equal(serverWrites.length, 1);
+    assert.equal(serverWrites[0].dossierId, "dossier");
+    assert.equal(serverWrites[0].fiscalYear, h.workspace().fiscalYear.year);
+    assert.equal(serverWrites[0].schemaVersion, 3);
+    const reloaded = parseWorkspaceSnapshot(JSON.parse(JSON.stringify(serverWrites[0].payload)));
+    assert.ok(reloaded.ok);
+    const restored = bienScopeFor(reloaded.envelope.workspace, expected);
+    assert.equal(restored.status, "ready");
+    if (restored.status === "ready") assert.deepEqual(restored.draft.rentReconciliationV2, confirmed);
+    assert.equal(resolveFiscalCalculationMode(reloaded.envelope.workspace), "EXACT_39C_V2");
+  });
+}
 
 test("flag ON never promotes legacy cash into v2 facts when opening the route", () => {
   process.env.NEXT_PUBLIC_F013_V2_MANUAL = "1";
