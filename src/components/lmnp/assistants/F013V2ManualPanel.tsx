@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { ScopedOwnerLink as Link } from "@/components/lmnp/app-shell/scoped-owner-navigation";
 import { Button } from "@/design-system/components/Button";
 import { Card } from "@/design-system/components/Card";
 import { colors } from "@/design-system/theme/colors";
@@ -9,6 +10,7 @@ import { radius } from "@/design-system/theme/radius";
 import { spacing } from "@/design-system/theme/spacing";
 import { typography } from "@/design-system/theme/typography";
 import { useBienScope, useLmnp } from "@/lib/lmnp/store";
+import { LMNP_ROUTES } from "@/lib/lmnp/routes";
 import {
   answerBalance,
   answerCollections,
@@ -110,18 +112,18 @@ function BalanceQuestion({
   );
 }
 
-export function F013V2ManualPanel() {
+export function F013V2ManualPanel({ productiveNavigation = false }: { productiveNavigation?: boolean }) {
   if (!isF013V2ManualEnabled()) {
     return <div role="status">Cette fonctionnalité n’est pas disponible pour le moment.</div>;
   }
   return (
     <BienScopeGate>
-      <F013V2ManualPanelBody />
+      <F013V2ManualPanelBody productiveNavigation={productiveNavigation} />
     </BienScopeGate>
   );
 }
 
-function F013V2ManualPanelBody() {
+function F013V2ManualPanelBody({ productiveNavigation }: { productiveNavigation: boolean }) {
   const { workspace } = useLmnp();
   const bienScope = useBienScope();
   const propertyId = bienScope.propertyId;
@@ -241,6 +243,18 @@ function F013V2ManualPanelBody() {
             )}
           </div>
         </Card>
+      ) : null}
+      {productiveNavigation ? (
+        <div className="flex flex-wrap gap-3">
+          {summary.confirmationFresh ? (
+            <Link href={LMNP_ROUTES.chargesAssistant} className="inline-flex min-h-11 items-center rounded-full bg-action px-5 py-3 font-medium text-ink hover:bg-action-hover">
+              Continuer vers Charges
+            </Link>
+          ) : null}
+          <Link href={LMNP_ROUTES.dashboard} className="inline-flex min-h-11 items-center rounded-full border border-outline px-5 py-3 font-medium text-ink">
+            Retour au tableau de bord
+          </Link>
+        </div>
       ) : null}
     </div>
   );
